@@ -1,0 +1,4 @@
+Django
+psycopg[binary]
+Pillow
+python-dotenv
