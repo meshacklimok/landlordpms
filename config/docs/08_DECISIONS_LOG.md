@@ -123,3 +123,11 @@ Key points: single-entry append-only ledger shaped for later double-entry; we ne
 
 ### D-040 — Additions from competitor deep dive (doc 16 §7–9) — ACCEPTED
 MVP: vacancy share link, P&L and cash flow by property, bank as a payment method with statement import, import concierge, optional MFA for Owner/Accountant, status and trust pages, VAT field on platform invoices. Tier 2: owner viewer and statements, lease PDF and move-out statement, prospects and viewings, vendor SLA, segmented announcements, WhatsApp, collectability score. Design-in only: BED_SPACE and semester billing, ESTATE and committee role, branch/white-label. Skip: short-stay, credit screening, public marketplace.
+
+### D-041 — Phase 1 implementation choices — ACCEPTED (2026-09-26)
+1. `PropertyAccess` ships in Phase 1, so a minimal `Property` (organization, name, code, category) ships with it. Phase 2 extends that model; it does not replace it.
+2. Organization scoping is explicit: `Model.objects.for_org(org)`, which raises on `None`. There is no thread-local "current organization" and no automatic filtering.
+3. `Organization.status` is ACTIVE, READ_ONLY (subscription lapsed: only capabilities marked `read_only_safe` work, and `subscription.manage` is one of them) or FROZEN (platform action: nothing works).
+4. Capabilities are defined in code (`accounts/capabilities.py`) and synced after every migrate. Removed codenames are deactivated, never deleted. Existing role templates are not overwritten, except that the Owner template always gains new capabilities.
+5. Org-wide capabilities (staff, roles, subscription, organization, payment accounts, full audit) also need `Membership.all_properties`. That is why property-scoped staff can never manage staff.
+6. The database is PostgreSQL in every environment, including tests.
