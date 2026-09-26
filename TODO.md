@@ -9,10 +9,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] `manage.py check` and `migrate` run against Postgres
 - [ ] Remove old `db.sqlite3` (waiting for user's go-ahead)
 - [x] Pin versions in `requirements.txt`
-- [~] `SECRET_KEY` with no insecure fallback (done); split settings (base/dev/prod) (todo)
-- [ ] Move `static/css/js/script.js` to `static/js/`
-- [~] Add ruff, pytest-django (done in `pyproject.toml`), pre-commit, GitHub Actions CI (todo)
-- [ ] Commit docs and settings changes
+- [x] `SECRET_KEY` with no insecure fallback; split settings (base/dev/prod)
+- [x] Move `static/css/js/script.js` to `static/js/`
+- [x] Add ruff, pytest-django (`pyproject.toml`), pre-commit, GitHub Actions CI
+- [x] Commit docs and settings changes
 
 ### Brainstorm and design (docs 10, 11, 12)
 - [x] Users, roles, permission matrix (doc 10)
