@@ -98,6 +98,42 @@ class PayerForm(forms.Form):
     name = forms.CharField(label=_("Name"), max_length=150, required=False, help_text=_("e.g. employer, spouse"))
 
 
+class NoticeForm(forms.Form):
+    given_on = forms.DateField(label=_("Notice given on"), widget=DateInput)
+
+
+class EndLeaseForm(forms.Form):
+    ended_on = forms.DateField(label=_("Moved out on"), widget=DateInput,
+                               help_text=_("The last day of the lease. Charges stop after this day."))
+    terminate = forms.BooleanField(label=_("Ended early (termination)"), required=False)
+    reason = forms.CharField(label=_("Reason"), required=False, widget=forms.Textarea(attrs={"rows": 2}),
+                             help_text=_("Required for a termination."))
+
+
+class RenewForm(forms.Form):
+    start_date = forms.DateField(label=_("Starts"), widget=DateInput, required=False,
+                                 help_text=_("Defaults to the day after this lease ends."))
+    end_date = forms.DateField(label=_("Ends"), widget=DateInput, required=False,
+                               help_text=_("Leave empty for a periodic (month-to-month) lease."))
+    rent = forms.DecimalField(label=_("Monthly rent (KES)"), max_digits=14, decimal_places=2, min_value=0,
+                              required=False, help_text=_("Defaults to the current rent."))
+
+
+class TransferForm(forms.Form):
+    unit = forms.ModelChoiceField(label=_("Move to unit"), queryset=None)
+    start_date = forms.DateField(label=_("Moves in on"), widget=DateInput,
+                                 help_text=_("This lease ends the day before."))
+    end_date = forms.DateField(label=_("Ends"), widget=DateInput, required=False,
+                               help_text=_("Defaults to this lease's end date."))
+    rent = forms.DecimalField(label=_("Monthly rent (KES)"), max_digits=14, decimal_places=2, min_value=0,
+                              required=False, help_text=_("Defaults to the new unit's listed rent."))
+
+    def __init__(self, *args, units, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["unit"].queryset = units
+        self.fields["unit"].label_from_instance = lambda u: f"{u.property.name} · {u.code}"
+
+
 class LeaseSearchForm(forms.Form):
     q = forms.CharField(required=False, max_length=100)
     status = forms.ChoiceField(required=False, choices=[("", _("All"))] + list(Lease.Status.choices))

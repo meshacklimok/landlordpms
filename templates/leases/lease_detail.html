@@ -15,7 +15,19 @@
   </div>
 
   {% if overlap %}
-  <div class="alert alert-warning small">{% blocktrans with start=overlap.start_date|date:"j M Y" %}This unit has an active lease from {{ start }} that overlaps these dates. It must end before this one can start.{% endblocktrans %}</div>
+  <div class="alert alert-warning small">{% blocktrans with start=overlap.start_date|date:"j M Y" %}This unit has a lease from {{ start }} that overlaps these dates. It must end before this one can start.{% endblocktrans %}</div>
+  {% endif %}
+  {% if predecessor %}
+  <div class="alert alert-info small">{% url 'leases:detail' predecessor.public_id as prev_url %}{% blocktrans with number=predecessor.number ends=predecessor_ends|date:"j M Y" %}Activating this lease closes <a href="{{ prev_url }}">{{ number }}</a> on {{ ends }}.{% endblocktrans %}</div>
+  {% endif %}
+  {% if successor %}
+  <div class="alert alert-info small">{% url 'leases:detail' successor.public_id as next_url %}{% blocktrans with unit=successor.unit.code start=successor.start_date|date:"j M Y" %}A <a href="{{ next_url }}">draft follow-on lease</a> for unit {{ unit }} from {{ start }} is waiting to be activated.{% endblocktrans %}</div>
+  {% endif %}
+  {% if lease.notice_given_on and lease.status == "ACTIVE" %}
+  <div class="alert alert-warning small d-flex justify-content-between align-items-center gap-2">
+    <span>{% blocktrans with given=lease.notice_given_on|date:"j M Y" by=lease.move_out_by|date:"j M Y" %}Notice to vacate given on {{ given }}. Move out by {{ by }}.{% endblocktrans %}</span>
+    {% if can_terminate %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="withdraw_notice"><button class="btn btn-link btn-sm p-0">{% trans "Withdraw" %}</button></form>{% endif %}
+  </div>
   {% endif %}
 
   <div class="card shadow-sm mb-3"><div class="card-body">
@@ -25,6 +37,10 @@
       <dt class="col-5">{% trans "Deposit" %}</dt><dd class="col-7">{{ lease.currency }} {{ lease.deposit_amount|floatformat:"2g" }}</dd>
       <dt class="col-5">{% trans "Rent due" %}</dt><dd class="col-7">{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of the month, {{ g }} grace days{% endblocktrans %}</dd>
       <dt class="col-5">{% trans "Notice period" %}</dt><dd class="col-7">{% blocktrans with n=lease.notice_days %}{{ n }} days{% endblocktrans %}</dd>
+      {% if lease.activated_at %}<dt class="col-5">{% trans "Activated" %}</dt><dd class="col-7">{{ lease.activated_at|date:"j M Y" }}</dd>{% endif %}
+      {% if lease.ended_on %}<dt class="col-5">{% trans "Ended on" %}</dt><dd class="col-7">{{ lease.ended_on|date:"j M Y" }}{% if lease.end_reason %} · {{ lease.end_reason }}{% endif %}</dd>{% endif %}
+      {% if lease.previous_lease %}<dt class="col-5">{% trans "Follows" %}</dt><dd class="col-7"><a href="{% url 'leases:detail' lease.previous_lease.public_id %}">{{ lease.previous_lease }}</a></dd>{% endif %}
+      {% for nl in next_leases %}<dt class="col-5">{% trans "Followed by" %}</dt><dd class="col-7"><a href="{% url 'leases:detail' nl.public_id %}">{{ nl }}</a> · {{ nl.unit.code }}</dd>{% endfor %}
     </dl>
     {% if lease.terms %}<hr><p class="small mb-0" style="white-space:pre-line">{{ lease.terms }}</p>{% endif %}
   </div></div>
@@ -139,6 +155,54 @@
     {% endif %}
   </div></div>
 
+  {% if can_terminate or can_renew or can_transfer %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Lease actions" %}</h2>
+    {% if renew_form %}
+    <details {% if renew_form.errors %}open{% endif %}><summary class="small">{% trans "Renew" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="renew">
+        {% with form=renew_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Draft renewal" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if transfer_form %}
+    <details {% if transfer_form.errors %}open{% endif %}><summary class="small">{% trans "Move to another unit" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="transfer">
+        {% with form=transfer_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Draft transfer" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if notice_form %}
+    <details {% if notice_form.errors %}open{% endif %}><summary class="small">{% if lease.notice_given_on %}{% trans "Change notice to vacate" %}{% else %}{% trans "Record notice to vacate" %}{% endif %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="notice">
+        {% with form=notice_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Save notice" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if end_form %}
+    <details {% if end_form.errors %}open{% endif %}><summary class="small text-danger">{% trans "End or terminate" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="end">
+        {% with form=end_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-outline-danger" onclick="return confirm('{% trans "End this lease? This cannot be undone." %}')">{% trans "End lease" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if can_activate %}
+  <form method="post" class="mb-2">{% csrf_token %}
+    <input type="hidden" name="action" value="activate">
+    <button class="btn btn-primary" onclick="return confirm('{% trans "Activate this lease? It gets a lease number and billing starts from its start date." %}')">{% trans "Activate lease" %}</button>
+  </form>
+  {% endif %}
   {% if can_edit_draft %}
   <p class="small text-muted">{% trans "This draft bills nothing until it is activated." %}</p>
   <form method="post" class="mt-3">{% csrf_token %}

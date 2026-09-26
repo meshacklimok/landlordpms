@@ -114,9 +114,13 @@ def update_property(actor: Membership, prop: Property, *, request=None, **fields
 
 
 def _open_leases():
+    """Drafts, active leases and closed ones whose tenant has not moved out yet."""
+    from django.db.models import Q
+
     from leases.models import Lease
 
-    return Lease.objects.filter(status__in=(Lease.Status.DRAFT, Lease.Status.ACTIVE))
+    return Lease.objects.filter(Q(status__in=(Lease.Status.DRAFT, Lease.Status.ACTIVE))
+                                | Q(ended_on__gte=timezone.localdate()))
 
 
 def _issued_leases():

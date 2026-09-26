@@ -164,3 +164,58 @@ def test_charge_types_page(client, owner):
     assert ct.name == "Parking" and ct.is_archived
     r = client.post(url, {"action": "create", "name": "Rent 2", "category": "RENT"})
     assert r.context["form"].errors["category"]
+
+
+def test_lease_actions_through_page(client, owner, unit, tenant):
+    today = datetime.date.today()
+    lease = services.create_lease(owner, unit=unit, tenants=[tenant], start_date=today - datetime.timedelta(days=60),
+                                  end_date=today + datetime.timedelta(days=30), rent=15000)
+    client.post(detail(lease), {"action": "activate"})
+    lease.refresh_from_db()
+    assert lease.status == Lease.Status.ACTIVE and lease.number
+    r = client.get(detail(lease))
+    assert r.context["can_renew"] and r.context["can_transfer"] and r.context["end_form"]
+
+    client.post(detail(lease), {"action": "notice", "given_on": today.isoformat()})
+    lease.refresh_from_db()
+    assert lease.notice_given_on == today
+    assert client.get(detail(lease)).status_code == 200
+    client.post(detail(lease), {"action": "withdraw_notice"})
+
+    r = client.post(detail(lease), {"action": "renew", "end_date": "", "start_date": "", "rent": ""})
+    renewal = Lease.objects.get(previous_lease=lease)
+    assert r["Location"] == detail(renewal)
+    r = client.get(detail(renewal))
+    assert r.context["predecessor"] == lease and r.context["overlap"] is None
+    assert client.get(detail(lease)).context["successor"] == renewal
+    client.post(detail(renewal), {"action": "delete"})
+
+    other = property_services.create_unit(owner, unit.property, code="B1")
+    r = client.post(detail(lease), {"action": "transfer", "unit": other.pk, "start_date": today.isoformat()})
+    moved = Lease.objects.get(previous_lease=lease)
+    assert r["Location"] == detail(moved)
+    client.post(detail(moved), {"action": "activate"})
+    lease.refresh_from_db()
+    assert lease.status == Lease.Status.ENDED
+    assert client.get(detail(lease)).status_code == 200
+
+
+def test_end_through_page_shows_errors(client, owner, unit, tenant):
+    lease = services.activate_lease(owner, services.create_lease(
+        owner, unit=unit, tenants=[tenant], start_date=D(2026, 1, 1), end_date=None, rent=15000))
+    r = client.post(detail(lease), {"action": "end", "ended_on": "2026-02-01", "terminate": "on", "reason": ""})
+    assert r.status_code == 200 and r.context["end_form"].errors["reason"]
+    client.post(detail(lease), {"action": "end", "ended_on": "2026-02-01", "terminate": "on", "reason": "Arrears"})
+    lease.refresh_from_db()
+    assert lease.status == Lease.Status.TERMINATED
+    r = client.get(detail(lease))
+    assert not any(r.context[k] for k in ("can_terminate", "can_renew", "can_transfer", "can_activate"))
+
+
+def test_agent_drafts_but_cannot_activate(client, owner, unit, lease):
+    agent = add_member(owner.organization, "leasing_agent", properties=[unit.property])
+    login(client, agent)
+    r = client.get(detail(lease))
+    assert r.context["can_edit_draft"] and not r.context["can_activate"]
+    assert client.post(detail(lease), {"action": "activate"}).status_code == 403
+    assert Lease.objects.get(pk=lease.pk).is_draft

@@ -82,17 +82,19 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Standalone-house shortcut (auto-create unit)
 - [x] Tenant (lifecycle status, normalised phone, sensitive fields); COMPANY type, duplicate-phone warning
 - [x] Lease, LeaseTenant, LeaseRentChange, LeaseCharge, LeasePayer; overlap constraint (btree_gist); ChargeType brought forward
-- [ ] Lease actions: activate, renew, terminate, transfer
+- [x] Lease actions: activate (LSE number), notice to vacate, end/terminate, renew, transfer; overlap uses the actual end (ended_on)
 - [ ] CSV import: units and tenants
 - [ ] List pages: pagination, search, filters, indexes
-- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; ended leases archive in step 4; drafts may be deleted)
+- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled, Phase 3)
 
 ## Phase 3 — Billing
-- [ ] NumberSequence with row-locked allocation; concurrency test
+- [x] NumberSequence with row-locked allocation (brought forward for lease numbers; add a threaded concurrency test with invoices)
 - [ ] `core/money.py` (parse, round, prorate, format) + tests
 - [ ] Invoice, InvoiceLine, LedgerEntry (ChargeType done in Phase 2)
 - [ ] Idempotent monthly invoice generation job (+ proration)
 - [ ] Tenant statement, arrears list, aging
+- [ ] Nightly job: recompute tenant status once a closed lease's ended_on passes; archive ended leases once settled
+- [ ] Deposit ledger: DEPOSIT_TRANSFERRED on lease transfer (D-016), refund on end
 - [ ] Tests: totals, rounding, duplicates, proration
 
 ## Phase 4 — Payments and receipts

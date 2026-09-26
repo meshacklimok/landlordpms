@@ -7,7 +7,9 @@
 - LeasePayer holds extra phone numbers that pay for this lease (spouse, employer). Matching
   payments to them comes in Phase 6.
 - Stored statuses: DRAFT, ACTIVE, ENDED, TERMINATED, RENEWED. "Expiring" is derived.
-- The database refuses two ACTIVE leases on one unit whose dates overlap.
+- A closed lease records the day it actually ended (ended_on). It can be in the future
+  when a renewal or transfer is activated ahead of the move.
+- The database refuses two issued leases on one unit whose dates overlap.
 """
 
 import datetime
@@ -18,6 +20,7 @@ from django.contrib.postgres.fields import DateRangeField, RangeOperators
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import F, Func, Q, Value
+from django.db.models.functions import Coalesce
 from django.utils.translation import gettext_lazy as _
 
 from core.models import AllObjectsManager, ArchivableModel, LiveManager, PublicIdModel, TimeStampedModel
@@ -95,14 +98,18 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
             models.CheckConstraint(condition=Q(deposit_amount__gte=0), name="leases_lease_deposit_not_negative"),
             models.UniqueConstraint("organization", "number", condition=~Q(number=""),
                                     name="leases_lease_org_number_unique"),
-            # D-016: never two active leases on one unit at the same time.
+            models.CheckConstraint(condition=Q(ended_on__isnull=True) | Q(ended_on__gte=F("start_date")),
+                                   name="leases_lease_ended_after_start"),
+            # D-016: never two issued leases on one unit at the same time. A closed lease
+            # holds the unit until the day it actually ended.
             ExclusionConstraint(
-                name="leases_lease_no_active_overlap",
+                name="leases_lease_no_overlap",
                 expressions=[
                     ("unit", RangeOperators.EQUAL),
-                    (DateRange("start_date", "end_date", Value("[]")), RangeOperators.OVERLAPS),
+                    (DateRange("start_date", Coalesce("ended_on", "end_date"), Value("[]")),
+                     RangeOperators.OVERLAPS),
                 ],
-                condition=Q(status="ACTIVE"),
+                condition=~Q(status="DRAFT"),
             ),
         ]
         indexes = [models.Index(fields=["organization", "status"]), models.Index(fields=["unit", "status"])]
@@ -124,6 +131,18 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
 
         today = timezone.localdate()
         return self.rent_on(max(today, self.start_date))
+
+    @property
+    def effective_end(self):
+        """The day the lease actually ends: when it was closed, else its contract end (None = periodic)."""
+        return self.ended_on or self.end_date
+
+    @property
+    def move_out_by(self):
+        """The last day under a notice to vacate (doc 14 B1)."""
+        if self.notice_given_on is None:
+            return None
+        return self.notice_given_on + datetime.timedelta(days=self.notice_days)
 
     def is_expiring(self, today: datetime.date) -> bool:
         return (self.status == self.Status.ACTIVE and self.end_date is not None

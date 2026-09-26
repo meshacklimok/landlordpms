@@ -284,15 +284,15 @@ def test_payers(owner, unit, tenant):
 # ---------------------------------------------------------------------------
 
 
-def test_database_refuses_overlapping_active_leases(owner, unit, tenant):
+def test_database_refuses_overlapping_leases(owner, unit, tenant):
     first = activate(draft(owner, unit, [tenant], start=D(2026, 1, 1), end=D(2026, 12, 31)))
     second = draft(owner, unit, [tenant], start=D(2026, 12, 31), end=None)
-    assert services.overlapping_active_lease(second) == first
+    assert services.overlapping_lease(second) == first
     with pytest.raises(IntegrityError), transaction.atomic():
         Lease.objects.filter(pk=second.pk).update(status=Lease.Status.ACTIVE)
     # The day after is fine.
     services.update_draft_lease(owner, second, start_date=D(2027, 1, 1))
-    assert services.overlapping_active_lease(second) is None
+    assert services.overlapping_lease(second) is None
     activate(second)
 
 

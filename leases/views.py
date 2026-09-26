@@ -13,8 +13,9 @@ from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
-from accounts.permissions import can
+from accounts.permissions import can, visible_properties
 from billing.services import recurring_charge_types
+from properties.models import Property, Unit
 from properties.views import _apply_errors, _get_unit
 from tenants.models import Tenant
 from tenants.services import visible_tenants
@@ -38,6 +39,13 @@ def _get_lease(request, public_id) -> Lease:
 
 def _tenant_choices(request):
     return visible_tenants(request.membership).order_by("name")
+
+
+def _transfer_units(membership, lease):
+    props = visible_properties(membership, Property.objects.all())
+    return (Unit.objects.for_org(membership.organization).filter(property__in=props)
+            .exclude(pk=lease.unit_id).exclude(manual_status=Unit.ManualStatus.INACTIVE)
+            .select_related("property").order_by("property__name", "code"))
 
 
 class LeaseListView(CapabilityRequiredMixin, View):
@@ -144,9 +152,13 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
     def context(self, request, lease, **forms_in):
         m, prop = request.membership, lease.unit.property
         is_open = lease.status in services.OPEN_STATUSES
+        is_active = lease.status == Lease.Status.ACTIVE
         can_draft = can(m, "leases.draft", prop)
         can_charges = is_open and (can(m, "charges.manage", prop) or (lease.is_draft and can_draft))
+        can_terminate = is_active and can(m, "leases.terminate", prop)
         on_lease = [lt.tenant_id for lt in lease.lease_tenants.all()]
+        predecessor = services.closing_predecessor(lease)
+        successor = services.open_successor(lease) if is_active else None
         ctx = {
             "lease": lease,
             "unit": lease.unit,
@@ -160,8 +172,25 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
             "can_charges": can_charges,
             "can_change_rent": lease.status == Lease.Status.ACTIVE and can(m, "leases.change_rent", prop),
             "can_see_tenants": can(m, "tenants.view"),
-            "overlap": services.overlapping_active_lease(lease) if lease.is_draft else None,
+            "overlap": services.overlapping_lease(lease, ignore=predecessor) if lease.is_draft else None,
+            "predecessor": predecessor,
+            "predecessor_ends": lease.start_date - services.DAY if predecessor else None,
+            "successor": successor,
+            "next_leases": Lease.all_objects.filter(previous_lease=lease).exclude(status=Lease.Status.DRAFT),
+            "can_activate": lease.is_draft and can(m, "leases.activate", prop),
+            "can_terminate": can_terminate,
+            "can_renew": is_active and can_draft and successor is None,
+            "can_transfer": can_terminate and successor is None,
         }
+        if ctx["can_terminate"]:
+            ctx["notice_form"] = forms_in.get("notice_form") or forms.NoticeForm(
+                initial={"given_on": ctx["today"].isoformat()})
+            ctx["end_form"] = forms_in.get("end_form") or forms.EndLeaseForm(
+                initial={"ended_on": min(ctx["today"], lease.move_out_by or ctx["today"]).isoformat()})
+        if ctx["can_renew"]:
+            ctx["renew_form"] = forms_in.get("renew_form") or forms.RenewForm()
+        if ctx["can_transfer"]:
+            ctx["transfer_form"] = forms_in.get("transfer_form") or forms.TransferForm(units=_transfer_units(m, lease))
         if ctx["can_edit_draft"]:
             ctx["tenant_form"] = forms_in.get("tenant_form") or forms.AddTenantForm(
                 tenants=_tenant_choices(request).exclude(pk__in=on_lease))
@@ -275,6 +304,61 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
         payer = get_object_or_404(LeasePayer, lease=lease, pk=request.POST.get("payer"))
         services.remove_payer(m, payer, request=request)
         messages.success(request, _("Payer removed."))
+
+    # Lease actions -----------------------------------------------------------
+
+    def do_activate(self, request, m, lease):
+        services.activate_lease(m, lease, request=request)
+        messages.success(request, _("Lease %(number)s is active.") % {"number": lease.number})
+
+    def do_notice(self, request, m, lease):
+        form = forms.NoticeForm(request.POST)
+        if not form.is_valid():
+            return self._bad_form(request, lease, "notice_form", form)
+        try:
+            services.give_notice(m, lease, request=request, **form.cleaned_data)
+        except ValidationError as exc:
+            return self._bad_form(request, lease, "notice_form", form, exc)
+        messages.success(request, _("Notice recorded. Move out by %(date)s.")
+                         % {"date": lease.move_out_by.strftime("%d %b %Y")})
+
+    def do_withdraw_notice(self, request, m, lease):
+        services.withdraw_notice(m, lease, request=request)
+        messages.success(request, _("Notice withdrawn."))
+
+    def do_end(self, request, m, lease):
+        form = forms.EndLeaseForm(request.POST)
+        if not form.is_valid():
+            return self._bad_form(request, lease, "end_form", form)
+        try:
+            services.end_lease(m, lease, request=request, **form.cleaned_data)
+        except ValidationError as exc:
+            lease.refresh_from_db()
+            return self._bad_form(request, lease, "end_form", form, exc)
+        messages.success(request, _("Lease terminated.") if lease.status == Lease.Status.TERMINATED
+                         else _("Lease ended."))
+
+    def do_renew(self, request, m, lease):
+        form = forms.RenewForm(request.POST)
+        if not form.is_valid():
+            return self._bad_form(request, lease, "renew_form", form)
+        try:
+            new = services.renew_lease(m, lease, request=request, **form.cleaned_data)
+        except ValidationError as exc:
+            return self._bad_form(request, lease, "renew_form", form, exc)
+        messages.success(request, _("Renewal drafted. Check it, then activate it."))
+        return redirect("leases:detail", public_id=new.public_id)
+
+    def do_transfer(self, request, m, lease):
+        form = forms.TransferForm(request.POST, units=_transfer_units(m, lease))
+        if not form.is_valid():
+            return self._bad_form(request, lease, "transfer_form", form)
+        try:
+            new = services.transfer_lease(m, lease, request=request, **form.cleaned_data)
+        except ValidationError as exc:
+            return self._bad_form(request, lease, "transfer_form", form, exc)
+        messages.success(request, _("Transfer drafted. Activating it ends this lease the day before the move."))
+        return redirect("leases:detail", public_id=new.public_id)
 
     # Draft -------------------------------------------------------------------
 

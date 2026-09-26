@@ -103,3 +103,26 @@ class OrgScopedModel(models.Model):
 
     class Meta:
         abstract = True
+
+
+class NumberSequence(models.Model):
+    """Human document numbers per organization, e.g. LSE-2026-000042 (doc 11 §24).
+
+    Allocated inside the issuing transaction under a row lock: numbers are never reused,
+    and a rolled-back issue gives its number back. Use ``core.numbering.next_number``.
+    """
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    key = models.CharField(max_length=30)
+    # The year for yearly series, "" for a series that never resets.
+    period = models.CharField(max_length=10, blank=True)
+    prefix = models.CharField(max_length=10)
+    next_value = models.PositiveBigIntegerField(default=1)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint("organization", "key", "period", name="core_numbersequence_unique"),
+        ]
+
+    def __str__(self):
+        return f"{self.prefix} {self.period} → {self.next_value}"
