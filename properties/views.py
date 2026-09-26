@@ -5,8 +5,6 @@ the member may see. Anything outside that is a 404, never a 403, so other
 organizations' records cannot be probed.
 """
 
-from collections import Counter
-
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
@@ -20,7 +18,7 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from leases.services import with_occupancy
 
-from . import forms, services
+from . import forms, selectors, services
 from .models import Building, Property, Unit
 
 PAGE_SIZE = 25
@@ -114,9 +112,15 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             "building_form": forms.BuildingForm(),
         }
         if ctx["show_units"]:
-            units = list(with_occupancy(Unit.objects.filter(property=prop).select_related("building")))
-            ctx["units"] = units
-            ctx["status_counts"] = dict(Counter(u.get_effective_status_display() for u in units))
+            search = forms.UnitSearchForm(request.GET)
+            search.is_valid()
+            q, status = search.cleaned_data.get("q", ""), search.cleaned_data.get("status", "")
+            units = with_occupancy(Unit.objects.filter(property=prop))
+            ctx["unit_total"] = units.count()
+            ctx["status_counts"] = selectors.status_counts(units)
+            matching = selectors.filter_units(units, status=status, q=q).select_related("building")
+            ctx["units"] = Paginator(matching, PAGE_SIZE).get_page(request.GET.get("page"))
+            ctx["q"], ctx["status"] = q, status
             ctx["archived_units"] = Unit.all_objects.archived().filter(property=prop) if ctx["can_manage_units"] else []
         ctx["buildings"] = Building.objects.filter(property=prop).annotate(
             unit_count=Count("units", filter=Q(units__archived_at__isnull=True))
@@ -232,6 +236,40 @@ class BuildingEditView(CapabilityRequiredMixin, View):
 # ---------------------------------------------------------------------------
 # Units
 # ---------------------------------------------------------------------------
+
+
+class UnitListView(CapabilityRequiredMixin, View):
+    """Every unit the member can see, across properties; `?status=vacant` is the vacancy list."""
+
+    template_name = "properties/unit_list.html"
+    required_capability = "units.view"
+
+    def get(self, request):
+        search = forms.UnitSearchForm(request.GET)
+        search.is_valid()
+        data = search.cleaned_data
+        props = visible_properties(request.membership, Property.objects.all()).order_by("name")
+        units = selectors.visible_units(request.membership)
+        prop = props.filter(public_id=data["property"]).first() if data.get("property") else None
+        if prop is not None:
+            units = units.filter(property=prop)
+        if data.get("unit_type"):
+            units = units.filter(unit_type=data["unit_type"])
+        counts = selectors.status_counts(units)
+        status = data.get("status", "")
+        units = selectors.filter_units(units, status=status, q=data.get("q", ""))
+        page = Paginator(units.select_related("property", "building"), PAGE_SIZE).get_page(request.GET.get("page"))
+        return render(request, self.template_name, {
+            "page": page,
+            "q": data.get("q", ""),
+            "status": status,
+            "unit_type": data.get("unit_type", ""),
+            "selected_property": prop,
+            "properties": props[:200],
+            "status_counts": counts,
+            "status_choices": [(key, label) for key, (label, _cond) in selectors.STATUS_FILTERS.items()],
+            "type_choices": Unit.Type.choices,
+        })
 
 
 class UnitCreateView(CapabilityRequiredMixin, View):

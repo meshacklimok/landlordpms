@@ -13,5 +13,6 @@ urlpatterns = [
     path("<uuid:public_id>/buildings/new/", views.BuildingCreateView.as_view(), name="building_create"),
     path("<uuid:public_id>/units/new/", views.UnitCreateView.as_view(), name="unit_create"),
     path("buildings/<uuid:public_id>/", views.BuildingEditView.as_view(), name="building_edit"),
+    path("units/", views.UnitListView.as_view(), name="units"),
     path("units/<uuid:public_id>/", views.UnitDetailView.as_view(), name="unit"),
 ]

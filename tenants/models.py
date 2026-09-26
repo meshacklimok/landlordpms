@@ -77,6 +77,7 @@ class Tenant(PublicIdModel, TimeStampedModel, ArchivableModel):
         indexes = [
             models.Index(fields=["organization", "phone"]),
             models.Index(fields=["organization", "status"]),
+            models.Index(fields=["organization", "name"]),
         ]
 
     def __str__(self):

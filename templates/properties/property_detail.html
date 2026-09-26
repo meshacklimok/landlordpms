@@ -24,13 +24,21 @@
 {% if show_units %}
 <div class="card shadow-sm mb-3"><div class="card-body">
   <div class="d-flex justify-content-between align-items-center mb-2">
-    <h2 class="h6 mb-0">{% trans "Units" %} <span class="text-muted">({{ units|length }})</span></h2>
+    <h2 class="h6 mb-0">{% trans "Units" %} <span class="text-muted">({{ unit_total }})</span></h2>
     {% if can_manage_units and not property.is_archived %}<a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}">{% trans "Add unit" %}</a>{% endif %}
   </div>
   {% if status_counts %}
   <div class="small text-muted mb-2">
-    {% for label, n in status_counts.items %}{% if not forloop.first %} · {% endif %}{{ label }}: {{ n }}{% endfor %}
+    {% for key, label, n in status_counts %}{% if not forloop.first %} · {% endif %}<a href="{% querystring status=key page=None %}" class="link-secondary">{{ label }}: {{ n }}</a>{% endfor %}
+    {% if status %} · <a href="{% querystring status=None page=None %}">{% trans "Show all" %}</a>{% endif %}
   </div>
+  {% endif %}
+  {% if unit_total > 10 or q %}
+  <form method="get" class="d-flex gap-2 mb-2">
+    <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="{% trans 'Find a unit' %}" aria-label="{% trans 'Find a unit' %}">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Search" %}</button>
+  </form>
   {% endif %}
   <div class="list-group list-group-flush">
     {% for u in units %}
@@ -40,12 +48,13 @@
         <span class="small text-muted">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.building %} · {{ u.building.name }}{% endif %}</span>
         <div class="small text-muted">{% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></div>
       </div>
-      <span class="badge {% if u.is_occupied %}text-bg-primary{% elif u.manual_status == 'NORMAL' %}text-bg-success{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>
+      {% include "properties/_unit_status_badge.html" %}
     </a>
     {% empty %}
-    <div class="text-muted small py-2">{% trans "No units yet." %}</div>
+    <div class="text-muted small py-2">{% if q or status %}{% trans "No units match." %}{% else %}{% trans "No units yet." %}{% endif %}</div>
     {% endfor %}
   </div>
+  {% include "partials/pager.html" with page=units %}
   {% if archived_units %}
   <details class="mt-2 small"><summary class="text-muted">{% blocktrans count n=archived_units|length %}{{ n }} archived unit{% plural %}{{ n }} archived units{% endblocktrans %}</summary>
     <ul class="mb-0 mt-1">{% for u in archived_units %}<li><a href="{% url 'properties:unit' u.public_id %}">{{ u.code }}</a></li>{% endfor %}</ul>

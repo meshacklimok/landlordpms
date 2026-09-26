@@ -74,3 +74,10 @@ class UnitStatusForm(forms.Form):
 class PropertySearchForm(forms.Form):
     q = forms.CharField(required=False, max_length=100)
     archived = forms.BooleanField(required=False)
+
+
+class UnitSearchForm(forms.Form):
+    q = forms.CharField(required=False, max_length=100)
+    property = forms.UUIDField(required=False)
+    status = forms.CharField(required=False, max_length=20)
+    unit_type = forms.ChoiceField(required=False, choices=[("", "")] + list(Unit.Type.choices))
