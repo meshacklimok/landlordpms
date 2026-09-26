@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ property.name }}{% endblock %}
+{% block content %}
+<a href="{% url 'properties:list' %}" class="small">← {% trans "Properties" %}</a>
+<div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+  <div>
+    <h1 class="h4 mb-0">{{ property.name }} <span class="badge text-bg-light border">{{ property.code }}</span></h1>
+    <div class="small text-muted">{{ property.get_category_display }}{% if property.address_line %} · {{ property.address_line }}{% endif %}</div>
+  </div>
+  {% if can_manage and not property.is_archived %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:edit' property.public_id %}">{% trans "Edit" %}</a>{% endif %}
+</div>
+
+{% if property.is_archived %}
+<div class="alert alert-secondary d-flex justify-content-between align-items-center">
+  <span>{% trans "This property is archived." %}</span>
+  {% if can_manage %}
+  <form method="post" action="{% url 'properties:archive' property.public_id %}">{% csrf_token %}
+    <input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if show_units %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h6 mb-0">{% trans "Units" %} <span class="text-muted">({{ units|length }})</span></h2>
+    {% if can_manage_units and not property.is_archived %}<a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}">{% trans "Add unit" %}</a>{% endif %}
+  </div>
+  {% if status_counts %}
+  <div class="small text-muted mb-2">
+    {% for status, n in status_counts.items %}{% if not forloop.first %} · {% endif %}{% if status == "NORMAL" %}{% trans "Available" %}{% elif status == "RESERVED" %}{% trans "Reserved" %}{% elif status == "UNDER_MAINTENANCE" %}{% trans "Under maintenance" %}{% else %}{% trans "Inactive" %}{% endif %}: {{ n }}{% endfor %}
+  </div>
+  {% endif %}
+  <div class="list-group list-group-flush">
+    {% for u in units %}
+    <a href="{% url 'properties:unit' u.public_id %}" class="list-group-item list-group-item-action px-0 d-flex justify-content-between align-items-center">
+      <div>
+        <span class="fw-semibold">{{ u.code }}</span>
+        <span class="small text-muted">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.building %} · {{ u.building.name }}{% endif %}</span>
+        <div class="small text-muted">{% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></div>
+      </div>
+      <span class="badge {% if u.manual_status == 'NORMAL' %}text-bg-success{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>
+    </a>
+    {% empty %}
+    <div class="text-muted small py-2">{% trans "No units yet." %}</div>
+    {% endfor %}
+  </div>
+  {% if archived_units %}
+  <details class="mt-2 small"><summary class="text-muted">{% blocktrans count n=archived_units|length %}{{ n }} archived unit{% plural %}{{ n }} archived units{% endblocktrans %}</summary>
+    <ul class="mb-0 mt-1">{% for u in archived_units %}<li><a href="{% url 'properties:unit' u.public_id %}">{{ u.code }}</a></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div></div>
+{% endif %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Buildings" %} <span class="small text-muted fw-normal">{% trans "(optional, for large developments)" %}</span></h2>
+  <ul class="list-unstyled mb-2">
+    {% for b in buildings %}
+    <li class="py-1">{% if can_manage %}<a href="{% url 'properties:building_edit' b.public_id %}">{{ b.name }}</a>{% else %}{{ b.name }}{% endif %}
+      <span class="small text-muted">· {% blocktrans count n=b.unit_count %}{{ n }} unit{% plural %}{{ n }} units{% endblocktrans %}</span></li>
+    {% empty %}<li class="small text-muted">{% trans "No buildings. Units sit directly under the property." %}</li>{% endfor %}
+  </ul>
+  {% if can_manage and not property.is_archived %}
+  <form method="post" action="{% url 'properties:building_create' property.public_id %}" class="d-flex gap-2">{% csrf_token %}
+    <input name="name" maxlength="100" required class="form-control form-control-sm" placeholder="{% trans 'Building name, e.g. Block A' %}" aria-label="{% trans 'Building name' %}">
+    <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Add building" %}</button>
+  </form>
+  {% endif %}
+</div></div>
+
+{% if can_manage and not property.is_archived %}
+<form method="post" action="{% url 'properties:archive' property.public_id %}" class="mt-4">{% csrf_token %}
+  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this property with all its buildings and units?" %}')">{% trans "Archive property" %}</button>
+</form>
+{% endif %}
+{% endblock %}

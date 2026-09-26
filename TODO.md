@@ -75,16 +75,17 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [~] Platform Admin: Django admin with org, user overview (done); subscription overview (waits for subscription model)
 
 ## Phase 2 — Properties, tenants, leases
-- [ ] Unit types include BED_SPACE (design-in); Property.category includes ESTATE; branch/branding fields on Organization (design-in)
+- [x] Unit types include BED_SPACE (design-in); Property.category includes ESTATE
+- [ ] Branch/branding fields on Organization (design-in)
 - [ ] Shareable public vacancy link
-- [ ] Property, Building (optional), Unit (types, manual status, payment_reference)
-- [ ] Standalone-house shortcut (auto-create unit)
+- [x] Property, Building (optional), Unit (types, manual status, payment_reference); structured Kenyan address
+- [x] Standalone-house shortcut (auto-create unit)
 - [ ] Tenant (lifecycle status, normalised phone, sensitive fields)
 - [ ] Lease, LeaseTenant, LeaseRentChange, LeaseCharge; overlap constraint
 - [ ] Lease actions: activate, renew, terminate, transfer
 - [ ] CSV import: units and tenants
 - [ ] List pages: pagination, search, filters, indexes
-- [ ] Archive instead of delete
+- [ ] Archive instead of delete (properties, buildings and units done; tenants and leases to follow)
 
 ## Phase 3 — Billing
 - [ ] NumberSequence with row-locked allocation; concurrency test

@@ -15,7 +15,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
 from audit import services as audit
-from properties.models import Property
+from properties.models import Property, Unit
 
 from . import forms, identity, services
 from .capabilities import OWNER_CRITICAL
@@ -224,11 +224,12 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         m = self.request.membership
         org = m.organization
         has_property = Property.objects.for_org(org).exists()
+        has_unit = Unit.objects.for_org(org).exists()
         # Derived from data, no table (doc 11 §16). Later steps light up in Phase 2–4.
         ctx["checklist"] = [
             (_("Create your workspace"), True),
             (_("Add a property"), has_property),
-            (_("Add units"), False),
+            (_("Add units"), has_unit),
             (_("Add tenants"), False),
             (_("Create leases and set rent"), False),
             (_("Add a payment method"), False),

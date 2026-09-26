@@ -1,0 +1,54 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ unit.code }} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
+  <h1 class="h4 mt-2 mb-0">{% trans "Unit" %} {{ unit.code }}</h1>
+  <div class="small text-muted mb-3">{{ unit.get_unit_type_display }}{% if unit.type_label %} · {{ unit.type_label }}{% endif %}{% if unit.building %} · {{ unit.building.name }}{% endif %}</div>
+
+  <dl class="row small mb-3">
+    <dt class="col-5">{% trans "Payment reference" %}</dt><dd class="col-7"><code>{{ unit.payment_reference }}</code></dd>
+    <dt class="col-5">{% trans "Status" %}</dt><dd class="col-7">{{ unit.get_effective_status_display }}</dd>
+    {% if unit.list_rent is not None %}<dt class="col-5">{% trans "Asking rent" %}</dt><dd class="col-7">KES {{ unit.list_rent|floatformat:"2g" }}</dd>{% endif %}
+  </dl>
+
+  {% if unit.is_archived %}
+  <div class="alert alert-secondary d-flex justify-content-between align-items-center">
+    <span>{% trans "This unit is archived." %}</span>
+    {% if can_archive %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button></form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if can_set_status %}
+  <form method="post" class="card card-body mb-3">{% csrf_token %}
+    <input type="hidden" name="action" value="status">
+    <label class="form-label small" for="id_manual_status">{% trans "Set status" %}</label>
+    <div class="d-flex gap-2">
+      <select name="manual_status" id="id_manual_status" class="form-select form-select-sm">
+        {% for value, label in status_form.fields.manual_status.choices %}<option value="{{ value }}" {% if value == unit.manual_status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-outline-primary">{% trans "Update" %}</button>
+    </div>
+    <div class="form-text">{% trans "Occupied is set by the lease, not here." %}</div>
+  </form>
+  {% endif %}
+
+  {% if can_edit and form %}
+  <h2 class="h6">{% trans "Edit unit" %}</h2>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="form-text mb-2">{% trans "Changing the code also changes the payment reference." %}</div>
+    <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+  </form>
+  {% endif %}
+
+  {% if can_archive and not unit.is_archived %}
+  <form method="post" class="mt-4">{% csrf_token %}
+    <input type="hidden" name="action" value="archive">
+    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this unit?" %}')">{% trans "Archive unit" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
