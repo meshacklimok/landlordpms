@@ -21,6 +21,25 @@
   </div>
   {% endif %}
 
+  {% if leases is not None %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h6 mb-0">{% trans "Leases" %}</h2>
+      {% if can_draft_lease %}<a class="btn btn-primary btn-sm" href="{% url 'leases:create' unit.public_id %}">{% trans "New lease" %}</a>{% endif %}
+    </div>
+    <div class="list-group list-group-flush">
+      {% for lease in leases %}
+      <a href="{% url 'leases:detail' lease.public_id %}" class="list-group-item list-group-item-action px-0 d-flex justify-content-between align-items-center small">
+        <span>{{ lease.primary_tenant.name|default:"—" }} · {{ lease.start_date|date:"j M Y" }} – {% if lease.end_date %}{{ lease.end_date|date:"j M Y" }}{% else %}{% trans "periodic" %}{% endif %}</span>
+        {% include "leases/_status.html" %}
+      </a>
+      {% empty %}
+      <div class="text-muted small">{% trans "No leases yet." %}</div>
+      {% endfor %}
+    </div>
+  </div></div>
+  {% endif %}
+
   {% if can_set_status %}
   <form method="post" class="card card-body mb-3">{% csrf_token %}
     <input type="hidden" name="action" value="status">

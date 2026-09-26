@@ -13,7 +13,7 @@ import re
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.db.models.functions import Upper
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -37,12 +37,16 @@ def visible_tenants(membership: Membership, queryset=None):
     """Tenants this membership may see.
 
     Members with every property see every tenant. Scoped members see the tenants
-    they added; tenants on leases in their properties join in step 3.
+    they added and the tenants on leases (any status) in their properties.
     """
+    from leases.models import LeaseTenant
+
     qs = (queryset if queryset is not None else Tenant.objects.all()).for_org(membership.organization)
-    if accessible_property_ids(membership) is None:
+    ids = accessible_property_ids(membership)
+    if ids is None:
         return qs
-    return qs.filter(Q(created_by_id=membership.user_id))
+    on_lease = LeaseTenant.objects.filter(tenant=OuterRef("pk"), lease__unit__property_id__in=ids)
+    return qs.filter(Q(created_by_id=membership.user_id) | Exists(on_lease))
 
 
 def tenants_with_phone(org, phone: str, exclude_pk=None):

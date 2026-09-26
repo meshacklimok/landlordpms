@@ -5,16 +5,20 @@ the member may see. Anything outside that is a 404, never a 403, so other
 organizations' records cannot be probed.
 """
 
+from collections import Counter
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from leases.services import with_occupancy
 
 from . import forms, services
 from .models import Building, Property, Unit
@@ -110,12 +114,9 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             "building_form": forms.BuildingForm(),
         }
         if ctx["show_units"]:
-            units = Unit.objects.filter(property=prop).select_related("building")
+            units = list(with_occupancy(Unit.objects.filter(property=prop).select_related("building")))
             ctx["units"] = units
-            ctx["status_counts"] = {
-                row["manual_status"]: row["n"]
-                for row in units.values("manual_status").annotate(n=Count("id")).order_by()
-            }
+            ctx["status_counts"] = dict(Counter(u.get_effective_status_display() for u in units))
             ctx["archived_units"] = Unit.all_objects.archived().filter(property=prop) if ctx["can_manage_units"] else []
         ctx["buildings"] = Building.objects.filter(property=prop).annotate(
             unit_count=Count("units", filter=Q(units__archived_at__isnull=True))
@@ -269,7 +270,12 @@ class UnitDetailView(CapabilityRequiredMixin, View):
     def context(self, request, unit, form=None, status_form=None):
         m = request.membership
         can_edit = can(m, "units.manage", unit.property) and not unit.is_archived
+        show_leases = can(m, "leases.view", unit.property)
         return {
+            "leases": unit.leases.prefetch_related("lease_tenants__tenant") if show_leases else None,
+            "can_draft_lease": (can(m, "leases.draft", unit.property) and not unit.is_archived
+                                and unit.manual_status != Unit.ManualStatus.INACTIVE),
+            "today": timezone.localdate(),
             "unit": unit,
             "property": unit.property,
             "can_edit": can_edit,

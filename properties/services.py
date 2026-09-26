@@ -113,13 +113,27 @@ def update_property(actor: Membership, prop: Property, *, request=None, **fields
     return prop
 
 
+def _open_leases():
+    from leases.models import Lease
+
+    return Lease.objects.filter(status__in=(Lease.Status.DRAFT, Lease.Status.ACTIVE))
+
+
+def _issued_leases():
+    from leases.models import Lease
+
+    return Lease.all_objects.exclude(status=Lease.Status.DRAFT)
+
+
 @transaction.atomic
 def archive_property(actor: Membership, prop: Property, request=None) -> None:
-    """Archives the property with its buildings and units. Later phases block this while a lease is active."""
+    """Archives the property with its buildings and units. Blocked while any unit has an open lease."""
     _same_org(actor, prop)
     require(actor, "properties.manage", prop)
     if prop.is_archived:
         return
+    if _open_leases().filter(unit__property=prop).exists():
+        raise ValidationError(_("End or delete the leases on this property before archiving it."))
     now = timezone.now()
     units = Unit.objects.filter(property=prop).update(archived_at=now, archived_by=actor.user, updated_at=now)
     Building.objects.filter(property=prop).update(archived_at=now, archived_by=actor.user, updated_at=now)
@@ -253,13 +267,15 @@ def create_unit(actor: Membership, prop: Property, *, code: str, request=None, *
 
 @transaction.atomic
 def update_unit(actor: Membership, unit: Unit, *, request=None, **fields) -> Unit:
-    """Changing the code changes the payment reference. Step 3 blocks that once the unit has a lease."""
+    """Changing the code changes the payment reference, so it is blocked once a lease has been issued."""
     _same_org(actor, unit, fields.get("building"))
     require(actor, "units.manage", unit.property)
     before = _snapshot(unit, (*UNIT_FIELDS, "payment_reference"))
     for k in UNIT_FIELDS:
         if k in fields:
             setattr(unit, k, clean_code(fields[k]) if k == "code" else fields[k])
+    if unit.code != before["code"] and _issued_leases().filter(unit=unit).exists():
+        raise ValidationError({"code": _("Tenants pay to this code. It cannot change once a lease has been issued.")})
     unit.payment_reference = payment_reference_for(unit.property.code, unit.code)
     _validate(unit, exclude=["organization", "property", "payment_reference"])
     _check_unit(unit.property, unit, exclude_pk=unit.pk)
@@ -288,11 +304,13 @@ def set_unit_status(actor: Membership, unit: Unit, status: str, request=None) ->
 
 @transaction.atomic
 def archive_unit(actor: Membership, unit: Unit, request=None) -> None:
-    """Later phases block this while a lease is active or a balance is open (doc 11 §23)."""
+    """Blocked while the unit has a draft or active lease. Open balances join in Phase 3 (doc 11 §23)."""
     _same_org(actor, unit)
     require(actor, "units.manage", unit.property)
     if unit.is_archived:
         return
+    if _open_leases().filter(unit=unit).exists():
+        raise ValidationError(_("End or delete this unit's lease before archiving it."))
     unit.archive(actor.user)
     audit.record("unit.archive", actor=actor.user, organization=actor.organization, obj=unit, request=request)
 

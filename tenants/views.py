@@ -8,12 +8,15 @@ from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from core.phone import InvalidPhoneNumber, normalize_phone
+from leases.models import Lease
+from leases.services import visible_leases
 from properties.views import _apply_errors
 
 from . import forms, services
@@ -109,8 +112,15 @@ class TenantDetailView(CapabilityRequiredMixin, View):
 
     def get(self, request, public_id):
         tenant = _get_tenant(request, public_id)
+        m = request.membership
+        leases = None
+        if can(m, "leases.view"):
+            leases = visible_leases(m, Lease.all_objects.filter(lease_tenants__tenant=tenant)).select_related(
+                "unit__property")
         return render(request, self.template_name, {
             "tenant": tenant,
+            "leases": leases,
+            "today": timezone.localdate(),
             "can_manage": can(request.membership, "tenants.manage"),
             "show_sensitive": can(request.membership, "tenants.view_sensitive"),
         })

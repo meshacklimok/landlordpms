@@ -29,7 +29,7 @@
   </div>
   {% if status_counts %}
   <div class="small text-muted mb-2">
-    {% for status, n in status_counts.items %}{% if not forloop.first %} · {% endif %}{% if status == "NORMAL" %}{% trans "Available" %}{% elif status == "RESERVED" %}{% trans "Reserved" %}{% elif status == "UNDER_MAINTENANCE" %}{% trans "Under maintenance" %}{% else %}{% trans "Inactive" %}{% endif %}: {{ n }}{% endfor %}
+    {% for label, n in status_counts.items %}{% if not forloop.first %} · {% endif %}{{ label }}: {{ n }}{% endfor %}
   </div>
   {% endif %}
   <div class="list-group list-group-flush">
@@ -40,7 +40,7 @@
         <span class="small text-muted">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.building %} · {{ u.building.name }}{% endif %}</span>
         <div class="small text-muted">{% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></div>
       </div>
-      <span class="badge {% if u.manual_status == 'NORMAL' %}text-bg-success{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>
+      <span class="badge {% if u.is_occupied %}text-bg-primary{% elif u.manual_status == 'NORMAL' %}text-bg-success{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>
     </a>
     {% empty %}
     <div class="text-muted small py-2">{% trans "No units yet." %}</div>

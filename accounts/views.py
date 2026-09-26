@@ -15,6 +15,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
 from audit import services as audit
+from leases.models import Lease
 from properties.models import Property, Unit
 from tenants.models import Tenant
 
@@ -232,7 +233,7 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
             (_("Add a property"), has_property),
             (_("Add units"), has_unit),
             (_("Add tenants"), Tenant.objects.for_org(org).exists()),
-            (_("Create leases and set rent"), False),
+            (_("Create leases and set rent"), Lease.all_objects.for_org(org).exists()),
             (_("Add a payment method"), False),
         ]
         ctx["show_checklist"] = can(m, "properties.manage")

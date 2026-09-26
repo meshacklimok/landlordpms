@@ -81,16 +81,16 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Property, Building (optional), Unit (types, manual status, payment_reference); structured Kenyan address
 - [x] Standalone-house shortcut (auto-create unit)
 - [x] Tenant (lifecycle status, normalised phone, sensitive fields); COMPANY type, duplicate-phone warning
-- [ ] Lease, LeaseTenant, LeaseRentChange, LeaseCharge; overlap constraint
+- [x] Lease, LeaseTenant, LeaseRentChange, LeaseCharge, LeasePayer; overlap constraint (btree_gist); ChargeType brought forward
 - [ ] Lease actions: activate, renew, terminate, transfer
 - [ ] CSV import: units and tenants
 - [ ] List pages: pagination, search, filters, indexes
-- [ ] Archive instead of delete (properties, buildings and units done; tenants and leases to follow)
+- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; ended leases archive in step 4; drafts may be deleted)
 
 ## Phase 3 — Billing
 - [ ] NumberSequence with row-locked allocation; concurrency test
 - [ ] `core/money.py` (parse, round, prorate, format) + tests
-- [ ] ChargeType, Invoice, InvoiceLine, LedgerEntry
+- [ ] Invoice, InvoiceLine, LedgerEntry (ChargeType done in Phase 2)
 - [ ] Idempotent monthly invoice generation job (+ proration)
 - [ ] Tenant statement, arrears list, aging
 - [ ] Tests: totals, rounding, duplicates, proration

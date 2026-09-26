@@ -26,6 +26,13 @@
     <a href="{% url 'tenants:list' %}">{% trans "Tenants and prospects" %}</a>
   </div></div></div>
   {% endif %}
+  {% if membership|can:"leases.view" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Leases" %}</h2>
+    <a href="{% url 'leases:list' %}">{% trans "Leases, rent and charges" %}</a>
+    {% if membership|can:"charges.manage" %}<br><a class="small" href="{% url 'billing:charge_types' %}">{% trans "Charge types" %}</a>{% endif %}
+  </div></div></div>
+  {% endif %}
   {% if membership|can:"dashboard.view_financial" %}
   <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
     <h2 class="h6">{% trans "Collections" %}</h2>

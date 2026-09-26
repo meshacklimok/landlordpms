@@ -167,7 +167,17 @@ class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
 
     # A method, not @property: the `property` field shadows the builtin in this class body.
     def get_effective_status_display(self) -> str:
-        """Shown status. "Occupied" joins once leases exist (Phase 2, step 3)."""
+        """Shown status: Occupied while an active lease has started, else the manual status.
+
+        Lists annotate `is_occupied` (leases.services.with_occupancy) to avoid a query per unit.
+        """
+        occupied = getattr(self, "is_occupied", None)
+        if occupied is None:
+            from leases.services import occupying_leases
+
+            occupied = occupying_leases().filter(unit=self).exists()
+        if occupied:
+            return _("Occupied")
         if self.manual_status == self.ManualStatus.NORMAL:
             return _("Available")
         return self.get_manual_status_display()

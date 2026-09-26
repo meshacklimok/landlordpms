@@ -24,6 +24,8 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("properties/", include("properties.urls")),
     path("tenants/", include("tenants.urls")),
+    path("leases/", include("leases.urls")),
+    path("billing/", include("billing.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:
