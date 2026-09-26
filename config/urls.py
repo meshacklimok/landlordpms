@@ -20,12 +20,15 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from properties.views import VacancyView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("properties/", include("properties.urls")),
     path("tenants/", include("tenants.urls")),
     path("leases/", include("leases.urls")),
     path("imports/", include("imports.urls")),
+    path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
     path("billing/", include("billing.urls")),
     path("", include("accounts.urls")),
 ]

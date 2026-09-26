@@ -1,6 +1,7 @@
 """Unit list queries: occupancy filters and status counts done in the database (doc 11 §20)."""
 
 from django.db.models import Count, Q
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from accounts.permissions import visible_properties
@@ -39,3 +40,25 @@ def status_counts(units) -> list[tuple[str, str, int]]:
     totals = units.order_by().aggregate(**{key: Count("pk", filter=cond) for key, (_label, cond) in
                                           STATUS_FILTERS.items()})
     return [(key, STATUS_FILTERS[key][0], n) for key, n in totals.items() if n]
+
+
+def is_available_to_let(unit: Unit) -> bool:
+    """Free now, not promised to anyone later, and not held back by its manual status."""
+    from leases.models import Lease
+
+    if unit.manual_status != Manual.NORMAL:
+        return False
+    today = timezone.localdate()
+    taken = Lease.objects.filter(unit=unit).exclude(status=Lease.Status.DRAFT).filter(
+        Q(status=Lease.Status.ACTIVE) | Q(ended_on__gte=today))
+    return not taken.exists()
+
+
+def shared_unit(token: str):
+    """The live unit behind a public link, or None. Frozen, lapsed or archived organizations show nothing."""
+    from accounts.models import Organization
+
+    return (Unit.objects.filter(share_token=token, property__archived_at__isnull=True,
+                                organization__status=Organization.Status.ACTIVE,
+                                organization__archived_at__isnull=True)
+            .select_related("property", "organization", "shared_by").first())

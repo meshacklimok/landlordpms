@@ -77,7 +77,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 ## Phase 2 — Properties, tenants, leases
 - [x] Unit types include BED_SPACE (design-in); Property.category includes ESTATE
 - [ ] Branch/branding fields on Organization (design-in)
-- [ ] Shareable public vacancy link
+- [x] Shareable public vacancy link (/v/<token>/: no login, noindex, rate-limited, revocable; shared by units.manage or leases.draft; WhatsApp share)
 - [x] Property, Building (optional), Unit (types, manual status, payment_reference); structured Kenyan address
 - [x] Standalone-house shortcut (auto-create unit)
 - [x] Tenant (lifecycle status, normalised phone, sensitive fields); COMPANY type, duplicate-phone warning

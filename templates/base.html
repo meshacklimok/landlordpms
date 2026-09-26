@@ -11,6 +11,7 @@
     .narrow { max-width: 440px; }
     .cap-sensitive::after { content: " ⚠"; color: #b54708; }
   </style>
+  {% block head %}{% endblock %}
 </head>
 <body>
 {% if user.is_authenticated %}

@@ -9,13 +9,16 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core import ratelimit
 from leases.services import with_occupancy
 
 from . import forms, selectors, services
@@ -321,6 +324,10 @@ class UnitDetailView(CapabilityRequiredMixin, View):
             "can_set_status": can(m, "units.set_status", unit.property) and not unit.is_archived,
             "form": form or (forms.UnitForm(instance=unit, property=unit.property) if can_edit else None),
             "status_form": status_form or forms.UnitStatusForm(initial={"manual_status": unit.manual_status}),
+            "can_share": services.can_share_unit(m, unit) and not unit.is_archived,
+            "share_url": (request.build_absolute_uri(reverse("vacancy", args=[unit.share_token]))
+                          if unit.share_token else ""),
+            "available": selectors.is_available_to_let(unit),
         }
 
     def get(self, request, public_id):
@@ -345,6 +352,12 @@ class UnitDetailView(CapabilityRequiredMixin, View):
             elif action == "restore":
                 services.restore_unit(m, unit, request=request)
                 messages.success(request, _("Unit restored."))
+            elif action == "share":
+                services.share_unit(m, unit, request=request)
+                messages.success(request, _("Vacancy link ready. Any older link for this unit no longer works."))
+            elif action == "unshare":
+                services.unshare_unit(m, unit, request=request)
+                messages.success(request, _("Vacancy link turned off."))
             else:
                 form = forms.UnitForm(request.POST, instance=unit, property=unit.property)
                 if form.is_valid():
@@ -360,3 +373,31 @@ class UnitDetailView(CapabilityRequiredMixin, View):
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         return redirect("properties:unit", public_id=unit.public_id)
+
+
+# ---------------------------------------------------------------------------
+# Public vacancy page (D-040): no login, read-only, not indexed
+# ---------------------------------------------------------------------------
+
+VACANCY_RATE_LIMIT = 60  # views per IP per minute
+
+
+class VacancyView(View):
+    template_name = "properties/vacancy.html"
+
+    def get(self, request, token):
+        if not ratelimit.hit(f"vacancy:ip:{request.META.get('REMOTE_ADDR', '')}", VACANCY_RATE_LIMIT, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        unit = selectors.shared_unit(token)
+        if unit is None:
+            raise Http404
+        contact = unit.shared_by
+        response = render(request, self.template_name, {
+            "unit": unit,
+            "property": unit.property,
+            "available": selectors.is_available_to_let(unit),
+            "contact_name": contact.full_name if contact else unit.organization.name,
+            "contact_phone": contact.phone if contact else unit.organization.billing_phone,
+        })
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response

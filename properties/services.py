@@ -8,6 +8,7 @@ Rules:
 - Every change is audited.
 """
 
+import secrets
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -17,7 +18,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from accounts.models import Membership, PropertyAccess
-from accounts.permissions import clear_cache, require
+from accounts.permissions import can, clear_cache, require
 from audit import services as audit
 
 from .models import Building, Property, Unit, clean_code, payment_reference_for
@@ -329,3 +330,39 @@ def restore_unit(actor: Membership, unit: Unit, request=None) -> None:
         raise ValidationError(_("Restore the building first, or move the unit."))
     unit.restore()
     audit.record("unit.restore", actor=actor.user, organization=actor.organization, obj=unit, request=request)
+
+
+# ---------------------------------------------------------------------------
+# Public vacancy link (D-040)
+# ---------------------------------------------------------------------------
+
+
+def can_share_unit(actor: Membership, unit: Unit) -> bool:
+    """Unit managers and letting agents (who draft leases) may advertise a unit."""
+    return can(actor, "units.manage", unit.property) or can(actor, "leases.draft", unit.property)
+
+
+@transaction.atomic
+def share_unit(actor: Membership, unit: Unit, request=None) -> Unit:
+    """Issues a new public link, replacing any old one. The sharer's name and phone are the contact."""
+    _same_org(actor, unit)
+    if not can_share_unit(actor, unit):
+        raise PermissionDenied("units.manage")
+    if unit.is_archived:
+        raise ValidationError(_("Restore the unit first."))
+    unit.share_token, unit.shared_by = secrets.token_urlsafe(16), actor.user
+    unit.save(update_fields=["share_token", "shared_by", "updated_at"])
+    audit.record("unit.share", actor=actor.user, organization=actor.organization, obj=unit, request=request)
+    return unit
+
+
+@transaction.atomic
+def unshare_unit(actor: Membership, unit: Unit, request=None) -> Unit:
+    _same_org(actor, unit)
+    if not can_share_unit(actor, unit):
+        raise PermissionDenied("units.manage")
+    if unit.share_token:
+        unit.share_token, unit.shared_by = None, None
+        unit.save(update_fields=["share_token", "shared_by", "updated_at"])
+        audit.record("unit.unshare", actor=actor.user, organization=actor.organization, obj=unit, request=request)
+    return unit

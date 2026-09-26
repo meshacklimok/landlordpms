@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if available %}{% trans "To let" %}: {% endif %}{{ unit.get_unit_type_display }}{% if unit.type_label %} · {{ unit.type_label }}{% endif %} · {{ property.name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    {% if available %}<span class="badge text-bg-success mb-2">{% trans "Available to let" %}</span>
+    {% else %}<span class="badge text-bg-secondary mb-2">{% trans "No longer available" %}</span>{% endif %}
+    <h1 class="h4 mb-1">{{ unit.get_unit_type_display }}{% if unit.type_label %} · {{ unit.type_label }}{% endif %}</h1>
+    <div class="text-muted mb-3">{{ property.name }} · {% trans "Unit" %} {{ unit.code }}</div>
+    <dl class="row small mb-3">
+      {% if property.area or property.county %}
+      <dt class="col-4">{% trans "Location" %}</dt>
+      <dd class="col-8">{% if property.area %}{{ property.area }}, {% endif %}{% if property.sub_county %}{{ property.sub_county }}, {% endif %}{{ property.get_county_display }}</dd>
+      {% endif %}
+      {% if unit.list_rent is not None %}
+      <dt class="col-4">{% trans "Rent" %}</dt><dd class="col-8">KES {{ unit.list_rent|floatformat:"0g" }} {% trans "per month" %}</dd>
+      {% endif %}
+    </dl>
+    {% if available %}
+      {% if contact_phone %}
+      <p class="small mb-2">{% blocktrans with name=contact_name %}Contact {{ name }}{% endblocktrans %}</p>
+      <div class="d-flex gap-2">
+        <a class="btn btn-success btn-sm" href="https://wa.me/{{ contact_phone|slice:'1:' }}?text={% filter urlencode %}{% blocktrans with p=property.name u=unit.code %}Hello, is unit {{ u }} at {{ p }} still available?{% endblocktrans %}{% endfilter %}" rel="noopener">WhatsApp</a>
+        <a class="btn btn-outline-primary btn-sm" href="tel:{{ contact_phone }}">{% trans "Call" %} {{ contact_phone }}</a>
+      </div>
+      {% else %}
+      <p class="small mb-0">{% blocktrans with name=contact_name %}Contact {{ name }}.{% endblocktrans %}</p>
+      {% endif %}
+    {% else %}
+      <p class="small text-muted mb-0">{% trans "This unit has been let or taken off the market." %}</p>
+    {% endif %}
+  </div></div>
+  <p class="small text-muted text-center mt-3">{{ unit.organization.name }}</p>
+</div>
+{% endblock %}

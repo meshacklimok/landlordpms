@@ -144,6 +144,13 @@ class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
         _("asking rent"), max_digits=14, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
 
+    # Public vacancy link /v/<token>/ (D-040). Null when not shared; sharing again issues a new token.
+    share_token = models.CharField(max_length=32, null=True, blank=True, unique=True, editable=False)  # noqa: DJ001
+    # Whose name and phone the public page shows as the contact.
+    shared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+
     objects = LiveManager()
     all_objects = AllObjectsManager()
 

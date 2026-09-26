@@ -40,6 +40,28 @@
   </div></div>
   {% endif %}
 
+  {% if can_share %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Vacancy link" %}</h2>
+    {% if share_url %}
+    <div class="input-group input-group-sm mb-2">
+      <input type="text" readonly class="form-control" value="{{ share_url }}" id="share-url" aria-label="{% trans 'Vacancy link' %}">
+      <button type="button" class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('share-url').value)">{% trans "Copy" %}</button>
+    </div>
+    {% if not available %}<div class="small text-warning mb-2">{% trans "The unit is not available, so the page says it is no longer available." %}</div>{% endif %}
+    <div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-success btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text={% filter urlencode %}{% if unit.type_label %}{{ unit.type_label }}{% else %}{{ unit.get_unit_type_display }}{% endif %} {% trans "to let at" %} {{ property.name }}{% if unit.list_rent is not None %}, KES {{ unit.list_rent|floatformat:"0g" }}{% endif %}: {{ share_url }}{% endfilter %}">{% trans "Share on WhatsApp" %}</a>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="share"><button class="btn btn-outline-secondary btn-sm">{% trans "New link" %}</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="unshare"><button class="btn btn-outline-danger btn-sm">{% trans "Turn off" %}</button></form>
+    </div>
+    <div class="form-text">{% blocktrans with name=unit.shared_by.full_name %}Anyone with the link sees the rent and area, and {{ name }}'s phone as the contact.{% endblocktrans %}</div>
+    {% else %}
+    <p class="small text-muted mb-2">{% trans "Create a public page for this unit to share on WhatsApp. It shows the type, area and asking rent, and your name and phone as the contact. No login needed, and search engines are asked not to list it." %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="share"><button class="btn btn-outline-success btn-sm">{% trans "Create vacancy link" %}</button></form>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
   {% if can_set_status %}
   <form method="post" class="card card-body mb-3">{% csrf_token %}
     <input type="hidden" name="action" value="status">
