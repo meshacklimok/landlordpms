@@ -1,0 +1,9 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Set up your workspace" %}{% endblock %}
+{% block heading %}{% trans "Set up your workspace" %}{% endblock %}
+{% block card %}
+<p class="text-muted small">{% trans "This is your business on landlordpms. You will be its Owner and can invite staff later." %}</p>
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <button class="btn btn-primary w-100">{% trans "Create workspace" %}</button>
+</form>
+{% endblock %}
