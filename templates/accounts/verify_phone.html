@@ -1,0 +1,10 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Verify phone" %}{% endblock %}
+{% block heading %}{% trans "Verify your phone" %}{% endblock %}
+{% block card %}
+<p class="text-muted">{% blocktrans with phone=user.phone %}We sent a 6-digit code to {{ phone }}.{% endblocktrans %}</p>
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <button class="btn btn-primary w-100">{% trans "Verify" %}</button>
+</form>
+<form method="post" class="mt-2">{% csrf_token %}<button name="resend" value="1" class="btn btn-link px-0">{% trans "Send a new code" %}</button></form>
+{% endblock %}
