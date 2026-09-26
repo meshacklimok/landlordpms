@@ -1,0 +1,63 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ batch.get_kind_display }} {% trans "import" %}{% endblock %}
+{% block content %}
+<a href="{% url 'imports:list' %}" class="small">← {% trans "Imports" %}</a>
+<div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+  <div>
+    <h1 class="h4 mb-0">{{ batch.get_kind_display }} {% trans "import" %} <span class="badge {% if batch.status == 'APPLIED' %}text-bg-success{% elif batch.status == 'PREVIEW' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ batch.get_status_display }}</span></h1>
+    <div class="small text-muted">{{ batch.file_name }} · {{ batch.created_at|date:"j M Y H:i" }}</div>
+  </div>
+</div>
+
+{% if batch.status == "PREVIEW" %}
+<div class="alert {% if batch.error_count %}alert-warning{% else %}alert-info{% endif %}">
+  {% blocktrans with ok=batch.ok_count bad=batch.error_count %}{{ ok }} rows are ready to import. {{ bad }} rows have errors and will be skipped.{% endblocktrans %}
+  {% trans "Nothing has been added yet." %}
+</div>
+<div class="d-flex gap-2 mb-3">
+  {% if batch.ok_count %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply">
+    <button class="btn btn-primary btn-sm">{% blocktrans count n=batch.ok_count %}Import {{ n }} row{% plural %}Import {{ n }} rows{% endblocktrans %}</button>
+  </form>
+  {% endif %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="discard">
+    <button class="btn btn-outline-secondary btn-sm">{% trans "Discard" %}</button>
+  </form>
+</div>
+{% elif batch.status == "APPLIED" %}
+<div class="alert alert-success d-flex justify-content-between align-items-center gap-2">
+  <span>{% blocktrans with ok=batch.ok_count bad=batch.error_count %}Imported {{ ok }} rows, skipped {{ bad }}.{% endblocktrans %}
+  {% if batch.can_undo %}{% blocktrans with until=batch.undo_until|date:"j M H:i" %}You can undo this until {{ until }}.{% endblocktrans %}{% endif %}</span>
+  {% if batch.can_undo %}
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="undo">
+    <button class="btn btn-outline-danger btn-sm text-nowrap" onclick="return confirm('{% trans "Remove everything this import added? Records already used on a lease are kept." %}')">{% trans "Undo import" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% elif batch.status == "UNDONE" %}
+<div class="alert alert-secondary">{% blocktrans with when=batch.undone_at|date:"j M Y H:i" %}Undone on {{ when }}.{% endblocktrans %}</div>
+{% endif %}
+
+{% if batch.rows %}
+<div class="small mb-2">
+  {% if only_errors %}<a href="?">{% trans "Show all rows" %}</a>{% elif batch.error_count %}<a href="?errors=1">{% trans "Show only rows with errors" %}</a>{% endif %}
+</div>
+<div class="table-responsive">
+<table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Line" %}</th>{% for c in columns %}<th>{{ c }}</th>{% endfor %}<th>{% trans "Result" %}</th></tr></thead>
+  <tbody>
+    {% for r in page %}
+    <tr class="{% if r.errors %}table-danger{% endif %}">
+      <td>{{ r.line }}</td>
+      {% for cell in r.cells %}<td>{{ cell }}</td>{% endfor %}
+      <td>{% if r.errors %}{{ r.errors|join:"; " }}{% else %}<span class="text-success">OK</span>{% if r.label %} · {{ r.label }}{% endif %}{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="99" class="text-muted">{% trans "No rows." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% include "partials/pager.html" %}
+{% endif %}
+{% endblock %}

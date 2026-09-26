@@ -83,7 +83,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Tenant (lifecycle status, normalised phone, sensitive fields); COMPANY type, duplicate-phone warning
 - [x] Lease, LeaseTenant, LeaseRentChange, LeaseCharge, LeasePayer; overlap constraint (btree_gist); ChargeType brought forward
 - [x] Lease actions: activate (LSE number), notice to vacate, end/terminate, renew, transfer; overlap uses the actual end (ended_on)
-- [ ] CSV import: units and tenants
+- [x] CSV import: units and tenants (imports app: preview via rolled-back dry run, apply, undo within 24h, templates; opening balances with Phase 3)
 - [x] List pages: pagination, search, filters, indexes (cross-property Units list doubles as the vacancy list; property page paginates units and counts statuses in SQL)
 - [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled, Phase 3)
 

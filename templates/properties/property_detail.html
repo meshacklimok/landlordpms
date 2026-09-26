@@ -25,7 +25,7 @@
 <div class="card shadow-sm mb-3"><div class="card-body">
   <div class="d-flex justify-content-between align-items-center mb-2">
     <h2 class="h6 mb-0">{% trans "Units" %} <span class="text-muted">({{ unit_total }})</span></h2>
-    {% if can_manage_units and not property.is_archived %}<a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}">{% trans "Add unit" %}</a>{% endif %}
+    {% if can_manage_units and not property.is_archived %}<div class="d-flex gap-2"><a class="btn btn-outline-secondary btn-sm" href="{% url 'imports:list' %}">{% trans "Import CSV" %}</a><a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}">{% trans "Add unit" %}</a></div>{% endif %}
   </div>
   {% if status_counts %}
   <div class="small text-muted mb-2">

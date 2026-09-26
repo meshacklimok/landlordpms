@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'properties',
     'tenants',
     'leases',
+    'imports',
     'billing',
     'payments',
     'mpesa',
