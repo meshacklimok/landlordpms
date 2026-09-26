@@ -8,8 +8,9 @@ from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
+from django.core.validators import RegexValidator
 from django.db import models
-from django.db.models.functions import Lower
+from django.db.models.functions import Lower, Upper
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -167,6 +168,14 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
+    # Branding for agencies and white-label (D-040): design-in only. Receipts, statements and
+    # public pages will use these; there is no settings page yet.
+    brand_name = models.CharField(_("brand name"), max_length=150, blank=True,
+                                  help_text=_("Shown to tenants instead of the organization name."))
+    logo = models.ImageField(_("logo"), upload_to="org-logos/", blank=True)
+    brand_color = models.CharField(_("brand colour"), max_length=7, blank=True, validators=[
+        RegexValidator(r"^#[0-9A-Fa-f]{6}$", _("Use a hex colour like #1A73E8."))])
+    document_footer = models.CharField(_("document footer"), max_length=200, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -175,8 +184,34 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.name
 
     @property
+    def display_name(self) -> str:
+        return self.brand_name or self.name
+
+    @property
     def is_operational(self) -> bool:
         return self.status == self.Status.ACTIVE and not self.is_archived
+
+
+class Branch(PublicIdModel, TimeStampedModel, ArchivableModel):
+    """An agency's office (D-040): design-in only. Properties may point at one; nothing scopes by it yet."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, related_name="branches")
+    name = models.CharField(_("name"), max_length=100)
+    phone = models.CharField(_("phone"), max_length=16, blank=True)
+    email = models.EmailField(_("email"), blank=True)
+
+    objects = LiveManager()
+    all_objects = AllObjectsManager()
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "branches"
+        constraints = [
+            models.UniqueConstraint("organization", Upper("name"), name="accounts_branch_org_name_unique"),
+        ]
+
+    def __str__(self):
+        return self.name
 
 
 # ---------------------------------------------------------------------------

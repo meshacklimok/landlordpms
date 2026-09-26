@@ -396,7 +396,7 @@ class VacancyView(View):
             "unit": unit,
             "property": unit.property,
             "available": selectors.is_available_to_let(unit),
-            "contact_name": contact.full_name if contact else unit.organization.name,
+            "contact_name": contact.full_name if contact else unit.organization.display_name,
             "contact_phone": contact.phone if contact else unit.organization.billing_phone,
         })
         response["X-Robots-Tag"] = "noindex, nofollow"

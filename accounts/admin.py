@@ -5,6 +5,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.db.models import Count, Q
 
 from .models import (
+    Branch,
     Capability,
     Invitation,
     Membership,
@@ -49,13 +50,26 @@ class MembershipInline(admin.TabularInline):
         return False
 
 
+class BranchInline(admin.TabularInline):
+    """Design-in (D-040): branches have no screens yet."""
+
+    model = Branch
+    extra = 0
+    fields = ["name", "phone", "email", "archived_at"]
+    readonly_fields = ["archived_at"]
+    can_delete = False
+
+    def get_queryset(self, request):
+        return Branch.all_objects.all()
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ["name", "org_type", "status", "member_count", "property_count", "created_at", "archived_at"]
     list_filter = ["status", "org_type"]
     search_fields = ["name", "kra_pin", "billing_phone", "billing_email"]
     readonly_fields = ["public_id", "created_at", "updated_at", "created_by", "archived_at", "archived_by"]
-    inlines = [MembershipInline]
+    inlines = [MembershipInline, BranchInline]
     actions = ["freeze", "unfreeze"]
 
     def get_queryset(self, request):

@@ -11,6 +11,7 @@ Occupancy is never stored: it comes from leases. A unit stores only its manual s
 import re
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Upper
@@ -58,6 +59,9 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     street = models.CharField(_("street / landmark"), max_length=200, blank=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    # Agency office that runs this property (D-040): design-in only, same organization.
+    branch = models.ForeignKey("accounts.Branch", on_delete=models.PROTECT, null=True, blank=True,
+                               related_name="properties")
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
@@ -76,6 +80,10 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        if self.branch_id and self.branch.organization_id != self.organization_id:
+            raise ValidationError({"branch": _("Choose a branch of this organization.")})
 
     def save(self, *args, **kwargs):
         self.code = clean_code(self.code)
