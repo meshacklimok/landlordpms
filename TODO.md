@@ -80,7 +80,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Shareable public vacancy link
 - [x] Property, Building (optional), Unit (types, manual status, payment_reference); structured Kenyan address
 - [x] Standalone-house shortcut (auto-create unit)
-- [ ] Tenant (lifecycle status, normalised phone, sensitive fields)
+- [x] Tenant (lifecycle status, normalised phone, sensitive fields); COMPANY type, duplicate-phone warning
 - [ ] Lease, LeaseTenant, LeaseRentChange, LeaseCharge; overlap constraint
 - [ ] Lease actions: activate, renew, terminate, transfer
 - [ ] CSV import: units and tenants

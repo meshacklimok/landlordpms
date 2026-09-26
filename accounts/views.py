@@ -16,6 +16,7 @@ from django.views.generic import TemplateView
 
 from audit import services as audit
 from properties.models import Property, Unit
+from tenants.models import Tenant
 
 from . import forms, identity, services
 from .capabilities import OWNER_CRITICAL
@@ -230,7 +231,7 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
             (_("Create your workspace"), True),
             (_("Add a property"), has_property),
             (_("Add units"), has_unit),
-            (_("Add tenants"), False),
+            (_("Add tenants"), Tenant.objects.for_org(org).exists()),
             (_("Create leases and set rent"), False),
             (_("Add a payment method"), False),
         ]

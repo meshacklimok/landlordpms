@@ -20,6 +20,12 @@
     <a href="{% url 'properties:list' %}">{% trans "Properties, buildings and units" %}</a>
   </div></div></div>
   {% endif %}
+  {% if membership|can:"tenants.view" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Tenants" %}</h2>
+    <a href="{% url 'tenants:list' %}">{% trans "Tenants and prospects" %}</a>
+  </div></div></div>
+  {% endif %}
   {% if membership|can:"dashboard.view_financial" %}
   <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
     <h2 class="h6">{% trans "Collections" %}</h2>

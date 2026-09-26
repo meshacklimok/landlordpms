@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ tenant.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'tenants:list' %}" class="small">← {% trans "Tenants" %}</a>
+  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+    <div>
+      <h1 class="h4 mb-0">{{ tenant.name }}</h1>
+      <div class="small text-muted">{{ tenant.get_kind_display }} · {{ tenant.get_status_display }}</div>
+    </div>
+    {% if can_manage and not tenant.is_archived %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'tenants:edit' tenant.public_id %}">{% trans "Edit" %}</a>{% endif %}
+  </div>
+
+  {% if tenant.is_archived %}
+  <div class="alert alert-secondary d-flex justify-content-between align-items-center">
+    <span>{% trans "This tenant is archived." %}</span>
+    {% if can_manage %}
+    <form method="post" action="{% url 'tenants:archive' tenant.public_id %}">{% csrf_token %}
+      <input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      {% if tenant.contact_person %}<dt class="col-5">{% trans "Contact person" %}</dt><dd class="col-7">{{ tenant.contact_person }}</dd>{% endif %}
+      <dt class="col-5">{% trans "Phone" %}</dt><dd class="col-7"><a href="tel:{{ tenant.phone }}">{{ tenant.phone }}</a></dd>
+      {% if tenant.alt_phone %}<dt class="col-5">{% trans "Other phone" %}</dt><dd class="col-7"><a href="tel:{{ tenant.alt_phone }}">{{ tenant.alt_phone }}</a></dd>{% endif %}
+      {% if tenant.email %}<dt class="col-5">{% trans "Email" %}</dt><dd class="col-7">{{ tenant.email }}</dd>{% endif %}
+      {% if show_sensitive %}
+      <dt class="col-5">{% trans "ID" %}</dt><dd class="col-7">{% if tenant.id_number %}{{ tenant.get_id_type_display }} {{ tenant.id_number }}{% else %}—{% endif %}</dd>
+      <dt class="col-5">{% trans "KRA PIN" %}</dt><dd class="col-7">{{ tenant.kra_pin|default:"—" }}</dd>
+      {% endif %}
+      {% if tenant.emergency_contact_name or tenant.emergency_contact_phone %}
+      <dt class="col-5">{% trans "Emergency contact" %}</dt><dd class="col-7">{{ tenant.emergency_contact_name }} {% if tenant.emergency_contact_phone %}<a href="tel:{{ tenant.emergency_contact_phone }}">{{ tenant.emergency_contact_phone }}</a>{% endif %}</dd>
+      {% endif %}
+    </dl>
+    {% if tenant.notes %}<hr><p class="small mb-0" style="white-space:pre-line">{{ tenant.notes }}</p>{% endif %}
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Leases" %}</h2>
+    <p class="small text-muted mb-0">{% trans "No leases yet." %}</p>
+  </div></div>
+
+  {% if can_manage and not tenant.is_archived and tenant.status != "ACTIVE" %}
+  <form method="post" action="{% url 'tenants:archive' tenant.public_id %}" class="mt-4">{% csrf_token %}
+    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this tenant?" %}')">{% trans "Archive tenant" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

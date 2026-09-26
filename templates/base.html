@@ -24,6 +24,7 @@
       {% load access %}
       <ul class="navbar-nav me-auto">
         {% if membership|can:"properties.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'properties:list' %}">{% trans "Properties" %}</a></li>{% endif %}
+        {% if membership|can:"tenants.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'tenants:list' %}">{% trans "Tenants" %}</a></li>{% endif %}
         {% if membership|can:"staff.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:staff' %}">{% trans "Staff" %}</a></li>{% endif %}
         {% if membership|can:"roles.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:roles' %}">{% trans "Roles" %}</a></li>{% endif %}
       </ul>
