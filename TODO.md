@@ -1,0 +1,163 @@
+# landlordpms — TODO
+
+Rule: **no models or views until Phase 0 is finished and agreed.** Docs live in `config/docs/`. Review docs 10–13.
+Legend: `[ ]` todo · `[~]` in progress · `[x]` done
+
+## Phase 0 — Plan and environment
+### Environment
+- [x] Switch to PostgreSQL: database created, `.env` set
+- [x] `manage.py check` and `migrate` run against Postgres
+- [ ] Remove old `db.sqlite3` (waiting for user's go-ahead)
+- [ ] Pin versions in `requirements.txt`
+- [ ] `SECRET_KEY` with no insecure fallback; split settings (base/dev/prod)
+- [ ] Move `static/css/js/script.js` to `static/js/`
+- [ ] Add ruff, pytest-django, pre-commit, GitHub Actions CI
+- [ ] Commit docs and settings changes
+
+### Brainstorm and design (docs 10, 11, 12)
+- [x] Users, roles, permission matrix (doc 10)
+- [x] Entity map and relationships (doc 11)
+- [x] Answers to open questions: multiple leases, co-tenants, transfers, ownership, multi-org (doc 11 §3)
+- [x] Implementation scope tiers (doc 12)
+- [x] Editable roles and capability catalog (doc 13)
+- [ ] **Review and approve** docs 10–13 (owner)
+- [x] Remaining brainstorm topics and recommendations (doc 14)
+- [x] Approve or change the 13 Group A recommendations in doc 14 (deposits, opening balances, rent timing, payer phones, numbering, concurrency, tax fields, commercial, agency, org context, login/OTP, lapse behaviour, SMS wallet)
+- [x] Review Group D foundations (doc 14 D1–D15): accounting model, no custody of funds, glossary, effective dating, addresses, DR targets
+- [x] Desk benchmark of competitors (doc 16)
+- [x] Decided D-039 (eTIMS priority, phone-hash test, earlier portal/WhatsApp/water)
+- [x] Decided D-040 (competitor gap list, doc 16 sections 7-9) and fold approved items into docs 11/12 and the phases
+- [ ] Hands-on trials of 3 Kenyan competitors; Daraja sandbox test for hashed phone; accountant check on eTIMS/eRITS
+- [ ] Sketch the 10 key mobile screens (doc 14 C2)
+- [x] Financial separation, archive matrix, numbering, money, reporting metrics, notification preferences (doc 11 §22–27)
+- [~] ER diagram drafted in `config/docs/erd.md`; awaiting review
+- [ ] Decide open items below
+
+### Open decisions (record in 08_DECISIONS_LOG.md)
+- [x] Caretaker cash payments: granted by Owner/Manager via `payments.record` (role or per person); `payments.confirm` decides review (D-025)
+- [x] Agency/client-owner mode in v1? *Recommended no, design-in only*
+- [x] Unit `payment_reference` format (e.g. `GV-A102` vs `LPM-GV-A102`)
+- [ ] Recommend Paybill (reference-based matching) over Till for auto-reconciliation? Confirm with Daraja docs
+- [x] Invoice/receipt/lease number formats (doc 11 §24)
+- [x] Default payment allocation order (oldest first) and manager override
+- [x] Grace days default and whether late fees are in MVP (recommended off)
+- [x] Billing period rule for mid-month move-in (prorate by days?)
+- [~] Data retention period for former tenants (90 days for organizations; tenant data period needs counsel)
+- [x] Phone-only login allowed without email?
+
+### Business preparation
+- [ ] Interview 5–10 landlords/caretakers (log in doc 02)
+- [ ] Choose pilot area and first 5 pilot landlords
+- [ ] Register company and domain
+- [ ] ODPC (data protection) registration
+- [ ] Daraja developer account, sandbox
+- [ ] Africa's Talking (SMS) sandbox account
+- [ ] Terms of Service and Privacy Policy drafts
+
+## Phase 1 — Foundation *(after Phase 0 approval)*
+- [ ] Archive mixin (`archived_at/by`, `objects`/`all_objects`) and PROTECT convention
+- [ ] Custom User (phone/email login) and `AUTH_USER_MODEL`
+- [ ] Organization, Membership
+- [ ] Capability catalog synced from code (doc 13)
+- [ ] RoleTemplate + Role + RoleCapability; copy templates into each new organization
+- [ ] MembershipCapability overrides; no-escalation rule; last-Owner protection
+- [ ] Role management UI for Owners (rename, add, clone, edit capabilities); Platform Admin edits templates in Django admin
+- [ ] Default templates: Owner, Manager, Accountant, Caretaker, Leasing/Letting Agent, Maintenance Manager, Maintenance Staff, Viewer
+- [ ] Single `can(membership, capability, property)` check used by views/services
+- [ ] PropertyAccess (scoped staff)
+- [ ] Org-scoped manager + view mixin + capability check
+- [ ] AuditEvent + service helper
+- [ ] Register / login / logout / reset / staff invite
+- [ ] Onboarding: create organization + Owner in one transaction, setup checklist
+- [ ] Base template (mobile-first), role-based home page shell
+- [ ] Tests: cross-organization isolation, role checks
+- [ ] Platform Admin: Django admin with org, user, subscription overview
+
+## Phase 2 — Properties, tenants, leases
+- [ ] Unit types include BED_SPACE (design-in); Property.category includes ESTATE; branch/branding fields on Organization (design-in)
+- [ ] Shareable public vacancy link
+- [ ] Property, Building (optional), Unit (types, manual status, payment_reference)
+- [ ] Standalone-house shortcut (auto-create unit)
+- [ ] Tenant (lifecycle status, normalised phone, sensitive fields)
+- [ ] Lease, LeaseTenant, LeaseRentChange, LeaseCharge; overlap constraint
+- [ ] Lease actions: activate, renew, terminate, transfer
+- [ ] CSV import: units and tenants
+- [ ] List pages: pagination, search, filters, indexes
+- [ ] Archive instead of delete
+
+## Phase 3 — Billing
+- [ ] NumberSequence with row-locked allocation; concurrency test
+- [ ] `core/money.py` (parse, round, prorate, format) + tests
+- [ ] ChargeType, Invoice, InvoiceLine, LedgerEntry
+- [ ] Idempotent monthly invoice generation job (+ proration)
+- [ ] Tenant statement, arrears list, aging
+- [ ] Tests: totals, rounding, duplicates, proration
+
+## Phase 4 — Payments and receipts
+- [ ] Bank payments: `method = BANK`, CSV statement import through the matching engine
+- [ ] P&L, cash flow and aged receivables by property
+- [ ] PaymentAccount, PropertyPaymentAccount (+ admin UI)
+- [ ] Payment, PaymentAllocation; partial, over-payment, credit
+- [ ] Reversal flow; caretaker cash review queue
+- [ ] Receipt numbering and PDF
+- [ ] Tests: allocation, reversal, credit
+
+## Phase 5 — Communications
+- [ ] WhatsApp adapter (moved earlier)
+- [ ] Segmented announcements
+- [ ] NotificationType catalog, OrganizationNotificationRule, NotificationPreference, ConsentRecord
+- [ ] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability
+- [ ] Owner notification settings page; tenant opt-out per channel
+- [ ] Message, MessageTemplate, provider adapter interface
+- [ ] SMS adapter (Africa's Talking), delivery status, opt-out
+- [ ] Triggers: invoice issued, due soon, payment received, overdue
+- [ ] In-app notifications
+
+## Phase 6 — M-Pesa
+- [ ] Store msisdn_raw and msisdn_hash; verify hash behaviour in Daraja sandbox
+- [ ] Unmatched-payment SMS asking for unit reference; inbox as a daily screen
+- [ ] MpesaTransaction, callback endpoints with per-account token
+- [ ] Idempotent processing, raw payload storage
+- [ ] Matching engine (account → reference → phone → amount)
+- [ ] Unallocated inbox and manual match
+- [ ] STK push
+- [ ] Encrypted credentials; daily reconciliation report
+- [ ] Safaricom go-live
+
+## Phase 7 — Dashboards, search, tenant portal
+- [ ] Collectability score (A to E) and daily who-to-call list
+- [ ] Read-only Owner membership and monthly owner statement PDF
+- [ ] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set
+- [ ] DailySnapshot table and nightly job; Chart.js dashboards with drill-down and CSV export
+- [ ] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging, NOI)
+- [ ] Portfolio and per-property dashboards
+- [ ] Per-role dashboards
+- [ ] Global search
+- [ ] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests
+
+## Phase 8 — Launch
+- [ ] Optional MFA for Owner/Accountant, mandatory for Platform Admin
+- [ ] Public status page, security and data-protection page
+- [ ] Import concierge process for pilots; track time to first invoice
+- [ ] `SubscriptionInvoice.vat_amount`; confirm VAT/eTIMS for our company
+- [ ] `EtimsAdapter` interface stub
+- [ ] Platform billing (flow A): Plan, Subscription, SubscriptionInvoice, PlatformReceipt, SMS wallet top-up; separate from tenant billing
+- [ ] Backups, monitoring, error tracking, HTTPS, prod settings
+- [ ] Subscriptions app and entitlements service
+- [ ] Onboarding polish, help docs, support channel
+
+## Phase 9 — Later
+- [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement
+- [ ] Vendor SLA on maintenance; metered water readings by caretaker (may move earlier)
+- [ ] Tenant portal (may move earlier)
+- [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
+- [ ] Maintenance, metered utilities, documents
+- [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)
+- [ ] Accounting/MRI reports, analytics, WhatsApp/email
+- [ ] Agency mode and joint ownership, custom roles per organization
+- [ ] API, mobile app, USSD, AI assistant (permission-aware tools)
+
+## Always
+- [ ] Update docs and `08_DECISIONS_LOG.md` with each decision
+- [ ] Tests for isolation, permissions, billing, payments, M-Pesa
+- [ ] No secrets in Git
