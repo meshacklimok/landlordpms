@@ -8,10 +8,10 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Switch to PostgreSQL: database created, `.env` set
 - [x] `manage.py check` and `migrate` run against Postgres
 - [ ] Remove old `db.sqlite3` (waiting for user's go-ahead)
-- [ ] Pin versions in `requirements.txt`
-- [ ] `SECRET_KEY` with no insecure fallback; split settings (base/dev/prod)
+- [x] Pin versions in `requirements.txt`
+- [~] `SECRET_KEY` with no insecure fallback (done); split settings (base/dev/prod) (todo)
 - [ ] Move `static/css/js/script.js` to `static/js/`
-- [ ] Add ruff, pytest-django, pre-commit, GitHub Actions CI
+- [~] Add ruff, pytest-django (done in `pyproject.toml`), pre-commit, GitHub Actions CI (todo)
 - [ ] Commit docs and settings changes
 
 ### Brainstorm and design (docs 10, 11, 12)
@@ -55,23 +55,24 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Terms of Service and Privacy Policy drafts
 
 ## Phase 1 — Foundation *(after Phase 0 approval)*
-- [ ] Archive mixin (`archived_at/by`, `objects`/`all_objects`) and PROTECT convention
-- [ ] Custom User (phone/email login) and `AUTH_USER_MODEL`
-- [ ] Organization, Membership
-- [ ] Capability catalog synced from code (doc 13)
-- [ ] RoleTemplate + Role + RoleCapability; copy templates into each new organization
-- [ ] MembershipCapability overrides; no-escalation rule; last-Owner protection
-- [ ] Role management UI for Owners (rename, add, clone, edit capabilities); Platform Admin edits templates in Django admin
-- [ ] Default templates: Owner, Manager, Accountant, Caretaker, Leasing/Letting Agent, Maintenance Manager, Maintenance Staff, Viewer
-- [ ] Single `can(membership, capability, property)` check used by views/services
-- [ ] PropertyAccess (scoped staff)
-- [ ] Org-scoped manager + view mixin + capability check
-- [ ] AuditEvent + service helper
-- [ ] Register / login / logout / reset / staff invite
-- [ ] Onboarding: create organization + Owner in one transaction, setup checklist
-- [ ] Base template (mobile-first), role-based home page shell
-- [ ] Tests: cross-organization isolation, role checks
-- [ ] Platform Admin: Django admin with org, user, subscription overview
+_Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations applied, 161 tests passing. Subscription overview in admin waits for the subscription model._
+- [x] Archive mixin (`archived_at/by`, `objects`/`all_objects`) and PROTECT convention
+- [x] Custom User (phone/email login) and `AUTH_USER_MODEL`
+- [x] Organization, Membership
+- [x] Capability catalog synced from code (doc 13)
+- [x] RoleTemplate + Role + RoleCapability; copy templates into each new organization
+- [x] MembershipCapability overrides; no-escalation rule; last-Owner protection
+- [x] Role management UI for Owners (rename, add, clone, edit capabilities); Platform Admin edits templates in Django admin
+- [x] Default templates: Owner, Manager, Accountant, Caretaker, Leasing/Letting Agent, Maintenance Manager, Maintenance Staff, Viewer
+- [x] Single `can(membership, capability, property)` check used by views/services
+- [x] PropertyAccess (scoped staff)
+- [x] Org-scoped manager + view mixin + capability check
+- [x] AuditEvent + service helper
+- [x] Register / login / logout / reset / staff invite
+- [x] Onboarding: create organization + Owner in one transaction, setup checklist
+- [x] Base template (mobile-first), role-based home page shell
+- [x] Tests: cross-organization isolation, role checks
+- [~] Platform Admin: Django admin with org, user overview (done); subscription overview (waits for subscription model)
 
 ## Phase 2 — Properties, tenants, leases
 - [ ] Unit types include BED_SPACE (design-in); Property.category includes ESTATE; branch/branding fields on Organization (design-in)
