@@ -1,0 +1,65 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ invoice.number|default:_("Draft invoice") }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'billing:invoices' %}" class="small">← {% trans "Invoices" %}</a>
+  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+    <div>
+      <h1 class="h4 mb-0">{{ invoice.number|default:_("Draft invoice") }}</h1>
+      <div class="small text-muted">{{ lease.primary_tenant.name|default:"—" }} · {{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} · <a href="{% url 'billing:lease_account' lease.public_id %}">{{ lease.number }}</a></div>
+    </div>
+    {% include "billing/_invoice_status.html" %}
+  </div>
+
+  {% if invoice.status == "VOID" %}
+  <div class="alert alert-secondary small">{% blocktrans with on=invoice.voided_at|date:"j M Y" %}Voided on {{ on }}{% endblocktrans %}{% if invoice.void_reason %}: {{ invoice.void_reason }}{% endif %}</div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-5">{% trans "Period" %}</dt><dd class="col-7">{{ invoice.period_start|date:"j M Y" }} – {{ invoice.period_end|date:"j M Y" }}</dd>
+      <dt class="col-5">{% trans "Issued" %}</dt><dd class="col-7">{{ invoice.issue_date|date:"j M Y"|default:"—" }}</dd>
+      <dt class="col-5">{% trans "Due" %}</dt><dd class="col-7">{{ invoice.due_date|date:"j M Y" }} · {% blocktrans with d=invoice.overdue_after|date:"j M Y" %}overdue after {{ d }}{% endblocktrans %}</dd>
+    </dl>
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <table class="table table-sm mb-0">
+      <thead><tr><th>{% trans "Item" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+      <tbody>
+        {% for line in lines %}
+        <tr><td>{{ line.description }}{% if line.service_start %}<div class="small text-muted">{{ line.service_start|date:"j M" }} – {{ line.service_end|date:"j M Y" }}</div>{% endif %}</td><td class="text-end text-nowrap">{{ line.amount|money:invoice.currency }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        {% if invoice.tax_total %}<tr><td>{% trans "Tax" %}</td><td class="text-end">{{ invoice.tax_total|money:invoice.currency }}</td></tr>{% endif %}
+        <tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end text-nowrap">{{ invoice.total|money:invoice.currency }}</td></tr>
+        {% if invoice.amount_paid %}<tr><td>{% trans "Paid" %}</td><td class="text-end text-nowrap">{{ invoice.amount_paid|money:invoice.currency }}</td></tr>{% endif %}
+        {% if invoice.status != "VOID" %}<tr class="fw-semibold"><td>{% trans "Outstanding" %}</td><td class="text-end text-nowrap">{{ invoice.outstanding|money:invoice.currency }}</td></tr>{% endif %}
+      </tfoot>
+    </table>
+  </div></div>
+
+  {% if entries %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Ledger" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for e in entries %}<li class="d-flex justify-content-between"><span>{{ e.entry_date|date:"j M Y" }} · {{ e.get_kind_display }}</span><span>{{ e.amount|money:e.currency }}</span></li>{% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
+  {% if can_void %}
+  <div class="card shadow-sm mb-3 border-danger-subtle"><div class="card-body">
+    <h2 class="h6">{% trans "Void this invoice" %}</h2>
+    <p class="small text-muted">{% trans "The number is kept and the amount is credited back. The month can then be billed again." %}</p>
+    <form method="post" novalidate>{% csrf_token %}
+      {% with form=void_form %}{% include "partials/form.html" %}{% endwith %}
+      <button class="btn btn-outline-danger">{% trans "Void invoice" %}</button>
+    </form>
+  </div></div>
+  {% elif invoice.amount_paid and invoice.status != "VOID" %}
+  <p class="small text-muted">{% trans "An invoice with payments cannot be voided. Reverse the payments first." %}</p>
+  {% endif %}
+</div>
+{% endblock %}

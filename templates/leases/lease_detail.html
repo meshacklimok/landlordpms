@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n money %}
 {% block title %}{% if lease.number %}{{ lease.number }}{% else %}{% trans "Draft lease" %}{% endif %} · {{ unit.code }}{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
@@ -154,6 +154,19 @@
     </details>
     {% endif %}
   </div></div>
+
+  {% if account %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "Account" %}</h2>
+      <a class="small" href="{% url 'billing:lease_account' lease.public_id %}">{% trans "Statement and deposits" %} →</a>
+    </div>
+    <dl class="row small mb-0 mt-2">
+      <dt class="col-5">{% if account.balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</dt><dd class="col-7">{{ account.balance|money:lease.currency }}</dd>
+      <dt class="col-5">{% trans "Deposit held" %}</dt><dd class="col-7">{{ account.deposit_held|money:lease.currency }}</dd>
+    </dl>
+  </div></div>
+  {% endif %}
 
   {% if can_terminate or can_renew or can_transfer %}
   <div class="card shadow-sm mb-3"><div class="card-body">

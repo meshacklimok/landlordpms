@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% load i18n money billing %}
+{% block title %}{% trans "Arrears" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h4 mb-0">{% trans "Arrears" %}</h1>
+  <a class="small" href="?{% if not show_all %}all=1{% endif %}">{% if show_all %}{% trans "Only overdue" %}{% else %}{% trans "Include balances not yet due" %}{% endif %}</a>
+</div>
+<p class="small text-muted">{% trans "What each lease owes, aged by how long past its due date. Payments and credits clear the oldest amounts first." %}</p>
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead>
+    <tr>
+      <th>{% trans "Lease" %}</th>
+      {% for key, label, low, high in buckets %}<th class="text-end">{{ label }}</th>{% endfor %}
+      <th class="text-end">{% trans "Balance" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td>
+        <a href="{% url 'billing:lease_account' row.lease.public_id %}">{{ row.lease.primary_tenant.name|default:row.lease.number }}</a>
+        <div class="small text-muted">{{ row.lease.unit.property.name }} · {{ row.lease.unit.code }} · {{ row.lease.number }}{% if row.lease.status != "ACTIVE" %} · {{ row.lease.get_status_display }}{% endif %}</div>
+      </td>
+      {% for key, label, low, high in buckets %}<td class="text-end text-nowrap">{% with v=row.buckets|bucket:key %}{% if v %}{{ v|money:row.lease.currency }}{% else %}<span class="text-muted">—</span>{% endif %}{% endwith %}</td>{% endfor %}
+      <td class="text-end text-nowrap fw-semibold">{{ row.balance|money:row.lease.currency }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="text-muted">{% trans "Nobody is behind." %}</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if rows %}
+  <tfoot>
+    <tr class="fw-semibold">
+      <td>{% trans "Total" %}</td>
+      {% for key, label, low, high in buckets %}<td class="text-end text-nowrap">{{ totals|bucket:key|money }}</td>{% endfor %}
+      <td class="text-end text-nowrap">{{ totals.total|money }}</td>
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>
+</div>
+{% endblock %}

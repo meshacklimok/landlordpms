@@ -14,6 +14,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from billing import deposits, invoicing
 from billing.services import recurring_charge_types
 from properties.models import Property, Unit
 from properties.views import _apply_errors, _get_unit
@@ -182,6 +183,8 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
             "can_renew": is_active and can_draft and successor is None,
             "can_transfer": can_terminate and successor is None,
         }
+        if not lease.is_draft and can(m, "invoices.view", prop):
+            ctx["account"] = {"balance": invoicing.lease_balance(lease), "deposit_held": deposits.held(lease)}
         if ctx["can_terminate"]:
             ctx["notice_form"] = forms_in.get("notice_form") or forms.NoticeForm(
                 initial={"given_on": ctx["today"].isoformat()})

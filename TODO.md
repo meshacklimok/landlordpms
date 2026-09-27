@@ -94,7 +94,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Idempotent monthly invoice generation (+ proration); rebill on lease end, rent change, charge change
 - [x] Daily command `billing_daily`: generation, moved-out tenants, archive settled leases (schedule it)
 - [x] Selectors: invoice list, lease statement with running balance, arrears with FIFO aging
-- [ ] Pages: invoices, generate month, void, lease balance/statement/deposits, arrears and aging
+- [x] Pages: invoices, bill a month, void, lease account (statement, opening balance, deposits), arrears and aging
 - [x] Deposit ledger: DEPOSIT_TRANSFERRED on lease transfer (D-016), deduction, refund, clearance statement
 - [ ] Tests: totals, rounding, duplicates, proration
 
