@@ -141,6 +141,33 @@ def test_password_reset_for_unknown_phone_is_silent(outbox):
     assert outbox == []
 
 
+def test_password_reset_limits_match_for_unknown_phones(outbox):
+    make_user(phone="0712345678")
+    errors = []
+    for phone in ("0712345678", "0799999999"):
+        identity.request_password_reset(phone)
+        with pytest.raises(otp.OTPError) as exc:
+            identity.request_password_reset(phone)
+        errors.append(str(exc.value))
+    assert errors[0] == errors[1]
+    assert len(outbox) == 1
+
+
+def test_password_reset_rejects_weak_password_for_unknown_phone():
+    with pytest.raises(ValidationError):
+        identity.reset_password(phone="0799999999", code="123456", new_password="123")
+
+
+def test_otp_attempts_cannot_be_shared_by_parallel_guesses(outbox):
+    otp.issue_otp("+254712345678", VERIFY)
+    code = last_code(outbox)
+    # The attempt is spent in the database before the code is compared, so the last attempt locks it.
+    OTPCode.objects.update(attempts=otp.MAX_ATTEMPTS - 1)
+    assert not otp.verify_otp("+254712345678", VERIFY, "000000" if code != "000000" else "111111")
+    assert not otp.verify_otp("+254712345678", VERIFY, code)
+    assert OTPCode.objects.get().attempts == otp.MAX_ATTEMPTS
+
+
 def test_password_reset_flow_warns_owner(outbox):
     user = make_user(phone="0712345678", email="w@example.com")
     identity.request_password_reset("0712 345 678")
