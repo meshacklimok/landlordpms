@@ -16,7 +16,6 @@ import csv
 import datetime
 import io
 import re
-from decimal import Decimal, InvalidOperation
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -27,6 +26,7 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership
 from accounts.permissions import can, require, visible_properties
 from audit import services as audit
+from core.money import parse_money
 from core.phone import InvalidPhoneNumber, normalize_phone
 from properties import services as property_services
 from properties.models import Building, Property, Unit, clean_code
@@ -162,14 +162,10 @@ def _choice(choices, value: str, default=""):
 def _money(value: str):
     if not value:
         return None
-    cleaned = re.sub(r"(?i)kes|ksh|[,\s]", "", value)
     try:
-        amount = Decimal(cleaned)
-    except InvalidOperation:
-        raise ValidationError(_("“%(value)s” is not an amount.") % {"value": value}) from None
-    if amount < 0:
-        raise ValidationError(_("The amount cannot be negative."))
-    return amount
+        return parse_money(value)
+    except ValidationError as e:
+        raise ValidationError(f"“{value}”: {e.messages[0]}") from None
 
 
 # ---------------------------------------------------------------------------

@@ -112,7 +112,7 @@ def test_unit_preview_changes_nothing(owner, prop):
     assert "No property with code XX" in errors[3][0]
     assert "no building called" in errors[4][0]
     assert "not a valid choice" in errors[5][0]
-    assert "not an amount" in errors[6][0]
+    assert "Enter an amount" in errors[6][0]
     assert errors[7] == ["property_code is required."]
 
 

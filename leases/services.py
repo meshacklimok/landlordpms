@@ -29,6 +29,7 @@ from accounts.models import Membership
 from accounts.permissions import can, require, visible_properties
 from audit import services as audit
 from billing.models import ChargeType
+from core.money import parse_money
 from core.numbering import next_number
 from core.phone import InvalidPhoneNumber, normalize_phone
 from properties.models import Property, Unit
@@ -141,13 +142,9 @@ def _require_open(lease: Lease) -> None:
 
 def _money(value, field: str, *, allow_zero: bool) -> Decimal:
     try:
-        amount = Decimal(str(value)).quantize(Decimal("0.01"))
-    except Exception:
-        raise ValidationError({field: _("Enter an amount.")}) from None
-    if amount < 0 or (amount == 0 and not allow_zero):
-        raise ValidationError({field: _("Enter an amount above zero.") if not allow_zero
-                               else _("The amount cannot be negative.")})
-    return amount
+        return parse_money(value, allow_zero=allow_zero)
+    except ValidationError as e:
+        raise ValidationError({field: e.messages}) from None
 
 
 def _check_unit(actor: Membership, unit: Unit) -> None:

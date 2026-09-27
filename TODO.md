@@ -89,7 +89,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 3 — Billing
 - [x] NumberSequence with row-locked allocation (brought forward for lease numbers; add a threaded concurrency test with invoices)
-- [ ] `core/money.py` (parse, round, prorate, format) + tests
+- [x] `core/money.py` (parse, round, prorate, format) + tests; `{% load money %}{{ v|money }}` filter
 - [ ] Invoice, InvoiceLine, LedgerEntry (ChargeType done in Phase 2)
 - [ ] Idempotent monthly invoice generation job (+ proration)
 - [ ] Tenant statement, arrears list, aging
