@@ -91,10 +91,11 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] NumberSequence with row-locked allocation (50 parallel invoice issues test)
 - [x] `core/money.py` (parse, round, prorate, format) + tests; `{% load money %}{{ v|money }}` filter
 - [x] Invoice, InvoiceLine, LedgerEntry (signed, append-only) and DepositEntry; opening balances (D-042)
-- [ ] Idempotent monthly invoice generation job (+ proration)
+- [x] Idempotent monthly invoice generation (+ proration); rebill on lease end, rent change, charge change
+- [ ] Daily command that runs generation and the lease/tenant housekeeping
 - [ ] Tenant statement, arrears list, aging
 - [ ] Nightly job: recompute tenant status once a closed lease's ended_on passes; archive ended leases once settled
-- [ ] Deposit ledger: DEPOSIT_TRANSFERRED on lease transfer (D-016), refund on end
+- [x] Deposit ledger: DEPOSIT_TRANSFERRED on lease transfer (D-016), deduction, refund, clearance statement
 - [ ] Tests: totals, rounding, duplicates, proration
 
 ## Phase 4 — Payments and receipts

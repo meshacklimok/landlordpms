@@ -137,11 +137,13 @@ def test_recurring_charges_are_billed_and_a_later_charge_gets_its_own_invoice(ow
     assert sorted(ln.amount for ln in first.lines.all()) == [Decimal("500.00"), Decimal("15000.00")]
     assert first.total == Decimal("15500.00")
     garbage = ChargeType.objects.get(organization=owner.organization, category=ChargeType.Category.GARBAGE)
+    # Added to a month already billed: it is billed at once, on its own invoice.
     lease_services.add_charge(owner, lease, charge_type=garbage, amount=300, active_from=D(2026, 2, 15))
-    extra = bill(lease, FEB, today=D(2026, 2, 15))
+    extra = InvoiceLine.objects.get(lease=lease, charge_type=garbage).invoice
     [line] = extra.lines.all()
-    assert line.charge_type == garbage and line.amount == Decimal("150.00")  # 14 of 28 days
-    assert extra.number == "INV-2026-000002" and extra.due_date == D(2026, 2, 15)
+    assert line.amount == Decimal("150.00")  # 14 of 28 days
+    assert extra.number == "INV-2026-000002" and extra.due_date == extra.issue_date
+    assert bill(lease, FEB) is None
     assert invoicing.lease_balance(lease) == Decimal("15650.00")
 
 

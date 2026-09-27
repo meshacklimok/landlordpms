@@ -206,11 +206,12 @@ def _billable(lease: Lease) -> bool:
     return lease.status != Lease.Status.DRAFT and lease.archived_at is None
 
 
-def generate_lease_month(lease: Lease, month: datetime.date, *, actor=None, today=None,
+def generate_lease_month(lease: Lease, month: datetime.date, *, actor=None, today=None, due_date=None,
                          request=None) -> Invoice | None:
     """Bills whatever of `month` is not billed yet for one lease, as one issued invoice.
 
     Returns None when there is nothing new to bill. Safe to call any number of times.
+    `due_date` keeps the original due date when a month is billed again after a correction.
     """
     today = today or timezone.localdate()
     month = month_start(month)
@@ -225,7 +226,7 @@ def generate_lease_month(lease: Lease, month: datetime.date, *, actor=None, toda
             return None
         start = min(ln.service_start for ln in lines)
         end = max(ln.service_end for ln in lines)
-        due = _due_date(lease, month, start, today)
+        due = due_date or _due_date(lease, month, start, today)
         subtotal = sum((ln.amount for ln in lines), ZERO)
         invoice = Invoice.objects.create(
             organization=lease.organization, lease=lease, period_start=start, period_end=end, due_date=due,
@@ -337,23 +338,72 @@ def void_invoice(actor: Membership, invoice: Invoice, *, reason: str, request=No
         raise ValidationError(_("This invoice is already void."))
     if invoice.amount_paid > 0:
         raise ValidationError(_("Payments are allocated to this invoice. Reverse or move them first."))
+    _void(invoice, user=actor.user, reason=reason, request=request)
+    return invoice
+
+
+def _void(invoice: Invoice, *, user, reason: str, request=None) -> None:
     was = invoice.status
-    today = timezone.localdate()
     InvoiceLine.objects.filter(invoice=invoice).update(is_void=True)
     invoice.status = Invoice.Status.VOID
     invoice.voided_at = timezone.now()
-    invoice.voided_by = actor.user
+    invoice.voided_by = user
     invoice.void_reason = reason
     invoice.save(update_fields=["status", "voided_at", "voided_by", "void_reason", "updated_at"])
     if was != Invoice.Status.DRAFT and invoice.total > 0:
-        LedgerEntry.objects.create(organization=invoice.organization, lease=invoice.lease, entry_date=today,
-                                   kind=LedgerEntry.Kind.INVOICE_VOID, amount=-invoice.total,
-                                   currency=invoice.currency, invoice=invoice, reason=reason,
-                                   created_by=actor.user)
-    audit.record("invoice.void", actor=actor.user, organization=invoice.organization, obj=invoice,
+        LedgerEntry.objects.create(organization=invoice.organization, lease=invoice.lease,
+                                   entry_date=timezone.localdate(), kind=LedgerEntry.Kind.INVOICE_VOID,
+                                   amount=-invoice.total, currency=invoice.currency, invoice=invoice,
+                                   reason=reason, created_by=user)
+    audit.record("invoice.void", actor=user, organization=invoice.organization, obj=invoice,
                  request=request, changes={"status": [was, Invoice.Status.VOID], "reason": [None, reason],
                                            "total": [str(invoice.total), None]})
-    return invoice
+
+
+# ---------------------------------------------------------------------------
+# Keeping issued invoices right when the lease changes
+# ---------------------------------------------------------------------------
+
+
+def rebill_from(lease: Lease, day: datetime.date, *, actor: Membership, reason: str,
+                request=None) -> list[Invoice]:
+    """Bills again every month already billed from `day` on, after the lease's terms changed.
+
+    Rent is billed in advance, so ending a lease, changing its rent or stopping a charge can
+    make an issued invoice wrong. For each month billed from `day` on whose lines no longer
+    match the lease, the unpaid invoices are voided and the month billed again with the new
+    terms and the original due date. Invoices with payments are left alone and returned, to be
+    corrected by hand. Runs inside the caller's transaction, which holds the lease lock.
+    """
+    lines = list(InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day))
+                 .select_related("invoice"))
+    kept: list[Invoice] = []
+    for month in sorted({ln.billing_month for ln in lines}):
+        billed = [ln for ln in lines if ln.billing_month == month]
+        now = {(ln.charge_type.pk, ln.amount, ln.service_start, ln.service_end)
+               for ln in lines_for_month(lease, month)}
+        if now == {(ln.charge_type_id, ln.amount, ln.service_start, ln.service_end) for ln in billed}:
+            continue
+        invoices = Invoice.objects.select_for_update().filter(
+            pk__in={ln.invoice_id for ln in billed}, status__in=Invoice.OPEN).order_by("pk")
+        due = None
+        for invoice in invoices:
+            if invoice.amount_paid > 0:
+                kept.append(invoice)
+                continue
+            due = min(due or invoice.due_date, invoice.due_date)
+            _void(invoice, user=actor.user, reason=reason, request=request)
+        if due is not None:
+            generate_lease_month(lease, month, actor=actor, due_date=due, request=request)
+    return kept
+
+
+def bill_missing(lease: Lease, day: datetime.date, *, actor: Membership, request=None) -> None:
+    """Bills a charge added from `day` for the months that were already billed without it."""
+    months = (InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day))
+              .values_list("billing_month", flat=True).distinct().order_by("billing_month"))
+    for month in list(months):
+        generate_lease_month(lease, month, actor=actor, request=request)
 
 
 # ---------------------------------------------------------------------------

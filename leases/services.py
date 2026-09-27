@@ -99,6 +99,12 @@ def _same_org(actor: Membership, *objs) -> None:
             raise PermissionDenied(_("That record belongs to another organization."))
 
 
+def _billing():
+    from billing import invoicing  # billing depends on leases, not the other way round
+
+    return invoicing
+
+
 def _require(actor: Membership, capability: str, lease: Lease) -> None:
     _same_org(actor, lease)
     require(actor, capability, lease.unit.property)
@@ -376,6 +382,8 @@ def add_rent_change(actor: Membership, lease: Lease, *, effective_from: datetime
     _audit("lease.rent_change", actor, lease, request, {
         "rent": [str(before), str(amount)], "effective_from": [None, str(effective_from)],
     })
+    _billing().rebill_from(lease, effective_from, actor=actor, request=request,
+                           reason=_("Rent changed from %(day)s") % {"day": effective_from.strftime("%d %b %Y")})
     return change
 
 
@@ -423,6 +431,8 @@ def add_charge(actor: Membership, lease: Lease, *, charge_type: ChargeType, amou
     _audit("lease.charge_add", actor, lease, request, {
         "charge": [None, f"{charge_type.name} {amount}"], "active_from": [None, str(active_from)],
     })
+    if lease.status != Lease.Status.DRAFT:
+        _billing().bill_missing(lease, active_from, actor=actor, request=request)
     return charge
 
 
@@ -448,6 +458,10 @@ def end_charge(actor: Membership, charge: LeaseCharge, *, active_to: datetime.da
         "charge": [f"{charge.charge_type.name} {charge.amount}"] * 2,
         "active_to": [str(old) if old else None, str(active_to)],
     })
+    earliest = min(active_to, old) if old else active_to
+    _billing().rebill_from(lease, earliest + DAY, actor=actor, request=request,
+                           reason=_("%(name)s changed to end on %(day)s")
+                           % {"name": charge.charge_type.name, "day": active_to.strftime("%d %b %Y")})
 
 
 # ---------------------------------------------------------------------------
@@ -538,6 +552,8 @@ def _close(actor: Membership, lease: Lease, *, status: str, ended_on: datetime.d
         **({"reason": [None, reason]} if reason else {}),
         **({"charges_removed": [removed, None]} if removed else {}), **(extra or {}),
     })
+    _billing().rebill_from(lease, ended_on + DAY, actor=actor, request=request,
+                           reason=_("Lease ended on %(day)s") % {"day": ended_on.strftime("%d %b %Y")})
 
 
 def _overlap_error(clash: Lease) -> ValidationError:
