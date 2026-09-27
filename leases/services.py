@@ -68,14 +68,14 @@ def with_occupancy(units, today: datetime.date | None = None):
     return units.annotate(is_occupied=Exists(occupying_leases(today).filter(unit=OuterRef("pk"))))
 
 
-def sync_tenant_status(tenant: Tenant) -> str:
+def sync_tenant_status(tenant: Tenant, today: datetime.date | None = None) -> str:
     """ACTIVE while on an active lease, FORMER once every lease has closed, else PROSPECT (doc 11 §6).
 
-    A closed lease still counts until its tenants move out (ended_on). A stored status can
-    go stale when that day passes; the nightly job that recomputes it comes with Phase 3.
+    A closed lease still counts until its tenants move out (ended_on). The stored status goes
+    stale when that day passes; the daily job (billing.jobs) recomputes it.
     """
     links = LeaseTenant.objects.filter(tenant=tenant)
-    current = Q(lease__status=Lease.Status.ACTIVE) | Q(lease__ended_on__gte=timezone.localdate())
+    current = Q(lease__status=Lease.Status.ACTIVE) | Q(lease__ended_on__gte=today or timezone.localdate())
     if links.filter(current).exists():
         status = Tenant.Status.ACTIVE
     elif links.exclude(lease__status=Lease.Status.DRAFT).exists():

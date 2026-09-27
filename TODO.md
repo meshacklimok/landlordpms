@@ -85,16 +85,16 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Lease actions: activate (LSE number), notice to vacate, end/terminate, renew, transfer; overlap uses the actual end (ended_on)
 - [x] CSV import: units and tenants (imports app: preview via rolled-back dry run, apply, undo within 24h, templates; opening balances with Phase 3)
 - [x] List pages: pagination, search, filters, indexes (cross-property Units list doubles as the vacancy list; property page paginates units and counts statuses in SQL)
-- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled, Phase 3)
+- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled by the daily job)
 
 ## Phase 3 — Billing
 - [x] NumberSequence with row-locked allocation (50 parallel invoice issues test)
 - [x] `core/money.py` (parse, round, prorate, format) + tests; `{% load money %}{{ v|money }}` filter
 - [x] Invoice, InvoiceLine, LedgerEntry (signed, append-only) and DepositEntry; opening balances (D-042)
 - [x] Idempotent monthly invoice generation (+ proration); rebill on lease end, rent change, charge change
-- [ ] Daily command that runs generation and the lease/tenant housekeeping
-- [ ] Tenant statement, arrears list, aging
-- [ ] Nightly job: recompute tenant status once a closed lease's ended_on passes; archive ended leases once settled
+- [x] Daily command `billing_daily`: generation, moved-out tenants, archive settled leases (schedule it)
+- [x] Selectors: invoice list, lease statement with running balance, arrears with FIFO aging
+- [ ] Pages: invoices, generate month, void, lease balance/statement/deposits, arrears and aging
 - [x] Deposit ledger: DEPOSIT_TRANSFERRED on lease transfer (D-016), deduction, refund, clearance statement
 - [ ] Tests: totals, rounding, duplicates, proration
 
