@@ -188,6 +188,10 @@ CACHES = {
     }
 }
 
+# How many of our own proxies sit in front of Django. Client IPs (rate limits, audit) are read
+# from X-Forwarded-For only when this is set; 0 means use REMOTE_ADDR.
+TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
+
 # SMS adapter (core/sms.py). The console adapter prints codes during development.
 SMS_BACKEND = os.getenv("SMS_BACKEND", "core.sms.ConsoleSmsSender")
 

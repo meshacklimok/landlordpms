@@ -19,6 +19,7 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from core import ratelimit
+from core.net import client_ip
 from leases.services import with_occupancy
 
 from . import forms, selectors, services
@@ -386,7 +387,7 @@ class VacancyView(View):
     template_name = "properties/vacancy.html"
 
     def get(self, request, token):
-        if not ratelimit.hit(f"vacancy:ip:{request.META.get('REMOTE_ADDR', '')}", VACANCY_RATE_LIMIT, 60):
+        if not ratelimit.hit(f"vacancy:ip:{client_ip(request)}", VACANCY_RATE_LIMIT, 60):
             return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
         unit = selectors.shared_unit(token)
         if unit is None:

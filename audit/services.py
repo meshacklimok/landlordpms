@@ -4,14 +4,15 @@ from typing import Any
 
 from django.db import models
 
+from core.net import client_ip as client_ip_of
+
 from .models import AuditEvent
 
 
 def client_ip(request) -> str | None:
     if request is None:
         return None
-    # Only trust X-Forwarded-For once we sit behind a known proxy (set in prod settings).
-    return request.META.get("REMOTE_ADDR") or None
+    return client_ip_of(request) or None
 
 
 def record(

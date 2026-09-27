@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import password_validators_help_tex
 from django.utils.translation import gettext_lazy as _
 
 from core import ratelimit
+from core.net import client_ip
 from core.phone import InvalidPhoneNumber, normalize_phone
 
 from .capabilities import CAPABILITIES
@@ -58,7 +59,7 @@ class LoginForm(forms.Form):
         password = data.get("password")
         if not identifier or not password:
             return data
-        ip = self.request.META.get("REMOTE_ADDR", "")
+        ip = client_ip(self.request)
         # Key on the normalized phone so "0712…", "+254 712…" etc. share one counter.
         key = identifier
         if "@" not in identifier:
