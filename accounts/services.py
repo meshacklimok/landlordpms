@@ -302,13 +302,22 @@ def change_member_role(actor: Membership, membership: Membership, role: Role, re
 
 @transaction.atomic
 def set_member_active(actor: Membership, membership: Membership, active: bool, request=None) -> Membership:
-    """Suspend or reactivate a member."""
+    """Suspend or reactivate a member.
+
+    Reactivating hands the member's access back, so it follows the same rule as granting it:
+    only someone who holds every capability and property the member has can do it.
+    """
     require(actor, "staff.manage")
     _same_org(actor, membership)
     _require_owner_for(actor, membership=membership)
     _lock_org(actor.organization)
     if not active:
         _ensure_not_last_owner(membership)
+    elif not membership.is_active:
+        clear_cache(membership)
+        _no_escalation(actor, effective_capabilities(membership))
+        _check_scope_escalation(actor, membership.all_properties,
+                                set(membership.property_access.values_list("property_id", flat=True)))
     if membership.is_active != active:
         membership.is_active = active
         membership.save(update_fields=["is_active", "updated_at"])
@@ -427,6 +436,7 @@ def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = 
     ids = set() if all_properties else _org_property_ids(actor.organization, properties)
     _check_scope_escalation(actor, all_properties, ids)
     phone = normalize_phone(phone)
+    email = (email or "").strip().lower()
     if Membership.objects.filter(organization=actor.organization, user__phone=phone).exists():
         raise ValidationError(_("This person is already a member."))
 

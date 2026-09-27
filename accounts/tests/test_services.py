@@ -89,6 +89,14 @@ def test_cannot_invite_into_role_stronger_than_yourself(staff_admin):
         services.invite_staff(staff_admin, phone="0799000111", role=role(staff_admin.organization, "accountant"))
 
 
+def test_cannot_reactivate_member_stronger_than_yourself(owner, staff_admin):
+    accountant = add_member(owner.organization, "accountant", all_properties=True)  # has expenses.approve
+    services.set_member_active(owner, accountant, False)
+    with pytest.raises(PermissionDenied):
+        services.set_member_active(staff_admin, fresh(accountant), True)
+    services.set_member_active(owner, fresh(accountant), True)
+
+
 # --- Owner protection -------------------------------------------------------------------------
 
 
@@ -250,6 +258,12 @@ def test_revoked_invitation_cannot_be_accepted(owner):
     services.revoke_invitation(owner, inv)
     with pytest.raises(ValidationError):
         services.accept_invitation(token, make_user(phone="0799000111"))
+
+
+def test_invitation_email_is_normalised(owner):
+    inv, _ = services.invite_staff(owner, phone="0799000111", role=role(owner.organization, "viewer"),
+                                   email="  Wanjiku@Example.COM ")
+    assert inv.email == "wanjiku@example.com"
 
 
 def test_cannot_invite_existing_member(owner):
