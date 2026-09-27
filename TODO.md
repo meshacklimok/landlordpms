@@ -88,9 +88,9 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled, Phase 3)
 
 ## Phase 3 — Billing
-- [x] NumberSequence with row-locked allocation (brought forward for lease numbers; add a threaded concurrency test with invoices)
+- [x] NumberSequence with row-locked allocation (50 parallel invoice issues test)
 - [x] `core/money.py` (parse, round, prorate, format) + tests; `{% load money %}{{ v|money }}` filter
-- [ ] Invoice, InvoiceLine, LedgerEntry (ChargeType done in Phase 2)
+- [x] Invoice, InvoiceLine, LedgerEntry (signed, append-only) and DepositEntry; opening balances (D-042)
 - [ ] Idempotent monthly invoice generation job (+ proration)
 - [ ] Tenant statement, arrears list, aging
 - [ ] Nightly job: recompute tenant status once a closed lease's ended_on passes; archive ended leases once settled

@@ -598,6 +598,10 @@ def activate_lease(actor: Membership, lease: Lease, request=None) -> Lease:
     except IntegrityError:
         # Another lease was activated on this unit at the same moment.
         raise ValidationError(_("Another lease on this unit overlaps these dates.")) from None
+    if prev is not None:
+        from billing import deposits  # billing depends on leases, not the other way round
+
+        deposits.transfer_held(actor, prev, lease, entry_date=lease.start_date, request=request)
     _audit("lease.activate", actor, lease, request, {
         "status": [Lease.Status.DRAFT, Lease.Status.ACTIVE], "number": [None, lease.number],
         **({"previous_lease": [None, prev.number]} if prev else {}),
@@ -731,7 +735,7 @@ def transfer_lease(actor: Membership, lease: Lease, *, unit: Unit, start_date: d
     """Starts a draft for the same tenants on another unit (D-016).
 
     Activating it ends this lease the day before the move. The deposit moves across in
-    the deposit ledger (DEPOSIT_TRANSFERRED, Phase 3).
+    the deposit ledger (DEPOSIT_TRANSFERRED) when the draft is activated.
     """
     _require(actor, "leases.terminate", lease)
     _same_org(actor, unit)

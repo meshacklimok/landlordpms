@@ -70,6 +70,8 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("invoices.approve_adjustment", "Approve invoice adjustments"),
     Cap("invoices.void", "Void invoices", sensitive=True),
     Cap("charges.manage", "Manage charge types and recurring charges"),
+    Cap("deposits.record", "Record deposits received and refunded"),
+    Cap("deposits.deduct", "Deduct from a deposit", sensitive=True),
     # payments
     _view("payments.view", "See payments"),
     Cap("payments.record", "Record payments (cash, bank, cheque)"),
@@ -151,7 +153,7 @@ _MANAGER = _caps(
     "prospects.view", "prospects.manage",
     "leases.view", "leases.draft", "leases.activate", "leases.terminate", "leases.change_rent",
     "invoices.view", "invoices.generate", "invoices.adjust", "invoices.approve_adjustment",
-    "invoices.void", "charges.manage",
+    "invoices.void", "charges.manage", "deposits.record", "deposits.deduct",
     "payments.view", "payments.record", "payments.confirm", "payments.allocate", "receipts.issue",
     "payment_accounts.view",
     "mpesa.view_transactions", "mpesa.match",
@@ -176,7 +178,8 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         "Invoices, payments, reconciliation and financial reports.",
         _caps(
             "properties.view", "units.view", "units.list_vacant", "tenants.view", "leases.view",
-            "invoices.view", "payments.view", "payments.record", "payments.allocate", "receipts.issue",
+            "invoices.view", "deposits.record",
+            "payments.view", "payments.record", "payments.allocate", "receipts.issue",
             "payment_accounts.view", "mpesa.view_transactions", "mpesa.match",
             "expenses.view", "expenses.submit", "expenses.approve",
             "reports.view_basic", "reports.view_financial", "reports.export",

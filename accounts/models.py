@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower, Upper
 from django.utils import timezone
@@ -168,6 +168,12 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
+    # Rent billing (doc 14 A3, D-036). Partial first and last months are prorated by days
+    # unless the organization bills them as a full month.
+    prorate_partial_months = models.BooleanField(_("prorate partial months"), default=True)
+    invoice_lead_days = models.PositiveSmallIntegerField(
+        _("invoice lead days"), default=5, validators=[MaxValueValidator(28)],
+        help_text=_("How many days before the month starts its invoices go out."))
     # Branding for agencies and white-label (D-040): design-in only. Receipts, statements and
     # public pages will use these; there is no settings page yet.
     brand_name = models.CharField(_("brand name"), max_length=150, blank=True,
