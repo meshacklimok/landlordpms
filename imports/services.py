@@ -1,10 +1,11 @@
-"""Bulk CSV import of units and tenants (doc 11 §20, doc 14 A2/B8).
+"""Bulk CSV import of units, tenants and opening balances (doc 11 §20, doc 14 A2/B8).
 
 Flow: upload -> preview -> apply -> (undo within 24 hours).
 - The preview runs every row through the normal create services inside a transaction that is
   rolled back, so it reports exactly what applying would do, duplicates within the file included.
 - Applying runs the rows again for real. Rows that fail are skipped and reported; the rest are kept.
-- Undo deletes the records the batch created, except any already used on a lease.
+- Undo deletes the units and tenants the batch created, except any already used on a lease. For opening
+  balances it reverses each entry that is still the lease's balance brought forward; the ledger keeps both.
 - Codes and phones are normalised by the same services the forms use.
 - A batch belongs to whoever uploaded it. Members with every property can also act on anyone's batch;
   members limited to some properties see only their own.
@@ -26,8 +27,11 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership
 from accounts.permissions import can, require, visible_properties
 from audit import services as audit
+from billing import invoicing
+from billing.models import LedgerEntry
 from core.money import parse_money
 from core.phone import InvalidPhoneNumber, normalize_phone
+from leases.models import Lease
 from properties import services as property_services
 from properties.models import Building, Property, Unit, clean_code
 from tenants import services as tenant_services
@@ -46,20 +50,27 @@ COLUMNS = {
     Kind.UNITS: ("property_code", "unit_code", "building", "unit_type", "type_label", "list_rent"),
     Kind.TENANTS: ("name", "phone", "alt_phone", "email", "kind", "contact_person", "id_type", "id_number",
                    "kra_pin", "emergency_contact_name", "emergency_contact_phone", "notes"),
+    Kind.BALANCES: ("property_code", "unit_code", "lease_number", "amount", "as_of", "reason"),
 }
-REQUIRED = {Kind.UNITS: ("property_code", "unit_code"), Kind.TENANTS: ("name", "phone")}
+REQUIRED = {
+    Kind.UNITS: ("property_code", "unit_code"), Kind.TENANTS: ("name", "phone"),
+    Kind.BALANCES: ("property_code", "unit_code", "amount", "as_of"),
+}
 EXAMPLES = {
     Kind.UNITS: ("GV", "A1", "Block A", "APARTMENT", "2 bedroom", "15000"),
     Kind.TENANTS: ("Wanjiku Kamau", "0712345678", "", "wanjiku@example.com", "INDIVIDUAL", "", "NATIONAL_ID",
                    "12345678", "A123456789B", "", "", ""),
+    Kind.BALANCES: ("GV", "A1", "", "12500", "2026-01-31", "Arrears from the old spreadsheet"),
 }
 ALIASES = {
     "property": "property_code", "unit": "unit_code", "code": "unit_code", "type": "unit_type",
     "label": "type_label", "rent": "list_rent", "asking_rent": "list_rent",
     "tenant": "name", "tenant_name": "name", "full_name": "name", "phone_number": "phone", "mobile": "phone",
     "kra": "kra_pin", "id": "id_number", "id_no": "id_number",
+    "lease": "lease_number", "balance": "amount", "opening_balance": "amount", "date": "as_of",
 }
-CAPABILITY = {Kind.UNITS: "units.manage", Kind.TENANTS: "tenants.manage"}
+CAPABILITY = {Kind.UNITS: "units.manage", Kind.TENANTS: "tenants.manage", Kind.BALANCES: "invoices.adjust"}
+DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y")
 SENSITIVE = set(Tenant.SENSITIVE_FIELDS)
 
 
@@ -168,6 +179,15 @@ def _money(value: str):
         raise ValidationError(f"“{value}”: {e.messages[0]}") from None
 
 
+def _date(value: str) -> datetime.date:
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(value, fmt).date()
+        except ValueError:
+            continue
+    raise ValidationError(_("“%(value)s” is not a date. Use 2026-01-31 or 31/01/2026.") % {"value": value})
+
+
 # ---------------------------------------------------------------------------
 # One row
 # ---------------------------------------------------------------------------
@@ -212,7 +232,41 @@ def _create_tenant(actor: Membership, data: dict, request):
     return tenant, tenant.name
 
 
-CREATE = {Kind.UNITS: _create_unit, Kind.TENANTS: _create_tenant}
+def _unit(actor: Membership, data: dict) -> Unit:
+    code = clean_code(data["property_code"])
+    unit = (Unit.objects.filter(property__in=visible_properties(actor, Property.objects.all()),
+                                property__code__iexact=code, code__iexact=clean_code(data["unit_code"]))
+            .select_related("property").first())
+    if unit is None:
+        raise ValidationError(_("No unit %(unit)s in property %(code)s.") % {"unit": data["unit_code"], "code": code})
+    return unit
+
+
+def _create_balance(actor: Membership, data: dict, request):
+    """A balance brought forward for the unit's active lease, or for the lease named in lease_number."""
+    unit = _unit(actor, data)
+    leases = Lease.all_objects.filter(unit=unit).exclude(status=Lease.Status.DRAFT)
+    number = data.get("lease_number", "")
+    lease = (leases.filter(number__iexact=number) if number
+             else leases.filter(status=Lease.Status.ACTIVE, archived_at__isnull=True)).first()
+    if lease is None:
+        message = (_("%(unit)s has no lease %(number)s.") if number
+                   else _("%(unit)s has no active lease. Add lease_number for an ended one."))
+        raise ValidationError(message % {"unit": unit.payment_reference, "number": number})
+    if invoicing.opening_balance(lease) is not None:
+        raise ValidationError(_("Lease %(number)s already has a balance brought forward. Change it on its account "
+                                "page.") % {"number": lease.number})
+    try:
+        entry = invoicing.set_opening_balance(actor, lease, amount=data["amount"], as_of=_date(data["as_of"]),
+                                              reason=data.get("reason", ""), request=request)
+    except PermissionDenied:
+        raise ValidationError(_("You cannot enter balances for %(name)s.") % {"name": unit.property.name}) from None
+    if entry is None:
+        raise ValidationError(_("The amount is zero. Leave the row out instead."))
+    return entry, f"{unit.payment_reference} · {lease.number}"
+
+
+CREATE = {Kind.UNITS: _create_unit, Kind.TENANTS: _create_tenant, Kind.BALANCES: _create_balance}
 MODEL = {Kind.UNITS: Unit, Kind.TENANTS: Tenant}
 
 
@@ -311,12 +365,37 @@ def _in_use(kind: str, obj) -> bool:
     return obj.leases.exists() if kind == Kind.UNITS else obj.lease_links.exists()
 
 
+def _undo_balances(actor: Membership, batch: ImportBatch, request) -> tuple[list[str], list[str]]:
+    """Reverses each imported balance that is still the lease's balance brought forward."""
+    removed, kept = [], []
+    entries = (LedgerEntry.objects.filter(organization=actor.organization, pk__in=batch.created_ids,
+                                          kind=LedgerEntry.Kind.OPENING_BALANCE)
+               .select_related("lease__unit__property"))
+    for entry in entries:
+        lease = entry.lease
+        label = f"{lease.unit.payment_reference} · {lease.number}"
+        if invoicing.opening_balance(lease) != entry:
+            kept.append(label)  # changed by hand since the import
+            continue
+        try:
+            with transaction.atomic():
+                invoicing.set_opening_balance(actor, lease, amount=0, as_of=entry.entry_date, request=request)
+        except (PermissionDenied, ValidationError):
+            kept.append(label)
+        else:
+            removed.append(label)
+    return removed, kept
+
+
 @transaction.atomic
 def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[list[str], list[str]]:
     """Deletes what the batch created, keeping anything already used. Returns (removed, kept) labels."""
     locked = _locked(actor, batch)
     if not locked.can_undo:
         raise ValidationError(_("An import can only be undone within 24 hours of applying it."))
+    if locked.kind == Kind.BALANCES:
+        removed, kept = _undo_balances(actor, locked, request)
+        return _finish_undo(actor, locked, removed, kept, request)
     model = MODEL[locked.kind]
     removed, kept = [], []
     visible = set(tenant_services.visible_tenants(actor, Tenant.all_objects.filter(pk__in=locked.created_ids))
@@ -339,6 +418,10 @@ def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[li
             kept.append(label)
         else:
             removed.append(label)
+    return _finish_undo(actor, locked, removed, kept, request)
+
+
+def _finish_undo(actor, locked, removed, kept, request):
     locked.status, locked.undone_at = Status.UNDONE, timezone.now()
     locked.save(update_fields=["status", "undone_at", "updated_at"])
     audit.record("import.undo", actor=actor.user, organization=actor.organization, obj=locked, request=request,

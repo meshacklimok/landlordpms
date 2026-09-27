@@ -15,7 +15,8 @@ from . import services
 from .models import ImportBatch
 
 ROW_PAGE_SIZE = 100
-KINDS = {"units": ImportBatch.Kind.UNITS, "tenants": ImportBatch.Kind.TENANTS}
+KINDS = {"units": ImportBatch.Kind.UNITS, "tenants": ImportBatch.Kind.TENANTS,
+         "balances": ImportBatch.Kind.BALANCES}
 
 
 class UploadForm(forms.Form):
@@ -108,7 +109,7 @@ class ImportDetailView(OrgMemberRequiredMixin, View):
                 removed, kept = services.undo_import(m, batch, request=request)
                 messages.success(request, _("Removed %(n)s records.") % {"n": len(removed)})
                 if kept:
-                    messages.warning(request, _("Kept because they are already in use: %(labels)s")
+                    messages.warning(request, _("Kept because they are in use or were changed since: %(labels)s")
                                      % {"labels": ", ".join(kept)})
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))

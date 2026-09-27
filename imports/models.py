@@ -11,11 +11,12 @@ UNDO_WINDOW = datetime.timedelta(hours=24)
 
 
 class ImportBatch(PublicIdModel, TimeStampedModel):
-    """One uploaded CSV: checked first (PREVIEW), then applied, and undoable for 24 hours (doc 14 B8)."""
+    """One uploaded CSV: checked first (PREVIEW), then applied, and undoable for 24 hours (doc 14 A2/B8)."""
 
     class Kind(models.TextChoices):
         UNITS = "UNITS", _("Units")
         TENANTS = "TENANTS", _("Tenants")
+        BALANCES = "BALANCES", _("Opening balances")
 
     class Status(models.TextChoices):
         PREVIEW = "PREVIEW", _("Checked, not imported")

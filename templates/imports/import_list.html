@@ -6,10 +6,11 @@
 <div class="row g-3 mb-4">
   {% for slug, kind in cards %}
   <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
-    <h2 class="h6">{% if slug == "units" %}{% trans "Units" %}{% else %}{% trans "Tenants" %}{% endif %}</h2>
+    <h2 class="h6">{{ kind.label }}</h2>
     <p class="small text-muted mb-2">
       {% if slug == "units" %}{% trans "Adds units to properties you already created. Buildings must exist first." %}
-      {% else %}{% trans "Adds tenants. Phone numbers like 0712 345 678 are converted to +254 format." %}{% endif %}
+      {% elif slug == "tenants" %}{% trans "Adds tenants. Phone numbers like 0712 345 678 are converted to +254 format." %}
+      {% else %}{% trans "What each tenant owed (or had paid ahead, as a negative amount) when you started. Goes to the unit's active lease unless you give a lease number. Activate the leases first." %}{% endif %}
       <a href="{% url 'imports:template' slug %}">{% trans "Download the template" %}</a>
     </p>
     <form method="post" action="{% url 'imports:upload' slug %}" enctype="multipart/form-data" class="d-flex gap-2">{% csrf_token %}
