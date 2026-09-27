@@ -392,13 +392,13 @@ class VacancyView(View):
         unit = selectors.shared_unit(token)
         if unit is None:
             raise Http404
-        contact = unit.shared_by
+        contact_name, contact_phone = selectors.vacancy_contact(unit)
         response = render(request, self.template_name, {
             "unit": unit,
             "property": unit.property,
             "available": selectors.is_available_to_let(unit),
-            "contact_name": contact.full_name if contact else unit.organization.display_name,
-            "contact_phone": contact.phone if contact else unit.organization.billing_phone,
+            "contact_name": contact_name,
+            "contact_phone": contact_phone,
         })
         response["X-Robots-Tag"] = "noindex, nofollow"
         return response

@@ -54,6 +54,18 @@ def is_available_to_let(unit: Unit) -> bool:
     return not taken.exists()
 
 
+def vacancy_contact(unit) -> tuple[str, str]:
+    """Name and phone shown on a public link: whoever shared it while they are still an active member,
+    otherwise the organization. Someone who has left must not keep receiving enquiries."""
+    from accounts.models import Membership
+
+    org, user = unit.organization, unit.shared_by
+    if user is not None and user.is_active and Membership.objects.filter(
+            organization=org, user=user, is_active=True).exists():
+        return user.full_name, user.phone
+    return org.display_name, org.billing_phone
+
+
 def shared_unit(token: str):
     """The live unit behind a public link, or None. Frozen, lapsed or archived organizations show nothing."""
     from accounts.models import Organization

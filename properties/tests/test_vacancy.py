@@ -102,6 +102,18 @@ def test_who_may_share(owner, prop, unit):
         services.unshare_unit(make_org(), unit)
 
 
+def test_contact_falls_back_to_the_organization_when_the_sharer_leaves(client, owner, prop, unit):
+    from accounts import services as account_services
+
+    agent = fresh(add_member(owner.organization, "leasing_agent", properties=[prop]))
+    services.share_unit(agent, unit)
+    assert agent.user.phone in page(client, unit).content.decode()
+    account_services.set_member_active(owner, agent, False)
+    body = page(client, unit).content.decode()
+    assert agent.user.phone not in body and agent.user.full_name not in body
+    assert owner.organization.display_name in body
+
+
 def test_rate_limited(client, owner, unit, monkeypatch):
     monkeypatch.setattr(views, "VACANCY_RATE_LIMIT", 2)
     services.share_unit(owner, unit)
