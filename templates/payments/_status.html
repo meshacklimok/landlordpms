@@ -1,0 +1,1 @@
+{% load i18n %}<span class="badge {% if payment.status == 'CONFIRMED' %}text-bg-success{% elif payment.status == 'REVERSED' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ payment.get_status_display }}</span>

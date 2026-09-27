@@ -8,7 +8,10 @@
       <h1 class="h4 mb-0">{% trans "Account" %}</h1>
       <div class="small text-muted">{{ lease.primary_tenant.name|default:"—" }} · {{ lease.get_status_display }}{% if lease.archived_at %} · {% trans "archived" %}{% endif %}</div>
     </div>
-    <button type="button" class="btn btn-outline-secondary btn-sm d-print-none" onclick="window.print()">{% trans "Print" %}</button>
+    <div class="d-flex gap-2 d-print-none">
+      {% if can_record_payment %}<a class="btn btn-primary btn-sm" href="{% url 'payments:record' lease.public_id %}">{% trans "Record payment" %}</a>{% endif %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">{% trans "Print" %}</button>
+    </div>
   </div>
 
   <div class="row g-2 mb-3">
@@ -40,7 +43,7 @@
         {% for row in statement.rows %}
         <tr>
           <td class="text-nowrap">{{ row.entry.entry_date|date:"j M Y" }}</td>
-          <td>{{ row.entry.get_kind_display }}{% if row.entry.invoice %} · <a href="{% url 'billing:invoice' row.entry.invoice.public_id %}">{{ row.entry.invoice.number }}</a>{% endif %}{% if row.entry.reason %}<div class="text-muted">{{ row.entry.reason }}</div>{% endif %}</td>
+          <td>{{ row.entry.get_kind_display }}{% if row.entry.invoice %} · <a href="{% url 'billing:invoice' row.entry.invoice.public_id %}">{{ row.entry.invoice.number }}</a>{% endif %}{% if row.entry.payment %} · <a href="{% url 'payments:detail' row.entry.payment.public_id %}">{% trans "payment" %}</a>{% endif %}{% if row.entry.reason %}<div class="text-muted">{{ row.entry.reason }}</div>{% endif %}</td>
           <td class="text-end text-nowrap">{% if row.debit %}{{ row.debit|money:lease.currency }}{% endif %}</td>
           <td class="text-end text-nowrap">{% if row.credit %}{{ row.credit|money:lease.currency }}{% endif %}</td>
           <td class="text-end text-nowrap">{{ row.balance|money:lease.currency }}</td>
@@ -63,6 +66,24 @@
       {% empty %}<li class="text-muted">{% trans "No invoices yet." %}</li>{% endfor %}
     </ul>
   </div></div>
+
+  {# Payments #}
+  {% if payments is not None %}
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Payments" %}</h2>
+    {% if credit > 0 %}
+    <div class="alert alert-info small d-flex justify-content-between align-items-center gap-2">
+      <span>{% blocktrans with amount=credit|money:lease.currency %}{{ amount }} paid ahead is not yet applied to an invoice.{% endblocktrans %}</span>
+      {% if can_apply_credit %}<form method="post" action="{% url 'payments:apply_credit' lease.public_id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Apply credit" %}</button></form>{% endif %}
+    </div>
+    {% endif %}
+    <ul class="list-unstyled small mb-0">
+      {% for payment in payments %}
+      <li class="d-flex justify-content-between gap-2"><span><a href="{% url 'payments:detail' payment.public_id %}">{{ payment.paid_at|date:"j M Y" }}</a> · {{ payment.get_method_display }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</span><span class="text-nowrap">{{ payment.amount|money:lease.currency }} {% include "payments/_status.html" %}</span></li>
+      {% empty %}<li class="text-muted">{% trans "No payments yet." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
 
   {# Balance brought forward #}
   {% if can_opening or opening %}

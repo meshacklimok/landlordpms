@@ -30,6 +30,7 @@ urlpatterns = [
     path("imports/", include("imports.urls")),
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
     path("billing/", include("billing.urls")),
+    path("payments/", include("payments.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

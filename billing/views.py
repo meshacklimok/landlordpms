@@ -16,6 +16,8 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from leases.models import Lease, LeaseTenant
 from leases.services import visible_leases
+from payments import selectors as payment_selectors
+from payments import services as payment_services
 from properties.views import _apply_errors
 
 from . import deposits, forms, invoicing, selectors, services
@@ -216,6 +218,10 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
             "can_opening": is_live and can(m, "invoices.adjust", prop),
             "can_record": is_live and can(m, "deposits.record", prop),
             "can_deduct": is_live and can(m, "deposits.deduct", prop),
+            "payments": payment_selectors.for_lease(lease)[:12] if can(m, "payments.view", prop) else None,
+            "credit": payment_services.unallocated_credit(lease),
+            "can_record_payment": is_live and can(m, "payments.record", prop),
+            "can_apply_credit": can(m, "payments.allocate", prop),
         }
         on_day = {"entry_date": today.isoformat()}
         if ctx["can_opening"]:

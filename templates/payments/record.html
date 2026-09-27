@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Record payment" %} · {{ lease.number }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'billing:lease_account' lease.public_id %}" class="small">← {% trans "Account" %} · {{ lease.number }}</a>
+  <h1 class="h4 mt-2 mb-0">{% trans "Record payment" %}</h1>
+  <div class="small text-muted mb-3">{{ lease.primary_tenant.name|default:"—" }} · {{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} ·
+    {% if balance < 0 %}{% blocktrans with amount=balance|money:lease.currency %}in credit {{ amount }}{% endblocktrans %}{% else %}{% blocktrans with amount=balance|money:lease.currency %}owes {{ amount }}{% endblocktrans %}{% endif %}</div>
+  {% if not will_confirm %}<div class="alert alert-info small">{% trans "A manager will review this payment before it counts towards the balance." %}</div>{% endif %}
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}
+      {% with form=form.main_form %}{% include "partials/form.html" %}{% endwith %}
+      {% include "payments/_allocation_fields.html" %}
+      <button class="btn btn-primary">{% if will_confirm %}{% trans "Record and issue receipt" %}{% else %}{% trans "Record for review" %}{% endif %}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

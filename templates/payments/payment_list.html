@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Payments" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h4 mb-0">{% trans "Payments" %}</h1>
+  {% if pending_count %}<a class="btn btn-warning btn-sm" href="{% url 'payments:review' %}">{% blocktrans count n=pending_count %}{{ n }} to review{% plural %}{{ n }} to review{% endblocktrans %}</a>{% endif %}
+</div>
+<p class="small text-muted">{% trans "To record a payment, open the tenant's lease account." %}</p>
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+  <input type="search" name="q" value="{{ q }}" class="form-control flex-grow-1 w-auto" placeholder="{% trans 'Search reference, receipt, lease, unit or tenant' %}" aria-label="{% trans 'Search' %}">
+  <select name="status" class="form-select w-auto" aria-label="{% trans 'Status' %}">
+    <option value="">{% trans "All" %}</option>
+    {% for value, label in status_filters %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
+</form>
+<div class="list-group">
+  {% for payment in page %}{% include "payments/_row.html" %}
+  {% empty %}
+  <div class="list-group-item text-muted">{% if q or status %}{% trans "No payments match your search." %}{% else %}{% trans "No payments yet." %}{% endif %}</div>
+  {% endfor %}
+</div>
+{% include "partials/pager.html" %}
+{% endblock %}

@@ -1,0 +1,13 @@
+{% load i18n %}{% with fields=form.allocation_fields %}{% if fields %}
+<details class="mb-3" {% for f in fields %}{% if f.value or f.errors %}open{% endif %}{% endfor %}>
+  <summary class="small">{% trans "Choose which invoices it pays" %}</summary>
+  <p class="small text-muted mt-2">{% trans "Leave all blank to pay the oldest invoice first. Anything not allocated is kept as credit." %}</p>
+  {% for field in fields %}
+  <div class="mb-2">
+    <label class="form-label small" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    <input type="text" inputmode="decimal" name="{{ field.html_name }}" id="{{ field.id_for_label }}" value="{{ field.value|default_if_none:'' }}" class="form-control form-control-sm{% if field.errors %} is-invalid{% endif %}">
+    {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+  </div>
+  {% endfor %}
+</details>
+{% endif %}{% endwith %}

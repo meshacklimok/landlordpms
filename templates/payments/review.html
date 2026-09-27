@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Payments to review" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'payments:list' %}" class="small">← {% trans "Payments" %}</a>
+  <h1 class="h4 mt-2">{% trans "Payments to review" %}</h1>
+  <p class="small text-muted">{% trans "Recorded by staff who cannot confirm payments. They do not count towards any balance until confirmed." %}</p>
+  <div class="list-group">
+    {% for payment in payments %}{% include "payments/_row.html" %}
+    {% empty %}<div class="list-group-item text-muted">{% trans "Nothing waiting for review." %}</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

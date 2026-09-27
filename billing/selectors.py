@@ -86,7 +86,7 @@ def statement(lease: Lease, *, start: datetime.date | None = None, end: datetime
     if end:
         entries = entries.filter(entry_date__lte=end)
     rows, balance = [], brought
-    for entry in entries.select_related("invoice").order_by("entry_date", "pk"):
+    for entry in entries.select_related("invoice", "payment").order_by("entry_date", "pk"):
         balance += entry.amount
         rows.append(StatementRow(entry, balance))
     return {"lease": lease, "start": start, "end": end, "brought_forward": brought, "rows": rows,
