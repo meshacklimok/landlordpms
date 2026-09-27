@@ -6,9 +6,14 @@ Flow: upload -> preview -> apply -> (undo within 24 hours).
 - Applying runs the rows again for real. Rows that fail are skipped and reported; the rest are kept.
 - Undo deletes the records the batch created, except any already used on a lease.
 - Codes and phones are normalised by the same services the forms use.
+- A batch belongs to whoever uploaded it. Members with every property can also act on anyone's batch;
+  members limited to some properties see only their own.
+- A preview holds the raw file, ID numbers included, so it expires after PREVIEW_TTL and
+  ``purge_stale_previews`` (run daily) empties it.
 """
 
 import csv
+import datetime
 import io
 import re
 from decimal import Decimal, InvalidOperation
@@ -35,6 +40,7 @@ Status = ImportBatch.Status
 
 MAX_BYTES = 1_000_000
 MAX_ROWS = 2000
+PREVIEW_TTL = datetime.timedelta(hours=24)
 
 COLUMNS = {
     Kind.UNITS: ("property_code", "unit_code", "building", "unit_type", "type_label", "list_rent"),
@@ -59,6 +65,28 @@ SENSITIVE = set(Tenant.SENSITIVE_FIELDS)
 
 def can_import(membership: Membership, kind: str) -> bool:
     return can(membership, CAPABILITY[kind])
+
+
+def visible_batches(membership: Membership, queryset=None):
+    """Batches this membership may see: its own, or everyone's with access to every property."""
+    qs = (queryset if queryset is not None else ImportBatch.objects.all()).filter(
+        organization=membership.organization, kind__in=[k for k in Kind.values if can_import(membership, k)])
+    return qs if membership.all_properties else qs.filter(created_by_id=membership.user_id)
+
+
+def can_access(membership: Membership, batch: ImportBatch) -> bool:
+    return (batch.organization_id == membership.organization_id and can_import(membership, batch.kind)
+            and (membership.all_properties or batch.created_by_id == membership.user_id))
+
+
+def is_expired(batch: ImportBatch) -> bool:
+    return batch.status == Status.PREVIEW and timezone.now() >= batch.created_at + PREVIEW_TTL
+
+
+def purge_stale_previews() -> int:
+    """Discards previews older than PREVIEW_TTL and drops their rows. Returns how many."""
+    return ImportBatch.objects.filter(status=Status.PREVIEW, created_at__lt=timezone.now() - PREVIEW_TTL).update(
+        status=Status.DISCARDED, rows=[], updated_at=timezone.now())
 
 
 def template_csv(kind: str) -> str:
@@ -247,6 +275,8 @@ def _locked(actor: Membership, batch: ImportBatch) -> ImportBatch:
     if batch.organization_id != actor.organization_id:
         raise PermissionDenied(_("That record belongs to another organization."))
     require(actor, CAPABILITY[batch.kind])
+    if not can_access(actor, batch):
+        raise PermissionDenied(_("Only the person who uploaded this import can use it."))
     return ImportBatch.objects.select_for_update().get(pk=batch.pk)
 
 
@@ -259,6 +289,8 @@ def apply_import(actor: Membership, batch: ImportBatch, request=None) -> ImportB
     locked = _locked(actor, batch)
     if locked.status != Status.PREVIEW:
         raise ValidationError(_("This import has already been applied or discarded."))
+    if is_expired(locked):
+        raise ValidationError(_("This preview is more than a day old. Upload the file again."))
     checked, created = _process(actor, locked.kind, locked.rows, request)
     ok, bad = _counts(checked)
     locked.rows, locked.created_ids, locked.ok_count, locked.error_count = _scrub(checked), created, ok, bad
@@ -291,9 +323,14 @@ def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[li
         raise ValidationError(_("An import can only be undone within 24 hours of applying it."))
     model = MODEL[locked.kind]
     removed, kept = [], []
+    visible = set(tenant_services.visible_tenants(actor, Tenant.all_objects.filter(pk__in=locked.created_ids))
+                  .values_list("pk", flat=True)) if locked.kind == Kind.TENANTS else set()
     for obj in model.all_objects.for_org(actor.organization).filter(pk__in=locked.created_ids):
         label = obj.payment_reference if locked.kind == Kind.UNITS else obj.name
         if locked.kind == Kind.UNITS and not can(actor, "units.manage", obj.property):
+            kept.append(label)
+            continue
+        if locked.kind == Kind.TENANTS and obj.pk not in visible:
             kept.append(label)
             continue
         if _in_use(locked.kind, obj):

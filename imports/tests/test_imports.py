@@ -245,3 +245,45 @@ def test_import_pages_are_gated(client, owner, prop):
     assert client.get(reverse("imports:list")).status_code == 403
     assert client.post(reverse("imports:upload", args=["tenants"]),
                        {"file": csv_file("name,phone\nA,0712345678\n")}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Who may see a batch, and how long a preview lives
+# ---------------------------------------------------------------------------
+
+
+def test_scoped_members_only_see_their_own_batches(client, owner, prop):
+    manager = fresh(add_member(owner.organization, "manager", all_properties=True))
+    scoped = fresh(add_member(owner.organization, "manager", properties=[prop]))
+    theirs = services.preview_import(manager, TENANTS, csv_file(TENANT_CSV))
+    mine = services.preview_import(scoped, TENANTS, csv_file("name,phone\nA,0733000111\n"))
+
+    assert list(services.visible_batches(scoped)) == [mine]
+    assert set(services.visible_batches(owner)) == {theirs, mine}
+    for action in (services.apply_import, services.discard_import):
+        with pytest.raises(PermissionDenied):
+            action(scoped, theirs)
+    applied = services.apply_import(manager, theirs)
+    with pytest.raises(PermissionDenied):
+        services.undo_import(scoped, applied)
+
+    login(client, scoped)
+    assert client.get(reverse("imports:detail", args=[theirs.public_id])).status_code == 404
+    assert client.post(reverse("imports:detail", args=[theirs.public_id]), {"action": "undo"}).status_code == 404
+    assert Tenant.objects.filter(name="Wanjiku Kamau").exists()
+    assert list(client.get(reverse("imports:list")).context["page"]) == [mine]
+
+
+def test_stale_previews_expire_and_are_purged(owner):
+    batch = services.preview_import(owner, TENANTS, csv_file(TENANT_CSV))
+    ImportBatch.objects.filter(pk=batch.pk).update(created_at=timezone.now() - datetime.timedelta(hours=25))
+    batch.refresh_from_db()
+    with pytest.raises(ValidationError, match="more than a day old"):
+        services.apply_import(owner, batch)
+    fresh_batch = services.preview_import(owner, TENANTS, csv_file(TENANT_CSV))
+
+    assert services.purge_stale_previews() == 1
+    batch.refresh_from_db()
+    assert batch.status == ImportBatch.Status.DISCARDED and batch.rows == []
+    fresh_batch.refresh_from_db()
+    assert fresh_batch.status == ImportBatch.Status.PREVIEW and fresh_batch.rows

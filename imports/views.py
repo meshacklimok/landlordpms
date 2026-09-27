@@ -42,8 +42,7 @@ class ImportListView(OrgMemberRequiredMixin, View):
         kinds = _kinds(request.membership)
         if not kinds:
             raise PermissionDenied("imports")
-        batches = ImportBatch.objects.filter(organization=request.organization, kind__in=kinds).select_related(
-            "created_by").defer("rows")
+        batches = services.visible_batches(request.membership).select_related("created_by").defer("rows")
         page = Paginator(batches, 25).get_page(request.GET.get("page"))
         cards = [(slug, kind) for slug, kind in KINDS.items() if kind in kinds]
         return render(request, self.template_name, {"page": page, "cards": cards, "form": UploadForm()})
@@ -76,11 +75,7 @@ class ImportDetailView(OrgMemberRequiredMixin, View):
     template_name = "imports/import_detail.html"
 
     def get_batch(self, request, public_id) -> ImportBatch:
-        batch = get_object_or_404(ImportBatch.objects.filter(organization=request.organization),
-                                  public_id=public_id)
-        if not services.can_import(request.membership, batch.kind):
-            raise Http404
-        return batch
+        return get_object_or_404(services.visible_batches(request.membership), public_id=public_id)
 
     def get(self, request, public_id):
         batch = self.get_batch(request, public_id)
@@ -92,7 +87,8 @@ class ImportDetailView(OrgMemberRequiredMixin, View):
         for row in page:
             row["cells"] = [row["data"].get(c, "") for c in columns]
         return render(request, self.template_name, {
-            "batch": batch, "page": page, "columns": columns, "only_errors": only_errors,
+            "batch": batch, "expired": services.is_expired(batch), "page": page, "columns": columns,
+            "only_errors": only_errors,
         })
 
     def post(self, request, public_id):

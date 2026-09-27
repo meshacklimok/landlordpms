@@ -13,9 +13,10 @@
 <div class="alert {% if batch.error_count %}alert-warning{% else %}alert-info{% endif %}">
   {% blocktrans with ok=batch.ok_count bad=batch.error_count %}{{ ok }} rows are ready to import. {{ bad }} rows have errors and will be skipped.{% endblocktrans %}
   {% trans "Nothing has been added yet." %}
+  {% if expired %}{% trans "This preview is more than a day old. Upload the file again to import it." %}{% endif %}
 </div>
 <div class="d-flex gap-2 mb-3">
-  {% if batch.ok_count %}
+  {% if batch.ok_count and not expired %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply">
     <button class="btn btn-primary btn-sm">{% blocktrans count n=batch.ok_count %}Import {{ n }} row{% plural %}Import {{ n }} rows{% endblocktrans %}</button>
   </form>
