@@ -123,6 +123,25 @@ class Payment(PublicIdModel, TimeStampedModel):
     def __str__(self):
         return f"{self.get_method_display()} {self.amount}"
 
+    # REVERSED covers two outcomes: turned down in review (never confirmed) or undone after confirming.
+    STATES = {
+        "pending": _("Pending review"),
+        "confirmed": _("Confirmed"),
+        "rejected": _("Rejected"),
+        "reversed": _("Reversed"),
+    }
+
+    @property
+    def state(self) -> str:
+        if self.status == self.Status.PENDING_REVIEW:
+            return "pending"
+        if self.status == self.Status.CONFIRMED:
+            return "confirmed"
+        return "reversed" if self.confirmed_at else "rejected"
+
+    def get_state_display(self) -> str:
+        return self.STATES[self.state]
+
     @property
     def allocated(self):
         return sum((a.amount for a in self.allocations.all()), ZERO)

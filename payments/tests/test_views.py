@@ -167,3 +167,93 @@ def test_out_of_scope_is_404_and_no_capability_is_403(client, owner, prop, lease
     stranger = make_org()
     login(client, stranger)
     assert client.get(detail(payment)).status_code == 404
+
+
+def test_list_filters_tabs_and_totals(client, owner, prop, lease):
+    login(client, owner)
+    pay(owner, lease, "5000", method="MPESA", reference="QAB1")
+    pay(owner, lease, "700", method="CASH")
+    url = reverse("payments:list")
+    r = client.get(url, {"method": "MPESA", "status": "confirmed", "property": prop.public_id,
+                         "date_from": "2026-02-01", "date_to": "2026-02-28"})
+    assert r.status_code == 200 and [p.reference for p in r.context["page"]] == ["QAB1"]
+    assert r.context["totals"]["confirmed"].amounts == {"KES": Decimal("5000.00")}
+    # Bad values are dropped, not errors.
+    r = client.get(url, {"method": "BITCOIN", "date_from": "yesterday", "property": "nope"})
+    assert r.status_code == 200 and len(r.context["page"]) == 2
+    r = client.get(url, {"status": "rejected"})
+    assert r.status_code == 200 and not r.context["page"].object_list
+    assert r.context["totals"]["all"].count == 2  # tab counts ignore the status filter
+
+
+def test_export_csv_follows_filters_scope_and_quotes_formulas(client, owner, lease):
+    pay(owner, lease, "5000", method="MPESA", reference="=HYPERLINK(1)")
+    pay(owner, lease, "700", method="CASH")
+    stranger = make_org()
+    pay(stranger, make_lease(stranger, make_property(stranger.organization)), "999", reference="THEIRS")
+    login(client, owner)
+    r = client.get(reverse("payments:export"), {"method": "CASH"})
+    assert r.status_code == 200 and r["Content-Type"].startswith("text/csv")
+    assert "attachment" in r["Content-Disposition"]
+    body = b"".join(r.streaming_content).decode("utf-8")
+    rows = body.lstrip("\ufeff").splitlines()
+    assert rows[0].startswith("Date paid,Status,Amount") and len(rows) == 2 and "700.00" in rows[1]
+    body = b"".join(client.get(reverse("payments:export")).streaming_content).decode("utf-8")
+    assert "'=HYPERLINK(1)" in body and "THEIRS" not in body
+    client.logout()
+    login(client, add_member(owner.organization, "maintenance_manager", all_properties=True))
+    assert client.get(reverse("payments:export")).status_code == 403
+
+
+def test_lease_picker_lists_and_searches(client, owner, prop, lease):
+    other = make_lease(owner, prop, code="B7")
+    bill(lease, FEB)
+    login(client, owner)
+    r = client.get(reverse("payments:pick_lease"))
+    assert r.status_code == 200 and r.context["leases"] == [lease, other]
+    r = client.get(reverse("payments:pick_lease"), {"q": "B7"})
+    assert r.context["leases"] == [other]
+    client.logout()
+    login(client, add_member(owner.organization, "viewer", all_properties=True))
+    assert client.get(reverse("payments:pick_lease")).status_code == 403
+
+
+def test_record_warns_on_a_reused_reference(client, owner, lease):
+    login(client, owner)
+    first = pay(owner, lease, "5000", reference="QAB1")
+    data = {"amount": "5000", "method": "MPESA", "paid_at": "2026-02-02", "reference": "qab1"}
+    r = client.post(record(lease), data)
+    assert r.status_code == 200 and r.context["form"].visible_duplicate == first
+    assert Payment.objects.count() == 1
+    r = client.post(record(lease), {**data, "allow_duplicate": "on"})
+    assert r.status_code == 302 and Payment.objects.count() == 2
+    assert first.reference.encode() in client.get(detail(first)).content  # the detail flags its twin
+
+
+def test_bulk_confirm_from_the_review_queue(client, owner, lease):
+    bill(lease, FEB)
+    accountant = add_member(owner.organization, "accountant", all_properties=True)
+    a, b, c = (pay(accountant, lease, amount) for amount in ("1000", "2000", "3000"))
+    login(client, accountant)
+    assert client.post(reverse("payments:review"), {"payment": [a.public_id]}).status_code == 403
+    client.logout()
+    login(client, owner)
+    r = client.post(reverse("payments:review"), {"payment": [a.public_id, b.public_id]})
+    assert r.status_code == 302 and r["Location"] == reverse("payments:review")
+    for p in (a, b, c):
+        p.refresh_from_db()
+    assert (a.status, b.status, c.status) == ("CONFIRMED", "CONFIRMED", "PENDING_REVIEW")
+    assert a.receipt.number and lease_balance(lease) == Decimal("12000.00")
+    # Already-confirmed or unknown ids are ignored, not errors.
+    client.post(reverse("payments:review"), {"payment": [a.public_id, "not-a-uuid"]})
+    assert list(client.get(reverse("payments:review")).context["payments"]) == [c]
+
+
+def test_detail_shows_rejection(client, owner, lease):
+    accountant = add_member(owner.organization, "accountant", all_properties=True)
+    payment = pay(accountant, lease, "900")
+    login(client, owner)
+    r = client.post(detail(payment), {"action": "reject", "reject-reason": "Never arrived"})
+    assert r.status_code == 302
+    r = client.get(detail(payment))
+    assert r.status_code == 200 and b"Never arrived" in r.content and b"Rejected" in r.content
