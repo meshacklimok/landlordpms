@@ -101,11 +101,11 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 ## Phase 4 — Payments and receipts
 - [ ] Bank payments: `method = BANK`, CSV statement import through the matching engine
 - [ ] P&L, cash flow and aged receivables by property
-- [ ] PaymentAccount, PropertyPaymentAccount (+ admin UI)
-- [ ] Payment, PaymentAllocation; partial, over-payment, credit
-- [ ] Reversal flow; caretaker cash review queue
-- [ ] Receipt numbering and PDF
-- [ ] Tests: allocation, reversal, credit
+- [x] PaymentAccount, PropertyPaymentAccount (+ admin UI; in-app page still to do)
+- [x] Payment, PaymentAllocation; partial, over-payment, credit
+- [x] Reversal flow; caretaker cash review queue (any recorder without `payments.confirm`; give a caretaker `payments.record` to use it)
+- [x] Receipt numbering and PDF
+- [x] Tests: allocation, reversal, credit
 
 ## Phase 5 — Communications
 - [ ] WhatsApp adapter (moved earlier)

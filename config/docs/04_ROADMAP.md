@@ -30,9 +30,9 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 **Exit:** invoices generate automatically and balances are always derivable from the ledger.
 
 ## Phase 4 — Payments (manual) & receipts
-- [ ] Record payment, allocate to invoices, partial/over-payment
-- [ ] Reversal flow
-- [ ] PDF/shareable receipts
+- [x] Record payment, allocate to invoices, partial/over-payment
+- [x] Reversal flow
+- [x] PDF/shareable receipts (PDF done; sending to tenants comes with Phase 5 SMS)
 **Exit:** first pilot landlord runs a real rent cycle.
 
 ## Phase 5 — Notifications
