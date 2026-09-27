@@ -3,3 +3,4 @@ psycopg[binary]==3.3.5
 Pillow==12.3.0
 python-dotenv==1.2.3
 redis==8.1.0
+reportlab==5.0.1

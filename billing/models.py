@@ -237,6 +237,9 @@ class LedgerEntry(AppendOnlyModel):
     amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=3, default="KES")
     invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    # Set for PAYMENT and PAYMENT_REVERSAL kinds (Phase 4).
+    payment = models.ForeignKey("payments.Payment", on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="+")
     # A REVERSAL points at the entry it cancels; each entry is reversed at most once.
     reversal_of = models.OneToOneField("self", on_delete=models.PROTECT, null=True, blank=True,
                                        related_name="reversed_by")
@@ -263,9 +266,14 @@ class LedgerEntry(AppendOnlyModel):
                 name="billing_ledger_reversal_has_target"),
             models.CheckConstraint(condition=~Q(kind__in=["INVOICE", "INVOICE_VOID"]) | Q(invoice__isnull=False),
                                    name="billing_ledger_invoice_kinds_link"),
+            models.CheckConstraint(condition=~Q(kind__in=["PAYMENT", "PAYMENT_REVERSAL"]) | Q(payment__isnull=False),
+                                   name="billing_ledger_payment_kinds_link"),
             # An invoice is posted once and voided once.
             models.UniqueConstraint("invoice", "kind", condition=Q(kind__in=["INVOICE", "INVOICE_VOID"]),
                                     name="billing_ledger_invoice_posted_once"),
+            # A payment is posted once and reversed once.
+            models.UniqueConstraint("payment", "kind", condition=Q(kind__in=["PAYMENT", "PAYMENT_REVERSAL"]),
+                                    name="billing_ledger_payment_posted_once"),
         ]
         indexes = [models.Index(fields=["lease", "entry_date"]), models.Index(fields=["organization", "kind"])]
 
