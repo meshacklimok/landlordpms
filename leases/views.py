@@ -168,7 +168,7 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
             "charges": lease.charges.select_related("charge_type"),
             "payers": lease.payers.all(),
             "can_edit_draft": lease.is_draft and can_draft,
-            "can_payers": is_open and can_draft,
+            "can_payers": services.can_manage_parties(m, lease),
             "can_charges": can_charges,
             "can_change_rent": lease.status == Lease.Status.ACTIVE and can(m, "leases.change_rent", prop),
             "can_see_tenants": can(m, "tenants.view"),

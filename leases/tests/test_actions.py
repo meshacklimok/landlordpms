@@ -130,6 +130,16 @@ def test_notice_to_vacate(owner, unit, tenant):
     assert AuditEvent.objects.filter(action="lease.notice_withdraw").exists()
 
 
+def test_closing_removes_charges_that_never_started(owner, unit, tenant):
+    lease = draft(owner, unit, [tenant])
+    services.add_charge(owner, lease, charge_type=water(owner.organization), amount=500, active_from=TODAY + 10 * DAY)
+    services.activate_lease(owner, lease)
+    services.end_lease(owner, lease, ended_on=TODAY - DAY)
+    assert not lease.charges.exists()
+    event = AuditEvent.objects.filter(action="lease.end").get()
+    assert event.changes["charges_removed"][0] == [f"Water 500.00 from {TODAY + 10 * DAY}"]
+
+
 def test_end_lease_frees_the_unit_and_stops_charges(owner, unit, tenant):
     lease = draft(owner, unit, [tenant])
     charge = services.add_charge(owner, lease, charge_type=water(owner.organization), amount=500)

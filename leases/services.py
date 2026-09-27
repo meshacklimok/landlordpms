@@ -117,6 +117,23 @@ def _require_charges(actor: Membership, lease: Lease) -> None:
     require(actor, "charges.manage", prop)
 
 
+def can_manage_parties(membership: Membership, lease: Lease) -> bool:
+    """Who may change the primary tenant and the extra payers.
+
+    On a draft that is whoever drafts it. Once issued, the primary tenant receives the invoices and
+    payers' phones are matched to payments, so it takes the right to activate leases.
+    """
+    if lease.status not in OPEN_STATUSES or lease.organization_id != membership.organization_id:
+        return False
+    return can(membership, "leases.draft" if lease.is_draft else "leases.activate", lease.unit.property)
+
+
+def _require_parties(actor: Membership, lease: Lease) -> None:
+    _same_org(actor, lease)
+    _require_open(lease)
+    require(actor, "leases.draft" if lease.is_draft else "leases.activate", lease.unit.property)
+
+
 def _require_open(lease: Lease) -> None:
     if lease.status not in OPEN_STATUSES:
         raise ValidationError(_("This lease has closed."))
@@ -247,6 +264,7 @@ def update_draft_lease(actor: Membership, lease: Lease, *, request=None, rent=No
                 value = (value or "").strip()
             setattr(lease, k, value)
     _check_dates(lease)
+    _check_charges_fit(lease)
     lease.save()
     changes = audit.diff(before, _snapshot(lease))
 
@@ -263,6 +281,20 @@ def update_draft_lease(actor: Membership, lease: Lease, *, request=None, rent=No
     if changes:
         _audit("lease.update", actor, lease, request, changes)
     return lease
+
+
+def _check_charges_fit(lease: Lease) -> None:
+    """New draft dates must still hold every charge. Charges starting early are moved to the start."""
+    for charge in lease.charges.select_related("charge_type"):
+        if charge.active_to and charge.active_to < lease.start_date:
+            raise ValidationError({"start_date": _("%(name)s ends on %(day)s, before this start date. "
+                                                   "Remove that charge first.")
+                                   % {"name": charge.charge_type.name, "day": charge.active_to.strftime("%d %b %Y")}})
+        if lease.end_date and charge.active_from > lease.end_date:
+            raise ValidationError({"end_date": _("%(name)s starts on %(day)s, after this end date. "
+                                                 "Remove that charge first.")
+                                   % {"name": charge.charge_type.name,
+                                      "day": charge.active_from.strftime("%d %b %Y")}})
 
 
 @transaction.atomic
@@ -308,8 +340,7 @@ def remove_lease_tenant(actor: Membership, lease: Lease, tenant: Tenant, request
 
 @transaction.atomic
 def set_primary_tenant(actor: Membership, lease: Lease, tenant: Tenant, request=None) -> None:
-    _require(actor, "leases.draft", lease)
-    _require_open(lease)
+    _require_parties(actor, lease)
     _same_org(actor, tenant)
     link = lease.lease_tenants.filter(tenant=tenant).first()
     if link is None:
@@ -356,6 +387,20 @@ def add_rent_change(actor: Membership, lease: Lease, *, effective_from: datetime
 # ---------------------------------------------------------------------------
 
 
+def _check_charge_clash(lease: Lease, charge_type: ChargeType, active_from, active_to, *, field: str,
+                        exclude: LeaseCharge | None = None) -> None:
+    """One charge of a type at a time, so no day is billed twice."""
+    clash = lease.charges.filter(charge_type=charge_type).filter(
+        Q(active_to__isnull=True) | Q(active_to__gte=active_from))
+    if active_to:
+        clash = clash.filter(active_from__lte=active_to)
+    if exclude is not None:
+        clash = clash.exclude(pk=exclude.pk)
+    if clash.exists():
+        raise ValidationError({field: _("This lease already has %(name)s for those dates.")
+                               % {"name": charge_type.name}})
+
+
 @transaction.atomic
 def add_charge(actor: Membership, lease: Lease, *, charge_type: ChargeType, amount, active_from=None,
                active_to=None, request=None) -> LeaseCharge:
@@ -374,13 +419,7 @@ def add_charge(actor: Membership, lease: Lease, *, charge_type: ChargeType, amou
         raise ValidationError({"active_from": _("A charge cannot start after the lease ends.")})
     if active_to and active_to < active_from:
         raise ValidationError({"active_to": _("The end must be on or after the start.")})
-    clash = lease.charges.filter(charge_type=charge_type).filter(
-        Q(active_to__isnull=True) | Q(active_to__gte=active_from))
-    if active_to:
-        clash = clash.filter(active_from__lte=active_to)
-    if clash.exists():
-        raise ValidationError({"charge_type": _("This lease already has %(name)s for those dates.")
-                               % {"name": charge_type.name}})
+    _check_charge_clash(lease, charge_type, active_from, active_to, field="charge_type")
     charge = LeaseCharge.objects.create(organization=lease.organization, lease=lease, charge_type=charge_type,
                                         amount=amount, active_from=active_from, active_to=active_to,
                                         created_by=actor.user)
@@ -403,6 +442,8 @@ def end_charge(actor: Membership, charge: LeaseCharge, *, active_to: datetime.da
         return
     if active_to < charge.active_from:
         raise ValidationError({"active_to": _("The end must be on or after the start.")})
+    # Moving the end later can run into the next charge of the same type.
+    _check_charge_clash(lease, charge.charge_type, charge.active_from, active_to, field="active_to", exclude=charge)
     old = charge.active_to
     charge.active_to = active_to
     charge.save(update_fields=["active_to", "updated_at"])
@@ -419,8 +460,7 @@ def end_charge(actor: Membership, charge: LeaseCharge, *, active_to: datetime.da
 
 @transaction.atomic
 def add_payer(actor: Membership, lease: Lease, *, phone: str, name="", request=None) -> LeasePayer:
-    _require(actor, "leases.draft", lease)
-    _require_open(lease)
+    _require_parties(actor, lease)
     try:
         phone = normalize_phone(phone)
     except InvalidPhoneNumber as exc:
@@ -440,8 +480,7 @@ def add_payer(actor: Membership, lease: Lease, *, phone: str, name="", request=N
 @transaction.atomic
 def remove_payer(actor: Membership, payer: LeasePayer, request=None) -> None:
     lease = payer.lease
-    _require(actor, "leases.draft", lease)
-    _require_open(lease)
+    _require_parties(actor, lease)
     phone = payer.phone
     payer.delete()
     _audit("lease.payer_remove", actor, lease, request, {"payer": [phone, None]})
@@ -480,7 +519,10 @@ def _tenants_of(*leases) -> list[Tenant]:
 
 def _close(actor: Membership, lease: Lease, *, status: str, ended_on: datetime.date, reason: str, action: str,
            request=None, extra=None) -> None:
-    """Closes an active lease and stops its recurring charges on its last day."""
+    """Closes an active lease and stops its recurring charges on its last day.
+
+    Charges that were due to start after that day never applied, so they are removed.
+    """
     lease.status = status
     lease.ended_on = ended_on
     lease.end_reason = reason
@@ -490,9 +532,14 @@ def _close(actor: Membership, lease: Lease, *, status: str, ended_on: datetime.d
     for charge in charges:
         charge.active_to = ended_on
         charge.save(update_fields=["active_to", "updated_at"])
+    unstarted = list(lease.charges.filter(active_from__gt=ended_on).select_related("charge_type"))
+    for charge in unstarted:
+        charge.delete()
+    removed = [f"{c.charge_type.name} {c.amount} from {c.active_from}" for c in unstarted]
     _audit(action, actor, lease, request, {
         "status": [Lease.Status.ACTIVE, status], "ended_on": [None, str(ended_on)],
-        **({"reason": [None, reason]} if reason else {}), **(extra or {}),
+        **({"reason": [None, reason]} if reason else {}),
+        **({"charges_removed": [removed, None]} if removed else {}), **(extra or {}),
     })
 
 

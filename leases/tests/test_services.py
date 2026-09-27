@@ -265,6 +265,50 @@ def test_ending_a_draft_charge_removes_it(owner, unit, tenant):
     assert not lease.charges.exists()
 
 
+def test_moving_a_charge_end_cannot_overlap_the_next_one(owner, unit, tenant):
+    lease = activate(draft(owner, unit, [tenant]))
+    kind = water(owner.organization)
+    first = services.add_charge(owner, lease, charge_type=kind, amount=500, active_to=D(2026, 6, 30))
+    services.add_charge(owner, lease, charge_type=kind, amount=700, active_from=D(2026, 7, 1))
+    with pytest.raises(ValidationError, match="already has"):
+        services.end_charge(owner, first, active_to=D(2026, 8, 31))
+    first.refresh_from_db()
+    assert first.active_to == D(2026, 6, 30)
+    services.end_charge(owner, first, active_to=D(2026, 6, 15))
+
+
+def test_draft_dates_must_still_hold_its_charges(owner, unit, tenant):
+    lease = draft(owner, unit, [tenant])
+    kind = water(owner.organization)
+    services.add_charge(owner, lease, charge_type=kind, amount=500, active_to=D(2026, 3, 31))
+    services.add_charge(owner, lease, charge_type=kind, amount=600, active_from=D(2026, 11, 1))
+    with pytest.raises(ValidationError) as exc:
+        services.update_draft_lease(owner, lease, start_date=D(2026, 4, 1))
+    assert "start_date" in exc.value.message_dict
+    with pytest.raises(ValidationError) as exc:
+        services.update_draft_lease(owner, Lease.objects.get(pk=lease.pk), end_date=D(2026, 10, 31))
+    assert "end_date" in exc.value.message_dict
+    assert Lease.objects.get(pk=lease.pk).start_date == JAN_1
+
+
+def test_primary_tenant_and_payers_on_an_issued_lease_need_activate(owner, unit, tenant):
+    agent = fresh(add_member(owner.organization, "leasing_agent", all_properties=True))
+    other = tenant_services.create_tenant(owner, name="Otieno", phone="0722000111")
+    lease = draft(owner, unit, [tenant, other])
+    services.set_primary_tenant(agent, lease, other)
+    payer = services.add_payer(agent, lease, phone="0799111222")
+    activate(lease)
+    assert not services.can_manage_parties(agent, lease) and services.can_manage_parties(owner, lease)
+    with pytest.raises(PermissionDenied):
+        services.set_primary_tenant(agent, lease, tenant)
+    with pytest.raises(PermissionDenied):
+        services.add_payer(agent, lease, phone="0799333444")
+    with pytest.raises(PermissionDenied):
+        services.remove_payer(agent, payer)
+    services.set_primary_tenant(owner, lease, tenant)
+    services.add_payer(owner, lease, phone="0799333444")
+
+
 def test_payers(owner, unit, tenant):
     lease = draft(owner, unit, [tenant])
     payer = services.add_payer(owner, lease, phone="0799 111 222", name="Employer")
