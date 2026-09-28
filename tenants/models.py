@@ -44,6 +44,9 @@ class Tenant(PublicIdModel, TimeStampedModel, ArchivableModel):
     phone = models.CharField(_("phone"), max_length=16, help_text=_("E.164, e.g. +254712345678"))
     alt_phone = models.CharField(_("other phone"), max_length=16, blank=True)
     email = models.EmailField(_("email"), blank=True)
+    # Language for SMS and other messages (D-044).
+    language = models.CharField(_("message language"), max_length=2,
+                                choices=[("en", _("English")), ("sw", _("Swahili"))], default="en")
     status = models.CharField(_("status"), max_length=10, choices=Status.choices, default=Status.PROSPECT,
                               editable=False)
 

@@ -110,10 +110,10 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 ## Phase 5 — Communications
 - [ ] WhatsApp adapter (moved earlier)
 - [ ] Segmented announcements
-- [ ] NotificationType catalog, OrganizationNotificationRule, NotificationPreference, ConsentRecord
-- [ ] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability
+- [x] NotificationType catalog (in code), OrganizationNotificationRule, NotificationPreference, ConsentRecord (D-044)
+- [x] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability; `send_due_messages` (schedule every few minutes)
 - [ ] Owner notification settings page; tenant opt-out per channel
-- [ ] Message, MessageTemplate, provider adapter interface
+- [x] Message log, MessageTemplate overrides (safe `{field}` rendering), provider adapter interface
 - [ ] SMS adapter (Africa's Talking), delivery status, opt-out
 - [ ] Triggers: invoice issued, due soon, payment received, overdue
 - [ ] In-app notifications

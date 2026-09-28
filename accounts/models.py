@@ -4,6 +4,8 @@ User ≠ Organization ≠ Role (doc 11 §0, D-014). Roles are per-organization c
 of platform templates and fully editable (doc 13, D-023, D-024).
 """
 
+import datetime
+
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
@@ -174,6 +176,9 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     invoice_lead_days = models.PositiveSmallIntegerField(
         _("invoice lead days"), default=5, validators=[MaxValueValidator(28)],
         help_text=_("How many days before the month starts its invoices go out."))
+    # Notifications (doc 11 §27, D-044): non-urgent messages wait until quiet hours end.
+    quiet_hours_start = models.TimeField(_("quiet hours start"), default=datetime.time(21, 0))
+    quiet_hours_end = models.TimeField(_("quiet hours end"), default=datetime.time(7, 0))
     # Branding for agencies and white-label (D-040): design-in only. Receipts, statements and
     # public pages will use these; there is no settings page yet.
     brand_name = models.CharField(_("brand name"), max_length=150, blank=True,

@@ -6,6 +6,7 @@ The Africa's Talking adapter arrives in Phase 5.
 
 import logging
 from dataclasses import dataclass
+from decimal import Decimal
 
 from django.conf import settings
 from django.utils.module_loading import import_string
@@ -19,6 +20,8 @@ class SmsResult:
     provider: str
     provider_id: str = ""
     error: str = ""
+    # What the provider charged, if it says.
+    cost: Decimal | None = None
 
 
 class SmsSender:
