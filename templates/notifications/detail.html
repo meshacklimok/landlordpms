@@ -32,7 +32,7 @@
   <div class="card shadow-sm"><div class="card-body">
     <dl class="row small mb-0">
       <dt class="col-4">{% trans "To" %}</dt>
-      <dd class="col-8"><a href="{% url 'tenants:detail' message.tenant.public_id %}">{{ message.tenant.name }}</a>{% if message.to %} · {{ message.to }}{% endif %}</dd>
+      <dd class="col-8">{% if message.tenant %}<a href="{% url 'tenants:detail' message.tenant.public_id %}">{{ message.tenant.name }}</a>{% if message.to %} · {{ message.to }}{% endif %}{% else %}{% trans "M-Pesa payer" %} · {{ message.to }}{% endif %}</dd>
       <dt class="col-4">{% trans "Language" %}</dt><dd class="col-8">{{ message.get_language_display }}</dd>
       {% if message.lease %}<dt class="col-4">{% trans "Lease" %}</dt><dd class="col-8"><a href="{% url 'leases:detail' message.lease.public_id %}">{{ message.lease.unit.property.name }} · {{ message.lease.unit.code }}</a></dd>{% endif %}
       {% if message.invoice %}<dt class="col-4">{% trans "Invoice" %}</dt><dd class="col-8"><a href="{% url 'billing:invoice' message.invoice.public_id %}">{{ message.invoice.number|default:_("Draft") }}</a></dd>{% endif %}

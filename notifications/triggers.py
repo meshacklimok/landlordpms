@@ -127,6 +127,49 @@ def payment_pending_review(payment) -> int:
 
 
 # ---------------------------------------------------------------------------
+# M-Pesa (D-045 item 7)
+# ---------------------------------------------------------------------------
+
+
+def mpesa_unmatched(tx) -> int:
+    """In-app, to everyone who may match it: the same people who see it in their inbox."""
+    from accounts.models import Membership
+    from mpesa import inbox
+
+    org = Organization.objects.get(pk=tx.organization_id)
+    context = {"amount": format_money(tx.amount, org.currency), "payer": tx.payer_name or tx.payer_phone or "?",
+               "reference": tx.bill_ref, "account": str(tx.payment_account), "trans_id": tx.trans_id}
+    memberships = (Membership.objects.filter(organization=org, is_active=True, user__is_active=True)
+                   .select_related("user", "organization", "role"))
+    sent = 0
+    for m in memberships:
+        if not inbox.visible_transactions(m, "mpesa.match").filter(pk=tx.pk).exists():
+            continue
+        if notify(org, "mpesa_unmatched", user=m.user, context=context,
+                  dedupe_key=f"mpesa_unmatched:{tx.pk}:{m.user.pk}"):
+            sent += 1
+    return sent
+
+
+def payer_unmatched(tx):
+    """One SMS to whoever paid, when M-Pesa gave their real number (not a hash).
+
+    A number that belongs to exactly one tenant goes to that tenant (their language and consent);
+    otherwise to the bare number, which is still refused if any tenant with it has opted out.
+    """
+    from tenants.models import Tenant
+
+    if not tx.payer_phone:
+        return None
+    org = Organization.objects.get(pk=tx.organization_id)
+    tenants = list(Tenant.objects.filter(organization=org, phone=tx.payer_phone)[:2])
+    recipient = {"tenant": tenants[0]} if len(tenants) == 1 else {"phone": tx.payer_phone}
+    context = {"amount": format_money(tx.amount, org.currency), "trans_id": tx.trans_id,
+               "paid_on": _date(timezone.localdate(tx.paid_at))}
+    return notify(org, "payment_unmatched", context=context, dedupe_key=f"payment_unmatched:{tx.pk}", **recipient)
+
+
+# ---------------------------------------------------------------------------
 # Daily reminders
 # ---------------------------------------------------------------------------
 

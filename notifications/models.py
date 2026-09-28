@@ -17,6 +17,8 @@ from . import catalog
 
 # Exactly one of tenant or user is set on recipient-bound rows.
 _ONE_RECIPIENT = (Q(tenant__isnull=False) & Q(user__isnull=True)) | (Q(tenant__isnull=True) & Q(user__isnull=False))
+# A message may also go to a bare number (an M-Pesa payer who is not a tenant).
+_MESSAGE_RECIPIENT = _ONE_RECIPIENT | (Q(tenant__isnull=True) & Q(user__isnull=True) & ~Q(to=""))
 
 
 class OrganizationNotificationRule(TimeStampedModel):
@@ -215,7 +217,7 @@ class Message(PublicIdModel):
     class Meta:
         ordering = ["-created_at", "-pk"]
         constraints = [
-            models.CheckConstraint(condition=_ONE_RECIPIENT, name="notifications_message_one_recipient"),
+            models.CheckConstraint(condition=_MESSAGE_RECIPIENT, name="notifications_message_one_recipient"),
             models.UniqueConstraint("organization", "dedupe_key", condition=~Q(dedupe_key=""),
                                     name="notifications_message_dedupe_unique"),
         ]
@@ -227,4 +229,4 @@ class Message(PublicIdModel):
         ]
 
     def __str__(self):
-        return f"{self.type} → {self.tenant or self.user} ({self.status})"
+        return f"{self.type} → {self.tenant or self.user or self.to} ({self.status})"

@@ -93,7 +93,9 @@ def consent(org, channel: str, *, tenant=None, user=None) -> bool | None:
     return None if latest is None else latest.granted
 
 
-def _address(channel: str, tenant, user) -> str:
+def _address(channel: str, tenant, user, phone: str = "") -> str:
+    if phone:
+        return phone if channel == catalog.SMS else ""
     person = tenant if tenant is not None else user
     if channel in (catalog.SMS, catalog.WHATSAPP):
         return person.phone or ""
@@ -102,8 +104,27 @@ def _address(channel: str, tenant, user) -> str:
     return ""
 
 
-def _blocked(org, ntype, channel: str, tenant, user) -> str | None:
+def _phone_blocked(org, ntype, channel: str, phone: str) -> str | None:
+    """A bare number (e.g. an M-Pesa payer): SMS only, and not if a tenant with that number stopped it."""
+    from tenants.models import Tenant
+
+    if channel != catalog.SMS:
+        return Skip.CHANNEL_UNAVAILABLE
+    if not sms_available(org):
+        return Skip.CHANNEL_UNAVAILABLE
+    if not ntype.mandatory:
+        for tenant in Tenant.all_objects.filter(organization=org, phone=phone):
+            if opted_out(org, ntype, channel, tenant=tenant):
+                return Skip.OPTED_OUT
+            if consent(org, channel, tenant=tenant) is False:
+                return Skip.NO_CONSENT
+    return None
+
+
+def _blocked(org, ntype, channel: str, tenant, user, phone: str = "") -> str | None:
     """Why this channel cannot be used for this recipient, or None if it can."""
+    if phone:
+        return _phone_blocked(org, ntype, channel, phone)
     if channel == catalog.IN_APP and user is None:
         return Skip.CHANNEL_UNAVAILABLE  # tenants have no in-app inbox until the portal (Phase 7)
     if channel == catalog.SMS and not sms_available(org):
@@ -146,8 +167,8 @@ def quiet_until(org: Organization, now: datetime.datetime) -> datetime.datetime 
 # ---------------------------------------------------------------------------
 
 
-def _choose(org, ntype, rule: Rule, tenant, user,
-            language: str) -> tuple[tuple[str, str] | None, str | None, str | None]:
+def _choose(org, ntype, rule: Rule, tenant, user, language: str,
+            phone: str = "") -> tuple[tuple[str, str] | None, str | None, str | None]:
     """The first allowed channel of the rule with its text; or None, the reason nothing can go and its channel.
 
     The reason shown is the first one that is about the recipient: a tenant who stopped SMS reads
@@ -157,7 +178,7 @@ def _choose(org, ntype, rule: Rule, tenant, user,
         return None, Skip.RULE_DISABLED, None
     reasons = []
     for channel in rule.channels:
-        reason = _blocked(org, ntype, channel, tenant, user)
+        reason = _blocked(org, ntype, channel, tenant, user, phone)
         text = None if reason else template_for(org, ntype, channel, language)
         if reason is None and not text:
             reason = Skip.NO_TEMPLATE
@@ -189,7 +210,8 @@ def preview(org: Organization, type_codename: str, *, tenant=None, user=None,
     return chosen, None if chosen else (reason or Skip.CHANNEL_UNAVAILABLE)
 
 
-def notify(org: Organization, type_codename: str, *, tenant=None, user=None, context: dict | None = None,
+def notify(org: Organization, type_codename: str, *, tenant=None, user=None, phone: str = "",
+           context: dict | None = None,
            dedupe_key: str = "", lease=None, invoice=None, payment=None, announcement=None, created_by=None,
            urgent: bool = False, now: datetime.datetime | None = None, send_now: bool = True) -> Message | None:
     """Writes one Message for this recipient and event, and sends it after commit if it is due.
@@ -197,9 +219,10 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
     Bulk triggers pass `send_now=False` and leave the message to `send_due`, so a run over many
     leases does not wait on the SMS provider. Returns None when `dedupe_key` was already used in
     this organization: the event was handled. `urgent` sends during quiet hours even when the type waits.
+    `phone` addresses someone who is neither a tenant nor a user, by SMS only (an M-Pesa payer).
     """
-    if (tenant is None) == (user is None):
-        raise ValueError("notify() needs exactly one of tenant or user")
+    if [tenant is not None, user is not None, bool(phone)].count(True) != 1:
+        raise ValueError("notify() needs exactly one of tenant, user or phone")
     ntype = catalog.get(type_codename)
     if dedupe_key and Message.objects.filter(organization=org, dedupe_key=dedupe_key).exists():
         return None
@@ -211,13 +234,15 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
                 created_by=created_by)
     context = {"org_name": org.display_name, **(context or {})}
 
-    chosen, reason, reason_channel = _choose(org, ntype, rule, tenant, user, language)
+    chosen, reason, reason_channel = _choose(org, ntype, rule, tenant, user, language, phone)
     if chosen is None:
         channel = reason_channel or (rule.channels[0] if rule.channels else ntype.channels[0])
-        fields = dict(channel=channel, status=Status.SKIPPED, skip_reason=reason or Skip.CHANNEL_UNAVAILABLE)
+        # A bare number is the only record of who it was for, so it is kept even when skipped.
+        fields = dict(channel=channel, to=phone, status=Status.SKIPPED,
+                      skip_reason=reason or Skip.CHANNEL_UNAVAILABLE)
     else:
         channel, text = chosen
-        fields = dict(channel=channel, to=_address(channel, tenant, user), body=render(text, context))
+        fields = dict(channel=channel, to=_address(channel, tenant, user, phone), body=render(text, context))
         if channel == catalog.WHATSAPP:
             fields["provider_template"] = whatsapp_call(ntype, text, language, context)
         if channel == catalog.IN_APP:

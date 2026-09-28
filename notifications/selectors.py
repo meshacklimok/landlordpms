@@ -19,11 +19,14 @@ STATES = {
 
 
 def visible_messages(membership: Membership):
-    """Messages to tenants this member may see. Staff in-app messages belong to the bell, not the log."""
+    """Messages to tenants this member may see, and (organization-wide members only) to bare numbers.
+
+    Staff in-app messages belong to the bell, not the log.
+    """
     from tenants.models import Tenant
     from tenants.services import visible_tenants
 
-    qs = Message.objects.for_org(membership.organization).filter(tenant__isnull=False)
+    qs = Message.objects.for_org(membership.organization).filter(user__isnull=True)
     if not membership.all_properties:
         qs = qs.filter(tenant__in=visible_tenants(membership, Tenant.all_objects.all()))
     return qs

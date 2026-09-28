@@ -126,6 +126,26 @@ _TYPES: tuple[NotificationType, ...] = (
         ("org_name", "tenant_name", "unit", "amount", "recorded_by"),
         bodies={(IN_APP, EN): "{recorded_by} recorded {amount} from {tenant_name} ({unit}). It needs review."},
     ),
+    # To whoever paid by M-Pesa when the payment could not be matched (D-045 item 7). Often not a
+    # tenant, so SMS only: WhatsApp needs a grant a stranger cannot have given. [VERIFY the Swahili]
+    NotificationType(
+        "payment_unmatched", _("Payment not matched (to the payer)"), TENANT, (SMS,),
+        ("org_name", "amount", "trans_id", "paid_on"),
+        bodies={
+            (SMS, EN): "We received {amount} by M-Pesa ({trans_id}) on {paid_on} but could not tell which "
+                       "unit it is for. Please tell us your unit number, and use it as the account number "
+                       "when you pay. {org_name}",
+            (SMS, SW): "Tumepokea {amount} kwa M-Pesa ({trans_id}) tarehe {paid_on} lakini hatukujua ni ya "
+                       "nyumba gani. Tafadhali tueleze nambari ya nyumba yako, na uitumie kama nambari ya "
+                       "akaunti unapolipa. {org_name}",
+        },
+    ),
+    NotificationType(
+        "mpesa_unmatched", _("M-Pesa payment not matched"), STAFF, (IN_APP,),
+        ("org_name", "amount", "payer", "reference", "account", "trans_id"),
+        bodies={(IN_APP, EN): "{amount} from {payer} (reference “{reference}”) on {account} could not be "
+                              "matched. It is waiting in the M-Pesa inbox."},
+    ),
 )
 
 TYPES = tuple(_with_whatsapp(t) for t in _TYPES)

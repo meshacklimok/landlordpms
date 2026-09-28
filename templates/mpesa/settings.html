@@ -4,6 +4,7 @@
 <div class="mx-auto" style="max-width: 760px">
   <h1 class="h3 mb-0">{% trans "M-Pesa" %}</h1>
   <p class="small text-body-secondary">{% trans "Connect your own Paybill or Till so tenants' payments arrive here and are matched to their leases. Money goes straight to your account; we never hold it." %}</p>
+  {% include "mpesa/_nav.html" with section="settings" %}
 
   <div class="list-group shadow-sm mb-4">
     {% for row in rows %}

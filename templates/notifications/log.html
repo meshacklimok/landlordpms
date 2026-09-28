@@ -62,7 +62,7 @@
           <tr data-href="{% url 'notifications:detail' message.public_id %}">
             <td class="num small">{{ message.created_at|date:"j M Y, H:i" }}</td>
             <td>
-              <a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'notifications:detail' message.public_id %}">{{ message.tenant.name }}</a>
+              <a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'notifications:detail' message.public_id %}">{% if message.tenant %}{{ message.tenant.name }}{% else %}{% trans "M-Pesa payer" %}{% endif %}</a>
               <div class="small text-body-secondary">{{ message.to|default:"—" }}{% if message.lease %} · {{ message.lease.unit.code }}{% endif %}</div>
             </td>
             <td class="small text-nowrap">{{ message.get_type_display }}</td>
@@ -79,7 +79,7 @@
     {% for message in page %}
     <a class="list-group-item list-group-item-action" href="{% url 'notifications:detail' message.public_id %}">
       <div class="d-flex justify-content-between gap-2">
-        <span class="fw-medium text-truncate">{{ message.tenant.name }}</span>
+        <span class="fw-medium text-truncate">{% if message.tenant %}{{ message.tenant.name }}{% else %}{% trans "M-Pesa payer" %}{% endif %}</span>
         {% include "notifications/_status.html" %}
       </div>
       <div class="small text-body-secondary">{{ message.get_type_display }} · {{ message.created_at|date:"j M, H:i" }}</div>

@@ -230,12 +230,17 @@ def match_phone(tx: MpesaTransaction) -> Lease | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
-def confirm_to_lease(tx: MpesaTransaction, lease: Lease, *, matched_by: str, user=None, source: str) -> Payment:
-    """Creates the confirmed payment for a transaction and marks it matched. `tx` must be locked."""
+def confirm_to_lease(tx: MpesaTransaction, lease: Lease, *, matched_by: str, user=None, actor=None,
+                     source: str) -> Payment:
+    """Creates the confirmed payment for a transaction and marks it matched. `tx` must be locked.
+
+    `actor` is the member matching by hand; None for an automatic match.
+    """
     paid_on = min(timezone.localdate(tx.paid_at), timezone.localdate())
     payment = payment_services.record_system_payment(
         lease, amount=tx.amount, method=Payment.Method.MPESA, paid_at=paid_on, reference=tx.trans_id,
-        source=source, payment_account=tx.payment_account, tenant=paying_tenant(tx, lease))
+        source=source, payment_account=tx.payment_account, tenant=paying_tenant(tx, lease),
+        actor=actor)
     tx.status = Status.MATCHED
     tx.payment = payment
     tx.matched_by = matched_by
@@ -266,4 +271,17 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
     reason = f"{reason} The payer's number is on the suggested lease." if suggestion else reason
     tx.note = f"{tx.note} {reason}".strip()[:300]
     tx.save()
+    _alert(tx)
     return tx
+
+
+def _alert(tx: MpesaTransaction) -> None:
+    """Tells the staff who can match it, and the payer. A failure here never undoes the matching."""
+    from notifications import triggers
+
+    try:
+        with transaction.atomic():
+            triggers.mpesa_unmatched(tx)
+            triggers.payer_unmatched(tx)
+    except Exception:
+        logger.exception("Alerts for unmatched M-Pesa transaction %s failed", tx.trans_id)

@@ -224,11 +224,14 @@ def _confirm(actor: Membership | None, payment: Payment, lease: Lease, *, alloca
 
 @transaction.atomic
 def record_system_payment(lease: Lease, *, amount, method: str, paid_at, reference: str, source: str,
-                          payment_account=None, tenant=None) -> Payment:
-    """Records and confirms money a provider has already confirmed, e.g. M-Pesa (D-045 item 6).
+                          payment_account=None, tenant=None, actor: Membership | None = None) -> Payment:
+    """Records and confirms money a provider has already confirmed, e.g. M-Pesa (D-045 items 6-7).
 
-    No reviewer: `recorded_by` and `confirmed_by` stay empty and the audit log names the source.
+    No review: the money is known to have arrived. Without an actor (an automatic match)
+    `recorded_by` and `confirmed_by` stay empty; either way the audit log names the source.
+    The caller checks the actor may place the money on this lease.
     """
+    user = actor.user if actor else None
     lease = _lock_lease(lease)
     if lease.status == Lease.Status.DRAFT or lease.archived_at is not None:
         raise ValidationError(_("Payments can only be recorded on an activated lease."))
@@ -239,12 +242,12 @@ def record_system_payment(lease: Lease, *, amount, method: str, paid_at, referen
     payment = Payment.objects.create(
         organization=lease.organization, lease=lease, tenant=_payer(lease, tenant), amount=_amount(amount),
         method=method, paid_at=_paid_at(paid_at), reference=(reference or "").strip()[:60],
-        payment_account=payment_account)
-    audit.record("payment.record", organization=lease.organization, obj=payment,
+        payment_account=payment_account, recorded_by=user)
+    audit.record("payment.record", actor=user, organization=lease.organization, obj=payment,
                  changes={"lease": [None, lease.number], "amount": [None, str(payment.amount)],
                           "method": [None, method], "reference": [None, payment.reference],
                           "source": [None, source]})
-    _confirm(None, payment, lease, source=source)
+    _confirm(actor, payment, lease, source=source)
     return payment
 
 
@@ -314,10 +317,19 @@ def reverse_payment(actor: Membership, payment: Payment, *, reason: str, request
                                kind=LedgerEntry.Kind.PAYMENT_REVERSAL, amount=payment.amount,
                                currency=lease.currency, payment=payment, reason=reason, created_by=actor.user)
     _mark_reversed(payment, actor, reason)
+    _reopen_source(payment, reason)
     audit.record("payment.reverse", actor=actor.user, organization=payment.organization, obj=payment,
                  request=request, changes={"status": [Status.CONFIRMED, Status.REVERSED],
                                            "reason": [None, reason], "amount": [str(payment.amount), None]})
     return payment
+
+
+def _reopen_source(payment: Payment, reason: str) -> None:
+    """A reversed M-Pesa payment goes back to the inbox to be matched again (D-045 item 7)."""
+    if payment.method == Payment.Method.MPESA:
+        from mpesa import inbox  # mpesa depends on payments, not the other way round
+
+        inbox.payment_reversed(payment, reason)
 
 
 def credit_payments(lease: Lease):

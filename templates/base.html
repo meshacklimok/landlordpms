@@ -30,7 +30,9 @@
         {% if membership|can:"leases.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'leases:list' %}">{% trans "Leases" %}</a></li>{% endif %}
         {% if membership|can:"invoices.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'billing:invoices' %}">{% trans "Invoices" %}</a></li>{% endif %}
         {% if membership|can:"payments.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'payments:list' %}">{% trans "Payments" %}</a></li>{% endif %}
-        {% if membership|can:"mpesa.settings" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:settings' %}">{% trans "M-Pesa" %}</a></li>{% endif %}
+        {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:inbox' %}">{% trans "M-Pesa" %}</a></li>
+        {% elif membership|can:"mpesa.view_transactions" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:transactions' %}">{% trans "M-Pesa" %}</a></li>
+        {% elif membership|can:"mpesa.settings" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:settings' %}">{% trans "M-Pesa" %}</a></li>{% endif %}
         {% if membership|can:"messages.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:log' %}">{% trans "Messages" %}</a></li>
         {% elif membership|can:"templates.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:templates' %}">{% trans "Messages" %}</a></li>
         {% elif membership|can:"organization.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:settings' %}">{% trans "Messages" %}</a></li>{% endif %}
