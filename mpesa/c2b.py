@@ -240,6 +240,10 @@ def confirm_to_lease(tx: MpesaTransaction, lease: Lease, *, matched_by: str, use
 
     `actor` is the member matching by hand; None for an automatic match.
     """
+    recorded = recorded_by_hand(tx)
+    if recorded is not None:
+        raise ValidationError(f"This M-Pesa code was already recorded by hand on {recorded.lease.number}; "
+                              "ignore this transaction instead of paying it twice.")
     paid_on = min(timezone.localdate(tx.paid_at), timezone.localdate())
     payment = payment_services.record_system_payment(
         lease, amount=tx.amount, method=Payment.Method.MPESA, paid_at=paid_on, reference=tx.trans_id,
@@ -255,6 +259,15 @@ def confirm_to_lease(tx: MpesaTransaction, lease: Lease, *, matched_by: str, use
     return payment
 
 
+def recorded_by_hand(tx: MpesaTransaction) -> Payment | None:
+    """A live payment someone typed in with this transaction's M-Pesa code, for example from the
+    tenant's SMS before Safaricom's confirmation came. Paying the transaction too would count the
+    money twice."""
+    from payments.selectors import same_reference
+
+    return same_reference(tx.organization, tx.trans_id).select_related("lease").first()
+
+
 @transaction.atomic
 def process(tx: MpesaTransaction) -> MpesaTransaction:
     """Matches a RECEIVED transaction: confirmed by reference, else left UNMATCHED (with a suggestion)."""
@@ -264,6 +277,17 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
     tx.attempts += 1
     tx.processed_at = timezone.now()
     tx.note = tx.note.replace(RETRY_NOTE, "").strip()
+    recorded = recorded_by_hand(tx)
+    if recorded is not None:
+        # Staff check the typed-in payment and ignore this one; the payer already has a receipt,
+        # so only staff are told.
+        tx.status = Status.UNMATCHED
+        tx.suggested_lease = recorded.lease
+        tx.note = (f"{tx.note} Already recorded by hand on {recorded.lease.number} "
+                   f"({recorded.get_status_display().lower()}); check it and ignore this one.").strip()[:300]
+        tx.save()
+        _alert(tx, payer=False)
+        return tx
     stk_reason = _confirm_stk(tx)
     if tx.status == Status.MATCHED:
         return tx
@@ -283,14 +307,15 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
     return tx
 
 
-def _alert(tx: MpesaTransaction) -> None:
+def _alert(tx: MpesaTransaction, *, payer: bool = True) -> None:
     """Tells the staff who can match it, and the payer. A failure here never undoes the matching."""
     from notifications import triggers
 
     try:
         with transaction.atomic():
             triggers.mpesa_unmatched(tx)
-            triggers.payer_unmatched(tx)
+            if payer:
+                triggers.payer_unmatched(tx)
     except Exception:
         logger.exception("Alerts for unmatched M-Pesa transaction %s failed", tx.trans_id)
 

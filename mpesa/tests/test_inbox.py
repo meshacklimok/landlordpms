@@ -1,5 +1,7 @@
 """The M-Pesa inbox: scope, matching by hand, ignoring, reversal, alerts and the pages (D-045 step 3)."""
 
+import datetime
+
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.urls import reverse
@@ -21,6 +23,7 @@ pytestmark = pytest.mark.django_db
 
 Status = MpesaTransaction.Status
 STRANGER = "+254799000111"
+FEB_3 = datetime.date(2026, 2, 3)
 
 
 @pytest.fixture(autouse=True)
@@ -377,3 +380,46 @@ def test_transaction_list_filters(client, owner, creds, lease):
     body = client.get(url, {"q": matched.trans_id[-4:]}).content.decode()
     assert matched.trans_id in body and waiting.trans_id not in body
     assert client.get(url, {"account": "junk", "status": "junk"}).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# The same M-Pesa code typed in by hand and sent by Safaricom (counted once)
+# ---------------------------------------------------------------------------
+
+
+def test_code_already_recorded_by_hand_is_not_paid_twice(owner, org, creds, lease):
+    bill(lease, FEB)
+    typed = payment_services.record_payment(owner, lease, amount="15000", method=Payment.Method.MPESA,
+                                            paid_at=FEB_3, reference="qab12cd301")
+    tx = receive(creds, BillRefNumber=lease.unit.payment_reference)
+
+    assert (tx.status, tx.payment, tx.suggested_lease) == (Status.UNMATCHED, None, lease)
+    assert "Already recorded by hand on" in tx.note and lease.number in tx.note
+    assert Payment.objects.get() == typed and lease_balance(lease) == 0
+    # Staff are told; the payer already has a receipt, so no "we could not match it" SMS.
+    assert Message.objects.filter(type="mpesa_unmatched").exists()
+    assert not Message.objects.filter(type="payment_unmatched").exists()
+    with pytest.raises(ValidationError, match="already recorded by hand"):
+        inbox.accept_suggestion(owner, tx)
+    assert Payment.objects.count() == 1
+
+
+def test_code_recorded_by_hand_then_reversed_matches_normally(owner, creds, lease):
+    typed = payment_services.record_payment(owner, lease, amount="15000", method=Payment.Method.MPESA,
+                                            paid_at=FEB_3, reference="QAB12CD301")
+    payment_services.reverse_payment(owner, typed, reason="Typed on the wrong lease")
+    tx = receive(creds, BillRefNumber=lease.unit.payment_reference)
+    assert tx.status == Status.MATCHED and tx.payment.reference == tx.trans_id
+
+
+def test_recording_by_hand_a_code_waiting_in_the_inbox_is_refused(client, owner, creds, lease):
+    tx = receive(creds)
+    login(client, owner)
+    data = {"amount": "15000", "method": "MPESA", "paid_at": "2026-02-03", "reference": tx.trans_id.lower(),
+            "allow_duplicate": "on"}
+    r = client.post(reverse("payments:record", args=[lease.public_id]), data)
+    assert r.status_code == 200 and "M-Pesa inbox" in r.context["form"].errors["reference"][0]
+    assert not Payment.objects.exists()
+    # A cheque that happens to carry the same characters is not an M-Pesa code.
+    r = client.post(reverse("payments:record", args=[lease.public_id]), {**data, "method": "CHEQUE"})
+    assert r.status_code == 302 and Payment.objects.count() == 1

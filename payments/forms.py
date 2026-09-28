@@ -104,12 +104,24 @@ class PaymentForm(AllocationFieldsMixin, forms.Form):
     def clean(self):
         cleaned = super().clean()
         reference = (cleaned.get("reference") or "").strip()
-        if reference and not cleaned.get("allow_duplicate"):
+        if reference and cleaned.get("method") == Payment.Method.MPESA and self._waiting_in_inbox(reference):
+            # Recording it here as well would count the money twice once someone matches it there.
+            self.add_error("reference", _("Safaricom already sent this M-Pesa payment. Match it from the "
+                                          "M-Pesa inbox instead."))
+        elif reference and not cleaned.get("allow_duplicate"):
             self.duplicate = selectors.same_reference(self.lease.organization, reference).first()
             if self.duplicate:
                 self.visible_duplicate = self.visible.filter(pk=self.duplicate.pk).first()
                 self.add_error("reference", _("This reference was already used on another payment."))
         return cleaned
+
+    def _waiting_in_inbox(self, reference: str) -> bool:
+        from mpesa.models import MpesaTransaction
+
+        waiting = [MpesaTransaction.Status.RECEIVED, MpesaTransaction.Status.UNMATCHED,
+                   MpesaTransaction.Status.FLAGGED]
+        return MpesaTransaction.objects.filter(organization_id=self.lease.organization_id,
+                                               trans_id__iexact=reference, status__in=waiting).exists()
 
     def main_form(self):
         """This form without the allocation fields, for partials/form.html."""
