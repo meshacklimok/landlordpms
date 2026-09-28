@@ -193,28 +193,59 @@ def record_payment(actor: Membership, lease: Lease, *, amount, method: str, paid
     return payment
 
 
-def _confirm(actor: Membership, payment: Payment, lease: Lease, *, allocations=None, request=None) -> None:
+def _confirm(actor: Membership | None, payment: Payment, lease: Lease, *, allocations=None, request=None,
+             source: str = "") -> None:
+    """Posts, allocates and receipts a payment. No actor means the system confirmed it (see `source`)."""
     from .receipts import issue_receipt
 
+    user = actor.user if actor else None
     if allocations:
         require(actor, "payments.allocate", lease.unit.property)
         plan = _explicit_plan(payment, lease, allocations)
     else:
         plan = _fifo_plan(lease, payment.amount)
     payment.status = Status.CONFIRMED
-    payment.confirmed_by = actor.user
+    payment.confirmed_by = user
     payment.confirmed_at = timezone.now()
     payment.save(update_fields=["status", "confirmed_by", "confirmed_at", "updated_at"])
     LedgerEntry.objects.create(organization=payment.organization, lease=lease, entry_date=payment.paid_at,
                                kind=LedgerEntry.Kind.PAYMENT, amount=-payment.amount, currency=lease.currency,
-                               payment=payment, reason=payment.reference, created_by=actor.user)
+                               payment=payment, reason=payment.reference, created_by=user)
     made = _allocate(payment, plan)
     receipt = issue_receipt(payment)
-    audit.record("payment.confirm", actor=actor.user, organization=payment.organization, obj=payment,
-                 request=request, changes={
-                     "status": [Status.PENDING_REVIEW, Status.CONFIRMED], "receipt": [None, receipt.number],
-                     "allocated": [None, {a.invoice.number: str(a.amount) for a in made}]})
+    changes = {"status": [Status.PENDING_REVIEW, Status.CONFIRMED], "receipt": [None, receipt.number],
+               "allocated": [None, {a.invoice.number: str(a.amount) for a in made}]}
+    if source:
+        changes["source"] = [None, source]
+    audit.record("payment.confirm", actor=user, organization=payment.organization, obj=payment,
+                 request=request, changes=changes)
     _triggers().payment_received(payment)
+
+
+@transaction.atomic
+def record_system_payment(lease: Lease, *, amount, method: str, paid_at, reference: str, source: str,
+                          payment_account=None, tenant=None) -> Payment:
+    """Records and confirms money a provider has already confirmed, e.g. M-Pesa (D-045 item 6).
+
+    No reviewer: `recorded_by` and `confirmed_by` stay empty and the audit log names the source.
+    """
+    lease = _lock_lease(lease)
+    if lease.status == Lease.Status.DRAFT or lease.archived_at is not None:
+        raise ValidationError(_("Payments can only be recorded on an activated lease."))
+    if method not in Payment.Method.values:
+        raise ValidationError({"method": _("Choose how it was paid.")})
+    if payment_account is not None and payment_account.organization_id != lease.organization_id:
+        raise PermissionDenied(_("That record belongs to another organization."))
+    payment = Payment.objects.create(
+        organization=lease.organization, lease=lease, tenant=_payer(lease, tenant), amount=_amount(amount),
+        method=method, paid_at=_paid_at(paid_at), reference=(reference or "").strip()[:60],
+        payment_account=payment_account)
+    audit.record("payment.record", organization=lease.organization, obj=payment,
+                 changes={"lease": [None, lease.number], "amount": [None, str(payment.amount)],
+                          "method": [None, method], "reference": [None, payment.reference],
+                          "source": [None, source]})
+    _confirm(None, payment, lease, source=source)
+    return payment
 
 
 @transaction.atomic

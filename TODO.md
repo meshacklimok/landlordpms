@@ -119,11 +119,11 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] In-app notifications
 
 ## Phase 6 — M-Pesa
-- [ ] Store msisdn_raw and msisdn_hash; verify hash behaviour in Daraja sandbox
+- [ ] Store msisdn_raw and msisdn_hash (done); verify hash behaviour in Daraja sandbox
 - [ ] Unmatched-payment SMS asking for unit reference; inbox as a daily screen
-- [ ] MpesaTransaction, callback endpoints with per-account token
-- [ ] Idempotent processing, raw payload storage
-- [ ] Matching engine (account → reference → phone → amount)
+- [x] MpesaTransaction, callback endpoints with per-account token
+- [x] Idempotent processing, raw payload storage
+- [x] Matching engine (account → reference → phone → amount); reference auto-confirms via `record_system_payment`
 - [ ] Unallocated inbox and manual match
 - [ ] STK push
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
