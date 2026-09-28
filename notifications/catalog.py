@@ -146,6 +146,12 @@ _TYPES: tuple[NotificationType, ...] = (
         bodies={(IN_APP, EN): "{amount} from {payer} (reference “{reference}”) on {account} could not be "
                               "matched. It is waiting in the M-Pesa inbox."},
     ),
+    # Sent by `mpesa_daily` to organization-wide `mpesa.view_transactions` holders (D-045 item 10).
+    NotificationType(
+        "mpesa_daily_summary", _("M-Pesa daily summary"), STAFF, (IN_APP,),
+        ("org_name", "day", "summary"),
+        bodies={(IN_APP, EN): "M-Pesa on {day}. {summary}"},
+    ),
 )
 
 TYPES = tuple(_with_whatsapp(t) for t in _TYPES)

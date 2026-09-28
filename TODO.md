@@ -128,8 +128,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] STK push: request from the lease (`/mpesa/request/<lease>/`), callback confirms on that lease, status check
 - [ ] Verify in the Daraja sandbox: STK query "still processing" error code, whether a C2B confirmation also arrives for STK payments, STK amount limit
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
-- [ ] Daily reconciliation report
-- [ ] Safaricom go-live
+- [x] Daily job `mpesa_daily`: retry stuck transactions, check waiting payment requests, in-app reconciliation summary
+- [ ] Safaricom go-live (checklist: config/docs/17_MPESA_GO_LIVE.md)
 
 ## Phase 7 — Dashboards, search, tenant portal
 - [ ] Collectability score (A to E) and daily who-to-call list
