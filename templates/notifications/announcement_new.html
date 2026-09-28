@@ -74,7 +74,7 @@
     <div class="card shadow-sm mb-3 border-primary-subtle" id="ann-preview"><div class="card-body">
       <h2 class="h6">{% trans "Preview" %}</h2>
       <div class="row g-2 text-center mb-3">
-        <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">{{ preview.sending }}</div><div class="small text-body-secondary">{% trans "will receive it" %}</div></div></div>
+        <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">{{ preview.sending }}</div><div class="small text-body-secondary">{% trans "will receive it" %}{% if preview.whatsapp %}<br>{% blocktrans count n=preview.whatsapp %}{{ n }} on WhatsApp{% plural %}{{ n }} on WhatsApp{% endblocktrans %}{% endif %}</div></div></div>
         <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">{{ preview.parts }}</div><div class="small text-body-secondary">{% trans "SMS in total" %}</div></div></div>
         <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">~KES {{ preview.cost|floatformat:2 }}</div><div class="small text-body-secondary">{% blocktrans with p=price %}at {{ p }} per SMS{% endblocktrans %}</div></div></div>
       </div>
@@ -90,7 +90,7 @@
           <thead class="sticky-top"><tr><th>{% trans "Tenant" %}</th><th>{% trans "Unit" %}</th><th>{% trans "Message" %}</th><th class="text-end">{% trans "SMS" %}</th></tr></thead>
           <tbody>
             {% for r in preview.recipients %}{% if not r.skip_reason %}
-            <tr><td class="text-nowrap">{{ r.tenant.name }}</td><td class="text-nowrap">{{ r.lease.unit.property.name }} · {{ r.lease.unit.code }}</td><td>{{ r.body }}</td><td class="text-end">{{ r.parts }}</td></tr>
+            <tr><td class="text-nowrap">{{ r.tenant.name }}</td><td class="text-nowrap">{{ r.lease.unit.property.name }} · {{ r.lease.unit.code }}</td><td style="white-space: pre-line">{{ r.body }}</td><td class="text-end">{% if r.channel == "WHATSAPP" %}<span class="badge bg-success-subtle text-success-emphasis">WhatsApp</span>{% else %}{{ r.parts }}{% endif %}</td></tr>
             {% endif %}{% endfor %}
           </tbody>
         </table>

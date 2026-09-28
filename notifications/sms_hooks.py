@@ -62,28 +62,45 @@ def _tenants_with(phone: str) -> list[Tenant]:
 
 
 @transaction.atomic
-def set_sms_from_phone(phone: str, *, allowed: bool, note: str) -> int:
-    """Stops (or restarts) SMS for every tenant with this phone. Returns how many changed."""
+def set_channel_from_phone(phone: str, channel: str, *, allowed: bool, note: str,
+                           source: str = ConsentRecord.Source.SMS_REPLY, only_restore: bool = False) -> int:
+    """Stops (or restarts) a channel for every tenant with this phone. Returns how many changed.
+
+    `only_restore` restarts it only for tenants who agreed to it before: a reply to a shared
+    number cannot say which landlord a first grant is meant for (D-044 item 16).
+    """
     changed = 0
     for tenant in _tenants_with(phone):
-        if channel_allowed(tenant, catalog.SMS) == allowed:
+        if channel_allowed(tenant, channel) == allowed:
             continue
-        ConsentRecord.objects.create(organization=tenant.organization, tenant=tenant, channel=catalog.SMS,
-                                     granted=allowed, source=ConsentRecord.Source.SMS_REPLY, note=note[:200])
+        if allowed and only_restore and not ConsentRecord.objects.filter(
+                organization=tenant.organization, tenant=tenant, channel=channel, granted=True).exists():
+            continue
+        ConsentRecord.objects.create(organization=tenant.organization, tenant=tenant, channel=channel,
+                                     granted=allowed, source=source, note=note[:200])
         audit.record("tenant.consent", organization=tenant.organization, obj=tenant,
-                     changes={catalog.SMS: [not allowed, allowed], "source": [None, note[:200]]})
+                     changes={channel: [not allowed, allowed], "source": [None, note[:200]]})
         changed += 1
     return changed
 
 
+def set_sms_from_phone(phone: str, *, allowed: bool, note: str) -> int:
+    return set_channel_from_phone(phone, catalog.SMS, allowed=allowed, note=note)
+
+
+def keyword(text: str) -> str:
+    """The first word of a reply, upper case, without trailing punctuation."""
+    words = (text or "").strip().upper().split()
+    return words[0].strip(".!") if words else ""
+
+
 def inbound(phone: str, text: str) -> int | None:
     """Handles a reply. STOP-type words opt out, START-type words opt back in; anything else is ignored."""
-    words = (text or "").strip().upper().split()
-    keyword = words[0].strip(".!") if words else ""
-    if keyword in STOP_WORDS:
-        return set_sms_from_phone(phone, allowed=False, note=f"Replied {keyword}")
-    if keyword in START_WORDS:
-        return set_sms_from_phone(phone, allowed=True, note=f"Replied {keyword}")
+    word = keyword(text)
+    if word in STOP_WORDS:
+        return set_sms_from_phone(phone, allowed=False, note=f"Replied {word}")
+    if word in START_WORDS:
+        return set_sms_from_phone(phone, allowed=True, note=f"Replied {word}")
     return None
 
 

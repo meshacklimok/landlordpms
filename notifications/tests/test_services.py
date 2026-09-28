@@ -85,7 +85,7 @@ def test_mandatory_type_cannot_be_switched_off(monkeypatch, owner):
 
 def test_rule_rejects_a_channel_without_wording(owner):
     with pytest.raises(ValidationError):
-        services.save_rule(owner, "announcement", enabled=True, channels=[catalog.WHATSAPP])
+        services.save_rule(owner, "announcement", enabled=True, channels=[catalog.EMAIL])
 
 
 def test_rules_need_organization_manage(org):

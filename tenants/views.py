@@ -18,7 +18,8 @@ from core.phone import InvalidPhoneNumber, normalize_phone
 from leases.models import Lease
 from leases.services import visible_leases
 from notifications import services as notifications
-from notifications.catalog import SMS
+from notifications.catalog import SMS, WHATSAPP
+from notifications.delivery import whatsapp_available
 from notifications.selectors import recent_for_tenant
 from properties.views import _apply_errors
 
@@ -127,6 +128,8 @@ class TenantDetailView(CapabilityRequiredMixin, View):
             "can_manage": can(request.membership, "tenants.manage"),
             "show_sensitive": can(request.membership, "tenants.view_sensitive"),
             "sms_allowed": notifications.channel_allowed(tenant, SMS),
+            "whatsapp_offered": whatsapp_available(tenant.organization),
+            "whatsapp_allowed": notifications.channel_allowed(tenant, WHATSAPP),
             "recent_messages": recent_for_tenant(tenant) if can(m, "messages.view") else None,
         })
 

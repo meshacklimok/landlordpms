@@ -36,6 +36,11 @@ def usable_channels(ntype: catalog.NotificationType) -> list[str]:
     return [c for c in order if c in have]
 
 
+def editable_channels(ntype: catalog.NotificationType) -> list[str]:
+    """WhatsApp wording must match the template Meta approved, so organizations cannot change it (D-044 item 16)."""
+    return [c for c in usable_channels(ntype) if c != catalog.WHATSAPP]
+
+
 def usable_languages(ntype: catalog.NotificationType) -> list[str]:
     """Staff messages are English only until user settings exist (D-044 item 8)."""
     return [catalog.EN] if ntype.audience == catalog.STAFF else list(catalog.LANGUAGES)
@@ -129,8 +134,8 @@ def set_quiet_hours(actor: Membership, *, start: datetime.time, end: datetime.ti
 
 
 def _check_template_target(ntype, channel: str, language: str) -> None:
-    if channel not in usable_channels(ntype) or language not in usable_languages(ntype):
-        raise ValidationError(_("That notification has no text for this channel and language."))
+    if channel not in editable_channels(ntype) or language not in usable_languages(ntype):
+        raise ValidationError(_("That notification has no wording you can change for this channel and language."))
 
 
 def live_template(org, type_codename: str, channel: str, language: str) -> MessageTemplate | None:
@@ -210,6 +215,8 @@ def set_tenant_channel(actor: Membership, tenant, channel: str, *, allowed: bool
         raise ValidationError(_("Unknown channel."))
     if channel_allowed(tenant, channel) == allowed:
         return None
+    if allowed and channel == catalog.WHATSAPP and not (note or "").strip():
+        raise ValidationError({"note": _("Say how the tenant agreed to WhatsApp messages.")})
     record = ConsentRecord.objects.create(
         organization=tenant.organization, tenant=tenant, channel=channel, granted=allowed,
         source=ConsentRecord.Source.STAFF, note=(note or "").strip()[:200], recorded_by=actor.user)

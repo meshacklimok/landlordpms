@@ -44,7 +44,12 @@ def validate_body(ntype: catalog.NotificationType, channel: str, text: str) -> N
 
 
 def template_for(org, ntype: catalog.NotificationType, channel: str, language: str) -> str | None:
-    """The organization's wording if it has one (in the language, else English), else the default."""
+    """The organization's wording if it has one (in the language, else English), else the default.
+
+    WhatsApp always uses the default: it must match the template Meta approved (D-044 item 16).
+    """
+    if channel == catalog.WHATSAPP:
+        return ntype.default_body(channel, language)
     overrides = {t.language: t.body for t in MessageTemplate.objects.filter(
         organization=org, type=ntype.codename, channel=channel, language__in={language, catalog.EN})}
     return (overrides.get(language) or ntype.bodies.get((channel, language))

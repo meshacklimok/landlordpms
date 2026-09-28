@@ -75,6 +75,7 @@ class Recipient:
     body: str = ""
     parts: int = 0
     skip_reason: str = ""
+    channel: str = ""
 
     @property
     def skip_label(self) -> str:
@@ -85,6 +86,8 @@ class Recipient:
 class Preview:
     recipients: list[Recipient]
     sending: int = 0
+    # Of those, how many go on WhatsApp (not counted in `parts` or `cost`).
+    whatsapp: int = 0
     parts: int = 0
     cost: Decimal = Decimal("0")
     skipped: dict[str, int] = field(default_factory=dict)
@@ -203,9 +206,11 @@ def preview(actor: Membership, text: str, audience: Audience, today: datetime.da
             result.skipped[reason] = result.skipped.get(reason, 0) + 1
             continue
         channel, template = chosen
+        r.channel = channel
         r.body = render(template, _context(org, text, r))
         r.parts = sms_parts(r.body) if channel == catalog.SMS else 0
         result.sending += 1
+        result.whatsapp += channel == catalog.WHATSAPP
         result.parts += r.parts
     result.cost = (price_per_part() * result.parts).quantize(Decimal("0.01"))
     return result

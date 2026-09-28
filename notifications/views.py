@@ -19,7 +19,7 @@ from accounts.mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin
 from accounts.permissions import can
 
 from . import announcements, catalog, forms, selectors, services
-from .delivery import Rule, effective_rule
+from .delivery import Rule, effective_rule, whatsapp_available
 from .models import Message
 from .rendering import SMS_SEGMENT, template_for
 from .rendering import render as fill
@@ -205,10 +205,13 @@ class TemplateListView(CapabilityRequiredMixin, View):
         for ntype in catalog.TYPES:
             items = []
             for channel in services.usable_channels(ntype):
+                if channel == catalog.WHATSAPP and not whatsapp_available(org):
+                    continue
                 for language in services.usable_languages(ntype):
                     override = services.live_template(org, ntype.codename, channel, language)
                     text = template_for(org, ntype, channel, language) or ""
                     items.append({"channel": channel, "language": language, "custom": override is not None,
+                                  "editable": channel in services.editable_channels(ntype),
                                   "preview": fill(text, _sample(org))})
             groups.append({"type": ntype, "items": items})
         return render(request, self.template_name, {"groups": groups})
@@ -220,7 +223,7 @@ class TemplateEditView(CapabilityRequiredMixin, View):
 
     def _target(self, type_codename, channel, language):
         ntype = _type_or_404(type_codename)
-        if channel not in services.usable_channels(ntype) or language not in services.usable_languages(ntype):
+        if channel not in services.editable_channels(ntype) or language not in services.usable_languages(ntype):
             raise Http404
         return ntype
 
@@ -305,8 +308,13 @@ class TenantChannelView(CapabilityRequiredMixin, View):
         except ValidationError as e:
             messages.error(request, _errors(e))
         else:
-            messages.success(request, _("SMS resumed for %(name)s.") % {"name": tenant.name} if allowed
-                             else _("SMS stopped for %(name)s. Required messages still go.") % {"name": tenant.name})
+            done = {
+                (catalog.SMS, True): _("SMS resumed for %(name)s."),
+                (catalog.SMS, False): _("SMS stopped for %(name)s. Required messages still go."),
+                (catalog.WHATSAPP, True): _("%(name)s now gets messages on WhatsApp."),
+                (catalog.WHATSAPP, False): _("WhatsApp stopped for %(name)s. Messages go by SMS."),
+            }.get((channel.upper(), allowed), _("Saved."))
+            messages.success(request, done % {"name": tenant.name})
         return redirect("tenants:detail", public_id=tenant.public_id)
 
 

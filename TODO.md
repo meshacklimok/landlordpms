@@ -108,7 +108,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Tests: allocation, reversal, credit
 
 ## Phase 5 — Communications
-- [ ] WhatsApp adapter (moved earlier)
+- [x] WhatsApp adapter (moved earlier)
 - [x] Segmented announcements
 - [x] NotificationType catalog (in code), OrganizationNotificationRule, NotificationPreference, ConsentRecord (D-044)
 - [x] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability; `send_due_messages` (schedule every few minutes)

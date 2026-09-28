@@ -207,4 +207,13 @@ AT_SENDER_ID = os.getenv("AT_SENDER_ID", "")
 # Secret part of the callback URLs: /hooks/sms/africastalking/<token>/<delivery|inbound|optout>/
 AT_CALLBACK_TOKEN = os.getenv("AT_CALLBACK_TOKEN", "")
 
+# WhatsApp adapter (core/whatsapp.py). Empty: WhatsApp is not offered and tenants get SMS.
+WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "")
+# Meta WhatsApp Cloud API (WHATSAPP_BACKEND=core.whatsapp.CloudApiWhatsAppSender). Webhook: /hooks/whatsapp/
+WA_API_VERSION = os.getenv("WA_API_VERSION", "v21.0")
+WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
+WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN", "")
+WA_APP_SECRET = os.getenv("WA_APP_SECRET", "")
+WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN", "")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

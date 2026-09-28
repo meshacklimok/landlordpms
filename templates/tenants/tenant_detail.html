@@ -79,6 +79,28 @@
       </form>
       {% endif %}
     </div>
+    {% if whatsapp_offered %}
+    <div class="d-flex justify-content-between align-items-start gap-2 border-top pt-2 mt-2">
+      <div class="small">
+        {% if whatsapp_allowed %}
+        <span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">{% trans "WhatsApp" %}</span> <span class="text-body-secondary">{% trans "Gets messages on WhatsApp instead of SMS." %}</span>
+        {% else %}
+        <span class="text-body-secondary">{% trans "WhatsApp: not agreed. Record it only after the tenant says yes." %}</span>
+        {% endif %}
+      </div>
+      {% if can_manage and not tenant.is_archived %}
+      <form method="post" action="{% url 'notifications:tenant_channel' tenant.public_id 'whatsapp' %}" class="d-flex gap-1 align-items-start">{% csrf_token %}
+        {% if whatsapp_allowed %}
+        <button class="btn btn-sm btn-outline-secondary text-nowrap" onclick="return confirm('{% trans "Stop WhatsApp to this tenant? Messages will go by SMS." %}')">{% trans "Stop WhatsApp" %}</button>
+        {% else %}
+        <input type="hidden" name="allowed" value="on">
+        <input type="text" name="note" maxlength="200" required class="form-control form-control-sm" style="max-width: 14rem" placeholder="{% trans 'How they agreed, e.g. said yes on a call' %}" aria-label="{% trans 'How the tenant agreed' %}">
+        <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Tenant agreed" %}</button>
+        {% endif %}
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
     {% if recent_messages is not None %}
     <div class="list-group list-group-flush mt-2">
       {% for message in recent_messages %}

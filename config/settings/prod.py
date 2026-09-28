@@ -62,3 +62,11 @@ if SMS_BACKEND == "core.sms.AfricasTalkingSmsSender":  # noqa: F405
     _required("AT_API_KEY")
     if len(_required("AT_CALLBACK_TOKEN")) < 32:
         raise ImproperlyConfigured("AT_CALLBACK_TOKEN must be at least 32 random characters.")
+if WHATSAPP_BACKEND == "core.whatsapp.CloudApiWhatsAppSender":  # noqa: F405
+    _required("WA_PHONE_NUMBER_ID")
+    _required("WA_ACCESS_TOKEN")
+    _required("WA_APP_SECRET")
+    if len(_required("WA_VERIFY_TOKEN")) < 32:
+        raise ImproperlyConfigured("WA_VERIFY_TOKEN must be at least 32 random characters.")
+elif WHATSAPP_BACKEND and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
+    raise ImproperlyConfigured("Set WHATSAPP_BACKEND to core.whatsapp.CloudApiWhatsAppSender or leave it empty.")

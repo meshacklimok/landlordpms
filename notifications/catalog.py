@@ -5,7 +5,7 @@ templates may say. Organizations only switch types on or off, choose channels an
 timing (``OrganizationNotificationRule``) and override the wording (``MessageTemplate``).
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.utils.translation import gettext_lazy as _
 
@@ -45,9 +45,37 @@ class NotificationType:
 
 _TENANCY = ("tenant_name", "org_name", "unit", "property")
 
-TYPES: tuple[NotificationType, ...] = (
+# WhatsApp wording is a template Meta approved (D-044 item 16): fixed in code, never edited by an
+# organization. It is the SMS wording with the organization named first and a way to stop at the end,
+# so no template starts or ends with a field. [VERIFY the Swahili with a native speaker.]
+WA_TEMPLATE_VERSION = 1
+_WA_HEAD = {EN: "Message from {org_name}.\n\n", SW: "Ujumbe kutoka {org_name}.\n\n"}
+_WA_FOOT = {EN: "\n\nReply STOP to stop WhatsApp messages.", SW: "\n\nJibu STOP kusitisha ujumbe wa WhatsApp."}
+
+
+def _with_whatsapp(ntype: "NotificationType") -> "NotificationType":
+    if WHATSAPP not in ntype.channels:
+        return ntype
+    bodies = dict(ntype.bodies)
+    for (channel, language), text in ntype.bodies.items():
+        if channel == SMS:
+            core = text.removesuffix(" {org_name}")
+            bodies[(WHATSAPP, language)] = _WA_HEAD[language] + core + _WA_FOOT[language]
+    return replace(ntype, bodies=bodies)
+
+
+def whatsapp_template(ntype: "NotificationType") -> str:
+    """The name of the approved template for this type."""
+    return f"{ntype.codename}_v{WA_TEMPLATE_VERSION}"
+
+
+def whatsapp_language(ntype: "NotificationType", language: str) -> str:
+    """The template language: the recipient's if the type has wording in it, else English."""
+    return language if (WHATSAPP, language) in ntype.bodies else EN
+
+_TYPES: tuple[NotificationType, ...] = (
     NotificationType(
-        "invoice_issued", _("Invoice issued"), TENANT, (SMS,),
+        "invoice_issued", _("Invoice issued"), TENANT, (WHATSAPP, SMS),
         (*_TENANCY, "invoice_number", "amount", "due_date", "balance", "pay_reference"),
         bodies={
             (SMS, EN): "Dear {tenant_name}, invoice {invoice_number} for {unit} of {amount} is due on "
@@ -57,7 +85,7 @@ TYPES: tuple[NotificationType, ...] = (
         },
     ),
     NotificationType(
-        "rent_due_soon", _("Rent due soon"), TENANT, (SMS,),
+        "rent_due_soon", _("Rent due soon"), TENANT, (WHATSAPP, SMS),
         (*_TENANCY, "invoice_number", "amount_due", "due_date", "pay_reference"),
         offsets=(3,),
         bodies={
@@ -68,7 +96,7 @@ TYPES: tuple[NotificationType, ...] = (
         },
     ),
     NotificationType(
-        "rent_overdue", _("Rent overdue"), TENANT, (SMS,),
+        "rent_overdue", _("Rent overdue"), TENANT, (WHATSAPP, SMS),
         (*_TENANCY, "invoice_number", "amount_due", "due_date", "balance", "pay_reference"),
         offsets=(2,),
         bodies={
@@ -79,7 +107,7 @@ TYPES: tuple[NotificationType, ...] = (
         },
     ),
     NotificationType(
-        "payment_received", _("Payment received"), TENANT, (SMS,),
+        "payment_received", _("Payment received"), TENANT, (WHATSAPP, SMS),
         (*_TENANCY, "amount", "paid_on", "receipt_number", "balance", "receipt_link"),
         bodies={
             (SMS, EN): "Dear {tenant_name}, we received {amount} for {unit} on {paid_on}. Receipt "
@@ -89,7 +117,7 @@ TYPES: tuple[NotificationType, ...] = (
         },
     ),
     NotificationType(
-        "announcement", _("Announcement"), TENANT, (SMS,),
+        "announcement", _("Announcement"), TENANT, (WHATSAPP, SMS),
         (*_TENANCY, "text"),
         bodies={(SMS, EN): "{text} {org_name}", (SMS, SW): "{text} {org_name}"},
     ),
@@ -100,6 +128,7 @@ TYPES: tuple[NotificationType, ...] = (
     ),
 )
 
+TYPES = tuple(_with_whatsapp(t) for t in _TYPES)
 BY_CODENAME: dict[str, NotificationType] = {t.codename: t for t in TYPES}
 CHOICES = [(t.codename, t.label) for t in TYPES]
 CHANNEL_CHOICES = [(SMS, _("SMS")), (WHATSAPP, _("WhatsApp")), (EMAIL, _("Email")), (IN_APP, _("In-app"))]

@@ -77,6 +77,7 @@ class ConsentRecord(models.Model):
     class Source(models.TextChoices):
         STAFF = "STAFF", _("Recorded by staff")
         SMS_REPLY = "SMS_REPLY", _("SMS reply")
+        WA_REPLY = "WA_REPLY", _("WhatsApp reply")
         PORTAL = "PORTAL", _("Tenant portal")
         IMPORT = "IMPORT", _("Import")
 
@@ -182,6 +183,8 @@ class Message(PublicIdModel):
     to = models.CharField(max_length=254, blank=True)
     language = models.CharField(max_length=2, choices=catalog.LANGUAGE_CHOICES, default=catalog.EN)
     body = models.TextField(blank=True)
+    # WhatsApp: the approved template sent, {"name", "language", "params"}, so a retry sends the same.
+    provider_template = models.JSONField(default=dict, blank=True)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.QUEUED)
     skip_reason = models.CharField(max_length=20, choices=SkipReason.choices, blank=True)
     error = models.CharField(max_length=300, blank=True)

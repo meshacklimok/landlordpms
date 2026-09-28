@@ -13,13 +13,13 @@
     <h2 class="h6 mb-2">{{ group.type.label }}</h2>
     <div class="list-group list-group-flush">
       {% for item in group.items %}
-      <a class="list-group-item list-group-item-action px-0" href="{% url 'notifications:template_edit' group.type.codename item.channel item.language %}">
+      {% if item.editable %}<a class="list-group-item list-group-item-action px-0" href="{% url 'notifications:template_edit' group.type.codename item.channel item.language %}">{% else %}<div class="list-group-item px-0">{% endif %}
         <div class="d-flex justify-content-between small">
-          <span class="fw-medium">{% if item.channel == "SMS" %}{% trans "SMS" %}{% else %}{% trans "In-app" %}{% endif %} · {% if item.language == "sw" %}{% trans "Swahili" %}{% else %}{% trans "English" %}{% endif %}</span>
-          {% if item.custom %}<span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Your wording" %}</span>{% else %}<span class="text-body-secondary">{% trans "Default" %}</span>{% endif %}
+          <span class="fw-medium">{% if item.channel == "SMS" %}{% trans "SMS" %}{% elif item.channel == "WHATSAPP" %}{% trans "WhatsApp" %}{% else %}{% trans "In-app" %}{% endif %} · {% if item.language == "sw" %}{% trans "Swahili" %}{% else %}{% trans "English" %}{% endif %}</span>
+          {% if not item.editable %}<span class="text-body-secondary" title="{% trans 'WhatsApp only delivers wording it approved in advance.' %}">{% trans "Fixed by WhatsApp" %}</span>{% elif item.custom %}<span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Your wording" %}</span>{% else %}<span class="text-body-secondary">{% trans "Default" %}</span>{% endif %}
         </div>
         <div class="small text-body-secondary text-truncate">{{ item.preview }}</div>
-      </a>
+      {% if item.editable %}</a>{% else %}</div>{% endif %}
       {% endfor %}
     </div>
   </div></div>

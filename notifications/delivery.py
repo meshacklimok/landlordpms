@@ -18,10 +18,11 @@ from django.utils import timezone
 from accounts.models import Membership, Organization
 from accounts.permissions import can
 from core.sms import SmsResult, get_sms_sender
+from core.whatsapp import get_whatsapp_sender
 
 from . import catalog
 from .models import ConsentRecord, Message, NotificationPreference, OrganizationNotificationRule
-from .rendering import render, template_for
+from .rendering import fields_in, render, template_for
 
 logger = logging.getLogger(__name__)
 
@@ -145,20 +146,38 @@ def quiet_until(org: Organization, now: datetime.datetime) -> datetime.datetime 
 # ---------------------------------------------------------------------------
 
 
-def _choose(org, ntype, rule: Rule, tenant, user, language: str) -> tuple[tuple[str, str] | None, str | None]:
-    """The first allowed channel of the rule with its text, or None and the first reason nothing can go."""
+def _choose(org, ntype, rule: Rule, tenant, user,
+            language: str) -> tuple[tuple[str, str] | None, str | None, str | None]:
+    """The first allowed channel of the rule with its text; or None, the reason nothing can go and its channel.
+
+    The reason shown is the first one that is about the recipient: a tenant who stopped SMS reads
+    "no consent", not "WhatsApp not available" (D-044 item 16).
+    """
     if not rule.enabled:
-        return None, Skip.RULE_DISABLED
-    first_reason = None
+        return None, Skip.RULE_DISABLED, None
+    reasons = []
     for channel in rule.channels:
         reason = _blocked(org, ntype, channel, tenant, user)
         text = None if reason else template_for(org, ntype, channel, language)
         if reason is None and not text:
             reason = Skip.NO_TEMPLATE
         if reason is None:
-            return (channel, text), None
-        first_reason = first_reason or reason
-    return None, first_reason
+            return (channel, text), None, None
+        reasons.append((reason, channel))
+    if not reasons:
+        return None, None, None
+    reason, channel = next((r for r in reasons if r[0] != Skip.CHANNEL_UNAVAILABLE), reasons[0])
+    return None, reason, channel
+
+
+def whatsapp_call(ntype: catalog.NotificationType, text: str, language: str, context: dict) -> dict:
+    """The approved template and its parameters: the `{field}` values in order, each on one line."""
+    params = []
+    for name in fields_in(text):
+        value = context.get(name)
+        params.append(" ".join(("" if value is None else str(value)).split()) or "-")
+    return {"name": catalog.whatsapp_template(ntype), "language": catalog.whatsapp_language(ntype, language),
+            "params": params}
 
 
 def preview(org: Organization, type_codename: str, *, tenant=None, user=None,
@@ -166,7 +185,7 @@ def preview(org: Organization, type_codename: str, *, tenant=None, user=None,
     """What `notify` would do for this recipient, without writing anything: (channel, text) or a skip reason."""
     ntype = catalog.get(type_codename)
     language = getattr(tenant, "language", "") or catalog.EN
-    chosen, reason = _choose(org, ntype, rule or effective_rule(org, ntype), tenant, user, language)
+    chosen, reason, _channel = _choose(org, ntype, rule or effective_rule(org, ntype), tenant, user, language)
     return chosen, None if chosen else (reason or Skip.CHANNEL_UNAVAILABLE)
 
 
@@ -192,13 +211,15 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
                 created_by=created_by)
     context = {"org_name": org.display_name, **(context or {})}
 
-    chosen, first_reason = _choose(org, ntype, rule, tenant, user, language)
+    chosen, reason, reason_channel = _choose(org, ntype, rule, tenant, user, language)
     if chosen is None:
-        fields = dict(channel=rule.channels[0] if rule.channels else ntype.channels[0], status=Status.SKIPPED,
-                      skip_reason=first_reason or Skip.CHANNEL_UNAVAILABLE)
+        channel = reason_channel or (rule.channels[0] if rule.channels else ntype.channels[0])
+        fields = dict(channel=channel, status=Status.SKIPPED, skip_reason=reason or Skip.CHANNEL_UNAVAILABLE)
     else:
         channel, text = chosen
         fields = dict(channel=channel, to=_address(channel, tenant, user), body=render(text, context))
+        if channel == catalog.WHATSAPP:
+            fields["provider_template"] = whatsapp_call(ntype, text, language, context)
         if channel == catalog.IN_APP:
             fields.update(status=Status.DELIVERED, sent_at=now, delivered_at=now)
         else:
@@ -238,6 +259,9 @@ def _send_email(message: Message) -> SmsResult:
 def _deliver(message: Message) -> SmsResult:
     if message.channel == catalog.SMS:
         return get_sms_sender().send(message.to, message.body)
+    if message.channel == catalog.WHATSAPP:
+        t = message.provider_template
+        return get_whatsapp_sender().send(message.to, t["name"], t["language"], t["params"])
     if message.channel == catalog.EMAIL:
         return _send_email(message)
     return SmsResult(ok=False, provider="", error=f"No sender for {message.channel}")
