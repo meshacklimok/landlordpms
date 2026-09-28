@@ -15,7 +15,7 @@ class TenantForm(forms.ModelForm):
 
     class Meta:
         model = Tenant
-        fields = ["kind", "name", "contact_person", "phone", "alt_phone", "email",
+        fields = ["kind", "name", "contact_person", "phone", "alt_phone", "email", "language",
                   "id_type", "id_number", "kra_pin",
                   "emergency_contact_name", "emergency_contact_phone", "notes"]
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
@@ -24,6 +24,8 @@ class TenantForm(forms.ModelForm):
     def __init__(self, *args, show_sensitive=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["id_type"].choices = [("", _("—"))] + list(Tenant.IdType.choices)
+        self.fields["language"].required = False
+        self.fields["language"].help_text = _("For SMS reminders and receipts")
         if not show_sensitive:
             for f in Tenant.SENSITIVE_FIELDS:
                 del self.fields[f]
@@ -35,6 +37,7 @@ class TenantForm(forms.ModelForm):
     def service_data(self) -> dict:
         data = dict(self.cleaned_data)
         data.pop("confirm_duplicate", None)
+        data["language"] = data.get("language") or Tenant._meta.get_field("language").default
         return data
 
 

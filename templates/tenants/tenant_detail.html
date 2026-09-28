@@ -28,6 +28,7 @@
       <dt class="col-5">{% trans "Phone" %}</dt><dd class="col-7"><a href="tel:{{ tenant.phone }}">{{ tenant.phone }}</a></dd>
       {% if tenant.alt_phone %}<dt class="col-5">{% trans "Other phone" %}</dt><dd class="col-7"><a href="tel:{{ tenant.alt_phone }}">{{ tenant.alt_phone }}</a></dd>{% endif %}
       {% if tenant.email %}<dt class="col-5">{% trans "Email" %}</dt><dd class="col-7">{{ tenant.email }}</dd>{% endif %}
+      <dt class="col-5">{% trans "Message language" %}</dt><dd class="col-7">{{ tenant.get_language_display }}</dd>
       {% if show_sensitive %}
       <dt class="col-5">{% trans "ID" %}</dt><dd class="col-7">{% if tenant.id_number %}{{ tenant.get_id_type_display }} {{ tenant.id_number }}{% else %}—{% endif %}</dd>
       <dt class="col-5">{% trans "KRA PIN" %}</dt><dd class="col-7">{{ tenant.kra_pin|default:"—" }}</dd>

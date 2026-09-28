@@ -192,6 +192,9 @@ CACHES = {
 # from X-Forwarded-For only when this is set; 0 means use REMOTE_ADDR.
 TRUSTED_PROXY_COUNT = int(os.getenv("TRUSTED_PROXY_COUNT", "0"))
 
+# Where the site is served, for links in messages sent outside a request (receipt links).
+SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
+
 # SMS adapter (core/sms.py). The console adapter prints codes during development.
 SMS_BACKEND = os.getenv("SMS_BACKEND", "core.sms.ConsoleSmsSender")
 

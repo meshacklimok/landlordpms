@@ -5,6 +5,7 @@ It is served only through a permission-checked view, and its file name is a rand
 """
 
 import io
+import secrets
 import uuid
 
 from django.core.files.base import ContentFile
@@ -25,7 +26,8 @@ def issue_receipt(payment: Payment) -> Receipt:
     now = timezone.now()
     receipt = Receipt(organization=payment.organization, payment=payment, issued_at=now,
                       number=next_number(payment.organization, "receipt", prefix="RCT",
-                                         period=str(timezone.localdate().year)))
+                                         period=str(timezone.localdate().year)),
+                      share_token=secrets.token_urlsafe(16))
     receipt.pdf.save(f"{uuid.uuid4().hex}.pdf", ContentFile(render_pdf(receipt)), save=False)
     receipt.save()
     return receipt

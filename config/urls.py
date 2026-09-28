@@ -20,6 +20,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from payments.views import PublicReceiptView
 from properties.views import VacancyView
 
 urlpatterns = [
@@ -29,6 +30,7 @@ urlpatterns = [
     path("leases/", include("leases.urls")),
     path("imports/", include("imports.urls")),
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
+    path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
     path("billing/", include("billing.urls")),
     path("payments/", include("payments.urls")),
     path("", include("accounts.urls")),

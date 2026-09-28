@@ -33,6 +33,12 @@ Status = Payment.Status
 # ---------------------------------------------------------------------------
 
 
+def _triggers():
+    from notifications import triggers  # notifications depends on payments, not the other way round
+
+    return triggers
+
+
 def _same_org(actor: Membership, obj) -> None:
     if obj.organization_id != actor.organization_id:
         raise PermissionDenied(_("That record belongs to another organization."))
@@ -182,6 +188,8 @@ def record_payment(actor: Membership, lease: Lease, *, amount, method: str, paid
                           "method": [None, method], "reference": [None, payment.reference]})
     if can(actor, "payments.confirm", lease.unit.property):
         _confirm(actor, payment, lease, allocations=allocations, request=request)
+    else:
+        _triggers().payment_pending_review(payment)
     return payment
 
 
@@ -206,6 +214,7 @@ def _confirm(actor: Membership, payment: Payment, lease: Lease, *, allocations=N
                  request=request, changes={
                      "status": [Status.PENDING_REVIEW, Status.CONFIRMED], "receipt": [None, receipt.number],
                      "allocated": [None, {a.invoice.number: str(a.amount) for a in made}]})
+    _triggers().payment_received(payment)
 
 
 @transaction.atomic

@@ -25,7 +25,7 @@ from core.phone import InvalidPhoneNumber, normalize_phone
 
 from .models import Tenant
 
-TENANT_FIELDS = ("kind", "name", "contact_person", "phone", "alt_phone", "email",
+TENANT_FIELDS = ("kind", "name", "contact_person", "phone", "alt_phone", "email", "language",
                  "emergency_contact_name", "emergency_contact_phone", "notes")
 SENSITIVE_FIELDS = Tenant.SENSITIVE_FIELDS
 PHONE_FIELDS = ("phone", "alt_phone", "emergency_contact_phone")

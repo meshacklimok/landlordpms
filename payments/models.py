@@ -179,6 +179,9 @@ class Receipt(TimeStampedModel):
     number = models.CharField(_("receipt number"), max_length=30, editable=False)
     issued_at = models.DateTimeField(editable=False)
     pdf = models.FileField(upload_to="receipts/%Y/", editable=False)
+    # Public link /r/<token>/ sent to the tenant with the payment message (D-044). Null on receipts
+    # issued before links existed.
+    share_token = models.CharField(max_length=32, null=True, blank=True, unique=True, editable=False)  # noqa: DJ001
 
     class Meta:
         constraints = [

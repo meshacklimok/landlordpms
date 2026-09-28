@@ -9,6 +9,7 @@ from audit import services as audit
 from core.money import ZERO
 from leases.models import Lease, LeaseTenant
 from leases.services import sync_tenant_status
+from notifications import triggers
 from tenants.models import Tenant
 
 from . import deposits, invoicing
@@ -63,4 +64,5 @@ def run_daily(today: datetime.date | None = None) -> dict[str, int]:
     counts = invoicing.run_scheduled(today)
     counts["tenants_moved_out"] = sync_moved_out_tenants(today)
     counts["leases_archived"] = archive_settled_leases(today)
+    counts.update(triggers.send_reminders(today))
     return counts

@@ -115,7 +115,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Owner notification settings page; tenant opt-out per channel
 - [x] Message log, MessageTemplate overrides (safe `{field}` rendering), provider adapter interface
 - [ ] SMS adapter (Africa's Talking), delivery status, opt-out
-- [ ] Triggers: invoice issued, due soon, payment received, overdue
+- [x] Triggers: invoice issued (monthly run only), due soon, overdue (daily job), payment received with public receipt link `/r/<token>/`, payment waiting for review (in-app); set `SITE_URL` in production
 - [ ] In-app notifications
 
 ## Phase 6 — M-Pesa

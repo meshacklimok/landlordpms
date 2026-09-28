@@ -9,7 +9,7 @@ import uuid
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.http import FileResponse, Http404, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -19,14 +19,16 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from billing.invoicing import lease_balance
+from core import ratelimit
 from core.money import ZERO
+from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
 from properties.models import Property
 from properties.views import _apply_errors
 
 from . import forms, selectors, services
-from .models import Payment
+from .models import Payment, Receipt
 
 PAGE_SIZE = 25
 PICKER_SIZE = 20
@@ -310,6 +312,29 @@ class ReceiptView(CapabilityRequiredMixin, View):
             raise Http404
         return FileResponse(receipt.pdf.open("rb"), content_type="application/pdf",
                             as_attachment=request.GET.get("download") == "1", filename=f"{receipt.number}.pdf")
+
+
+RECEIPT_LINK_RATE_LIMIT = 30  # views per IP per minute
+
+
+class PublicReceiptView(View):
+    """The receipt PDF behind the link in the payment message (D-044). No login: the token is the key.
+
+    The link stops working once the payment is reversed.
+    """
+
+    def get(self, request, token):
+        if not ratelimit.hit(f"receipt_link:ip:{client_ip(request)}", RECEIPT_LINK_RATE_LIMIT, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        receipt = (Receipt.objects.select_related("payment").filter(share_token=token)
+                   .exclude(payment__status=Payment.Status.REVERSED).first())
+        if receipt is None or not receipt.pdf:
+            raise Http404
+        response = FileResponse(receipt.pdf.open("rb"), content_type="application/pdf",
+                                filename=f"{receipt.number}.pdf")
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
 
 class ApplyCreditView(CapabilityRequiredMixin, View):

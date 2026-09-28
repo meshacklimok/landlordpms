@@ -1,4 +1,4 @@
-"""Production settings. Requires SECRET_KEY, ALLOWED_HOSTS, DB_*, REDIS_URL and EMAIL_* in the environment."""
+"""Production settings. Requires SECRET_KEY, ALLOWED_HOSTS, SITE_URL, DB_*, REDIS_URL and EMAIL_* in the environment."""
 import os
 
 from django.core.exceptions import ImproperlyConfigured
@@ -16,6 +16,7 @@ def _required(name: str) -> str:
 
 
 _required("ALLOWED_HOSTS")
+SITE_URL = _required("SITE_URL").rstrip("/")
 
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

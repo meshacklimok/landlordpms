@@ -147,10 +147,12 @@ def quiet_until(org: Organization, now: datetime.datetime) -> datetime.datetime 
 
 def notify(org: Organization, type_codename: str, *, tenant=None, user=None, context: dict | None = None,
            dedupe_key: str = "", lease=None, invoice=None, payment=None, created_by=None,
-           now: datetime.datetime | None = None) -> Message | None:
+           now: datetime.datetime | None = None, send_now: bool = True) -> Message | None:
     """Writes one Message for this recipient and event, and sends it after commit if it is due.
 
-    Returns None when `dedupe_key` was already used in this organization: the event was handled.
+    Bulk triggers pass `send_now=False` and leave the message to `send_due`, so a run over many
+    leases does not wait on the SMS provider. Returns None when `dedupe_key` was already used in
+    this organization: the event was handled.
     """
     if (tenant is None) == (user is None):
         raise ValueError("notify() needs exactly one of tenant or user")
@@ -195,7 +197,7 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
         if dedupe_key and Message.objects.filter(organization=org, dedupe_key=dedupe_key).exists():
             return None
         raise
-    if message.status == Status.QUEUED and message.send_after is None:
+    if send_now and message.status == Status.QUEUED and message.send_after is None:
         transaction.on_commit(lambda: send_one(message.pk))
     return message
 

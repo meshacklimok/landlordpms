@@ -275,6 +275,7 @@ class RunResult:
 def generate_month(org: Organization, month: datetime.date, *, actor: Membership | None = None,
                    today=None, request=None) -> RunResult:
     """Bills one month for every lease the actor may bill (every lease when run by the job)."""
+    from notifications import triggers  # notifications depends on billing, not the other way round
     if actor is not None:
         if actor.organization_id != org.pk:
             raise PermissionDenied(_("That record belongs to another organization."))
@@ -293,6 +294,8 @@ def generate_month(org: Organization, month: datetime.date, *, actor: Membership
             continue
         if invoice is not None:
             result.invoices.append(invoice)
+            # Only the monthly run tells the tenant; a month billed again after a correction does not (D-044).
+            triggers.invoice_issued(invoice)
     return result
 
 
