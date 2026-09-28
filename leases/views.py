@@ -185,6 +185,10 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
         }
         if not lease.is_draft and can(m, "invoices.view", prop):
             ctx["account"] = {"balance": invoicing.lease_balance(lease), "deposit_held": deposits.held(lease)}
+        if not lease.is_draft and lease.archived_at is None and can(m, "payments.record", prop):
+            from mpesa.stk import stk_accounts
+
+            ctx["can_request_mpesa"] = bool(stk_accounts(lease))
         if ctx["can_terminate"]:
             ctx["notice_form"] = forms_in.get("notice_form") or forms.NoticeForm(
                 initial={"given_on": ctx["today"].isoformat()})

@@ -27,3 +27,24 @@ class CredentialsForm(forms.Form):
     consumer_key = _secret(_("Consumer key"))
     consumer_secret = _secret(_("Consumer secret"))
     passkey = _secret(_("Passkey"), _("Only needed to request payments from a tenant's phone (Paybill)."))
+
+
+class StkRequestForm(forms.Form):
+    """A payment request to a tenant's phone. The service checks the phone and the amount."""
+
+    phone = forms.CharField(label=_("Phone"), max_length=20,
+                            help_text=_("The tenant gets a prompt to enter their M-Pesa PIN."))
+    amount = forms.CharField(label=_("Amount (KES)"), max_length=12, help_text=_("Whole shillings."))
+    account = forms.ChoiceField(label=_("Paybill"), required=False)
+
+    def __init__(self, *args, accounts=(), phones=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["phone"].widget.attrs.update({"list": "stk-phones", "inputmode": "tel", "autocomplete": "off"})
+        self.fields["amount"].widget.attrs.update({"inputmode": "numeric"})
+        self.phones = list(phones)
+        if len(accounts) > 1:
+            self.fields["account"].choices = [(str(c.payment_account.public_id), c.payment_account.display_name)
+                                              for c in accounts]
+            self.fields["account"].required = True
+        else:
+            del self.fields["account"]

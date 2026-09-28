@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from core.net import client_ip
 
-from . import c2b
+from . import c2b, stk
 from .models import DarajaCredentials
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ ACCEPTED = {"ResultCode": 0, "ResultDesc": "Accepted"}
 @method_decorator(csrf_exempt, name="dispatch")
 class DarajaHookView(View):
     http_method_names = ["post"]
-    kinds = ("validate", "confirm")
+    kinds = ("validate", "confirm", "stk")
 
     def post(self, request, token, kind):
         allowed = getattr(settings, "MPESA_ALLOWED_IPS", [])
@@ -49,6 +49,13 @@ class DarajaHookView(View):
                 logger.warning("Daraja confirmation without TransID for %s", creds.payment_account_id)
                 return JsonResponse({"ResultCode": "C2B00016", "ResultDesc": "Rejected"}, status=400)
             # Stored (or already stored): Safaricom must not send it again.
+            return JsonResponse(ACCEPTED)
+        if kind == "stk":
+            try:
+                stk.receive(creds, payload)
+            except c2b.BadCallback:
+                logger.warning("Daraja STK callback without CheckoutRequestID for %s", creds.payment_account_id)
+                return JsonResponse({"ResultCode": 1, "ResultDesc": "Rejected"}, status=400)
             return JsonResponse(ACCEPTED)
         # Validation is enabled only on request from Safaricom; we accept every payment and
         # sort out wrong references afterwards (D-045 item 3).

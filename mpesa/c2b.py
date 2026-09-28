@@ -8,6 +8,9 @@
 2. Phone: the payer's number, or its hash, is on exactly one active lease (a tenant or an extra
    payer); among several, the one whose balance equals the amount. Only a suggestion.
 3. Otherwise the transaction waits in the inbox as UNMATCHED.
+
+A payment made in answer to a payment request (STK push) skips all this: the request named the
+lease, so it is confirmed there (D-045 item 8).
 """
 
 import datetime
@@ -17,6 +20,7 @@ import re
 import zoneinfo
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import F, Value
 from django.db.models.functions import Replace, Upper
@@ -260,7 +264,11 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
     tx.attempts += 1
     tx.processed_at = timezone.now()
     tx.note = tx.note.replace(RETRY_NOTE, "").strip()
-    lease, reason = match_reference(tx)
+    stk_reason = _confirm_stk(tx)
+    if tx.status == Status.MATCHED:
+        return tx
+    # A request that could not take the payment is not overruled by the account number typed.
+    lease, reason = (None, stk_reason) if stk_reason else match_reference(tx)
     if lease is not None:
         confirm_to_lease(tx, lease, matched_by=MpesaTransaction.MatchedBy.REFERENCE,
                          source=f"mpesa:{tx.trans_id}")
@@ -285,3 +293,40 @@ def _alert(tx: MpesaTransaction) -> None:
             triggers.payer_unmatched(tx)
     except Exception:
         logger.exception("Alerts for unmatched M-Pesa transaction %s failed", tx.trans_id)
+
+
+def _stk_request(tx: MpesaTransaction):
+    from .models import StkRequest
+
+    return StkRequest.objects.filter(transaction=tx).select_related("lease").first()
+
+
+def _confirm_stk(tx: MpesaTransaction) -> str:
+    """Confirms a locked transaction on the lease its payment request named. Returns why it could
+    not ("" when it was confirmed, or when there was no request)."""
+    stk = _stk_request(tx)
+    if stk is None:
+        return ""
+    try:
+        with transaction.atomic():
+            confirm_to_lease(tx, stk.lease, matched_by=MpesaTransaction.MatchedBy.STK,
+                             source=f"mpesa:{tx.trans_id}:stk")
+    except ValidationError as e:
+        return f"Paid in answer to a request on {stk.lease.number}, which cannot take it: {' '.join(e.messages)}"
+    return ""
+
+
+def settle_stk(tx: MpesaTransaction) -> None:
+    """Confirms an UNMATCHED transaction that turned out to answer a payment request."""
+    try:
+        with transaction.atomic():
+            tx = MpesaTransaction.objects.select_for_update().select_related("payment_account").get(pk=tx.pk)
+            if tx.status != Status.UNMATCHED:
+                return
+            reason = _confirm_stk(tx)
+            if reason:
+                tx.status = Status.UNMATCHED
+                tx.note = f"{tx.note} {reason}".strip()[:300]
+                tx.save()
+    except Exception:
+        logger.exception("M-Pesa transaction %s could not be placed on its payment request", tx.trans_id)

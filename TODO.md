@@ -125,7 +125,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Idempotent processing, raw payload storage
 - [x] Matching engine (account → reference → phone → amount); reference auto-confirms via `record_system_payment`
 - [x] Unallocated inbox (`/mpesa/inbox/`), transaction list, manual match / accept suggestion / ignore / restore; reversal returns it to the inbox
-- [ ] STK push
+- [x] STK push: request from the lease (`/mpesa/request/<lease>/`), callback confirms on that lease, status check
+- [ ] Verify in the Daraja sandbox: STK query "still processing" error code, whether a C2B confirmation also arrives for STK payments, STK amount limit
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
 - [ ] Daily reconciliation report
 - [ ] Safaricom go-live

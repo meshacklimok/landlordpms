@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DarajaCredentials, MpesaTransaction
+from .models import DarajaCredentials, MpesaTransaction, StkRequest
 
 
 @admin.register(DarajaCredentials)
@@ -27,6 +27,24 @@ class MpesaTransactionAdmin(admin.ModelAdmin):
     list_display = ["trans_id", "amount", "paid_at", "bill_ref", "status", "payment_account", "organization"]
     list_filter = ["status", "source"]
     search_fields = ["trans_id", "bill_ref"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(StkRequest)
+class StkRequestAdmin(admin.ModelAdmin):
+    """Read-only: requests are sent from the lease and settled by Safaricom's callback."""
+
+    list_display = ["created_at", "lease", "phone", "amount", "status", "result_code", "organization"]
+    list_filter = ["status"]
+    search_fields = ["checkout_request_id", "phone"]
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]

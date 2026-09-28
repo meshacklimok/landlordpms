@@ -11,7 +11,7 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 from core import crypto
-from core.models import ScopedQuerySet, TimeStampedModel
+from core.models import PublicIdModel, ScopedQuerySet, TimeStampedModel
 
 # Daraja refuses callback URLs containing these words, in any case. [VERIFY the full list]
 FORBIDDEN_URL_WORDS = ("mpesa", "m-pesa", "safaricom", "exe", "exec", "cmd", "sql", "query")
@@ -152,3 +152,48 @@ class MpesaTransaction(TimeStampedModel):
 
     def __str__(self):
         return self.trans_id
+
+
+class StkRequest(PublicIdModel, TimeStampedModel):
+    """A payment request sent to a tenant's phone (Lipa na M-Pesa Online, D-045 item 8).
+
+    PENDING until Safaricom's callback says the tenant paid (PAID, with the transaction) or did not
+    (FAILED: cancelled, timed out, wrong PIN, not enough money).
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Waiting for the tenant")
+        PAID = "PAID", _("Paid")
+        FAILED = "FAILED", _("Not paid")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    payment_account = models.ForeignKey("payments.PaymentAccount", on_delete=models.PROTECT,
+                                        related_name="stk_requests")
+    lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="stk_requests")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    phone = models.CharField(_("phone"), max_length=16)
+    amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
+    account_reference = models.CharField(max_length=12)
+    # Daraja's ids for the request; the callback is found by CheckoutRequestID.
+    merchant_request_id = models.CharField(max_length=60, blank=True)
+    checkout_request_id = models.CharField(max_length=60, null=True, blank=True, unique=True)  # noqa: DJ001
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    result_code = models.CharField(max_length=20, blank=True)
+    result_desc = models.CharField(max_length=300, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    transaction = models.OneToOneField(MpesaTransaction, on_delete=models.PROTECT, null=True, blank=True,
+                                       related_name="stk_request")
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name="mpesa_stkrequest_amount_positive"),
+            models.CheckConstraint(condition=~models.Q(status="PAID") | models.Q(transaction__isnull=False),
+                                   name="mpesa_stkrequest_paid_has_transaction"),
+        ]
+        indexes = [models.Index(fields=["organization", "status"])]
+
+    def __str__(self):
+        return f"{self.phone} · {self.amount}"

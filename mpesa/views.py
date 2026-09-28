@@ -1,24 +1,29 @@
 """M-Pesa pages. Thin views; services do the work. Other organizations' records are a 404."""
 
+import datetime
 import uuid
+from decimal import ROUND_CEILING
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import Http404
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
+from billing.invoicing import lease_balance
 from leases.models import Lease
+from leases.services import visible_leases
 from payments import selectors as payment_selectors
 from payments.models import Payment, PaymentAccount
 
-from . import forms, inbox, services
-from .models import DarajaCredentials, MpesaTransaction
+from . import forms, inbox, services, stk
+from .models import DarajaCredentials, MpesaTransaction, StkRequest
 
 Status = MpesaTransaction.Status
 PICKER_SIZE = 10
@@ -262,3 +267,96 @@ class TransactionDetailView(CapabilityRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("mpesa:transaction", trans_id=tx.trans_id)
+
+
+# ---------------------------------------------------------------------------
+# Payment requests (STK push, D-045 item 8)
+# ---------------------------------------------------------------------------
+
+WATCH_FOR = datetime.timedelta(minutes=3)
+
+
+class RequestPaymentView(CapabilityRequiredMixin, View):
+    """Sends an M-Pesa prompt to a tenant's phone and shows what became of recent ones."""
+
+    template_name = "mpesa/request.html"
+    required_capability = "payments.record"
+
+    def lease(self, request, public_id) -> Lease:
+        qs = visible_leases(request.membership, Lease.objects.exclude(status=Lease.Status.DRAFT))
+        lease = get_object_or_404(qs.filter(archived_at__isnull=True).select_related("unit__property"),
+                                  public_id=public_id)
+        if not can(request.membership, "payments.record", lease.unit.property):
+            raise Http404
+        return lease
+
+    def phones(self, lease) -> list[tuple[str, str]]:
+        found = {}
+        for lt in lease.lease_tenants.select_related("tenant"):
+            for number in (lt.tenant.phone, lt.tenant.alt_phone):
+                if number:
+                    found.setdefault(number, lt.tenant.name)
+        for payer in lease.payers.all():
+            found.setdefault(payer.phone, payer.name or _("Other payer"))
+        return list(found.items())
+
+    def make_form(self, lease, accounts, data=None):
+        phones = self.phones(lease)
+        balance = lease_balance(lease)
+        initial = {"phone": phones[0][0] if phones else "",
+                   "amount": str(max(balance, 1).to_integral_value(rounding=ROUND_CEILING)) if balance > 0 else ""}
+        return forms.StkRequestForm(data, initial=initial, accounts=accounts, phones=phones)
+
+    def context(self, request, lease, accounts, form):
+        requests = list(StkRequest.objects.filter(lease=lease).select_related("transaction__payment")[:10])
+        now = timezone.now()
+        return {"lease": lease, "form": form, "accounts": accounts, "requests": requests,
+                "watching": any(r.status == StkRequest.Status.PENDING and now - r.created_at < WATCH_FOR
+                                for r in requests),
+                "balance": lease_balance(lease), "currency": lease.currency}
+
+    def get(self, request, public_id):
+        lease = self.lease(request, public_id)
+        accounts = stk.stk_accounts(lease)
+        return render(request, self.template_name,
+                      self.context(request, lease, accounts, self.make_form(lease, accounts)))
+
+    def post(self, request, public_id):
+        lease = self.lease(request, public_id)
+        m = request.membership
+        if request.POST.get("action") == "check":
+            req = StkRequest.objects.filter(lease=lease, public_id=_uuid(request.POST.get("request", ""))).first()
+            if req is None:
+                raise Http404
+            try:
+                req = stk.check_status(req, actor=m)
+            except PermissionDenied:
+                raise Http404 from None
+            except ValidationError as e:
+                messages.info(request, " ".join(e.messages))
+            else:
+                if req.status == StkRequest.Status.FAILED:
+                    messages.info(request, _("Not paid: %(why)s") % {"why": req.result_desc or req.result_code})
+                elif req.status == StkRequest.Status.PENDING and req.result_code == "0":
+                    messages.info(request, _("Safaricom says it was paid. It shows here when the confirmation "
+                                             "arrives."))
+            return redirect("mpesa:request", public_id=lease.public_id)
+
+        accounts = stk.stk_accounts(lease)
+        form = self.make_form(lease, accounts, request.POST)
+        if form.is_valid():
+            account = None
+            if "account" in form.fields:
+                account = next((c.payment_account for c in accounts
+                                if str(c.payment_account.public_id) == form.cleaned_data["account"]), None)
+            try:
+                stk.request_payment(m, lease, phone=form.cleaned_data["phone"], amount=form.cleaned_data["amount"],
+                                    payment_account=account, request=request)
+            except PermissionDenied:
+                raise Http404 from None
+            except ValidationError as e:
+                _add_errors(form, e)
+            else:
+                messages.success(request, _("Request sent. The tenant should see the M-Pesa prompt now."))
+                return redirect("mpesa:request", public_id=lease.public_id)
+        return render(request, self.template_name, self.context(request, lease, accounts, form), status=400)

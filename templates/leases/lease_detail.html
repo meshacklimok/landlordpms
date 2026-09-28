@@ -165,6 +165,7 @@
       <dt class="col-5">{% if account.balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</dt><dd class="col-7">{{ account.balance|money:lease.currency }}</dd>
       <dt class="col-5">{% trans "Deposit held" %}</dt><dd class="col-7">{{ account.deposit_held|money:lease.currency }}</dd>
     </dl>
+    {% if can_request_mpesa %}<a class="btn btn-sm btn-outline-success mt-2" href="{% url 'mpesa:request' lease.public_id %}"><i class="bi bi-phone-vibrate"></i> {% trans "Request M-Pesa payment" %}</a>{% endif %}
   </div></div>
   {% endif %}
 

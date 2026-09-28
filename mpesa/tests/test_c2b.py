@@ -131,8 +131,9 @@ def test_unknown_token_is_404_and_missing_code_is_refused(client, creds):
     assert not MpesaTransaction.objects.exists()
 
 
-def test_stk_callbacks_are_not_handled_yet(client, creds):
-    assert post(client, creds, payload(), kind="stk").status_code == 404
+def test_stk_callback_without_checkout_id_is_refused(client, creds):
+    assert post(client, creds, payload(), kind="stk").status_code == 400
+    assert post(client, creds, payload(), kind="nope").status_code == 404
 
 
 def test_wrong_shortcode_is_flagged_and_never_matched(client, creds, lease):

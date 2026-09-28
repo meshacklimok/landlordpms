@@ -14,6 +14,7 @@ def _test_settings(settings):
 
     FakeDarajaClient.calls.clear()
     FakeDarajaClient.fail = ""
+    FakeDarajaClient.replies = {}
     MemorySmsSender.outbox.clear()
     cache.clear()
     yield
