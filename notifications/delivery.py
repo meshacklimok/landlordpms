@@ -251,7 +251,7 @@ def send_one(pk: int, now: datetime.datetime | None = None) -> str | None:
             message.error = ""
         else:
             message.error = (result.error or "")[:300]
-            if message.attempts >= Message.MAX_ATTEMPTS:
+            if result.permanent or message.attempts >= Message.MAX_ATTEMPTS:
                 message.status = Status.FAILED
             else:
                 message.send_after = now + RETRY_BASE * (2 ** (message.attempts - 1))

@@ -20,6 +20,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from notifications.hook_views import AfricasTalkingHookView
 from payments.views import PublicReceiptView
 from properties.views import VacancyView
 
@@ -31,6 +32,8 @@ urlpatterns = [
     path("imports/", include("imports.urls")),
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
     path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
+    path("hooks/sms/africastalking/<str:token>/<slug:kind>/", AfricasTalkingHookView.as_view(),
+         name="hook_africastalking"),
     path("billing/", include("billing.urls")),
     path("payments/", include("payments.urls")),
     path("messages/", include("notifications.urls")),

@@ -53,7 +53,12 @@ MAILERS = {
 DEFAULT_FROM_EMAIL = SERVER_EMAIL = _required("DEFAULT_FROM_EMAIL")
 
 # The console adapter would print login codes to the log instead of sending them. It is allowed only
-# when explicitly asked for (a staging server before the real SMS adapter lands in Phase 5).
+# when explicitly asked for (a staging server without an SMS account).
 if SMS_BACKEND.startswith("core.sms.") and SMS_BACKEND != "core.sms.AfricasTalkingSmsSender" \
         and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
     raise ImproperlyConfigured("Set SMS_BACKEND to a real SMS adapter (or ALLOW_CONSOLE_SMS=1 on staging).")
+if SMS_BACKEND == "core.sms.AfricasTalkingSmsSender":  # noqa: F405
+    _required("AT_USERNAME")
+    _required("AT_API_KEY")
+    if len(_required("AT_CALLBACK_TOKEN")) < 32:
+        raise ImproperlyConfigured("AT_CALLBACK_TOKEN must be at least 32 random characters.")

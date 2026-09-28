@@ -198,5 +198,11 @@ SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 # SMS adapter (core/sms.py). The console adapter prints codes during development.
 SMS_BACKEND = os.getenv("SMS_BACKEND", "core.sms.ConsoleSmsSender")
+# Africa's Talking (SMS_BACKEND=core.sms.AfricasTalkingSmsSender). AT_USERNAME=sandbox uses the sandbox.
+AT_USERNAME = os.getenv("AT_USERNAME", "")
+AT_API_KEY = os.getenv("AT_API_KEY", "")
+AT_SENDER_ID = os.getenv("AT_SENDER_ID", "")
+# Secret part of the callback URLs: /hooks/sms/africastalking/<token>/<delivery|inbound|optout>/
+AT_CALLBACK_TOKEN = os.getenv("AT_CALLBACK_TOKEN", "")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

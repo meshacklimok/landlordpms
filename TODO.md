@@ -114,7 +114,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability; `send_due_messages` (schedule every few minutes)
 - [x] Owner notification settings page; tenant opt-out per channel
 - [x] Message log, MessageTemplate overrides (safe `{field}` rendering), provider adapter interface
-- [ ] SMS adapter (Africa's Talking), delivery status, opt-out
+- [x] SMS adapter (Africa's Talking), delivery status, opt-out
 - [x] Triggers: invoice issued (monthly run only), due soon, overdue (daily job), payment received with public receipt link `/r/<token>/`, payment waiting for review (in-app); set `SITE_URL` in production
 - [x] In-app notifications
 
