@@ -27,6 +27,8 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Desk benchmark of competitors (doc 16)
 - [x] Decided D-039 (eTIMS priority, phone-hash test, earlier portal/WhatsApp/water)
 - [x] Decided D-040 (competitor gap list, doc 16 sections 7-9) and fold approved items into docs 11/12 and the phases
+- [x] Third competitor pass: 21 websites and apps (doc 16 Part 3, 2026-09-29)
+- [ ] **Approve or change D-046** (payment link, water forward, condition reports, good-standing letter, quarterly billing, tax flag, late fees design-in)
 - [ ] Hands-on trials of 3 Kenyan competitors; Daraja sandbox test for hashed phone; accountant check on eTIMS/eRITS
 - [ ] Sketch the 10 key mobile screens (doc 14 C2)
 - [x] Financial separation, archive matrix, numbering, money, reporting metrics, notification preferences (doc 11 §22–27)
@@ -129,6 +131,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Verify in the Daraja sandbox: STK query "still processing" error code, whether a C2B confirmation also arrives for STK payments, STK amount limit
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
 - [x] Daily job `mpesa_daily`: retry stuck transactions, check waiting payment requests, in-app reconciliation summary
+- [x] One M-Pesa code counted once: a hand-typed code blocks automatic payment of the callback, and a code waiting in the inbox cannot be typed in (D-045 item 12)
 - [ ] Safaricom go-live (checklist: config/docs/17_MPESA_GO_LIVE.md)
 
 ## Phase 7 — Dashboards, search, tenant portal
@@ -141,6 +144,9 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Per-role dashboards
 - [ ] Global search
 - [ ] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests
+- [ ] Tenant payment link: STK push started by the tenant from the rent SMS, any amount (D-046 item 1, waits for approval)
+- [ ] Annual rental income pack; owner resident/non-resident flag for the tax estimate (D-046)
+- [ ] Quarterly and yearly billing (`Lease.Frequency`) (D-046)
 
 ## Phase 8 — Launch
 - [ ] Optional MFA for Owner/Accountant, mandatory for Platform Admin
@@ -155,7 +161,9 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 9 — Later
 - [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement
-- [ ] Vendor SLA on maintenance; metered water readings by caretaker (may move earlier)
+- [ ] Move-in/move-out condition reports with photos and item register; tenant good-standing letter (D-046)
+- [ ] Unverified M-Pesa code check (typed code not confirmed by Daraja or statement within 24h), after statement import
+- [ ] Vendor SLA on maintenance; metered water readings by caretaker with photo and anomaly flags (D-046 proposes moving this to right after Phase 7)
 - [ ] Tenant portal (may move earlier)
 - [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
 - [ ] Maintenance, metered utilities, documents

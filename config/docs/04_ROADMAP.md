@@ -36,15 +36,15 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 **Exit:** first pilot landlord runs a real rent cycle.
 
 ## Phase 5 — Notifications
-- [ ] SMS (Africa's Talking) reminders and receipts
-- [ ] WhatsApp templates
-- [ ] Message log, delivery status, opt-out
-- [ ] Scheduled reminders
+- [x] SMS (Africa's Talking) reminders and receipts
+- [x] WhatsApp templates
+- [x] Message log, delivery status, opt-out
+- [x] Scheduled reminders
 
 ## Phase 6 — M-Pesa
-- [ ] Daraja sandbox: C2B register URLs, confirmation, STK Push
-- [ ] Idempotent processing, unmatched-payment inbox
-- [ ] Per-organization shortcode config, encrypted secrets
+- [~] Daraja sandbox: C2B register URLs, confirmation, STK Push (built; sandbox checks still open)
+- [x] Idempotent processing, unmatched-payment inbox, one M-Pesa code counted once
+- [x] Per-organization shortcode config, encrypted secrets
 - [ ] Production go-live with Safaricom
 **Exit:** 90%+ of pilot payments reconcile automatically.
 
