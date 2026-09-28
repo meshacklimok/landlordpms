@@ -112,11 +112,11 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Segmented announcements
 - [x] NotificationType catalog (in code), OrganizationNotificationRule, NotificationPreference, ConsentRecord (D-044)
 - [x] Delivery rule engine (org rule + preference + consent + channel + quiet hours); audience by capability; `send_due_messages` (schedule every few minutes)
-- [ ] Owner notification settings page; tenant opt-out per channel
+- [x] Owner notification settings page; tenant opt-out per channel
 - [x] Message log, MessageTemplate overrides (safe `{field}` rendering), provider adapter interface
 - [ ] SMS adapter (Africa's Talking), delivery status, opt-out
 - [x] Triggers: invoice issued (monthly run only), due soon, overdue (daily job), payment received with public receipt link `/r/<token>/`, payment waiting for review (in-app); set `SITE_URL` in production
-- [ ] In-app notifications
+- [x] In-app notifications
 
 ## Phase 6 — M-Pesa
 - [ ] Store msisdn_raw and msisdn_hash; verify hash behaviour in Daraja sandbox

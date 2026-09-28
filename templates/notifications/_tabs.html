@@ -1,0 +1,5 @@
+{% load i18n access %}<ul class="nav nav-underline mb-3 small">
+  {% if membership|can:"messages.view" %}<li class="nav-item"><a class="nav-link {% if tab == 'log' %}active{% endif %}" href="{% url 'notifications:log' %}">{% trans "Message log" %}</a></li>{% endif %}
+  {% if membership|can:"templates.manage" %}<li class="nav-item"><a class="nav-link {% if tab == 'templates' %}active{% endif %}" href="{% url 'notifications:templates' %}">{% trans "Templates" %}</a></li>{% endif %}
+  {% if membership|can:"organization.manage" %}<li class="nav-item"><a class="nav-link {% if tab == 'settings' %}active{% endif %}" href="{% url 'notifications:settings' %}">{% trans "Settings" %}</a></li>{% endif %}
+</ul>

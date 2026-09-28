@@ -33,6 +33,7 @@ urlpatterns = [
     path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
     path("billing/", include("billing.urls")),
     path("payments/", include("payments.urls")),
+    path("messages/", include("notifications.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

@@ -17,6 +17,9 @@ from accounts.permissions import can
 from core.phone import InvalidPhoneNumber, normalize_phone
 from leases.models import Lease
 from leases.services import visible_leases
+from notifications import services as notifications
+from notifications.catalog import SMS
+from notifications.selectors import recent_for_tenant
 from properties.views import _apply_errors
 
 from . import forms, services
@@ -123,6 +126,8 @@ class TenantDetailView(CapabilityRequiredMixin, View):
             "today": timezone.localdate(),
             "can_manage": can(request.membership, "tenants.manage"),
             "show_sensitive": can(request.membership, "tenants.view_sensitive"),
+            "sms_allowed": notifications.channel_allowed(tenant, SMS),
+            "recent_messages": recent_for_tenant(tenant) if can(m, "messages.view") else None,
         })
 
 

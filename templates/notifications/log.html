@@ -1,0 +1,106 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Messages" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <div class="mb-2">
+    <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
+    <div class="small text-body-secondary">{% trans "Every message to tenants: sent, waiting, failed or skipped, with the reason." %}</div>
+  </div>
+  {% include "notifications/_tabs.html" with tab="log" %}
+
+  {% if tenant %}
+  <div class="alert alert-light border d-flex justify-content-between align-items-center py-2 small">
+    <span>{% blocktrans with name=tenant.name %}Messages to {{ name }}{% endblocktrans %}</span>
+    <a href="{% querystring tenant=None page=None %}">{% trans "All tenants" %}</a>
+  </div>
+  {% endif %}
+
+  <form method="get" class="card shadow-sm mb-3"><div class="card-body pb-2">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    {% if tenant %}<input type="hidden" name="tenant" value="{{ tenant.public_id }}">{% endif %}
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md">
+        <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
+        <div class="input-group">
+          <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+          <input type="search" id="f-q" name="q" value="{{ filters.q|default:'' }}" class="form-control" placeholder="{% trans 'Tenant, phone or text' %}">
+        </div>
+      </div>
+      <div class="col-8 col-md-4 col-lg-3">
+        <label class="form-label small text-body-secondary mb-1" for="f-type">{% trans "Notification" %}</label>
+        <select id="f-type" name="type" class="form-select">
+          {% for value, label in form.fields.type.choices %}<option value="{{ value }}" {% if value == filters.type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-4 col-md-auto d-flex gap-2">
+        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+        {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'notifications:log' %}{% if status %}?status={{ status }}{% endif %}">{% trans "Clear" %}</a>{% endif %}
+      </div>
+    </div>
+  </div></form>
+
+  <ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
+    <li class="nav-item"><a class="nav-link {% if not status %}active{% endif %}" href="{% querystring status=None page=None %}">{% trans "All" %}<span class="count">{{ counts.all }}</span></a></li>
+    {% for key, label, n in tabs %}
+    <li class="nav-item"><a class="nav-link {% if key == status %}active{% endif %}" href="{% querystring status=key page=None %}">{{ label }}<span class="count">{{ n }}</span></a></li>
+    {% endfor %}
+  </ul>
+
+  {% if page.object_list %}
+  <div class="card shadow-sm d-none d-md-block overflow-hidden">
+    <div class="table-responsive">
+      <table class="table pay-table">
+        <thead><tr>
+          <th scope="col">{% trans "When" %}</th>
+          <th scope="col">{% trans "Tenant" %}</th>
+          <th scope="col">{% trans "Notification" %}</th>
+          <th scope="col">{% trans "Text" %}</th>
+          <th scope="col">{% trans "Status" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for message in page %}
+          <tr data-href="{% url 'notifications:detail' message.public_id %}">
+            <td class="num small">{{ message.created_at|date:"j M Y, H:i" }}</td>
+            <td>
+              <a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'notifications:detail' message.public_id %}">{{ message.tenant.name }}</a>
+              <div class="small text-body-secondary">{{ message.to|default:"—" }}{% if message.lease %} · {{ message.lease.unit.code }}{% endif %}</div>
+            </td>
+            <td class="small text-nowrap">{{ message.get_type_display }}</td>
+            <td class="small text-body-secondary" style="max-width: 28rem"><div class="text-truncate">{{ message.body|default:"—" }}</div></td>
+            <td>{% include "notifications/_status.html" %}{% if message.skip_reason %}<div class="small text-body-secondary">{{ message.get_skip_reason_display }}</div>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="list-group shadow-sm d-md-none">
+    {% for message in page %}
+    <a class="list-group-item list-group-item-action" href="{% url 'notifications:detail' message.public_id %}">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="fw-medium text-truncate">{{ message.tenant.name }}</span>
+        {% include "notifications/_status.html" %}
+      </div>
+      <div class="small text-body-secondary">{{ message.get_type_display }} · {{ message.created_at|date:"j M, H:i" }}</div>
+      <div class="small text-truncate">{{ message.body|default:message.get_skip_reason_display }}</div>
+    </a>
+    {% endfor %}
+  </div>
+
+  <div class="small text-body-secondary mt-2">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</div>
+  {% include "partials/pager.html" %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-chat-left-text"></i></div>
+    {% if filtered or status %}
+      <h2 class="h6">{% trans "No messages match" %}</h2>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'notifications:log' %}">{% trans "Clear filters" %}</a>
+    {% else %}
+      <h2 class="h6">{% trans "No messages yet" %}</h2>
+      <p class="small text-body-secondary mb-0">{% trans "Invoices, reminders and receipts go to tenants by SMS and are listed here." %}</p>
+    {% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

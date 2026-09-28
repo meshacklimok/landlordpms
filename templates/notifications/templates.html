@@ -1,0 +1,28 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Message templates" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <div class="mb-2">
+    <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
+    <div class="small text-body-secondary">{% trans "The wording of each notification. Fields in {braces} are filled in when it is sent." %}</div>
+  </div>
+  {% include "notifications/_tabs.html" with tab="templates" %}
+
+  {% for group in groups %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6 mb-2">{{ group.type.label }}</h2>
+    <div class="list-group list-group-flush">
+      {% for item in group.items %}
+      <a class="list-group-item list-group-item-action px-0" href="{% url 'notifications:template_edit' group.type.codename item.channel item.language %}">
+        <div class="d-flex justify-content-between small">
+          <span class="fw-medium">{% if item.channel == "SMS" %}{% trans "SMS" %}{% else %}{% trans "In-app" %}{% endif %} · {% if item.language == "sw" %}{% trans "Swahili" %}{% else %}{% trans "English" %}{% endif %}</span>
+          {% if item.custom %}<span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Your wording" %}</span>{% else %}<span class="text-body-secondary">{% trans "Default" %}</span>{% endif %}
+        </div>
+        <div class="small text-body-secondary text-truncate">{{ item.preview }}</div>
+      </a>
+      {% endfor %}
+    </div>
+  </div></div>
+  {% endfor %}
+</div>
+{% endblock %}
