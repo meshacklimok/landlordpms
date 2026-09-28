@@ -216,4 +216,13 @@ WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN", "")
 WA_APP_SECRET = os.getenv("WA_APP_SECRET", "")
 WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN", "")
 
+# Keys that encrypt provider secrets at rest (core/crypto.py): comma-separated Fernet keys, the first
+# encrypts. Empty in development means a key derived from SECRET_KEY; production must set them.
+FIELD_ENCRYPTION_KEYS = os.getenv("FIELD_ENCRYPTION_KEYS", "")
+
+# Daraja (M-Pesa) client, one set of credentials per payment account (mpesa/daraja.py, D-045).
+MPESA_CLIENT = os.getenv("MPESA_CLIENT", "mpesa.daraja.DarajaClient")
+# Optional: only these IPs may call the M-Pesa callbacks (comma-separated). Empty allows any.
+MPESA_ALLOWED_IPS = [ip.strip() for ip in os.getenv("MPESA_ALLOWED_IPS", "").split(",") if ip.strip()]
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

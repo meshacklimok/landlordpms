@@ -1,4 +1,5 @@
-"""Production settings. Requires SECRET_KEY, ALLOWED_HOSTS, SITE_URL, DB_*, REDIS_URL and EMAIL_* in the environment."""
+"""Production settings. Requires SECRET_KEY, ALLOWED_HOSTS, SITE_URL, DB_*, REDIS_URL, EMAIL_* and
+FIELD_ENCRYPTION_KEYS in the environment."""
 import os
 
 from django.core.exceptions import ImproperlyConfigured
@@ -70,3 +71,12 @@ if WHATSAPP_BACKEND == "core.whatsapp.CloudApiWhatsAppSender":  # noqa: F405
         raise ImproperlyConfigured("WA_VERIFY_TOKEN must be at least 32 random characters.")
 elif WHATSAPP_BACKEND and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
     raise ImproperlyConfigured("Set WHATSAPP_BACKEND to core.whatsapp.CloudApiWhatsAppSender or leave it empty.")
+
+# Daraja keys and other provider secrets are stored encrypted with these (D-045 item 2).
+try:
+    from cryptography.fernet import Fernet
+
+    for _key in _required("FIELD_ENCRYPTION_KEYS").split(","):
+        Fernet(_key.strip())
+except ValueError as e:
+    raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS must be comma-separated Fernet keys.") from e

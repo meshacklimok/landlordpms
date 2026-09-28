@@ -8,10 +8,18 @@ from core.sms import MemorySmsSender
 def _test_settings(settings):
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
     settings.SMS_BACKEND = "core.sms.MemorySmsSender"
+    # Never reach Safaricom from a test.
+    settings.MPESA_CLIENT = "mpesa.daraja.FakeDarajaClient"
+    from mpesa.daraja import FakeDarajaClient
+
+    FakeDarajaClient.calls.clear()
+    FakeDarajaClient.fail = ""
     MemorySmsSender.outbox.clear()
     cache.clear()
     yield
     MemorySmsSender.outbox.clear()
+    FakeDarajaClient.calls.clear()
+    FakeDarajaClient.fail = ""
 
 
 @pytest.fixture

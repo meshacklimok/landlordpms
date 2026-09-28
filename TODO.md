@@ -126,7 +126,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Matching engine (account → reference → phone → amount)
 - [ ] Unallocated inbox and manual match
 - [ ] STK push
-- [ ] Encrypted credentials; daily reconciliation report
+- [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
+- [ ] Daily reconciliation report
 - [ ] Safaricom go-live
 
 ## Phase 7 — Dashboards, search, tenant portal
