@@ -1,4 +1,4 @@
-"""Communications pages: message log, notification settings, templates, the bell and tenant opt-out.
+"""Communications pages: message log, announcements, settings, templates, the bell and tenant opt-out.
 
 Thin views; services do the work. Anything outside the member's reach is a 404, never a 403.
 """
@@ -8,7 +8,7 @@ import uuid
 from django.contrib import messages
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Q, Sum
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.translation import gettext as _
@@ -18,7 +18,7 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin
 from accounts.permissions import can
 
-from . import catalog, forms, selectors, services
+from . import announcements, catalog, forms, selectors, services
 from .delivery import Rule, effective_rule
 from .models import Message
 from .rendering import SMS_SEGMENT, template_for
@@ -308,3 +308,86 @@ class TenantChannelView(CapabilityRequiredMixin, View):
             messages.success(request, _("SMS resumed for %(name)s.") % {"name": tenant.name} if allowed
                              else _("SMS stopped for %(name)s. Required messages still go.") % {"name": tenant.name})
         return redirect("tenants:detail", public_id=tenant.public_id)
+
+
+# ---------------------------------------------------------------------------
+# Announcements
+# ---------------------------------------------------------------------------
+
+
+def _state_counts() -> dict:
+    return {key: Count("messages", filter=Q(messages__status__in=statuses))
+            for key, statuses in selectors.STATES.items()}
+
+
+class AnnouncementListView(CapabilityRequiredMixin, View):
+    template_name = "notifications/announcements.html"
+    required_capability = "messages.send_bulk"
+
+    def get(self, request):
+        qs = (announcements.visible_announcements(request.membership).select_related("created_by")
+              .annotate(**_state_counts()))
+        page = Paginator(qs.order_by("-created_at", "-pk"), PAGE_SIZE).get_page(request.GET.get("page"))
+        return render(request, self.template_name, {"page": page})
+
+
+class AnnouncementNewView(CapabilityRequiredMixin, View):
+    template_name = "notifications/announcement_new.html"
+    required_capability = "messages.send_bulk"
+
+    def _render(self, request, form, preview=None, status=200):
+        return render(request, self.template_name, {
+            "form": form, "preview": preview, "fields": announcements.FIELDS,
+            "price": announcements.price_per_part(), "inline_limit": announcements.BULK_INLINE,
+            "has_buildings": form.fields["buildings"].queryset.exists(),
+            "org_name": request.organization.display_name,
+        }, status=status)
+
+    def get(self, request):
+        form = forms.AnnouncementForm(membership=request.membership, initial={"nonce": uuid.uuid4()})
+        return self._render(request, form)
+
+    def post(self, request):
+        form = forms.AnnouncementForm(request.POST, membership=request.membership)
+        if not form.is_valid():
+            return self._render(request, form, status=400)
+        data = form.cleaned_data
+        try:
+            if request.POST.get("action") != "send":
+                preview = announcements.preview(request.membership, data["text"], form.audience())
+                return self._render(request, form, preview)
+            announcement, created = announcements.send(
+                request.membership, data["text"], form.audience(), nonce=data["nonce"],
+                urgent=data.get("urgent", False), request=request)
+        except ValidationError as e:
+            if hasattr(e, "error_dict"):
+                for field, errs in e.message_dict.items():
+                    for err in errs:
+                        form.add_error(field if field in form.fields else None, err)
+            else:
+                form.add_error(None, _errors(e))
+            return self._render(request, form, status=400)
+        if created:
+            messages.success(request, _("Announcement sent to %(n)s tenants.") % {"n": announcement.recipient_count})
+        return redirect("notifications:announcement", public_id=announcement.public_id)
+
+
+class AnnouncementDetailView(CapabilityRequiredMixin, View):
+    template_name = "notifications/announcement_detail.html"
+    required_capability = "messages.send_bulk"
+
+    def get(self, request, public_id):
+        announcement = get_object_or_404(announcements.visible_announcements(request.membership)
+                                         .select_related("created_by"), public_id=public_id)
+        base = announcement.messages.select_related("tenant", "lease__unit")
+        status = request.GET.get("status", "")
+        if status not in selectors.STATES:
+            status = ""
+        qs = base.filter(status__in=selectors.STATES[status]) if status else base
+        page = Paginator(qs.order_by("tenant__name", "pk"), PAGE_SIZE).get_page(request.GET.get("page"))
+        counts = selectors.counts_by_state(base)
+        return render(request, self.template_name, {
+            "announcement": announcement, "page": page, "status": status, "counts": counts,
+            "tabs": [(key, label, counts[key]) for key, label in TAB_LABELS.items()],
+            "cost": base.aggregate(total=Sum("cost"))["total"],
+        })

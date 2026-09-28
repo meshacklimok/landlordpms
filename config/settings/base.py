@@ -198,6 +198,8 @@ SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8000").rstrip("/")
 
 # SMS adapter (core/sms.py). The console adapter prints codes during development.
 SMS_BACKEND = os.getenv("SMS_BACKEND", "core.sms.ConsoleSmsSender")
+# KES per SMS part, for the cost estimate shown before an announcement is sent.
+SMS_PRICE_ESTIMATE = os.getenv("SMS_PRICE_ESTIMATE", "0.80")
 # Africa's Talking (SMS_BACKEND=core.sms.AfricasTalkingSmsSender). AT_USERNAME=sandbox uses the sandbox.
 AT_USERNAME = os.getenv("AT_USERNAME", "")
 AT_API_KEY = os.getenv("AT_API_KEY", "")

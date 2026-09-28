@@ -1,0 +1,45 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Announcement" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'notifications:announcements' %}" class="small">← {% trans "Announcements" %}</a>
+  <h1 class="h4 mt-2 mb-0">{% trans "Announcement" %}</h1>
+  <div class="small text-body-secondary mb-3">
+    {{ announcement.created_at|date:"j M Y, H:i" }}{% if announcement.created_by %} · {{ announcement.created_by }}{% endif %}
+    {% if announcement.urgent %} · {% trans "sent during quiet hours" %}{% endif %}
+  </div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <p class="mb-2" style="white-space: pre-line">{{ announcement.text }}</p>
+    <div class="small text-body-secondary">
+      {{ announcement.summary }} ·
+      {% blocktrans count n=announcement.recipient_count %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}
+      {% if cost %} · {% blocktrans with c=cost|floatformat:2 %}provider cost KES {{ c }}{% endblocktrans %}{% endif %}
+    </div>
+  </div></div>
+
+  <ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
+    <li class="nav-item"><a class="nav-link {% if not status %}active{% endif %}" href="{% querystring status=None page=None %}">{% trans "All" %}<span class="count">{{ counts.all }}</span></a></li>
+    {% for key, label, n in tabs %}
+    <li class="nav-item"><a class="nav-link {% if key == status %}active{% endif %}" href="{% querystring status=key page=None %}">{{ label }}<span class="count">{{ n }}</span></a></li>
+    {% endfor %}
+  </ul>
+
+  {% if page.object_list %}
+  <div class="list-group shadow-sm">
+    {% for message in page %}
+    <a class="list-group-item list-group-item-action" href="{% url 'notifications:detail' message.public_id %}">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="fw-medium text-truncate">{{ message.tenant.name }}{% if message.lease %} <span class="small text-body-secondary">· {{ message.lease.unit.code }}</span>{% endif %}</span>
+        {% include "notifications/_status.html" %}
+      </div>
+      <div class="small text-body-secondary text-truncate">{{ message.to|default:"—" }}{% if message.skip_reason %} · {{ message.get_skip_reason_display }}{% elif message.error %} · {{ message.error }}{% endif %}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% include "partials/pager.html" %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-4 small text-body-secondary">{% trans "No messages in this group." %}</div></div>
+  {% endif %}
+</div>
+{% endblock %}

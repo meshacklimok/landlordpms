@@ -145,14 +145,39 @@ def quiet_until(org: Organization, now: datetime.datetime) -> datetime.datetime 
 # ---------------------------------------------------------------------------
 
 
+def _choose(org, ntype, rule: Rule, tenant, user, language: str) -> tuple[tuple[str, str] | None, str | None]:
+    """The first allowed channel of the rule with its text, or None and the first reason nothing can go."""
+    if not rule.enabled:
+        return None, Skip.RULE_DISABLED
+    first_reason = None
+    for channel in rule.channels:
+        reason = _blocked(org, ntype, channel, tenant, user)
+        text = None if reason else template_for(org, ntype, channel, language)
+        if reason is None and not text:
+            reason = Skip.NO_TEMPLATE
+        if reason is None:
+            return (channel, text), None
+        first_reason = first_reason or reason
+    return None, first_reason
+
+
+def preview(org: Organization, type_codename: str, *, tenant=None, user=None,
+            rule: Rule | None = None) -> tuple[tuple[str, str] | None, str | None]:
+    """What `notify` would do for this recipient, without writing anything: (channel, text) or a skip reason."""
+    ntype = catalog.get(type_codename)
+    language = getattr(tenant, "language", "") or catalog.EN
+    chosen, reason = _choose(org, ntype, rule or effective_rule(org, ntype), tenant, user, language)
+    return chosen, None if chosen else (reason or Skip.CHANNEL_UNAVAILABLE)
+
+
 def notify(org: Organization, type_codename: str, *, tenant=None, user=None, context: dict | None = None,
-           dedupe_key: str = "", lease=None, invoice=None, payment=None, created_by=None,
-           now: datetime.datetime | None = None, send_now: bool = True) -> Message | None:
+           dedupe_key: str = "", lease=None, invoice=None, payment=None, announcement=None, created_by=None,
+           urgent: bool = False, now: datetime.datetime | None = None, send_now: bool = True) -> Message | None:
     """Writes one Message for this recipient and event, and sends it after commit if it is due.
 
     Bulk triggers pass `send_now=False` and leave the message to `send_due`, so a run over many
     leases does not wait on the SMS provider. Returns None when `dedupe_key` was already used in
-    this organization: the event was handled.
+    this organization: the event was handled. `urgent` sends during quiet hours even when the type waits.
     """
     if (tenant is None) == (user is None):
         raise ValueError("notify() needs exactly one of tenant or user")
@@ -163,22 +188,11 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
     rule = effective_rule(org, ntype)
     language = getattr(tenant, "language", "") or catalog.EN
     base = dict(organization=org, type=ntype.codename, tenant=tenant, user=user, language=language,
-                lease=lease, invoice=invoice, payment=payment, dedupe_key=dedupe_key, created_by=created_by)
+                lease=lease, invoice=invoice, payment=payment, announcement=announcement, dedupe_key=dedupe_key,
+                created_by=created_by)
     context = {"org_name": org.display_name, **(context or {})}
 
-    first_reason = Skip.RULE_DISABLED if not rule.enabled else None
-    chosen = None
-    if rule.enabled:
-        for channel in rule.channels:
-            reason = _blocked(org, ntype, channel, tenant, user)
-            text = None if reason else template_for(org, ntype, channel, language)
-            if reason is None and not text:
-                reason = Skip.NO_TEMPLATE
-            if reason is None:
-                chosen = (channel, text)
-                break
-            first_reason = first_reason or reason
-
+    chosen, first_reason = _choose(org, ntype, rule, tenant, user, language)
     if chosen is None:
         fields = dict(channel=rule.channels[0] if rule.channels else ntype.channels[0], status=Status.SKIPPED,
                       skip_reason=first_reason or Skip.CHANNEL_UNAVAILABLE)
@@ -189,7 +203,8 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, con
             fields.update(status=Status.DELIVERED, sent_at=now, delivered_at=now)
         else:
             fields.update(status=Status.QUEUED,
-                          send_after=None if ntype.urgent or channel not in _NOISY else quiet_until(org, now))
+                          send_after=None if ntype.urgent or urgent or channel not in _NOISY
+                          else quiet_until(org, now))
     try:
         with transaction.atomic():
             message = Message.objects.create(**base, **fields)

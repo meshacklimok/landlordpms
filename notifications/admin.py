@@ -2,7 +2,14 @@ from django.contrib import admin
 
 from billing.admin import ReadOnlyAdmin
 
-from .models import ConsentRecord, Message, MessageTemplate, NotificationPreference, OrganizationNotificationRule
+from .models import (
+    Announcement,
+    ConsentRecord,
+    Message,
+    MessageTemplate,
+    NotificationPreference,
+    OrganizationNotificationRule,
+)
 
 
 @admin.register(Message)
@@ -12,6 +19,13 @@ class MessageAdmin(ReadOnlyAdmin):
     list_display = ["created_at", "type", "channel", "to", "status", "skip_reason", "attempts", "organization"]
     list_filter = ["status", "channel", "type", "skip_reason"]
     search_fields = ["to", "body", "provider_id", "organization__name"]
+    date_hierarchy = "created_at"
+
+
+@admin.register(Announcement)
+class AnnouncementAdmin(ReadOnlyAdmin):
+    list_display = ["created_at", "summary", "recipient_count", "created_by", "organization"]
+    search_fields = ["text", "organization__name"]
     date_hierarchy = "created_at"
 
 

@@ -105,8 +105,11 @@ def test_co_tenants_get_it_only_when_the_rule_says_so(owner, org, prop):
 # ---------------------------------------------------------------------------
 
 
-def test_confirmed_payment_sends_the_payer_a_receipt_link_after_commit(owner, lease, outbox,
+def test_confirmed_payment_sends_the_payer_a_receipt_link_after_commit(owner, org, lease, outbox,
                                                                        django_capture_on_commit_callbacks):
+    # It is sent at the real time; without quiet hours it goes at once whatever the clock says.
+    org.quiet_hours_start = org.quiet_hours_end
+    org.save(update_fields=["quiet_hours_start"])
     bill(lease, FEB)
     with django_capture_on_commit_callbacks(execute=True):
         payment = pay(owner, lease, "10000")

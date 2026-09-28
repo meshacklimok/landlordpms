@@ -1,5 +1,7 @@
 """Africa's Talking callbacks: delivery reports, STOP/START replies and network opt-outs (D-044 item 14)."""
 
+import datetime
+
 import pytest
 from django.urls import reverse
 
@@ -50,14 +52,16 @@ def sent_message(owner, tenant, provider_id="ATXid_1"):
 
 
 def test_permanent_failure_is_not_retried(owner, tenant, monkeypatch):
-    m = delivery.notify(owner.organization, "announcement", tenant=tenant, context={"text": "Hi"}, send_now=False)
+    noon = datetime.datetime(2026, 2, 20, 12, tzinfo=datetime.UTC)
+    m = delivery.notify(owner.organization, "announcement", tenant=tenant, context={"text": "Hi"}, send_now=False,
+                        now=noon)
 
     class Rejecting:
         def send(self, to, body):
             return SmsResult(ok=False, provider="africastalking", error="406 UserInBlacklist", permanent=True)
 
     monkeypatch.setattr(delivery, "get_sms_sender", Rejecting)
-    assert delivery.send_one(m.pk) == Status.FAILED
+    assert delivery.send_one(m.pk, now=noon) == Status.FAILED
     m.refresh_from_db()
     assert m.attempts == 1 and m.error == "406 UserInBlacklist"
 

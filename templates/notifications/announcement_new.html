@@ -1,0 +1,141 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "New announcement" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 720px">
+  <a href="{% url 'notifications:announcements' %}" class="small">← {% trans "Announcements" %}</a>
+  <h1 class="h4 mt-2 mb-3">{% trans "New announcement" %}</h1>
+
+  <form method="post" id="ann-form">{% csrf_token %}
+    {{ form.nonce }}
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <label class="form-label fw-medium" for="ann-text">{% trans "Message" %}</label>
+      <textarea name="text" id="ann-text" rows="4" maxlength="1000" class="form-control{% if form.text.errors %} is-invalid{% endif %}" required>{{ form.text.value|default:'' }}</textarea>
+      {% for e in form.text.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      <div class="form-text" id="ann-count"></div>
+      <div class="small mt-2 mb-1 text-body-secondary">{% blocktrans %}Filled for each tenant (click to insert). “{{ org_name }}” is added at the end.{% endblocktrans %}</div>
+      <div class="d-flex flex-wrap gap-1">
+        {% for name in fields %}<button type="button" class="btn btn-sm btn-outline-secondary py-0" data-insert="{{ name }}"><code>{{ "{" }}{{ name }}{{ "}" }}</code></button>{% endfor %}
+      </div>
+    </div></div>
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Who receives it" %}</h2>
+      <p class="small text-body-secondary">{% trans "Tenants living in a unit today. Leave a list empty to include everything you can see." %}</p>
+
+      <div class="fw-medium small mb-1">{% trans "Properties" %}</div>
+      <div class="border rounded p-2 mb-3 overflow-auto" style="max-height: 12rem">
+        {% for cb in form.properties %}<div class="form-check">{{ cb.tag }}<label class="form-check-label" for="{{ cb.id_for_label }}">{{ cb.choice_label }}</label></div>
+        {% empty %}<div class="small text-body-secondary">{% trans "No properties." %}</div>{% endfor %}
+      </div>
+
+      {% if has_buildings %}
+      <div class="fw-medium small mb-1">{% trans "Buildings" %}</div>
+      <div class="border rounded p-2 mb-3 overflow-auto" style="max-height: 12rem">
+        {% for cb in form.buildings %}<div class="form-check">{{ cb.tag }}<label class="form-check-label" for="{{ cb.id_for_label }}">{{ cb.choice_label }}</label></div>{% endfor %}
+      </div>
+      {% endif %}
+
+      {% if form.owing %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" name="owing" id="ann-owing" {% if form.owing.value %}checked{% endif %}>
+          <label class="form-check-label" for="ann-owing">{% trans "Only tenants owing money, overdue for at least" %}</label>
+        </div>
+        <input type="number" name="owing_days" min="1" max="365" value="{{ form.owing_days.value|default:1 }}" class="form-control form-control-sm{% if form.owing_days.errors %} is-invalid{% endif %}" style="width: 5.5rem" aria-label="{% trans 'Days overdue' %}">
+        <span class="small">{% trans "days" %}</span>
+      </div>
+      {% for e in form.owing_days.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      {% endif %}
+
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" name="ending" id="ann-ending" {% if form.ending.value %}checked{% endif %}>
+          <label class="form-check-label" for="ann-ending">{% trans "Only leases ending within" %}</label>
+        </div>
+        <input type="number" name="ending_within" min="0" max="365" value="{{ form.ending_within.value|default_if_none:60 }}" class="form-control form-control-sm{% if form.ending_within.errors %} is-invalid{% endif %}" style="width: 5.5rem" aria-label="{% trans 'Days until the lease ends' %}">
+        <span class="small">{% trans "days" %}</span>
+      </div>
+      {% for e in form.ending_within.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="include_co_tenants" id="ann-co" {% if form.include_co_tenants.value %}checked{% endif %}>
+        <label class="form-check-label" for="ann-co">{% trans "Also send to co-tenants" %}</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="urgent" id="ann-urgent" {% if form.urgent.value %}checked{% endif %}>
+        <label class="form-check-label" for="ann-urgent">{% trans "Send now, even during quiet hours" %}</label>
+        <div class="form-text mt-0">{% trans "Otherwise messages written at night wait until quiet hours end." %}</div>
+      </div>
+    </div></div>
+
+    {% if preview %}
+    <div class="card shadow-sm mb-3 border-primary-subtle" id="ann-preview"><div class="card-body">
+      <h2 class="h6">{% trans "Preview" %}</h2>
+      <div class="row g-2 text-center mb-3">
+        <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">{{ preview.sending }}</div><div class="small text-body-secondary">{% trans "will receive it" %}</div></div></div>
+        <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">{{ preview.parts }}</div><div class="small text-body-secondary">{% trans "SMS in total" %}</div></div></div>
+        <div class="col"><div class="border rounded py-2"><div class="h5 mb-0">~KES {{ preview.cost|floatformat:2 }}</div><div class="small text-body-secondary">{% blocktrans with p=price %}at {{ p }} per SMS{% endblocktrans %}</div></div></div>
+      </div>
+      {% if preview.skipped %}
+      <div class="alert alert-warning small py-2">
+        <div class="fw-medium">{% trans "Skipped (no message goes to them):" %}</div>
+        {% for r in preview.recipients %}{% if r.skip_reason %}<div>{{ r.tenant.name }} ({{ r.lease.unit.code }}): {{ r.skip_label }}</div>{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if preview.recipients %}
+      <div class="table-responsive border rounded" style="max-height: 20rem">
+        <table class="table table-sm small mb-0">
+          <thead class="sticky-top"><tr><th>{% trans "Tenant" %}</th><th>{% trans "Unit" %}</th><th>{% trans "Message" %}</th><th class="text-end">{% trans "SMS" %}</th></tr></thead>
+          <tbody>
+            {% for r in preview.recipients %}{% if not r.skip_reason %}
+            <tr><td class="text-nowrap">{{ r.tenant.name }}</td><td class="text-nowrap">{{ r.lease.unit.property.name }} · {{ r.lease.unit.code }}</td><td>{{ r.body }}</td><td class="text-end">{{ r.parts }}</td></tr>
+            {% endif %}{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="small text-body-secondary mb-0">{% trans "No tenants match. Change who it goes to." %}</p>
+      {% endif %}
+      {% if preview.sending > inline_limit %}<p class="small text-body-secondary mt-2 mb-0">{% trans "Large groups go out over the next few minutes." %}</p>{% endif %}
+    </div></div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <button class="btn {% if preview.sending %}btn-outline-secondary{% else %}btn-primary{% endif %}" name="action" value="preview">{% if preview %}{% trans "Preview again" %}{% else %}{% trans "Preview" %}{% endif %}</button>
+      {% if preview.sending %}
+      <button class="btn btn-primary" name="action" value="send" id="ann-send"
+              data-confirm="{% blocktrans count n=preview.sending %}Send to {{ n }} tenant?{% plural %}Send to {{ n }} tenants?{% endblocktrans %}" onclick="return confirm(this.dataset.confirm)">
+        <i class="bi bi-send"></i> {% blocktrans count n=preview.sending %}Send to {{ n }} tenant{% plural %}Send to {{ n }} tenants{% endblocktrans %}
+      </button>
+      <span class="small text-body-secondary align-self-center d-none" id="ann-stale">{% trans "You changed something. Preview again before sending." %}</span>
+      {% endif %}
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var form = document.getElementById("ann-form"), box = document.getElementById("ann-text"),
+      count = document.getElementById("ann-count"), send = document.getElementById("ann-send"),
+      stale = document.getElementById("ann-stale"), extra = {{ org_name|length }} + 1;
+  document.querySelectorAll("[data-insert]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var token = "{" + btn.dataset.insert + "}", s = box.selectionStart, e = box.selectionEnd;
+      box.value = box.value.slice(0, s) + token + box.value.slice(e);
+      box.focus(); box.selectionStart = box.selectionEnd = s + token.length;
+      box.dispatchEvent(new Event("input", {bubbles: true}));
+    });
+  });
+  var update = function () {
+    var n = box.value.trim().length + extra, parts = n <= 160 ? 1 : Math.ceil(n / 153);
+    count.textContent = "~" + n + " {% trans 'characters with your name' %} · ~" + parts + " SMS {% trans 'each' %}";
+  };
+  box.addEventListener("input", update); update();
+  if (send) {
+    var markStale = function () { send.disabled = true; stale.classList.remove("d-none"); };
+    form.addEventListener("input", markStale); form.addEventListener("change", markStale);
+  }
+})();
+</script>
+{% endblock %}

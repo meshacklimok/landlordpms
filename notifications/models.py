@@ -129,6 +129,29 @@ class MessageTemplate(TimeStampedModel, ArchivableModel):
         return f"{self.type} · {self.channel} · {self.language}"
 
 
+class Announcement(PublicIdModel):
+    """A notice sent to a chosen group of tenants (D-044 item 15). Each recipient's copy is a ``Message``."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    text = models.TextField(_("text"), max_length=1000)
+    # Who it went to, in words, e.g. "Riverside Court · owing 30+ days". The filters are kept in `audience`.
+    summary = models.CharField(max_length=300, blank=True)
+    audience = models.JSONField(default=dict, blank=True)
+    recipient_count = models.PositiveIntegerField(default=0)
+    urgent = models.BooleanField(default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return self.text[:50]
+
+
 class Message(PublicIdModel):
     """One notification to one recipient: sent, waiting, failed or skipped with the reason."""
 
@@ -175,6 +198,8 @@ class Message(PublicIdModel):
     invoice = models.ForeignKey("billing.Invoice", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
     payment = models.ForeignKey("payments.Payment", on_delete=models.PROTECT, null=True, blank=True,
                                 related_name="+")
+    announcement = models.ForeignKey(Announcement, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="messages")
     # Same key, same organization: the event was already handled (D-044 item 4).
     dedupe_key = models.CharField(max_length=150, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
