@@ -5,9 +5,10 @@
    Safaricom has not answered within a day.
 3. Sends yesterday's reconciliation summary per organization, one line per account, in-app to
    organization-wide holders of `mpesa.view_transactions`.
+4. Tells `mpesa.match` holders about hand-typed codes Safaricom never confirmed (D-066).
 
 Safe to run more than once a day: retries skip what has been processed, and the summary has a
-dedupe key per organization, day and person.
+dedupe key per organization, day and person; so do the code alerts.
 """
 
 import datetime
@@ -21,7 +22,7 @@ from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, can
 from core.money import ZERO, format_money
 
-from . import c2b, stk
+from . import c2b, codes, stk
 from .models import MpesaTransaction, StkRequest
 
 logger = logging.getLogger(__name__)
@@ -131,4 +132,5 @@ def run_daily(now: datetime.datetime | None = None) -> dict[str, int]:
     counts.update(check_pending_requests(now))
     yesterday = now.astimezone(c2b.NAIROBI).date() - datetime.timedelta(days=1)
     counts["summaries_sent"] = send_summaries(yesterday)
+    counts["code_alerts_sent"] = codes.send_alerts(now)
     return counts

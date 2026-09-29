@@ -24,6 +24,7 @@ from core.money import ZERO
 from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
+from mpesa.codes import flag_for as code_flag
 from properties.models import Property
 from properties.views import _apply_errors
 
@@ -255,6 +256,8 @@ class PaymentDetailView(CapabilityRequiredMixin, View):
             "duplicates": selectors.duplicates_of(payment).filter(
                 pk__in=selectors.visible_payments(m).values("pk")).select_related("lease__unit")[:5],
             "can_confirm": can_confirm, "can_reverse": can_reverse,
+            "code_flag": code_flag(payment) if payment.method == Payment.Method.MPESA else None,
+            "code_check": getattr(payment, "code_check", None),
             "can_record": can(m, "payments.record", prop) and payment.lease.status != Lease.Status.DRAFT
             and payment.lease.archived_at is None,
         }

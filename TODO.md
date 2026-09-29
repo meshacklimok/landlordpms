@@ -174,7 +174,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement
 - [x] Move-in/move-out condition reports with photos and item register (D-047)
 - [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
-- [ ] Unverified M-Pesa code check (typed code not confirmed by Daraja or statement within 24h), after statement import
+- [x] Unverified M-Pesa code check: a typed code no callback or statement brought in within 24h, or with another amount, is flagged; "Codes to check" page, payment warning, home task, daily alert, mark checked with a note (D-066)
 - [ ] Vendor SLA on maintenance (metered water done: D-057)
 - [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
 - [ ] Maintenance, other metered utilities (electricity sub-meters), documents

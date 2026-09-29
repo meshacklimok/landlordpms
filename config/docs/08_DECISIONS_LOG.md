@@ -780,3 +780,25 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
    - a balance sheet;
    - expense entry;
    - PDF versions of these reports.
+
+### D-066 — Unverified M-Pesa codes — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Staff often record an M-Pesa payment by hand from the code in the tenant's SMS. A made-up or edited SMS then becomes a receipt. D-045 item 12 stops a real code from counting twice, but nothing yet says that a typed code never reached our Paybill or Till. Doc 16 Part 3 item 14 (Silqu) flags a typed code that no callback or statement confirms within 24 hours, and D-064 left this until the M-Pesa statement import existed.
+
+**Decision.**
+1. **What is checked:** live payments (pending review or confirmed) with `method = MPESA` and a reference, that are not the payment of an `MpesaTransaction`. These are the ones typed by hand. Payments made from a callback, an STK request or a statement line are already proven.
+2. **When a code counts as seen:** an `MpesaTransaction` in the same organization has that code (ignoring case), whatever its status or source. If its amount differs from the payment's, the payment is flagged at once as **"amount does not match"**.
+3. **When a code counts as missing** (**"not found"**): it was recorded more than 24 hours ago, and something should have brought it in:
+   - the payment's account (or, when it has none, any Paybill or Till of the organization) had its C2B URLs registered on or before the date paid; or
+   - an imported M-Pesa statement for that account covers the date paid. `StatementImport` now keeps the first and last dates of the lines read (`period_from`, `period_to`); imports made before this change have none and do not count.
+   Otherwise the code **cannot be checked**. It is not flagged, and the page says how many are in this state and why.
+4. **Where it shows.**
+   - A "Codes to check" tab on the M-Pesa pages (`/mpesa/codes/`), needing `mpesa.match`, scoped by the lease's property like the payments list.
+   - A warning on the payment page.
+   - A "Today" task on the home page for `mpesa.match` holders.
+   - A daily in-app alert `mpesa_unverified_codes` from `mpesa_daily` to each `mpesa.match` holder who has any, once a day.
+5. **What staff do.**
+   - Reverse the payment (or reject it while pending) with the existing actions.
+   - Or mark the code **checked** with a note (for example "seen on the Safaricom portal, paid to our other Till"). This needs `mpesa.match`, is audited, and is kept as a `CodeCheck`. A checked payment leaves the list.
+   - A code that arrives later (callback or statement) clears the flag without anyone acting.
+6. **Not in this step:** blocking the confirmation of a pending payment, SMS to the tenant, and checks against the Safaricom transaction status API.

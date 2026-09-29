@@ -39,6 +39,10 @@ class StatementImport(PublicIdModel, TimeStampedModel):
     matched_count = models.PositiveIntegerField(default=0)
     unmatched_count = models.PositiveIntegerField(default=0)
     applied_at = models.DateTimeField(null=True, blank=True)
+    # The first and last dates among the lines read, so a typed M-Pesa code on a date the statement
+    # covers can be looked for in it (D-066 item 3). Empty for imports made before D-066.
+    period_from = models.DateField(null=True, blank=True)
+    period_to = models.DateField(null=True, blank=True)
 
     objects = ScopedQuerySet.as_manager()
 

@@ -39,6 +39,16 @@
   <div class="alert alert-secondary d-flex gap-2 small"><i class="bi bi-arrow-counterclockwise"></i><div><span class="fw-semibold">{% blocktrans with on=payment.reversed_at|date:"j M Y" %}Reversed on {{ on }}{% endblocktrans %}</span>{% if payment.reversal_reason %}: {{ payment.reversal_reason }}{% endif %}<div>{% trans "The invoices and balance went back as they were. The receipt is kept." %}</div></div></div>
   {% endif %}
 
+  {% if code_flag %}
+  <div class="alert alert-danger d-flex gap-2 small"><i class="bi bi-patch-question"></i><div>
+    <span class="fw-semibold">{% if code_flag.amount_differs %}{% trans "The M-Pesa amount does not match" %}{% else %}{% trans "M-Pesa code not found" %}{% endif %}</span>
+    <div>{% if code_flag.amount_differs %}{% blocktrans with found=code_flag.found_amount|money:lease.currency %}Safaricom reported {{ found }} for this code. Check it before relying on this payment.{% endblocktrans %}{% else %}{% trans "No callback or imported statement has this code, a day after it was typed in. Check it with Safaricom before relying on this payment." %}{% endif %}
+    {% if membership|can:"mpesa.match" %}<a href="{% url 'mpesa:codes' %}">{% trans "Codes to check" %}</a>{% endif %}</div>
+  </div></div>
+  {% elif code_check %}
+  <div class="alert alert-light border d-flex gap-2 small"><i class="bi bi-patch-check"></i><div>{% blocktrans with who=code_check.checked_by.get_full_name|default:code_check.checked_by.email on=code_check.created_at|date:"j M Y" %}M-Pesa code checked by {{ who }} on {{ on }}{% endblocktrans %}: {{ code_check.note }}</div></div>
+  {% endif %}
+
   {% if duplicates %}
   <div class="alert alert-warning small">
     <div class="fw-semibold"><i class="bi bi-exclamation-triangle"></i> {% trans "Same reference on another payment" %}</div>

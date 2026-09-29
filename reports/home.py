@@ -23,6 +23,7 @@ from inspections.services import visible_reports
 from leases.models import EXPIRING_WITHIN_DAYS, Lease, LeaseTenant
 from leases.services import visible_leases
 from meters import services as meter_services
+from mpesa import codes
 from mpesa.inbox import visible_transactions
 from mpesa.models import MpesaTransaction
 from payments.selectors import pending_review
@@ -79,6 +80,13 @@ def _mpesa_to_match(m: Membership) -> Task | None:
     n = (visible_transactions(m, "mpesa.match").filter(status=MpesaTransaction.Status.UNMATCHED)
          .order_by().values("pk").distinct().count())
     return Task("match", n, ngettext("M-Pesa payment to match", "M-Pesa payments to match", n), reverse("mpesa:inbox"))
+
+
+def _codes_to_check(m: Membership) -> Task | None:
+    if not can(m, "mpesa.match"):
+        return None
+    n = len(codes.review(codes.for_member(m)).flagged)
+    return Task("codes", n, ngettext("M-Pesa code to check", "M-Pesa codes to check", n), reverse("mpesa:codes"))
 
 
 def _readings_to_approve(m: Membership) -> Task | None:
@@ -153,7 +161,8 @@ def _reports_to_finish(m: Membership) -> list[ConditionReport]:
 def home(membership: Membership, today: datetime.date | None = None) -> Home:
     today = today or timezone.localdate()
     out = Home()
-    tasks = [_payments_to_confirm(membership), _mpesa_to_match(membership), _readings_to_approve(membership),
+    tasks = [_payments_to_confirm(membership), _mpesa_to_match(membership), _codes_to_check(membership),
+             _readings_to_approve(membership),
              _statements_to_send(membership, today), *_calls(membership, today),
              _draft_leases(membership)]
     # Vacancies are work for someone who can let them, and context for everyone else.

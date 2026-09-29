@@ -229,3 +229,19 @@ class PayLink(TimeStampedModel):
     @property
     def is_active(self) -> bool:
         return self.disabled_at is None
+
+
+class CodeCheck(models.Model):
+    """A person checked a hand-typed M-Pesa code that no callback or statement confirmed (D-066 item 5),
+    for example on the Safaricom portal. The payment then leaves the "Codes to check" list."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    payment = models.OneToOneField("payments.Payment", on_delete=models.PROTECT, related_name="code_check")
+    checked_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    note = models.CharField(_("note"), max_length=300)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    def __str__(self):
+        return f"{self.payment_id} checked"

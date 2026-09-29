@@ -24,7 +24,7 @@ from leases.services import visible_leases
 from payments import selectors as payment_selectors
 from payments.models import Payment, PaymentAccount
 
-from . import forms, inbox, paylinks, services, stk
+from . import codes, forms, inbox, paylinks, services, stk
 from .models import DarajaCredentials, MpesaTransaction, PayLink, StkRequest
 
 Status = MpesaTransaction.Status
@@ -197,6 +197,35 @@ class InboxView(CapabilityRequiredMixin, View):
         if error:
             messages.error(request, error)
         return redirect("mpesa:inbox")
+
+
+class CodesView(CapabilityRequiredMixin, View):
+    """Hand-typed M-Pesa codes that Safaricom never confirmed, or confirmed with another amount (D-066)."""
+
+    template_name = "mpesa/codes.html"
+    required_capability = "mpesa.match"
+
+    def get(self, request):
+        result = codes.review(codes.for_member(request.membership))
+        return render(request, self.template_name, {
+            "review": result, "inbox_count": inbox.inbox(request.membership).count(),
+            "currency": request.organization.currency,
+        })
+
+    def post(self, request):
+        payment = codes.for_member(request.membership).filter(
+            public_id=_uuid(request.POST.get("payment", ""))).select_related("lease__unit__property").first()
+        if payment is None:
+            raise Http404
+        try:
+            codes.mark_checked(request.membership, payment, note=request.POST.get("note", ""), request=request)
+        except PermissionDenied:
+            raise Http404 from None
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+        else:
+            messages.success(request, _("Marked as checked. It is off the list."))
+        return redirect("mpesa:codes")
 
 
 class TransactionListView(CapabilityRequiredMixin, View):

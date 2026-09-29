@@ -157,10 +157,13 @@ def preview(actor: Membership, account: PaymentAccount, upload, *, request=None)
     except parsing.StatementError as e:
         raise ValidationError(str(e)) from None
     rows, duplicates = _bank_rows(account, parsed) if kind == Kind.BANK else _mpesa_rows(parsed)
+    dates = [line.posted_on if kind == Kind.BANK else line.paid_at.astimezone(parsing.NAIROBI).date()
+             for line in parsed.lines]
     batch = StatementImport.objects.create(
         organization=actor.organization, payment_account=account, kind=kind, created_by=actor.user,
         file_name=(upload.name or "")[:200], rows=rows, errors=[list(e) for e in parsed.errors[:200]],
-        new_count=len(rows), duplicate_count=duplicates, skipped_count=parsed.skipped)
+        new_count=len(rows), duplicate_count=duplicates, skipped_count=parsed.skipped,
+        period_from=min(dates, default=None), period_to=max(dates, default=None))
     audit.record("statement.preview", actor=actor.user, organization=actor.organization, obj=batch, request=request,
                  changes={"account": [None, account.display_name], "new": [None, len(rows)],
                           "duplicates": [None, duplicates], "errors": [None, len(parsed.errors)]})
