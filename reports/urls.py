@@ -5,6 +5,8 @@ from . import views
 app_name = "reports"
 
 urlpatterns = [
+    path("", views.DashboardView.as_view(), name="dashboard"),
+    path("dashboard.csv", views.DashboardExportView.as_view(), name="dashboard_export"),
     path("income/", views.IncomeView.as_view(), name="income"),
     path("income/tax-residence/", views.TaxResidenceView.as_view(), name="tax_residence"),
     path("income/<int:year>/<slug:kind>/", views.IncomeExportView.as_view(), name="income_export"),

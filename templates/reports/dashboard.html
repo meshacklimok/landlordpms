@@ -1,0 +1,172 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Dashboard" %}{% endblock %}
+{% block content %}
+{% with c=board.current cur=board.currency %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% trans "Dashboard" %}</h1>
+  <form method="get" class="d-flex flex-wrap gap-2">
+    {{ form.property }}
+    {{ form.month }}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  </form>
+</div>
+<p class="small text-muted mb-3">
+  {% if board.scope.selected_property %}{{ board.scope.selected_property.name }}{% elif board.scope.is_partial %}{% trans "Only the properties you can see." %}{% else %}{% trans "All properties." %}{% endif %}
+  {% blocktrans with m=c.label %}Rent figures for {{ m }}, as recorded today: a late payment or a correction changes past months.{% endblocktrans %}
+</p>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <div class="small text-muted">{% trans "Occupancy" %}</div>
+      <div class="fs-5 fw-semibold">{{ board.occupancy.rate|percent }}</div>
+      <div class="small">
+        {% if can_units %}<a href="{% url 'properties:units' %}?status=occupied{% if board.scope.selected_property %}&property={{ board.scope.selected_property.public_id }}{% endif %}">{% endif %}
+        {% blocktrans with o=board.occupancy.occupied r=board.occupancy.rentable %}{{ o }} of {{ r }} units{% endblocktrans %}
+        {% if can_units %}</a>{% endif %}
+      </div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <div class="small text-muted">{% trans "Rent expected" %}</div>
+      <div class="fs-5 fw-semibold text-nowrap">{{ c.expected|money:cur }}</div>
+      <div class="small text-muted">{{ c.label }}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <div class="small text-muted">{% trans "Rent collected" %}</div>
+      <div class="fs-5 fw-semibold text-nowrap">{{ c.collected|money:cur }}</div>
+      <div class="small text-muted">{% if c.expected %}{% blocktrans with o=c.outstanding|money:cur %}{{ o }} still to collect{% endblocktrans %}{% else %}{{ c.label }}{% endif %}</div>
+    </div></div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <div class="small text-muted">{% trans "Collection rate" %}</div>
+      {% if c.rate is None %}
+      <div class="fs-6 fw-semibold">{% trans "No rent billed yet" %}</div>
+      {% else %}
+      <div class="fs-5 fw-semibold">{{ c.rate|percent }}</div>
+      {% endif %}
+      <div class="small text-muted">{% trans "collected ÷ expected" %}</div>
+    </div></div>
+  </div>
+  <div class="col-12 col-lg">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <div class="small text-muted">{% trans "Arrears today" %}</div>
+      <div class="fs-5 fw-semibold text-nowrap {% if board.arrears.total %}text-danger{% endif %}">{{ board.arrears.total|money:cur }}</div>
+      <div class="small">
+        {% if can_arrears %}<a href="{% url 'billing:arrears' %}">{% endif %}
+        {% blocktrans count n=board.arrears.leases %}{{ n }} lease owes{% plural %}{{ n }} leases owe{% endblocktrans %}
+        {% if can_arrears %}</a>{% endif %}
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<div class="row g-2 mb-3 small">
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body p-2">
+      {% trans "Cash received" %} ({{ c.label }}):
+      {% if can_payments %}<a class="fw-semibold" href="{% url 'payments:list' %}?{% for k, v in payments_query.items %}{{ k }}={{ v|urlencode }}{% if not forloop.last %}&amp;{% endif %}{% endfor %}">{{ c.cash|money:cur }}</a>
+      {% else %}<span class="fw-semibold">{{ c.cash|money:cur }}</span>{% endif %}
+      <div class="text-muted">{% trans "All confirmed payments dated in the month, including advances and old arrears." %}</div>
+    </div></div>
+  </div>
+  {% if board.unmatched is not None %}
+  <div class="col-md-6">
+    <div class="card h-100"><div class="card-body p-2">
+      {% trans "M-Pesa payments waiting to be matched" %}:
+      {% if can_inbox %}<a class="fw-semibold" href="{% url 'mpesa:inbox' %}">{{ board.unmatched.count }}</a>{% else %}<span class="fw-semibold">{{ board.unmatched.count }}</span>{% endif %}
+      {% if board.unmatched.count %}({{ board.unmatched.amount|money:cur }}){% endif %}
+    </div></div>
+  </div>
+  {% endif %}
+</div>
+
+{% if can_export or can_income %}
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+  {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:dashboard_export' %}{% if query %}?{{ query }}{% endif %}">{% trans "Download figures (CSV)" %}</a>{% endif %}
+  {% if can_income %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income' %}">{% trans "Rental income pack" %}</a>{% endif %}
+</div>
+{% endif %}
+
+<h2 class="h6">{% trans "Rent over 12 months" %}</h2>
+<div class="card shadow-sm mb-2"><div class="card-body p-2">
+  <div style="position: relative; height: 260px"><canvas id="trend-chart" role="img" aria-label="{% trans 'Rent expected, rent collected and cash received by month. The same figures are in the table below.' %}"></canvas></div>
+</div></div>
+<details class="mb-3">
+  <summary class="small">{% trans "Show as a table" %}</summary>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle small mb-0">
+    <thead><tr>
+      <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent expected" %}</th><th class="text-end">{% trans "Rent collected" %}</th>
+      <th class="text-end">{% trans "Rate" %}</th><th class="text-end">{% trans "Cash received" %}</th>
+    </tr></thead>
+    <tbody>
+      {% for row in board.trend %}
+      <tr>
+        <td class="text-nowrap">{{ row.label }}</td>
+        <td class="text-end text-nowrap">{{ row.expected|money:cur }}</td>
+        <td class="text-end text-nowrap">{{ row.collected|money:cur }}</td>
+        <td class="text-end">{{ row.rate|percent }}</td>
+        <td class="text-end text-nowrap">{{ row.cash|money:cur }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <h2 class="h6">{% trans "Arrears by days overdue" %}</h2>
+    {% if board.arrears.total %}
+    <div class="card shadow-sm mb-2"><div class="card-body p-2">
+      <div style="position: relative; height: 200px"><canvas id="aging-chart" role="img" aria-label="{% trans 'Arrears by days overdue. The same figures are in the table below.' %}"></canvas></div>
+    </div></div>
+    {% endif %}
+    <table class="table table-sm small mb-0">
+      <tbody>
+        {% for key, label, amount in board.arrears.buckets %}
+        <tr><td>{{ label }}</td><td class="text-end text-nowrap">{{ amount|money:cur }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end text-nowrap">{{ board.arrears.total|money:cur }}</td></tr></tfoot>
+    </table>
+    {% if not board.arrears.total %}<p class="small text-muted mt-2">{% trans "Nothing is overdue." %}</p>{% endif %}
+  </div>
+  <div class="col-md-6">
+    <h2 class="h6">{% blocktrans with d=board.day|date:"j M Y" %}Occupancy on {{ d }}{% endblocktrans %}</h2>
+    {% if board.by_property %}
+    <div class="table-responsive">
+    <table class="table table-sm align-middle small mb-0">
+      <thead><tr>
+        <th>{% trans "Property" %}</th><th class="text-end">{% trans "Occupied" %}</th><th class="text-end">{% trans "Vacant" %}</th><th class="text-end">{% trans "Rate" %}</th>
+      </tr></thead>
+      <tbody>
+        {% for row in board.by_property %}
+        <tr>
+          <td>{% if can_units %}<a href="{% url 'properties:units' %}?property={{ row.key }}">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}</td>
+          <td class="text-end">{% blocktrans with o=row.occupied r=row.rentable %}{{ o }} of {{ r }}{% endblocktrans %}</td>
+          <td class="text-end">{{ row.vacant }}{% if row.reserved or row.maintenance %} <span class="text-muted">({% if row.reserved %}{% blocktrans with n=row.reserved %}{{ n }} reserved{% endblocktrans %}{% endif %}{% if row.reserved and row.maintenance %}, {% endif %}{% if row.maintenance %}{% blocktrans with n=row.maintenance %}{{ n }} in repair{% endblocktrans %}{% endif %})</span>{% endif %}</td>
+          <td class="text-end">{{ row.rate|percent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="small text-muted">{% trans "No units yet. Add units to see occupancy." %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endwith %}
+{{ chart|json_script:"dashboard-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{% load static %}{% static 'js/dashboard.js' %}"></script>
+{% endblock %}

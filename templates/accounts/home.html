@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n access %}
+{% extends "base.html" %}{% load i18n access money reports %}
 {% block title %}{% trans "Home" %}{% endblock %}
 {% block content %}
 <h1 class="h4">{{ user.full_name }}</h1>
@@ -36,7 +36,14 @@
   {% if membership|can:"dashboard.view_financial" %}
   <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
     <h2 class="h6">{% trans "Collections" %}</h2>
-    <p class="text-muted small mb-0">{% trans "Collection and arrears figures appear here once billing is set up." %}</p>
+    {% with c=board.current cur=board.currency %}
+    <dl class="row small mb-2">
+      <dt class="col-7 fw-normal text-muted">{% trans "Occupancy" %}</dt><dd class="col-5 mb-1">{{ board.occupancy.rate|percent }} <span class="text-muted">({{ board.occupancy.occupied }}/{{ board.occupancy.rentable }})</span></dd>
+      <dt class="col-7 fw-normal text-muted">{% blocktrans with m=c.label %}Rent collected, {{ m }}{% endblocktrans %}</dt><dd class="col-5 mb-1">{% if c.rate is None %}{% trans "No rent billed yet" %}{% else %}{{ c.rate|percent }}{% endif %}</dd>
+      <dt class="col-7 fw-normal text-muted">{% trans "Arrears today" %}</dt><dd class="col-5 mb-0 text-nowrap">{{ board.arrears.total|money:cur }}</dd>
+    </dl>
+    {% endwith %}
+    <a href="{% url 'reports:dashboard' %}">{% trans "Open the dashboard" %}</a>
   </div></div></div>
   {% endif %}
   {% if show_staff %}

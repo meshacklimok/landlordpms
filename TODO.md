@@ -137,10 +137,10 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 ## Phase 7 — Dashboards, search, tenant portal
 - [ ] Collectability score (A to E) and daily who-to-call list
 - [ ] Read-only Owner membership and monthly owner statement PDF
-- [ ] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set
-- [ ] DailySnapshot table and nightly job; Chart.js dashboards with drill-down and CSV export
-- [ ] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging, NOI)
-- [ ] Portfolio and per-property dashboards
+- [x] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set (D-051)
+- [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
+- [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI waits for expenses
+- [x] Portfolio and per-property dashboards (property and month filters in the URL)
 - [ ] Per-role dashboards
 - [ ] Global search
 - [ ] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests

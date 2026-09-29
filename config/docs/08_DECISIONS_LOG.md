@@ -259,3 +259,22 @@ D-046 items 3 and 4, and the MRI report staged by D-037. Built on `feature/billi
 5. **The tax estimate** is each month's taxable rent (rent received plus unapplied money) times the rate in force that month, rounded per month. Rates are dated in code (`reports/income.py`) **[VERIFY with KRA or a tax adviser]**: resident 10% from 2016 and 7.5% from 1 January 2024; non-resident 10% final tax from 1 July 2026 (Finance Act 2026), with no rate before that, so no estimate is shown for those months. Other charges (water, service charge) are not taxed in the estimate **[VERIFY]**.
 6. **Notes on every pack**: the year is not over; only your properties are included; unapplied money counted as rent; months with no rate; a resident's yearly rent outside KES 288,000–15,000,000, the band the monthly regime covers **[VERIFY]** (the low end is only checked once the year is over); expenses are not tracked yet, so figures are gross; "Estimate only. Confirm with your tax adviser before filing."
 7. Not in this step: expenses and net income, a withholding statement per owner for agencies, eTIMS or eRITS submission, and filing.
+
+### D-051 — Phase 7 analytics: chart library, live figures, first report set — ACCEPTED (2026-09-29, open to change before merge)
+Answers doc 15 §8. The owner said to use the recommended defaults. Built on `feature/phase7-dashboards`, cut from `feature/billing-frequency`.
+1. **Chart library: Chart.js 4**, loaded from jsDelivr like Bootstrap, only on pages that draw a chart. No build step. Every chart has a table beside it (for screen readers and as a fallback when JavaScript is off), and the figures behind it export as CSV to people with `reports.export`.
+2. **Live figures first, no snapshot table yet.** Monthly trends are grouped queries over invoice lines, allocations and payments, so they come straight from the source. `DailySnapshot` waits until the 10,000-unit performance test (doc 15 §7) shows it is needed, or until arrears over time are wanted (the only trend the source cannot rebuild). This departs from doc 15's recommendation of snapshots from Phase 7.
+3. **Trends are "as recorded now"**: a late payment or a reversal changes the past months. The page says so. No "as at date" view yet.
+4. **First report set**: a dashboard with five headline numbers (occupancy, rent expected, rent collected, collection rate, arrears), then cash received, a 12-month rent trend, arrears aging and occupancy by property. Next come the who-to-call list with collectability grades, then the monthly owner statement PDF. Income against expenses waits for the expenses app (flow C).
+5. **One place for definitions**: `reports/metrics.py`, following doc 11 §26.
+   - *Rentable* units are live units that are not Inactive, on live properties.
+   - *Occupied* units are rentable units with an occupying lease on the day. The day is today for the current month and the month's last day for a past month.
+   - *Expected rent* is live rent lines on issued, part-paid or paid invoices, by the month each line bills. A quarterly invoice counts in its three months (D-049).
+   - *Collected for the month* is each confirmed payment's allocation, split across its invoice's live lines by their share (as in D-050), keeping the rent lines of that month. It is rounded per invoice and month.
+   - *Collection rate* is collected ÷ expected, with no rate when nothing was billed ("no rent billed yet", not 0%).
+   - *Cash received* is confirmed payments dated in the month, including advances and arrears clearing.
+   - *Arrears* is what is overdue today, from the existing FIFO aging (billing.selectors), in buckets 1–30, 31–60, 61–90 and 90+ days.
+   - *Unmatched M-Pesa* is the count and amount waiting in the inbox the member can see.
+6. **Scope**: the page needs `dashboard.view_financial` and counts only the properties the member can see. A scoped manager never sees organization totals. Filters are one property and a month, and they are kept in the URL. Counts sit beside rates ("8 of 10 units").
+7. **Drill-down**: occupancy opens the units list, cash received opens the payments list for that month and property, and arrears opens the arrears page.
+8. Not in this step: caching, `DailySnapshot`, per-role dashboards, and the Swahili labels (strings are wrapped, but there is no translation yet).

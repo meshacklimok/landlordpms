@@ -36,7 +36,8 @@
         {% if membership|can:"messages.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:log' %}">{% trans "Messages" %}</a></li>
         {% elif membership|can:"templates.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:templates' %}">{% trans "Messages" %}</a></li>
         {% elif membership|can:"organization.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:settings' %}">{% trans "Messages" %}</a></li>{% endif %}
-        {% if membership|can:"reports.view_financial" %}<li class="nav-item"><a class="nav-link" href="{% url 'reports:income' %}">{% trans "Reports" %}</a></li>{% endif %}
+        {% if membership|can:"dashboard.view_financial" %}<li class="nav-item"><a class="nav-link" href="{% url 'reports:dashboard' %}">{% trans "Reports" %}</a></li>
+        {% elif membership|can:"reports.view_financial" %}<li class="nav-item"><a class="nav-link" href="{% url 'reports:income' %}">{% trans "Reports" %}</a></li>{% endif %}
         {% if membership|can:"units.manage" or membership|can:"tenants.manage" or membership|can:"invoices.adjust" %}<li class="nav-item"><a class="nav-link" href="{% url 'imports:list' %}">{% trans "Import" %}</a></li>{% endif %}
         {% if membership|can:"staff.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:staff' %}">{% trans "Staff" %}</a></li>{% endif %}
         {% if membership|can:"roles.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:roles' %}">{% trans "Roles" %}</a></li>{% endif %}

@@ -17,6 +17,7 @@ from django.views.generic import TemplateView
 from audit import services as audit
 from leases.models import Lease
 from properties.models import Property, Unit
+from reports import metrics
 from tenants.models import Tenant
 
 from . import forms, identity, services
@@ -239,6 +240,8 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         ctx["show_checklist"] = can(m, "properties.manage")
         ctx["show_staff"] = can(m, "staff.view")
         ctx["show_roles"] = can(m, "roles.manage")
+        if can(m, "dashboard.view_financial"):
+            ctx["board"] = metrics.dashboard(m)
         return ctx
 
 
