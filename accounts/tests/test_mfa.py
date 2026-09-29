@@ -140,7 +140,9 @@ def test_a_recovery_code_logs_in_and_warns(client):
 # ---------------------------------------------------------------------------
 
 
-def test_switching_on_and_off_ends_other_sessions(client):
+def test_switching_on_and_off_ends_other_sessions(client, monkeypatch):
+    # Mid-step and frozen, so the codes below cannot drift out of the window if a 30-second step ends mid-test.
+    monkeypatch.setattr(mfa.time, "time", lambda: 1_790_000_025.0)
     user = make_user()
     make_org(owner=user)
     other = Client()
