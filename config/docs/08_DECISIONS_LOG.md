@@ -435,3 +435,29 @@ D-053 item 7, taken right after metered water. Built on `feature/owner-remittanc
    - WhatsApp;
    - sending statements automatically;
    - an owner login beyond the existing Viewer role.
+
+### D-059 — Two-step login (MFA) — ACCEPTED (2026-09-29, open to change before merge)
+Phase 8, first item (doc 12 Tier 1; doc 16 item 14; doc 06). Built on `feature/phase8-mfa`, cut from `feature/owner-remittances`. The user said "yes" to starting Phase 8 with MFA.
+1. **An authenticator app (TOTP), not SMS.** Codes follow RFC 6238: 6 digits, a 30-second step and SHA-1, which Google Authenticator, Microsoft Authenticator and Authy all read. The second factor is not SMS, for two reasons:
+   - Password reset already goes by SMS, so an SMS code would be the same factor twice.
+   - A SIM swap would get past both.
+   The secret is encrypted at rest with `core.crypto`. The code is checked with the standard library, allowing one step either side for clock drift, and a code already used cannot be used again (the last step is stored). Setup shows a QR code, drawn on the server as SVG with the small `segno` library (a new dependency), plus the key as text and an `otpauth://` link for setting up on the same phone.
+2. **Turning it on** is from a new "Security" page (`/account/security/`) for any logged-in user: scan, then enter a code to confirm. It is not switched on until a code has been checked.
+3. **Recovery codes.** When MFA is switched on, 10 single-use codes are shown once and stored hashed. Using one is audited. The user can make a new set, which needs a current code and replaces the old set.
+4. **Login.**
+   - After a correct password, a user with MFA is **not logged in yet**. The session holds the pending user for 5 minutes, and the next page asks for a code or a recovery code.
+   - Wrong codes are rate-limited: 5 per user per 15 minutes. Past that the user must wait, and the attempt is audited.
+   - Resetting the password by SMS does **not** switch MFA off: the next login still asks for a code.
+5. **Turning it off** needs the password and a current code (or a recovery code). It is audited.
+   - A user who has lost both the phone and the recovery codes asks support.
+   - A Platform Admin can then reset that user's MFA from Django admin after checking who they are. That is audited as well, and the user's other sessions are ended.
+6. **Who.**
+   - **Optional for everyone** in an organization.
+   - The home page shows a one-line suggestion to members whose role holds any *sensitive* capability (the `sensitive` flag in the catalog: void invoices, reverse payments, M-Pesa settings, payment accounts, deposit deductions, data export, reports export). This follows capabilities, not role names, so the Owner and Accountant templates get it without naming them.
+   - **Mandatory for Platform Admins** (`is_staff`). Django admin opens only in a session that passed a code. An admin without MFA is sent to set it up first.
+7. **Sessions.** A successful code marks the session as verified. Switching MFA on or off, or a reset by a Platform Admin, ends the user's other sessions.
+8. **Not in this step**:
+   - "remember this device";
+   - passkeys/WebAuthn;
+   - an organization setting that makes MFA mandatory for its members;
+   - SMS or email as a second factor.

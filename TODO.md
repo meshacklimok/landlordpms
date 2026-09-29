@@ -159,7 +159,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Try a round on a phone in the field; check the flag thresholds against a real month
 
 ## Phase 8 — Launch
-- [ ] Optional MFA for Owner/Accountant, mandatory for Platform Admin
+- [x] Optional MFA for Owner/Accountant, mandatory for Platform Admin (D-059: authenticator app, recovery codes, admin gate)
 - [ ] Public status page, security and data-protection page
 - [ ] Import concierge process for pilots; track time to first invoice
 - [ ] `SubscriptionInvoice.vat_amount`; confirm VAT/eTIMS for our company
@@ -175,7 +175,6 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
 - [ ] Unverified M-Pesa code check (typed code not confirmed by Daraja or statement within 24h), after statement import
 - [ ] Vendor SLA on maintenance (metered water done: D-057)
-- [ ] Tenant portal (may move earlier)
 - [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
 - [ ] Maintenance, other metered utilities (electricity sub-meters), documents
 - [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)

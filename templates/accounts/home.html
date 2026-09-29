@@ -4,6 +4,13 @@
 <h1 class="h4">{{ user.full_name }}</h1>
 <p class="text-muted">{{ organization.name }} · {{ membership.role.name }}</p>
 
+{% if suggest_mfa %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <span>{% trans "Your role can move money and see private records. Protect your account with two-step login." %}</span>
+  <a class="btn btn-sm btn-primary" href="{% url 'accounts:security' %}">{% trans "Set it up" %}</a>
+</div>
+{% endif %}
+
 {% if show_checklist %}
 <div class="card shadow-sm mb-3"><div class="card-body">
   <h2 class="h6">{% trans "Get set up" %}</h2>

@@ -80,6 +80,7 @@
         {% if unread_count %}<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: .6rem">{% if unread_count > 99 %}99+{% else %}{{ unread_count }}{% endif %}</span>{% endif %}
       </a>
       {% endif %}
+      <a class="nav-link me-md-3 my-2 my-md-0 d-inline-block" href="{% url 'accounts:security' %}">{% trans "Security" %}</a>
       <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}
         <button class="btn btn-sm btn-outline-secondary">{% trans "Log out" %}</button>
       </form>

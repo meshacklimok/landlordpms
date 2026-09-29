@@ -14,6 +14,7 @@ from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower, Upper
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.translation import gettext_lazy as _
 
 from core.models import (
@@ -76,6 +77,8 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False, help_text=_("Platform Admin: can use Django admin."))
     date_joined = models.DateTimeField(default=timezone.now)
+    # Raised to end every other session, e.g. when MFA is switched on or off (D-059).
+    session_epoch = models.PositiveIntegerField(default=0, editable=False)
 
     objects = UserManager()
 
@@ -107,6 +110,13 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     def phone_verified(self) -> bool:
         return self.phone_verified_at is not None
 
+    def _get_session_auth_hash(self, secret=None):
+        """Django's hash of the password, with the epoch added once it is raised, so sessions made
+        before any raise stay valid."""
+        value = self.password if not self.session_epoch else f"{self.password}:{self.session_epoch}"
+        key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+        return salted_hmac(key_salt, value, secret=secret, algorithm="sha256").hexdigest()
+
     def get_full_name(self):
         return self.full_name
 
@@ -117,6 +127,37 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
         """No-op when the user has no email (email is optional)."""
         if self.email:
             send_mail(subject, message, from_email, [self.email], **kwargs)
+
+
+class TOTPDevice(models.Model):
+    """A user's authenticator app (D-059). Not in use until a code has been checked (confirmed_at)."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="totp")
+    # Base32 secret, encrypted with core.crypto.
+    secret = models.TextField()
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # The last 30-second step accepted, so a code cannot be used twice.
+    last_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"TOTP {self.user}"
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self.confirmed_at is not None
+
+
+class RecoveryCode(models.Model):
+    """A single-use code for when the phone is lost. Stored hashed; shown once (D-059)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Recovery code {self.user}"
 
 
 class OTPCode(models.Model):

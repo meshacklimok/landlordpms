@@ -161,3 +161,19 @@ class OverrideForm(forms.Form):
 
     def granted(self):
         return {"grant": True, "deny": False}.get(self.cleaned_data["state"])
+
+
+class MFACodeForm(forms.Form):
+    """A code from the authenticator app, or one of the recovery codes (D-059)."""
+
+    code = forms.CharField(label=_("Code from your app"), max_length=20,
+                           help_text=_("Lost your phone? Enter one of your recovery codes instead."),
+                           widget=forms.TextInput(attrs={"inputmode": "text", "autocomplete": "one-time-code",
+                                                         "autofocus": True, "autocapitalize": "off"}))
+
+
+class MFADisableForm(forms.Form):
+    password = forms.CharField(label=_("Password"),
+                               widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}))
+    code = forms.CharField(label=_("Code from your app"), max_length=20,
+                           widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "autocapitalize": "off"}))

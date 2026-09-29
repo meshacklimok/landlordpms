@@ -20,7 +20,7 @@ from properties.models import Property, Unit
 from reports import home as reports_home
 from tenants.models import Tenant
 
-from . import forms, identity, services
+from . import forms, identity, mfa, services
 from .capabilities import OWNER_CRITICAL
 from .middleware import SESSION_KEY
 from .mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin, VerifiedUserRequiredMixin
@@ -119,13 +119,74 @@ class LoginView(View):
     def post(self, request):
         form = forms.LoginForm(request, request.POST)
         if form.is_valid():
+            next_url = request.POST.get("next") or request.GET.get("next") or ""
+            if mfa.is_enabled(form.user):
+                # Not logged in until the second step (D-059).
+                mfa.begin_login(request, form.user, next_url)
+                return redirect("accounts:login_mfa")
             login(request, form.user)
             audit.record("user.login", actor=form.user, obj=form.user, request=request)
-            next_url = request.POST.get("next") or request.GET.get("next")
-            if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}, request.is_secure()):
-                return redirect(next_url)
-            return redirect("accounts:home")
+            return _after_login(request, next_url)
         return render(request, self.template_name, {"form": form})
+
+
+def _after_login(request, next_url):
+    if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}, request.is_secure()):
+        return redirect(next_url)
+    return redirect("accounts:home")
+
+
+def _check_code(request, user, form):
+    """The kind of code accepted, or None with the error added to the form."""
+    try:
+        kind = mfa.check(user, form.cleaned_data["code"], request=request)
+    except mfa.MFAError as exc:
+        form.add_error("code", str(exc))
+        return None
+    if kind is None:
+        form.add_error("code", _("That code is wrong. Check the time on your phone and try again."))
+    elif kind == "recovery":
+        left = mfa.remaining_recovery_codes(user)
+        messages.warning(request, _("You used a recovery code. %(n)s left: make new ones from Security.") % {"n": left})
+    return kind
+
+
+@method_decorator(sensitive_post_parameters("code"), name="dispatch")
+class LoginMFAView(View):
+    """Second step of login, and a fresh check for a session that has not passed one (the admin gate)."""
+
+    template_name = "accounts/login_mfa.html"
+
+    def _user(self, request):
+        if request.user.is_authenticated:
+            return (request.user, None) if mfa.is_enabled(request.user) else (None, None)
+        return mfa.pending_user(request)
+
+    def get(self, request):
+        user, _data = self._user(request)
+        if user is None:
+            return redirect("accounts:home" if request.user.is_authenticated else "accounts:login")
+        return render(request, self.template_name, {"form": forms.MFACodeForm(), "next": request.GET.get("next", "")})
+
+    def post(self, request):
+        user, data = self._user(request)
+        if user is None:
+            if not request.user.is_authenticated:
+                messages.error(request, _("That took too long. Log in again."))
+            return redirect("accounts:home" if request.user.is_authenticated else "accounts:login")
+        form = forms.MFACodeForm(request.POST)
+        kind = _check_code(request, user, form) if form.is_valid() else None
+        if kind is None:
+            return render(request, self.template_name, {"form": form, "next": request.POST.get("next", "")})
+        if data is not None:
+            request.session.pop(mfa.PENDING, None)
+            login(request, user, backend=data.get("backend") or None)
+            audit.record("user.login", actor=user, obj=user, request=request, changes={"mfa": [None, kind]})
+            next_url = data.get("next", "")
+        else:
+            next_url = request.POST.get("next", "")
+        request.session[mfa.VERIFIED] = True
+        return _after_login(request, next_url)
 
 
 class LogoutView(View):
@@ -243,6 +304,7 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         ctx["show_checklist"] = can(m, "properties.manage")
         ctx["show_staff"] = can(m, "staff.view")
         ctx["show_roles"] = can(m, "roles.manage")
+        ctx["suggest_mfa"] = mfa.suggest(m)
         ctx["home"] = home = reports_home.home(m)
         ctx["board"] = home.board
         return ctx
@@ -507,3 +569,80 @@ class RoleArchiveView(CapabilityRequiredMixin, View):
             return redirect("accounts:role_edit", public_id=role.public_id)
         messages.success(request, _("Role removed."))
         return redirect("accounts:roles")
+
+
+# ---------------------------------------------------------------------------
+# Security: two-step login (D-059)
+# ---------------------------------------------------------------------------
+
+
+@method_decorator(sensitive_post_parameters("password", "code"), name="dispatch")
+class SecurityView(LoginRequiredMixin, View):
+    template_name = "accounts/security.html"
+
+    def _render(self, request, **ctx):
+        user = request.user
+        ctx.setdefault("enabled", mfa.is_enabled(user))
+        if not ctx["enabled"]:
+            secret = mfa.pending_secret(user)
+            if secret:
+                uri = mfa.provisioning_uri(user, secret)
+                ctx.update(secret=secret, uri=uri, qr=mfa.qr_svg(uri))
+                ctx.setdefault("confirm_form", forms.MFACodeForm())
+        else:
+            ctx["left"] = mfa.remaining_recovery_codes(user)
+            ctx.setdefault("renew_form", forms.MFACodeForm(prefix="renew"))
+            ctx.setdefault("disable_form", forms.MFADisableForm(prefix="off"))
+        ctx["required"] = user.is_staff
+        return render(request, self.template_name, ctx)
+
+    def get(self, request):
+        return self._render(request)
+
+    def post(self, request):
+        user = request.user
+        action = request.POST.get("action")
+        if action == "start":
+            try:
+                mfa.start_setup(user)
+            except ValidationError as exc:
+                messages.error(request, _error_text(exc))
+            return redirect("accounts:security")
+        if action == "confirm":
+            form = forms.MFACodeForm(request.POST)
+            if form.is_valid():
+                try:
+                    codes = mfa.confirm_setup(user, form.cleaned_data["code"], request=request)
+                except ValidationError as exc:
+                    form.add_error("code", exc)
+                else:
+                    messages.success(request, _("Two-step login is on."))
+                    return self._render(request, enabled=True, codes=codes)
+            return self._render(request, confirm_form=form)
+        if action == "renew":
+            form = forms.MFACodeForm(request.POST, prefix="renew")
+            if form.is_valid():
+                try:
+                    codes = mfa.regenerate_recovery_codes(user, form.cleaned_data["code"], request=request)
+                except (ValidationError, mfa.MFAError) as exc:
+                    form.add_error("code", _error_text(exc) if isinstance(exc, ValidationError) else str(exc))
+                else:
+                    messages.success(request, _("New recovery codes made. The old ones no longer work."))
+                    return self._render(request, codes=codes)
+            return self._render(request, renew_form=form)
+        if action == "disable":
+            form = forms.MFADisableForm(request.POST, prefix="off")
+            if form.is_valid():
+                try:
+                    mfa.disable(user, password=form.cleaned_data["password"], code=form.cleaned_data["code"],
+                                request=request)
+                except ValidationError as exc:
+                    for field, errors in exc.message_dict.items():
+                        form.add_error(field, errors)
+                except mfa.MFAError as exc:
+                    form.add_error("code", str(exc))
+                else:
+                    messages.success(request, _("Two-step login is off."))
+                    return redirect("accounts:security")
+            return self._render(request, disable_form=form)
+        return redirect("accounts:security")

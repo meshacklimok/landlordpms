@@ -22,7 +22,8 @@ from .models import (
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     ordering = ["-date_joined"]
-    list_display = ["phone", "full_name", "email", "phone_verified_at", "is_active", "is_staff", "date_joined"]
+    list_display = ["phone", "full_name", "email", "phone_verified_at", "two_step", "is_active", "is_staff",
+                    "date_joined"]
     list_filter = ["is_active", "is_staff", "is_superuser"]
     search_fields = ["phone", "email", "full_name"]
     readonly_fields = ["public_id", "date_joined", "last_login", "password_reset_at"]
@@ -33,6 +34,23 @@ class UserAdmin(BaseUserAdmin):
         ("Dates", {"fields": ("date_joined", "last_login", "password_reset_at")}),
     )
     add_fieldsets = ((None, {"classes": ("wide",), "fields": ("phone", "full_name", "password1", "password2")}),)
+    actions = ["reset_mfa"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("totp")
+
+    @admin.display(boolean=True, description="Two-step login")
+    def two_step(self, obj):
+        device = getattr(obj, "totp", None)
+        return bool(device and device.is_confirmed)
+
+    @admin.action(description="Reset two-step login (lost phone): check who they are first")
+    def reset_mfa(self, request, queryset):
+        from . import mfa
+
+        for user in queryset:
+            mfa.admin_reset(request.user, user, request=request)
+        self.message_user(request, f"Two-step login reset for {queryset.count()} user(s). Their sessions have ended.")
 
 
 class MembershipInline(admin.TabularInline):

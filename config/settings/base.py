@@ -85,6 +85,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "accounts.middleware.ActiveOrganizationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "accounts.middleware.AdminMFAMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
