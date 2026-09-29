@@ -33,6 +33,7 @@ Steps to move an organization's Paybill or Till from the Daraja sandbox to live 
 - [ ] Pay a small amount with the right account number: it should be confirmed on the lease and receipted within seconds.
 - [ ] Pay with a wrong account number: it should wait in the M-Pesa inbox with an alert, and the payer gets one SMS.
 - [ ] Paybill only: send a payment request from a lease to a test phone, approve it, and check the payment lands on that lease. Cancel a second one and check it shows "Not paid".
+- [ ] Paybill only: open the lease's payment link (on its "Request M-Pesa payment" page) on a phone, pay a small amount from it, and check the status page turns to "Paid" with a receipt. Then send one rent reminder and check the SMS carries the link and fits the segment count you expect.
 - [ ] The next morning, check the M-Pesa daily summary arrived in-app and its totals match the M-Pesa org portal statement for the day.
 
 ## 5. If something goes wrong
