@@ -151,6 +151,13 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Annual rental income pack; owner resident/non-resident flag for the tax estimate (D-046, D-050)
 - [x] Quarterly and yearly billing (`Lease.Frequency`) (D-046, D-049)
 
+## Metered water (D-057, between Phase 7 and 8)
+- [x] Meters per property (own or shared, equal or weighted split, rate per m³, minimum charge; prepaid meters are never billed)
+- [x] Readings with an optional photo, the monthly round page, flags (lower, zero while let, much higher, long gap)
+- [x] Approval (flagged readings need a note), reject with reason, undo while not invoiced
+- [x] Charges prorated by lease days, billed with next month's rent or on their own invoice if that month is out
+- [ ] Try a round on a phone in the field; check the flag thresholds against a real month
+
 ## Phase 8 — Launch
 - [ ] Optional MFA for Owner/Accountant, mandatory for Platform Admin
 - [ ] Public status page, security and data-protection page
@@ -167,10 +174,10 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Move-in/move-out condition reports with photos and item register (D-047)
 - [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
 - [ ] Unverified M-Pesa code check (typed code not confirmed by Daraja or statement within 24h), after statement import
-- [ ] Vendor SLA on maintenance; metered water readings by caretaker with photo and anomaly flags (D-046 proposes moving this to right after Phase 7)
+- [ ] Vendor SLA on maintenance (metered water done: D-057)
 - [ ] Tenant portal (may move earlier)
 - [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
-- [ ] Maintenance, metered utilities, documents
+- [ ] Maintenance, other metered utilities (electricity sub-meters), documents
 - [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)
 - [ ] Accounting/MRI reports, analytics, WhatsApp/email
 - [ ] Agency mode and joint ownership, custom roles per organization

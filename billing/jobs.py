@@ -35,7 +35,9 @@ def is_settled(lease: Lease) -> bool:
     """
     if invoicing.lease_balance(lease) != ZERO or deposits.held(lease) != ZERO:
         return False
-    lines = InvoiceLine.objects.filter(lease=lease, is_void=False)
+    if invoicing.unbilled_meter_charges().filter(lease=lease).exists():
+        return False
+    lines = InvoiceLine.objects.filter(lease=lease, is_void=False, meter_charge__isnull=True)
     if not lines.exists():
         return True
     last = invoicing.month_start(lease.ended_on)

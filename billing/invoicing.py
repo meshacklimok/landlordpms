@@ -31,6 +31,7 @@ from audit import services as audit
 from core.money import ZERO, days_in_month, format_money, parse_money, round_money
 from core.numbering import next_number
 from leases.models import Lease
+from meters.models import MeterCharge
 
 from .models import ChargeType, Invoice, InvoiceLine, LedgerEntry
 from .services import ensure_default_charge_types
@@ -99,6 +100,7 @@ class DraftLine:
     service_start: datetime.date
     service_end: datetime.date
     billing_month: datetime.date
+    meter_charge: MeterCharge | None = None
 
 
 @dataclass
@@ -192,6 +194,39 @@ def lines_for_month(lease: Lease, month: datetime.date) -> list[DraftLine]:
     return lines
 
 
+def unbilled_meter_charges():
+    """Charges from approved readings that are not on a live invoice line (D-057)."""
+    return (MeterCharge.objects.filter(cancelled_at__isnull=True)
+            .exclude(lines__is_void=False))
+
+
+def meter_lines(lease: Lease, months: list[datetime.date]) -> list[DraftLine]:
+    """One line per unbilled meter charge of the lease billed in `months`, oldest reading first."""
+    charges = (unbilled_meter_charges().filter(lease=lease, billing_month__in=months)
+               .order_by("service_start", "pk"))
+    if not charges:
+        return []
+    charge_type = metered_charge_type(lease.organization)
+    return [DraftLine(charge_type, c.description, c.amount, c.service_start, c.service_end, c.billing_month, c)
+            for c in charges]
+
+
+def metered_charge_type(org: Organization) -> ChargeType:
+    """The organization's system "Metered water" charge type, made on first use."""
+    qs = ChargeType.all_objects.for_org(org).filter(is_system=True, category=ChargeType.Category.METERED_WATER)
+    found = qs.first()
+    if found is not None:
+        return found
+    name = _("Metered water")
+    taken = ChargeType.all_objects.for_org(org).filter(name__iexact=name).exists()
+    try:
+        with transaction.atomic():
+            return ChargeType.objects.create(organization=org, name=name if not taken else f"{name} (meters)",
+                                             category=ChargeType.Category.METERED_WATER, is_system=True)
+    except IntegrityError:
+        return qs.get()  # made at the same time
+
+
 def rent_charge_type(org: Organization) -> ChargeType:
     ensure_default_charge_types(org)
     return ChargeType.all_objects.for_org(org).get(is_system=True, category=ChargeType.Category.RENT)
@@ -243,15 +278,20 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
         if not _billable(lease):
             return None
         months = period_months(lease, month)
-        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False)
+        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
+                                                meter_charge__isnull=True)
                      .values_list("billing_month", "charge_type_id"))
         lines = [ln for m in months for ln in lines_for_month(lease, m)
                  if (ln.billing_month, ln.charge_type.pk) not in billed]
-        if not lines:
+        metered = meter_lines(lease, months)
+        if not lines and not metered:
             return None
-        start = min(ln.service_start for ln in lines)
-        end = max(ln.service_end for ln in lines)
+        # The invoice covers the period's rent and charges; water alone covers its reading period.
+        dated = lines or metered
+        start = min(ln.service_start for ln in dated)
+        end = max(ln.service_end for ln in dated)
         due = due_date or _due_date(lease, months[0], start, today)
+        lines = lines + metered
         subtotal = sum((ln.amount for ln in lines), ZERO)
         invoice = Invoice.objects.create(
             organization=lease.organization, lease=lease, period_start=start, period_end=end, due_date=due,
@@ -264,7 +304,8 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
                     InvoiceLine(organization=lease.organization, invoice=invoice, lease=lease,
                                 charge_type=ln.charge_type, description=ln.description, quantity=1,
                                 unit_price=ln.amount, amount=ln.amount, service_start=ln.service_start,
-                                service_end=ln.service_end, billing_month=ln.billing_month)
+                                service_end=ln.service_end, billing_month=ln.billing_month,
+                                meter_charge=ln.meter_charge)
                     for ln in lines])
         except IntegrityError:
             # Billed by someone else after our check; the lease lock makes this a backstop only.
@@ -327,6 +368,40 @@ def generate_month(org: Organization, month: datetime.date, *, actor: Membership
     return result
 
 
+def bill_meter_charges(org: Organization, *, today=None, lease: Lease | None = None, actor: Membership | None = None,
+                       request=None) -> RunResult:
+    """Bills unbilled meter charges whose month is due: up to the last month being billed now (D-057).
+
+    A charge for a period already invoiced gets an invoice of its own; one for a month not billed
+    yet waits for that month's run, so it goes out with the rent.
+    """
+    from notifications import triggers
+    today = today or timezone.localdate()
+    last_due = months_to_bill(org, today)[-1]
+    charges = unbilled_meter_charges().filter(organization=org, billing_month__lte=last_due)
+    if lease is not None:
+        charges = charges.filter(lease=lease)
+    result = RunResult()
+    pairs = sorted(set(charges.values_list("lease_id", "billing_month")))
+    for lease_id, month in pairs:
+        target = Lease.all_objects.get(pk=lease_id)
+        if month >= month_start(today):
+            # This month's or next month's run will bill it with the rent unless that period is already out.
+            months = period_months(target, month)
+            if not InvoiceLine.objects.filter(lease=target, billing_month__in=months, is_void=False,
+                                              meter_charge__isnull=True).exists():
+                continue
+        try:
+            invoice = generate_lease_period(target, month, actor=actor, today=today, request=request)
+        except ValidationError as e:
+            result.errors.append((target, e.messages[0]))
+            continue
+        if invoice is not None:
+            result.invoices.append(invoice)
+            triggers.invoice_issued(invoice)
+    return result
+
+
 def run_scheduled(today=None) -> dict[str, int]:
     """The daily job: bills this month and, within the lead days, next month, for every organization."""
     today = today or timezone.localdate()
@@ -337,6 +412,9 @@ def run_scheduled(today=None) -> dict[str, int]:
             result = generate_month(org, month, today=today)
             counts["invoices"] += len(result.invoices)
             counts["errors"] += len(result.errors)
+        result = bill_meter_charges(org, today=today)
+        counts["invoices"] += len(result.invoices)
+        counts["errors"] += len(result.errors)
     return counts
 
 
@@ -408,7 +486,8 @@ def rebill_from(lease: Lease, day: datetime.date, *, actor: Membership, reason: 
     returned, to be corrected by hand. Runs inside the caller's transaction, which holds the
     lease lock.
     """
-    lines = list(InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day)))
+    lines = list(InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day),
+                                            meter_charge__isnull=True))
     wrong: set[int] = set()
     for month in sorted({ln.billing_month for ln in lines}):
         billed = [ln for ln in lines if ln.billing_month == month]

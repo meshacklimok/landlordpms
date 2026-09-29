@@ -1,0 +1,6 @@
+{% load i18n %}<form method="post" class="d-flex flex-wrap gap-1 mt-2">{% csrf_token %}
+  <input type="hidden" name="reading" value="{{ reading.public_id }}">
+  {% if reading.flags %}<input class="form-control form-control-sm" style="max-width:16rem" name="note" placeholder="{% trans 'Why it is right (needed)' %}" maxlength="300">{% endif %}
+  <button class="btn btn-sm btn-success" name="action" value="approve">{% trans "Approve" %}</button>
+</form>
+{% include "meters/_reject_one.html" %}

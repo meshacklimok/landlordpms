@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'mpesa',
     'notifications',
     'inspections',
+    'meters',
     'letters',
     'search',
     'portal',

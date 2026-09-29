@@ -42,10 +42,12 @@ class ChargeType(PublicIdModel, TimeStampedModel, ArchivableModel):
         SECURITY = "SECURITY", _("Security")
         PARKING = "PARKING", _("Parking")
         LATE_FEE = "LATE_FEE", _("Late fee")
+        # Billed from approved meter readings (D-057), never as a recurring lease charge.
+        METERED_WATER = "METERED_WATER", _("Metered water")
         OTHER = "OTHER", _("Other")
 
     # Categories that cannot be a recurring lease charge.
-    NOT_RECURRING = (Category.RENT, Category.DEPOSIT, Category.LATE_FEE)
+    NOT_RECURRING = (Category.RENT, Category.DEPOSIT, Category.LATE_FEE, Category.METERED_WATER)
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     name = models.CharField(_("name"), max_length=60)
@@ -203,13 +205,19 @@ class InvoiceLine(models.Model):
     billing_month = models.DateField(null=True, blank=True, editable=False)
     # Set when the invoice is voided, which frees the month to be billed again.
     is_void = models.BooleanField(default=False, editable=False)
+    # A metered water line (D-057). A lease may have several in one month, one per approved reading.
+    meter_charge = models.ForeignKey("meters.MeterCharge", on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="lines", editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["pk"]
         constraints = [
-            models.UniqueConstraint("lease", "billing_month", "charge_type", condition=Q(is_void=False),
+            models.UniqueConstraint("lease", "billing_month", "charge_type",
+                                    condition=Q(is_void=False, meter_charge__isnull=True),
                                     name="billing_invoiceline_billed_once"),
+            models.UniqueConstraint("meter_charge", condition=Q(is_void=False, meter_charge__isnull=False),
+                                    name="billing_invoiceline_meter_charge_billed_once"),
             models.CheckConstraint(condition=Q(amount__gte=0, tax_amount__gte=0, quantity__gt=0),
                                    name="billing_invoiceline_amounts_not_negative"),
             models.CheckConstraint(

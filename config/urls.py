@@ -47,6 +47,7 @@ urlpatterns = [
     path("messages/", include("notifications.urls")),
     path("mpesa/", include("mpesa.urls")),
     path("inspections/", include("inspections.urls")),
+    path("meters/", include("meters.urls")),
     path("letters/", include("letters.urls")),
     path("reports/", include("reports.urls")),
     path("search/", include("search.urls")),
