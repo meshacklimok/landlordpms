@@ -413,11 +413,7 @@ def add_charge(actor: Membership, lease: Lease, *, charge_type: ChargeType, amou
                active_to=None, request=None) -> LeaseCharge:
     _require_charges(actor, lease)
     _require_open(lease)
-    _same_org(actor, charge_type)
-    if charge_type.is_archived:
-        raise ValidationError({"charge_type": _("This charge type is archived.")})
-    if not charge_type.is_recurring_allowed:
-        raise ValidationError({"charge_type": _("Rent, deposit and late fees are not recurring charges.")})
+    _check_recurring_type(actor, charge_type)
     amount = _money(amount, "amount", allow_zero=False)
     active_from = active_from or lease.start_date
     if active_from < lease.start_date:
@@ -436,6 +432,52 @@ def add_charge(actor: Membership, lease: Lease, *, charge_type: ChargeType, amou
     if lease.status != Lease.Status.DRAFT:
         _billing().bill_missing(lease, active_from, actor=actor, request=request)
     return charge
+
+
+def _check_recurring_type(actor: Membership, charge_type: ChargeType) -> None:
+    _same_org(actor, charge_type)
+    if charge_type.is_archived:
+        raise ValidationError({"charge_type": _("This charge type is archived.")})
+    if not charge_type.is_recurring_allowed:
+        raise ValidationError({"charge_type": _("Rent, deposit and late fees are not recurring charges.")})
+
+
+def plan_property_charge(actor: Membership, prop: Property, *, charge_type: ChargeType,
+                         active_from: datetime.date) -> tuple[list, list]:
+    """D-069: which open leases on a property would get a charge, and which are skipped and why.
+
+    Returns ([(lease, from_date)], [(lease, reason)]). A lease starting later gets it from its own start.
+    """
+    require(actor, "charges.manage", prop)
+    _check_recurring_type(actor, charge_type)
+    leases = (Lease.objects.filter(organization=actor.organization, unit__property=prop, status__in=OPEN_STATUSES)
+              .select_related("unit").prefetch_related("lease_tenants__tenant").order_by("unit__code", "start_date"))
+    to_add, skipped = [], []
+    for lease in leases:
+        day = max(active_from, lease.start_date)
+        if lease.end_date and day > lease.end_date:
+            skipped.append((lease, _("Ends before the start date.")))
+            continue
+        try:
+            _check_charge_clash(lease, charge_type, day, None, field="charge_type")
+        except ValidationError:
+            skipped.append((lease, _("Already has %(name)s for those dates.") % {"name": charge_type.name}))
+            continue
+        to_add.append((lease, day))
+    return to_add, skipped
+
+
+@transaction.atomic
+def add_charge_to_property(actor: Membership, prop: Property, *, charge_type: ChargeType, amount,
+                           active_from: datetime.date, request=None) -> tuple[list, list]:
+    """Adds one recurring charge to every open lease on a property that can take it (D-069)."""
+    amount = _money(amount, "amount", allow_zero=False)
+    to_add, skipped = plan_property_charge(actor, prop, charge_type=charge_type, active_from=active_from)
+    added = []
+    for lease, day in to_add:
+        added.append(add_charge(actor, lease, charge_type=charge_type, amount=amount, active_from=day,
+                                request=request))
+    return added, skipped
 
 
 @transaction.atomic

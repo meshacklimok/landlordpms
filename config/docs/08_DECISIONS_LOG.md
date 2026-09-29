@@ -883,3 +883,15 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
     - the tenant rating the work;
     - spare parts and stock;
     - working offline (doc 14 C1).
+
+### D-069 — Adding a charge to every lease at a property — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Garbage, service charge, security and similar fixed extras are recurring lease charges (`LeaseCharge`, doc 11 §8, D-049 item 4), added one lease at a time from the lease page. In an apartment block where every unit pays the same garbage fee, that means opening every lease. The user asked for one button that adds it to the whole block.
+
+**Decision.**
+1. **Where.** The property page gets "Add a charge to all leases" for members with `charges.manage` on the property, when it is not archived and has open leases. It opens `/properties/<id>/charges/`.
+2. **What it does.** One recurring charge type (Garbage is picked by default), an amount per month and a start date are added to every open lease (draft or active) on the property through the same service as the lease page (`add_charge`), so the same rules, audit and rebilling apply.
+3. **Start date.** Defaults to the first day of next month, so invoices already issued are not changed. A lease that starts later gets the charge from its own start date. An earlier date is allowed and rebills the months already billed, as on the lease page.
+4. **Preview first.** The page lists the leases that will get the charge and the ones skipped with the reason (already has that charge for those dates, ends before the start date), and nothing is saved until "Add to N leases" is pressed. Leases skipped are left alone; the rest are added.
+5. **New leases** do not pick the charge up automatically; it is added on the lease like today. A property-level default charge list is left for later.
+6. **Changing or ending** the charge stays per lease.

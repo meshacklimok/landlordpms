@@ -18,8 +18,14 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from billing.invoicing import month_start, next_month
+from billing.models import ChargeType
+from billing.services import recurring_charge_types
 from core import ratelimit
 from core.net import client_ip
+from leases import services as lease_services
+from leases.forms import PropertyChargeForm
+from leases.models import Lease
 from leases.services import with_occupancy
 from maintenance import services as maintenance
 
@@ -171,6 +177,9 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             "can_manage": can(m, "properties.manage", prop),
             "can_manage_units": can(m, "units.manage", prop),
             "show_units": can(m, "units.view", prop),
+            "can_add_charges": (not prop.is_archived and can(m, "charges.manage", prop)
+                                and Lease.objects.filter(
+                                    unit__property=prop, status__in=lease_services.OPEN_STATUSES).exists()),
             "building_form": forms.BuildingForm(),
         }
         if ctx["show_units"]:
@@ -187,6 +196,50 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
         ctx["buildings"] = Building.objects.filter(property=prop).annotate(
             unit_count=Count("units", filter=Q(units__archived_at__isnull=True))
         )
+        return render(request, self.template_name, ctx)
+
+
+class PropertyChargeView(CapabilityRequiredMixin, View):
+    """D-069: add one recurring charge (garbage by default) to every open lease, after a preview."""
+
+    template_name = "properties/property_charges.html"
+    required_capability = "charges.manage"
+
+    def _form(self, request, data=None):
+        types = recurring_charge_types(request.organization)
+        garbage = types.filter(category=ChargeType.Category.GARBAGE).first()
+        initial = {"charge_type": garbage, "active_from": next_month(month_start(timezone.localdate()))}
+        return PropertyChargeForm(data, charge_types=types, initial=initial)
+
+    def _property(self, request, public_id):
+        prop = _get_property(request, public_id)
+        _require(request, "charges.manage", prop)
+        return prop
+
+    def get(self, request, public_id):
+        prop = self._property(request, public_id)
+        return render(request, self.template_name, {"property": prop, "form": self._form(request)})
+
+    def post(self, request, public_id):
+        prop = self._property(request, public_id)
+        form = self._form(request, request.POST)
+        ctx = {"property": prop, "form": form}
+        if form.is_valid():
+            data = form.cleaned_data
+            try:
+                if request.POST.get("action") == "apply":
+                    added, skipped = lease_services.add_charge_to_property(request.membership, prop,
+                                                                           request=request, **data)
+                    messages.success(request, _("%(name)s added to %(n)s leases.")
+                                     % {"name": data["charge_type"].name, "n": len(added)})
+                    if skipped:
+                        messages.info(request, _("%(n)s leases were left alone.") % {"n": len(skipped)})
+                    return redirect("properties:detail", public_id=prop.public_id)
+                ctx["to_add"], ctx["skipped"] = lease_services.plan_property_charge(
+                    request.membership, prop, charge_type=data["charge_type"], active_from=data["active_from"])
+                ctx["preview"] = True
+            except ValidationError as exc:
+                _apply_errors(form, exc)
         return render(request, self.template_name, ctx)
 
 

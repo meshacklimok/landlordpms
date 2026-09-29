@@ -178,6 +178,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Vendor SLA on maintenance (metered water done: D-057)
 - [x] Expenses (flow C): expenses with maker/checker approval, receipts, categories and suppliers; net operating income in the P&L, money out in the cash flow, taken off the owner statement (D-067; repair costs linked to maintenance requests in D-068)
 - [x] Maintenance requests and jobs: priorities with due times, assigning staff and suppliers (SMS), statuses, notes and photos, costs as expenses, tenant reports and updates in the portal, home tasks and the unit page (D-068)
+- [x] Add a recurring charge (e.g. garbage) to every lease at a property in one go, with a preview (D-069)
 - [ ] Other metered utilities (electricity sub-meters), documents
 - [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)
 - [ ] Accounting/MRI reports, analytics, WhatsApp/email

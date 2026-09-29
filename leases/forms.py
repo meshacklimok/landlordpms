@@ -97,6 +97,19 @@ class ChargeForm(forms.Form):
         self.fields["charge_type"].queryset = charge_types
 
 
+class PropertyChargeForm(forms.Form):
+    """D-069: one recurring charge for every open lease at a property."""
+
+    charge_type = forms.ModelChoiceField(label=_("Charge"), queryset=None)
+    amount = forms.DecimalField(label=_("Amount per month (KES)"), max_digits=14, decimal_places=2, min_value=0)
+    active_from = forms.DateField(label=_("From"), widget=DateInput,
+                                  help_text=_("A lease that starts later gets it from its own start date."))
+
+    def __init__(self, *args, charge_types, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["charge_type"].queryset = charge_types
+
+
 class EndChargeForm(forms.Form):
     active_to = forms.DateField(label=_("Last day"), widget=DateInput)
 
