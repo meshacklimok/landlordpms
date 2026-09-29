@@ -1,0 +1,90 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Owner statement" %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% trans "Owner statement" %}</h1>
+  {% if form.fields.owner.choices %}
+  <form method="get" class="d-flex flex-wrap gap-2">
+    {{ form.owner }}
+    {{ form.month }}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if st %}{% with cur=st.currency %}
+<p class="small text-muted mb-3">
+  {% blocktrans with m=st.label o=st.recipient %}{{ m }}, for {{ o }}.{% endblocktrans %}
+  {% if can_owners %}<a href="{% url 'properties:owners' %}">{% trans "Owners and fees" %}</a>{% endif %}
+</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card shadow-sm"><div class="card-body p-2">
+      <table class="table table-sm small mb-0">
+        <tbody>
+          <tr><td>{% trans "Rent collected" %}</td><td class="text-end text-nowrap">{{ st.rent|money:cur }}</td></tr>
+          <tr><td>{% trans "Other charges collected" %}</td><td class="text-end text-nowrap">{{ st.other|money:cur }}</td></tr>
+          <tr class="fw-semibold"><td>{% trans "Total collected" %}</td><td class="text-end text-nowrap">{{ st.collected|money:cur }}</td></tr>
+          {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}
+          <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-muted">{% trans "Not tracked yet" %}</td></tr>
+        </tbody>
+        <tfoot><tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap">{{ st.due|money:cur }}</td></tr></tfoot>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6 small">
+    <div class="card h-100"><div class="card-body p-2">
+      <div>{% trans "Rent and charges billed for the month" %}: <span class="fw-semibold">{{ st.billed|money:cur }}</span></div>
+      <div>{% trans "Owed by tenants at month end" %}: <span class="fw-semibold">{{ st.balance|money:cur }}</span></div>
+      {% if st.deposit %}<div>{% trans "Deposits received (held, not included)" %}: <span class="fw-semibold">{{ st.deposit|money:cur }}</span></div>{% endif %}
+      {% if can_export %}<a class="btn btn-sm btn-primary mt-2" href="{% url 'reports:owner_statement_pdf' %}?{{ query }}">{% trans "Download PDF" %}</a>{% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% for block in st.blocks %}
+<h2 class="h6 mt-3">{{ block.property.name }}
+  <span class="small text-muted fw-normal">
+    {% if block.rentable %}· {% blocktrans with o=block.occupied r=block.rentable %}{{ o }} of {{ r }} units occupied{% endblocktrans %}{% endif %}
+    {% if block.fee_percent %}· {% blocktrans with f=block.fee_percent|floatformat:"-2" %}fee {{ f }}% of rent{% endblocktrans %}{% endif %}
+  </span>
+</h2>
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Unit" %}</th>{% if st.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Collected" %}</th>
+    <th class="text-end">{% trans "Deposit" %}</th><th class="text-end">{% trans "Owed at month end" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for line in block.lines %}
+    <tr>
+      <td>{{ line.lease.unit.code }}</td>{% if st.show_tenants %}<td>{{ line.tenant }}</td>{% endif %}
+      <td class="text-end text-nowrap">{{ line.billed|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ line.collected|money:cur }}</td>
+      <td class="text-end text-nowrap">{% if line.deposit %}{{ line.deposit|money:cur }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td class="text-end text-nowrap {% if line.balance > 0 %}text-danger{% endif %}">{{ line.balance|money:cur }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="text-muted">{% trans "No tenants or payments this month." %}</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if block.lines %}
+  <tfoot><tr class="fw-semibold">
+    <td{% if st.show_tenants %} colspan="2"{% endif %}>{% trans "Total" %}</td>
+    <td class="text-end text-nowrap">{{ block.billed|money:cur }}</td><td class="text-end text-nowrap">{{ block.collected|money:cur }}</td>
+    <td class="text-end text-nowrap">{{ block.deposit|money:cur }}</td><td class="text-end text-nowrap">{{ block.balance|money:cur }}</td>
+  </tr></tfoot>
+  {% endif %}
+</table>
+</div>
+{% if block.fee_percent %}<p class="small text-muted">{% blocktrans with fee=block.fee|money:cur rent=block.rent|money:cur %}Management fee: {{ fee }} on rent collected of {{ rent }}.{% endblocktrans %}</p>{% endif %}
+{% endfor %}
+
+<ul class="small text-muted mt-3">{% for note in st.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% else %}
+<p class="text-muted">{% trans "No properties to show yet." %}</p>
+{% endif %}
+{% endblock %}

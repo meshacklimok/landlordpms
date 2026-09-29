@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Building, Property, Unit
+from .models import Building, Property, PropertyOwner, Unit
 
 
 class NoDeleteAdmin(admin.ModelAdmin):
@@ -40,3 +40,10 @@ class UnitAdmin(NoDeleteAdmin):
 
     def get_queryset(self, request):
         return Unit.all_objects.select_related("organization", "property", "building")
+
+
+@admin.register(PropertyOwner)
+class PropertyOwnerAdmin(NoDeleteAdmin):
+    list_display = ["name", "organization", "phone", "email"]
+    search_fields = ["name", "phone", "email", "organization__name"]
+    readonly_fields = ["public_id", "created_at", "updated_at"]

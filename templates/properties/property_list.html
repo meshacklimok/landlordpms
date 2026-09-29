@@ -33,6 +33,7 @@
 </nav>
 {% endif %}
 {% if can_manage %}
-<p class="small mt-3">{% if show_archived %}<a href="{% url 'properties:list' %}">{% trans "Back to active properties" %}</a>{% else %}<a href="?archived=on">{% trans "Show archived properties" %}</a>{% endif %}</p>
+<p class="small mt-3">{% if show_archived %}<a href="{% url 'properties:list' %}">{% trans "Back to active properties" %}</a>{% else %}<a href="?archived=on">{% trans "Show archived properties" %}</a>{% endif %}
+  · <a href="{% url 'properties:owners' %}">{% trans "Owners" %}</a></p>
 {% endif %}
 {% endblock %}

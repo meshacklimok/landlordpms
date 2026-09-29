@@ -1,4 +1,4 @@
-"""Reports: the dashboard (D-051) and the annual rental income pack (D-050).
+"""Reports: the dashboard (D-051), the annual rental income pack (D-050) and the owner statement (D-053).
 
 Thin views; reports.metrics and reports.income do the work.
 """
@@ -18,8 +18,8 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from properties.models import Property
 
-from . import forms, income, metrics
-from .pdf import render_pack
+from . import forms, income, metrics, statements
+from .pdf import render_pack, render_statement
 
 CSV_KINDS = ("months", "properties", "receipts")
 
@@ -215,3 +215,54 @@ class IncomeExportView(CapabilityRequiredMixin, View):
             yield [p.paid_at.isoformat(), receipt.number if receipt else "", p.tenant.name if p.tenant else "",
                    p.lease.unit.property.name, p.lease.unit.code, p.get_method_display(), p.reference, p.amount,
                    part.rent, part.other, part.deposit, part.unapplied]
+
+
+# ---------------------------------------------------------------------------
+# Owner statement (D-053)
+# ---------------------------------------------------------------------------
+
+
+def _statement(request):
+    m = request.membership
+    owners = statements.owner_choices(m)
+    form = forms.OwnerStatementForm(request.GET or None, owners=owners)
+    owner = form.value("owner") or (owners[0][0] if owners else None)
+    month = form.value("month")
+    today = timezone.localdate()
+    if month is None or month > today:
+        month = statements.default_month(today)
+    st = statements.statement(m, owner, month) if owner else None
+    if owners and request.GET.get("owner") and st is None:
+        raise Http404
+    if st is not None:
+        form = forms.OwnerStatementForm({"owner": owner, "month": f"{st.month:%Y-%m}"}, owners=owners)
+    return form, st
+
+
+class OwnerStatementView(CapabilityRequiredMixin, View):
+    template_name = "reports/owner_statement.html"
+    required_capability = "reports.view_financial"
+
+    def get(self, request):
+        form, st = _statement(request)
+        query = f"owner={st.owner.public_id if st.owner else statements.NO_OWNER}&month={st.month:%Y-%m}" if st else ""
+        return render(request, self.template_name, {
+            "form": form, "st": st, "query": query, "can_export": can(request.membership, "reports.export"),
+            "can_owners": can(request.membership, "properties.manage"),
+        })
+
+
+class OwnerStatementPdfView(CapabilityRequiredMixin, View):
+    required_capability = "reports.export"
+
+    def get(self, request):
+        if not can(request.membership, "reports.view_financial"):
+            raise PermissionDenied("reports.view_financial")
+        _form, st = _statement(request)
+        if st is None:
+            raise Http404
+        response = HttpResponse(render_statement(st), content_type="application/pdf")
+        name = st.owner.name if st.owner else request.organization.name
+        slug = "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-")[:40] or "owner"
+        response["Content-Disposition"] = f'attachment; filename="owner-statement-{slug}-{st.month:%Y-%m}.pdf"'
+        return response

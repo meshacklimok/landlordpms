@@ -28,3 +28,21 @@ class DashboardFilterForm(forms.Form):
     def value(self, name):
         self.is_valid()
         return None if name in self.errors else self.cleaned_data.get(name)
+
+
+class OwnerStatementForm(forms.Form):
+    owner = forms.ChoiceField(required=False)
+    month = forms.DateField(required=False, input_formats=["%Y-%m"],
+                            widget=forms.DateInput(attrs={"type": "month", "class": "form-control form-control-sm",
+                                                       "aria-label": _("Month")}, format="%Y-%m"))
+
+    def __init__(self, data, *, owners):
+        super().__init__(data)
+        self.fields["owner"].choices = owners
+        self.fields["owner"].widget.attrs.update({"class": "form-select form-select-sm", "aria-label": _("Owner")})
+
+    def value(self, name):
+        if not self.is_bound:
+            return None
+        self.is_valid()
+        return None if name in self.errors else self.cleaned_data.get(name)

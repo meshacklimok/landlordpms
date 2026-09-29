@@ -6,6 +6,8 @@ app_name = "properties"
 
 urlpatterns = [
     path("", views.PropertyListView.as_view(), name="list"),
+    path("owners/", views.OwnerListView.as_view(), name="owners"),
+    path("owners/<uuid:public_id>/", views.OwnerEditView.as_view(), name="owner_edit"),
     path("new/", views.PropertyCreateView.as_view(), name="create"),
     path("<uuid:public_id>/", views.PropertyDetailView.as_view(), name="detail"),
     path("<uuid:public_id>/edit/", views.PropertyEditView.as_view(), name="edit"),

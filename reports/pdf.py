@@ -1,4 +1,4 @@
-"""The rental income pack as an A4 PDF, drawn with ReportLab like receipts and letters (D-050).
+"""The rental income pack (D-050) and the owner statement (D-053) as A4 PDFs, drawn with ReportLab.
 
 Drawn on request from the live figures; nothing is stored.
 """
@@ -17,6 +17,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from core.money import format_money
 
 from .income import Pack
+from .statements import Statement
 
 BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=9, leading=12)
 SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=10, textColor=colors.HexColor("#555555"))
@@ -106,6 +107,62 @@ def render_pack(pack: Pack) -> bytes:
     else:
         story.append(_p(_("No payments in this year.")))
     story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}") for note in pack.notes]
+    if org.document_footer:
+        story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_statement(st: Statement) -> bytes:
+    """The monthly owner statement (D-053), portrait A4."""
+    org = st.organization
+    c = st.currency
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm,
+                            bottomMargin=14 * mm, title=_("Owner statement %(month)s") % {"month": st.label})
+    summary = [
+        [_("Summary"), ""],
+        [_("Rent collected"), format_money(st.rent, c)],
+        [_("Other charges collected"), format_money(st.other, c)],
+        [_("Total collected"), format_money(st.collected, c)],
+    ]
+    if st.has_fee:
+        summary.append([_("Less management fee"), format_money(-st.fee, c)])
+    summary += [
+        [_("Less expenses"), _("Not tracked yet")],
+        [_("Due to the owner"), format_money(st.due, c)],
+    ]
+    summary_table = _table(summary, first_width=80 * mm)
+    story = [
+        _p(org.display_name, HEAD),
+        _p(_("Owner statement for %(month)s") % {"month": st.label}, TITLE),
+        _p(_("To: %(owner)s. Drawn %(day)s.") % {"owner": st.recipient, "day": f"{timezone.localdate():%d %b %Y}"},
+           SMALL),
+        Spacer(1, 5 * mm),
+        summary_table,
+    ]
+    extra = [[_("Rent and charges billed for the month"), format_money(st.billed, c)],
+             [_("Owed by tenants at month end"), format_money(st.balance, c)]]
+    if st.deposit:
+        extra.insert(0, [_("Deposits received (held, not included)"), format_money(st.deposit, c)])
+    story += [Spacer(1, 3 * mm), _table([["", ""], *extra], total=False, first_width=80 * mm)]
+    head = [_("Unit"), _("Tenant"), _("Billed"), _("Collected"), _("Deposit"), _("Owed at month end")]
+    for block in st.blocks:
+        title = block.property.name
+        if block.rentable:
+            title += " · " + _("%(o)s of %(r)s units occupied") % {"o": block.occupied, "r": block.rentable}
+        if block.fee_percent:
+            title += " · " + _("fee %(pct)s%% of rent") % {"pct": f"{block.fee_percent:g}"}
+        rows = [head] + [[line.lease.unit.code, line.tenant, _n(line.billed), _n(line.collected), _n(line.deposit),
+                          _n(line.balance)] for line in block.lines]
+        rows.append([_("Total"), "", _n(block.billed), _n(block.collected), _n(block.deposit), _n(block.balance)])
+        table = _table(rows, first_width=22 * mm)
+        table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "LEFT")]))
+        story += [Spacer(1, 6 * mm), _p(title, TITLE), table]
+        if block.fee_percent:
+            story.append(_p(_("Management fee: %(fee)s on rent collected of %(rent)s.") % {
+                "fee": format_money(block.fee, c), "rent": format_money(block.rent, c)}, SMALL))
+    story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}", SMALL) for note in st.notes]
     if org.document_footer:
         story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
     doc.build(story)

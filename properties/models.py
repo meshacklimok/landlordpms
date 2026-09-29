@@ -12,7 +12,7 @@ import re
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Upper
 from django.utils.translation import gettext_lazy as _
@@ -35,6 +35,22 @@ unit_code_validator = RegexValidator(
 
 def clean_code(value: str | None) -> str:
     return (value or "").strip().upper().replace(" ", "")
+
+
+class PropertyOwner(PublicIdModel, TimeStampedModel):
+    """Who owns one or more properties: a person or company, not a login (D-035, D-053)."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    name = models.CharField(_("name"), max_length=150)
+    phone = models.CharField(_("phone"), max_length=16, blank=True)
+    email = models.EmailField(_("email"), blank=True)
+    note = models.CharField(_("note"), max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["name", "pk"]
+
+    def __str__(self):
+        return self.name
 
 
 class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
@@ -63,6 +79,13 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     branch = models.ForeignKey("accounts.Branch", on_delete=models.PROTECT, null=True, blank=True,
                                related_name="properties")
 
+    # Who owns it and the agency's fee on rent collected (D-053).
+    owner = models.ForeignKey(PropertyOwner, on_delete=models.PROTECT, null=True, blank=True,
+                              related_name="properties", verbose_name=_("owner"))
+    management_fee_percent = models.DecimalField(
+        _("management fee (%)"), max_digits=5, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=_("Taken from rent collected on the owner statement. Leave empty for no fee."))
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -84,6 +107,8 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     def clean(self):
         if self.branch_id and self.branch.organization_id != self.organization_id:
             raise ValidationError({"branch": _("Choose a branch of this organization.")})
+        if self.owner_id and self.owner.organization_id != self.organization_id:
+            raise ValidationError({"owner": _("Choose an owner of this organization.")})
 
     def save(self, *args, **kwargs):
         self.code = clean_code(self.code)

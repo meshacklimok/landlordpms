@@ -89,6 +89,7 @@
 <div class="d-flex flex-wrap gap-2 mb-3 small">
   {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:dashboard_export' %}{% if query %}?{{ query }}{% endif %}">{% trans "Download figures (CSV)" %}</a>{% endif %}
   {% if can_income %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income' %}">{% trans "Rental income pack" %}</a>{% endif %}
+  {% if can_income %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:owner_statement' %}">{% trans "Owner statement" %}</a>{% endif %}
 </div>
 {% endif %}
 

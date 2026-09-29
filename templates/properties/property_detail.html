@@ -6,6 +6,7 @@
   <div>
     <h1 class="h4 mb-0">{{ property.name }} <span class="badge text-bg-light border">{{ property.code }}</span></h1>
     <div class="small text-muted">{{ property.get_category_display }}{% if property.address_line %} · {{ property.address_line }}{% endif %}</div>
+    {% if property.owner %}<div class="small text-muted">{% blocktrans with o=property.owner.name %}Owner: {{ o }}{% endblocktrans %}{% if property.management_fee_percent is not None %} · {% blocktrans with f=property.management_fee_percent|floatformat:"-2" %}Fee {{ f }}% of rent collected{% endblocktrans %}{% endif %}</div>{% endif %}
   </div>
   {% if can_manage and not property.is_archived %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:edit' property.public_id %}">{% trans "Edit" %}</a>{% endif %}
 </div>

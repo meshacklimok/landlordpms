@@ -301,3 +301,17 @@ Phase 7 step 2 (D-051 item 4; doc 16 Tier 2 item 7). The rules are rule-based an
 
    It can be filtered by property and grade. Phone numbers show to people with `tenants.view`, as `tel:` links.
 8. Not in this step: reminder sequences, the grade in the tenancy letter or visible to tenants, and grade history.
+
+### D-053 — Property owners and the monthly owner statement — ACCEPTED (2026-09-29, open to change before merge)
+Phase 7 step 3 (D-051 item 4; doc 12 Tier 2; doc 16 Tier 2 item 8). It builds the D-035 design-in and the statement from doc 14 A9. Built on `feature/phase7-dashboards`. Recommended defaults, taken because the user said "next".
+1. **`PropertyOwner`** (properties app): the person or company who owns one or more properties. It has a name, and an optional phone, email and note. It is not a login. `Property.owner` (nullable) and `Property.management_fee_percent` (nullable, 0 to 100) are set on the property form. Owners are added and edited at `/properties/owners/` by people with `properties.manage`. Every change is audited. No deleting.
+2. **The statement** (`/reports/owner-statement/`, `reports.view_financial`) covers one owner and one calendar month. It includes only that owner's properties the member can see, archived ones included. Properties with no owner set make up their own statement, addressed to the organization, so a self-managing landlord gets one too. It defaults to last month. The A4 PDF needs `reports.export`. It is drawn on request from the live figures; nothing is stored or numbered yet.
+3. **Figures**, per unit and per property:
+   - **Billed**: live invoice lines by the month they bill (D-049), without deposits.
+   - **Collected**: confirmed payments dated in the month (cash basis, because it is what can be paid over). Each payment is split across its invoices as in D-050: rent, other charges and deposit. Money not yet applied to an invoice counts as rent.
+   - **Balance at month end**: the lease's ledger up to the last day of the month.
+   - **Occupied**: units at month end, for live properties.
+4. **Management fee**: the property's percent times the rent collected (rent plus unapplied money), rounded per property. Water, service charge and other charges carry no fee. No percent set means no fee.
+5. **Due to the owner** = rent and other charges collected − the management fee − expenses. Expenses show as "not tracked yet" until the expenses app (flow C). Deposits received are listed, but they are held and not paid over.
+6. **Owner login**: invite the owner with the existing Viewer role, limited to their properties. It is read-only and has no tenant names, because Viewer lacks `tenants.view`. Tenant names show on the statement only for members with `tenants.view`. There is no new role or capability.
+7. **Not in this step**: remittance records (money paid over to the owner), stored numbered statements, sending the statement by email or SMS, expenses, and a tax residence for each owner (D-050 item 1).

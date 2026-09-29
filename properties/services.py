@@ -21,9 +21,11 @@ from accounts.models import Membership, PropertyAccess
 from accounts.permissions import can, clear_cache, require
 from audit import services as audit
 
-from .models import Building, Property, Unit, clean_code, payment_reference_for
+from .models import Building, Property, PropertyOwner, Unit, clean_code, payment_reference_for
 
-PROPERTY_FIELDS = ("name", "category", "county", "sub_county", "area", "street", "latitude", "longitude")
+PROPERTY_FIELDS = ("name", "category", "county", "sub_county", "area", "street", "latitude", "longitude", "owner",
+                   "management_fee_percent")
+OWNER_FIELDS = ("name", "phone", "email", "note")
 UNIT_FIELDS = ("code", "building", "unit_type", "type_label", "list_rent")
 
 # Case C: a single house gets one unit automatically.
@@ -54,6 +56,41 @@ def _snapshot(obj, fields) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Owners (D-053)
+# ---------------------------------------------------------------------------
+
+
+def _save_owner(actor: Membership, owner: PropertyOwner, fields: dict, request=None) -> PropertyOwner:
+    require(actor, "properties.manage")
+    _same_org(actor, owner)
+    creating = owner.pk is None
+    before = {} if creating else _snapshot(owner, OWNER_FIELDS)
+    for k in OWNER_FIELDS:
+        if k in fields:
+            setattr(owner, k, (fields[k] or "").strip())
+    if not owner.name:
+        raise ValidationError({"name": _("Enter the owner's name.")})
+    _validate(owner, exclude=["organization"])
+    owner.save()
+    after = _snapshot(owner, OWNER_FIELDS)
+    changes = {k: [None, v] for k, v in after.items() if v} if creating else audit.diff(before, after)
+    if changes:
+        audit.record("property_owner.create" if creating else "property_owner.update", actor=actor.user,
+                     organization=actor.organization, obj=owner, request=request, changes=changes)
+    return owner
+
+
+@transaction.atomic
+def create_owner(actor: Membership, *, request=None, **fields) -> PropertyOwner:
+    return _save_owner(actor, PropertyOwner(organization=actor.organization), fields, request)
+
+
+@transaction.atomic
+def update_owner(actor: Membership, owner: PropertyOwner, *, request=None, **fields) -> PropertyOwner:
+    return _save_owner(actor, owner, fields, request)
+
+
+# ---------------------------------------------------------------------------
 # Properties
 # ---------------------------------------------------------------------------
 
@@ -72,6 +109,7 @@ def create_property(actor: Membership, *, name: str, code: str, category: str = 
     org = actor.organization
     prop = Property(organization=org, name=name.strip(), code=clean_code(code), category=category,
                     created_by=actor.user, **{k: v for k, v in address.items() if k in PROPERTY_FIELDS})
+    _same_org(actor, prop.owner)
     _validate(prop, exclude=["organization", "created_by"])
     if _property_code_taken(org, prop.code):
         raise ValidationError({"code": _("Another property already uses the code %(code)s.") % {"code": prop.code}})
@@ -101,6 +139,7 @@ def update_property(actor: Membership, prop: Property, *, request=None, **fields
     require(actor, "properties.manage", prop)
     if "code" in fields and clean_code(fields["code"]) != prop.code:
         raise ValidationError({"code": _("A property code cannot be changed; unit payment references use it.")})
+    _same_org(actor, fields.get("owner"))
     before = _snapshot(prop, PROPERTY_FIELDS)
     for k in PROPERTY_FIELDS:
         if k in fields:

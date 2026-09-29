@@ -23,7 +23,7 @@ from core.net import client_ip
 from leases.services import with_occupancy
 
 from . import forms, selectors, services
-from .models import Building, Property, Unit
+from .models import Building, Property, PropertyOwner, Unit
 
 PAGE_SIZE = 25
 
@@ -81,15 +81,72 @@ class PropertyListView(CapabilityRequiredMixin, View):
         })
 
 
+class OwnerListView(CapabilityRequiredMixin, View):
+    """Property owners: who each statement goes to (D-053)."""
+
+    template_name = "properties/owner_list.html"
+    required_capability = "properties.manage"
+
+    def context(self, request, form=None):
+        props = visible_properties(request.membership, Property.all_objects.all())
+        owners = PropertyOwner.objects.filter(organization=request.organization).annotate(
+            property_count=Count("properties", filter=Q(properties__in=props)))
+        return {"owners": owners, "form": form or forms.PropertyOwnerForm(),
+                "unowned": props.filter(owner__isnull=True, archived_at__isnull=True).count(),
+                "can_invite": can(request.membership, "staff.manage")}
+
+    def get(self, request):
+        return render(request, self.template_name, self.context(request))
+
+    def post(self, request):
+        form = forms.PropertyOwnerForm(request.POST)
+        if form.is_valid():
+            try:
+                services.create_owner(request.membership, request=request, **form.cleaned_data)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            else:
+                messages.success(request, _("Owner added. Choose them on each of their properties."))
+                return redirect("properties:owners")
+        return render(request, self.template_name, self.context(request, form))
+
+
+class OwnerEditView(CapabilityRequiredMixin, View):
+    template_name = "properties/owner_form.html"
+    required_capability = "properties.manage"
+
+    def _owner(self, request, public_id):
+        return get_object_or_404(PropertyOwner, organization=request.organization, public_id=public_id)
+
+    def get(self, request, public_id):
+        owner = self._owner(request, public_id)
+        return render(request, self.template_name, {"form": forms.PropertyOwnerForm(instance=owner), "owner": owner})
+
+    def post(self, request, public_id):
+        owner = self._owner(request, public_id)
+        form = forms.PropertyOwnerForm(request.POST, instance=owner)
+        if form.is_valid():
+            try:
+                services.update_owner(request.membership, owner, request=request, **form.cleaned_data)
+            except ValidationError as exc:
+                owner.refresh_from_db()
+                _apply_errors(form, exc)
+            else:
+                messages.success(request, _("Owner saved."))
+                return redirect("properties:owners")
+        return render(request, self.template_name, {"form": form, "owner": owner})
+
+
 class PropertyCreateView(CapabilityRequiredMixin, View):
     template_name = "properties/property_form.html"
     required_capability = "properties.manage"
 
     def get(self, request):
-        return render(request, self.template_name, {"form": forms.PropertyForm()})
+        return render(request, self.template_name,
+                      {"form": forms.PropertyForm(organization=request.organization)})
 
     def post(self, request):
-        form = forms.PropertyForm(request.POST)
+        form = forms.PropertyForm(request.POST, organization=request.organization)
         if form.is_valid():
             try:
                 prop = services.create_property(request.membership, request=request, **form.cleaned_data)
@@ -139,11 +196,12 @@ class PropertyEditView(CapabilityRequiredMixin, View):
     def get(self, request, public_id):
         prop = _get_property(request, public_id)
         _require(request, "properties.manage", prop)
-        return render(request, self.template_name, {"form": forms.PropertyForm(instance=prop), "property": prop})
+        return render(request, self.template_name, {
+            "form": forms.PropertyForm(instance=prop, organization=request.organization), "property": prop})
 
     def post(self, request, public_id):
         prop = _get_property(request, public_id)
-        form = forms.PropertyForm(request.POST, instance=prop)
+        form = forms.PropertyForm(request.POST, instance=prop, organization=request.organization)
         if form.is_valid():
             try:
                 services.update_property(request.membership, prop, request=request, **form.cleaned_data)

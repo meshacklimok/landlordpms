@@ -1,7 +1,7 @@
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from .models import Building, Property, Unit, clean_code
+from .models import Building, Property, PropertyOwner, Unit, clean_code
 
 
 class CodeField(forms.CharField):
@@ -14,7 +14,8 @@ class CodeField(forms.CharField):
 class PropertyForm(forms.ModelForm):
     class Meta:
         model = Property
-        fields = ["name", "code", "category", "county", "sub_county", "area", "street", "latitude", "longitude"]
+        fields = ["name", "code", "category", "county", "sub_county", "area", "street", "latitude", "longitude",
+                  "owner", "management_fee_percent"]
         field_classes = {"code": CodeField}
         help_texts = {
             "code": _("Short letters or digits used in payment references, e.g. GV gives GV-A102. "
@@ -26,8 +27,11 @@ class PropertyForm(forms.ModelForm):
             "longitude": forms.NumberInput(attrs={"step": "any", "inputmode": "decimal"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, organization=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["owner"].queryset = PropertyOwner.objects.filter(organization=organization)
+        self.fields["owner"].empty_label = _("Not set")
+        self.fields["owner"].help_text = _("Used for the monthly owner statement. Add owners on the Owners page.")
         self.fields["county"].choices = [("", _("Choose county"))] + list(self.fields["county"].choices)[1:]
         if self.instance.pk:
             del self.fields["code"]
@@ -81,3 +85,12 @@ class UnitSearchForm(forms.Form):
     property = forms.UUIDField(required=False)
     status = forms.CharField(required=False, max_length=20)
     unit_type = forms.ChoiceField(required=False, choices=[("", "")] + list(Unit.Type.choices))
+
+
+class PropertyOwnerForm(forms.ModelForm):
+    class Meta:
+        model = PropertyOwner
+        fields = ["name", "phone", "email", "note"]
+
+    def _post_clean(self):
+        pass

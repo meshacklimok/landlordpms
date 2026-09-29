@@ -136,7 +136,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 7 — Dashboards, search, tenant portal
 - [x] Collectability grade (A to E) and daily who-to-call list with calls and promises to pay (D-052)
-- [ ] Read-only Owner membership and monthly owner statement PDF
+- [x] Property owners, management fee and the monthly owner statement with PDF (D-053); owner login = Viewer role limited to their properties
+- [ ] Owner remittance records and sending the statement to the owner (D-053 item 7)
 - [x] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set (D-051)
 - [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
 - [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI waits for expenses
