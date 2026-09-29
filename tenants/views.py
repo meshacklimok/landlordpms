@@ -21,6 +21,7 @@ from notifications import services as notifications
 from notifications.catalog import SMS, WHATSAPP
 from notifications.delivery import whatsapp_available
 from notifications.selectors import recent_for_tenant
+from portal import views as portal_views
 from properties.views import _apply_errors
 
 from . import forms, services
@@ -131,6 +132,7 @@ class TenantDetailView(CapabilityRequiredMixin, View):
             "whatsapp_offered": whatsapp_available(tenant.organization),
             "whatsapp_allowed": notifications.channel_allowed(tenant, WHATSAPP),
             "recent_messages": recent_for_tenant(tenant) if can(m, "messages.view") else None,
+            "portal": portal_views.tenant_card(tenant) if can(m, "tenants.invite_portal") else None,
         })
 
 

@@ -337,3 +337,32 @@ Phase 7 step 4 (doc 11 §17 and §26; doc 12 "Global search"). Built on `feature
    The box is a plain GET form, so search works without JavaScript.
 6. **Indexes**: every query is first limited to one organization, which is indexed. Matching inside a value (`icontains`) scans that organization's rows, which is fine at the sizes in doc 11 §27. Postgres trigram indexes (`pg_trgm`) wait until the performance test shows a need. No migration.
 7. **Not in this step**: searching notes, messages, letters or inspections; spelling tolerance; recent searches.
+
+### D-055 — Tenant portal: invitation, account and read-only tenant pages — ACCEPTED (2026-09-29, open to change before merge)
+Phase 7 step 5 (doc 11 §6 and §18; doc 12 "Tenant portal"; D-039 moved it earlier). Built on `feature/phase7-dashboards`. Recommended defaults, taken because the user said "next".
+1. **Same login as staff.** A tenant signs up or logs in with the phone number and a password, and verifies the phone by SMS code, exactly as staff do. No new way to log in, so no new attack surface. One `User` can be staff in one organization and a tenant in another, or both in the same one.
+2. **`TenantAccount`** (new `portal` app) links a `User` to one `Tenant` record. A tenant has at most one live account; revoking keeps the row, and a later invitation makes a new one. One user may hold accounts in several organizations and sees them all together.
+3. **Invitation** (`PortalInvitation`, `tenants.invite_portal`, already granted to Owner and Manager):
+   - Staff invite from the tenant's page.
+   - The SMS carries a link with a random token; only its SHA-256 hash is stored. The link lasts 7 days, and a new invitation replaces any pending one.
+   - Accepting needs a logged-in user whose **verified phone equals the invited phone and the tenant's current phone**. That is the claim rule of doc 11 §6.
+   - Staff can revoke a pending invitation or a live account; both are audited.
+   - No invitation is sent when the tenant turned SMS off (D-044), or when they have no lease past draft (there would be nothing to show).
+4. **What a tenant sees** (doc 11 §18), read-only:
+   - each of their leases that is not a draft (unit, property, rent, dates, status);
+   - the balance and the next amount due with its date;
+   - open invoices;
+   - a 12-month statement with a running balance;
+   - confirmed payments, with their receipt PDFs;
+   - the "Pay with M-Pesa" link when the lease has one (D-046).
+   Co-tenants on a joint lease each see that lease. Staff names, notes, audit data and other tenants on the property are never shown.
+5. **Isolation.** Every portal query starts from the user's own lease IDs: live accounts, of tenants not archived, in organizations not archived. Anything else is a 404. Leakage tests cover:
+   - another tenant in the same organization;
+   - another organization;
+   - a revoked account;
+   - an archived tenant;
+   - draft leases;
+   - receipts of reversed payments;
+   - staff pages opened by a tenant.
+6. **Routing.** A logged-in user with no staff membership but a live tenant account goes to `/my/` instead of the "create your workspace" page. A user with both sees "My home" in the top bar. Tenant-only users get a small top bar without staff links.
+7. **Not in this step**: maintenance requests, notices and shared documents in the portal; in-app messages to tenants; paying inside the portal other than through the existing pay link; Swahili; per-role staff dashboards (still open in TODO).

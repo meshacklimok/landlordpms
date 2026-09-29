@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'inspections',
     'letters',
     'search',
+    'portal',
 
     # LandlordPMS — Business Operations
     'maintenance',
@@ -100,6 +101,7 @@ TEMPLATES = [
                 "django.contrib.messages.context_processors.messages",
                 "accounts.context_processors.organization",
                 "notifications.context_processors.bell",
+                "portal.context_processors.portal",
             ],
         },
     },

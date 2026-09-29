@@ -116,6 +116,47 @@
     {% endif %}
   </div></div>
 
+  {% if portal is not None %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div>
+        <h2 class="h6 mb-1">{% trans "Tenant portal" %}</h2>
+        {% if portal.account %}
+        <div class="small"><span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">{% trans "Active" %}</span> <span class="text-body-secondary">{% blocktrans with day=portal.account.created_at|date:"j M Y" %}Sees their balance, statement and receipts online since {{ day }}.{% endblocktrans %}</span></div>
+        {% elif portal.invitation %}
+        <div class="small"><span class="badge bg-info-subtle text-info-emphasis border border-info-subtle">{% trans "Invited" %}</span> <span class="text-body-secondary">{% blocktrans with phone=portal.invitation.phone day=portal.invitation.expires_at|date:"j M Y" %}Sent to {{ phone }}; the link works until {{ day }}.{% endblocktrans %}</span></div>
+        {% elif tenant.is_archived %}
+        <div class="small text-body-secondary">{% trans "Archived tenants cannot use the portal." %}</div>
+        {% elif not portal.has_leases %}
+        <div class="small text-body-secondary">{% trans "Add this tenant to a lease first: the portal shows their leases." %}</div>
+        {% elif not sms_allowed %}
+        <div class="small text-body-secondary">{% trans "SMS is stopped for this tenant, so an invitation cannot be sent." %}</div>
+        {% else %}
+        <div class="small text-body-secondary">{% trans "Invite the tenant by SMS to see their balance, statement and receipts online." %}</div>
+        {% endif %}
+      </div>
+      {% if not tenant.is_archived %}
+      <div class="d-flex gap-1">
+        {% if portal.account %}
+        <form method="post" action="{% url 'tenants:portal_revoke' tenant.public_id %}">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-danger text-nowrap" onclick="return confirm('{% trans "Remove portal access for this tenant?" %}')">{% trans "Remove access" %}</button>
+        </form>
+        {% elif portal.has_leases and sms_allowed %}
+        {% if portal.invitation %}
+        <form method="post" action="{% url 'tenants:portal_revoke_invite' tenant.public_id %}">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-secondary text-nowrap">{% trans "Cancel" %}</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'tenants:portal_invite' tenant.public_id %}">{% csrf_token %}
+          <button class="btn btn-sm btn-outline-primary text-nowrap">{% if portal.invitation %}{% trans "Send again" %}{% else %}{% trans "Invite" %}{% endif %}</button>
+        </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+  </div></div>
+  {% endif %}
+
   {% if can_manage and not tenant.is_archived and tenant.status != "ACTIVE" %}
   <form method="post" action="{% url 'tenants:archive' tenant.public_id %}" class="mt-4">{% csrf_token %}
     <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this tenant?" %}')">{% trans "Archive tenant" %}</button>

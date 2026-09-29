@@ -30,6 +30,7 @@ from .permissions import can, effective_capabilities
 
 RESET_PHONE_KEY = "reset_phone"
 INVITE_TOKEN_KEY = "invite_token"
+PORTAL_INVITE_KEY = "portal_invite_token"  # set by portal.views.AcceptView
 
 
 def _error_text(exc: ValidationError) -> str:
@@ -98,6 +99,8 @@ class VerifyPhoneView(LoginRequiredMixin, View):
             messages.success(request, _("Phone number verified."))
             if request.session.get(INVITE_TOKEN_KEY):
                 return redirect("accounts:accept_invite", token=request.session[INVITE_TOKEN_KEY])
+            if request.session.get(PORTAL_INVITE_KEY):
+                return redirect("portal:accept", token=request.session[PORTAL_INVITE_KEY])
             return redirect("accounts:home")
         if form.is_valid():
             form.add_error("code", _("That code is wrong or has expired."))

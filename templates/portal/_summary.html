@@ -1,0 +1,20 @@
+{% load i18n money %}
+<div class="row g-2 mb-3">
+  <div class="col-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% if summary.in_credit %}{% trans "In credit" %}{% else %}{% trans "You owe" %}{% endif %}</div>
+    <div class="h5 mb-0 {% if summary.balance > 0 %}text-danger{% endif %}">{{ summary.balance|absolute|money:summary.currency }}</div>
+    {% if summary.overdue %}<div class="small text-danger">{% blocktrans with amount=summary.overdue|money:summary.currency %}{{ amount }} is late{% endblocktrans %}</div>{% endif %}
+  </div></div></div>
+  <div class="col-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Next due" %}</div>
+    {% if summary.next_due %}
+    <div class="h5 mb-0">{{ summary.next_due.outstanding|money:summary.currency }}</div>
+    <div class="small text-muted">{% blocktrans with day=summary.next_due.due_date|date:"j M Y" %}by {{ day }}{% endblocktrans %}</div>
+    {% else %}
+    <div class="h5 mb-0">—</div><div class="small text-muted">{% trans "Nothing open" %}</div>
+    {% endif %}
+  </div></div></div>
+</div>
+{% if summary.pay_url and summary.balance > 0 %}
+<a class="btn btn-success w-100 mb-3" href="{{ summary.pay_url }}"><i class="bi bi-phone"></i> {% trans "Pay with M-Pesa" %}</a>
+{% endif %}
