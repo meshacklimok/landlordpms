@@ -21,7 +21,7 @@ from .income import Pack
 BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=9, leading=12)
 SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=10, textColor=colors.HexColor("#555555"))
 HEAD = ParagraphStyle("head", parent=BODY, fontName="Helvetica-Bold", fontSize=15, leading=19)
-TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=11, leading=15)
+TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=11, leading=15, keepWithNext=1)
 GRID = TableStyle([
     ("FONT", (0, 0), (-1, -1), "Helvetica", 8),
     ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
@@ -42,7 +42,8 @@ def _n(value) -> str:
 
 
 def _table(rows, total=True, first_width=None):
-    table = Table(rows, colWidths=[first_width] + [None] * (len(rows[0]) - 1), repeatRows=1)
+    table = Table(rows, colWidths=[first_width] + [None] * (len(rows[0]) - 1), repeatRows=1,
+                  hAlign="LEFT")
     style = TableStyle(GRID.getCommands())
     if total:
         style.add("FONT", (0, -1), (-1, -1), "Helvetica-Bold", 8)
