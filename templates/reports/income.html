@@ -1,0 +1,117 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% blocktrans with y=pack.year %}Rental income {{ y }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% blocktrans with y=pack.year %}Rental income {{ y }}{% endblocktrans %}</h1>
+  <form method="get" class="d-flex gap-2">
+    <select name="year" class="form-select form-select-sm" aria-label="{% trans 'Year' %}" onchange="this.form.submit()">
+      {% for y in years %}<option value="{{ y }}" {% if y == pack.year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
+  </form>
+</div>
+<p class="small text-muted">{% trans "What was billed and received in the year, and an estimate of the rental income tax on it. Deposits are not income here." %}</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-7">
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <dl class="row mb-0 small">
+        <dt class="col-6">{% trans "Tax residence" %}</dt><dd class="col-6">{{ pack.residence_label }}</dd>
+        <dt class="col-6">{% trans "Rent received" %}</dt><dd class="col-6">{{ pack.total.rent_received|money:pack.currency }}</dd>
+        {% if pack.total.unapplied %}<dt class="col-6">{% trans "Received, not yet applied" %}</dt><dd class="col-6">{{ pack.total.unapplied|money:pack.currency }}</dd>{% endif %}
+        <dt class="col-6">{% trans "Taxable rent" %}</dt><dd class="col-6">{{ pack.total.taxable|money:pack.currency }}</dd>
+        <dt class="col-6">{% trans "Rate" %}</dt><dd class="col-6">{% for span, rate in pack.rates %}{{ span }} {{ rate }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+        <dt class="col-6">{% trans "Tax estimate" %}</dt><dd class="col-6 fw-semibold">{% if pack.total.tax is not None %}{{ pack.total.tax|money:pack.currency }}{% else %}—{% endif %}</dd>
+      </dl>
+    </div></div>
+  </div>
+  <div class="col-md-5">
+    {% if can_settings %}
+    <div class="card shadow-sm h-100"><div class="card-body">
+      <form method="post" action="{% url 'reports:tax_residence' %}">{% csrf_token %}
+        <input type="hidden" name="year" value="{{ pack.year }}">
+        <div class="fw-semibold small mb-1">{{ form.landlord_tax_residence.label }}</div>
+        {% for radio in form.landlord_tax_residence %}
+        <div class="form-check">{{ radio.tag }}<label class="form-check-label small" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>
+        {% endfor %}
+        <div class="form-text small mb-2">{{ form.landlord_tax_residence.help_text }}</div>
+        <button class="btn btn-outline-primary btn-sm">{% trans "Save" %}</button>
+      </form>
+    </div></div>
+    {% endif %}
+  </div>
+</div>
+
+{% if can_export %}
+<div class="d-flex flex-wrap gap-2 mb-3 small">
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'pdf' %}">{% trans "Download PDF" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'months' %}">{% trans "Months (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'properties' %}">{% trans "Properties (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'receipts' %}">{% trans "Payments (CSV)" %}</a>
+</div>
+{% endif %}
+
+<h2 class="h6">{% trans "By month" %}</h2>
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
+    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
+    <th class="text-end">{% trans "Rate" %}</th><th class="text-end">{% trans "Tax estimate" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for row in pack.months %}
+    <tr>
+      <td class="text-nowrap">{{ row.label }}</td>
+      <td class="text-end text-nowrap">{{ row.rent_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.other_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.rent_received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.taxable|money:pack.currency }}</td>
+      <td class="text-end">{{ row.rate_label }}</td>
+      <td class="text-end text-nowrap">{% if row.tax is not None %}{{ row.tax|money:pack.currency }}{% else %}—{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr class="fw-semibold">
+    <td>{% trans "Total" %}</td>
+    <td class="text-end text-nowrap">{{ pack.total.rent_billed|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.other_billed|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.received|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.rent_received|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.taxable|money:pack.currency }}</td>
+    <td></td>
+    <td class="text-end text-nowrap">{% if pack.total.tax is not None %}{{ pack.total.tax|money:pack.currency }}{% else %}—{% endif %}</td>
+  </tr></tfoot>
+</table>
+</div>
+
+<h2 class="h6">{% trans "By property" %}</h2>
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Property" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
+    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for row in pack.properties %}
+    <tr>
+      <td>{{ row.label }}</td>
+      <td class="text-end text-nowrap">{{ row.rent_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.other_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.rent_received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.taxable|money:pack.currency }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="text-muted">{% trans "Nothing billed or received in this year." %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<h2 class="h6">{% trans "Notes" %}</h2>
+<ul class="small text-muted">
+  {% for note in pack.notes %}<li>{{ note }}</li>{% endfor %}
+</ul>
+{% endblock %}

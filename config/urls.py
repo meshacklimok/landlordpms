@@ -48,6 +48,7 @@ urlpatterns = [
     path("mpesa/", include("mpesa.urls")),
     path("inspections/", include("inspections.urls")),
     path("letters/", include("letters.urls")),
+    path("reports/", include("reports.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

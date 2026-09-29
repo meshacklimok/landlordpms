@@ -161,7 +161,11 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         # Frozen by the Platform Admin for abuse or security (doc 14 D14).
         FROZEN = "FROZEN", _("Frozen")
 
-    name = models.CharField(_("name"), max_length=150)
+    class TaxResidence(models.TextChoices):
+        RESIDENT = "RESIDENT", _("Resident in Kenya")
+        NON_RESIDENT = "NON_RESIDENT", _("Non-resident")
+
+    name =models.CharField(_("name"), max_length=150)
     org_type = models.CharField(_("type"), max_length=20, choices=Type.choices, default=Type.INDIVIDUAL)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
     currency = models.CharField(max_length=3, default="KES")
@@ -170,6 +174,9 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
+    # Picks the rate in the rental income tax estimate (D-050). An estimate only, never filed.
+    landlord_tax_residence = models.CharField(
+        _("landlord tax residence"), max_length=12, choices=TaxResidence.choices, default=TaxResidence.RESIDENT)
     # Rent billing (doc 14 A3, D-036). Partial first and last months are prorated by days
     # unless the organization bills them as a full month.
     prorate_partial_months = models.BooleanField(_("prorate partial months"), default=True)

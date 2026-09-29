@@ -146,7 +146,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests
 - [x] Tenant payment link: STK push started by the tenant from the rent SMS, any amount (D-046 item 1; built early on the Phase 6 branch, mpesa 0004)
 - [ ] Payment link: try it end to end in the Daraja sandbox; check how long a rent SMS gets with the link and what it costs
-- [ ] Annual rental income pack; owner resident/non-resident flag for the tax estimate (D-046)
+- [x] Annual rental income pack; owner resident/non-resident flag for the tax estimate (D-046, D-050)
 - [x] Quarterly and yearly billing (`Lease.Frequency`) (D-046, D-049)
 
 ## Phase 8 — Launch
