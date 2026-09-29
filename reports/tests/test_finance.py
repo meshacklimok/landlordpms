@@ -178,7 +178,7 @@ def test_the_profit_and_loss_csv_has_the_figures(client, owner, books):
     login(client, owner)
     content = client.get(reverse("reports:profit_loss"), {"from": "2026-01", "to": "2026-02",
                                                           "format": "csv"}).content.decode()
-    assert "2026-02,15000.00,0.00,5000.00,20000.00,,20000.00,25000.00,80.0,0.00" in content
+    assert "2026-02,15000.00,0.00,5000.00,20000.00,0.00,20000.00,25000.00,80.0,0.00" in content
 
 
 def test_the_pages_need_financial_reports(client, org, acacia):

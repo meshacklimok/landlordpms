@@ -1,0 +1,13 @@
+{% extends "expenses/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Record an expense" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'expenses:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Expenses" %}</a>
+  <h1 class="h4 mt-2">{% trans "Record an expense" %}</h1>
+  <p class="small text-body-secondary">{% trans "For money already paid. It counts in reports once it is approved." %}</p>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Record expense" %}</button>
+  </div></form>
+</div>
+{% endblock %}

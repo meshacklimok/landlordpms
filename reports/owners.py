@@ -194,19 +194,21 @@ def send_statement(actor: Membership, st: statements.Statement, *, sms: bool = F
         pdf = render_statement(st)
         now = timezone.now()
         send = OwnerStatementSend(
-            organization=org, owner=owner, month=st.month, collected=st.collected, fee=st.fee, due=st.due,
-            remitted=st.remitted, email_to=owner.email, sent_by=actor.user, sent_at=now,
+            organization=org, owner=owner, month=st.month, collected=st.collected, fee=st.fee, expenses=st.expenses,
+            due=st.due, remitted=st.remitted, email_to=owner.email, sent_by=actor.user, sent_at=now,
             number=next_number(org, "owner_statement", prefix="OST", period=str(timezone.localdate().year)))
         send.pdf.save(statement_filename(st), ContentFile(pdf), save=False)
         if sms:
             send.sms = notify(org, "owner_statement", phone=owner.phone, created_by=actor.user, context={
                 "owner_name": owner.name, "month": st.label, "collected": format_money(st.collected, cur),
-                "fee": format_money(st.fee, cur), "due": format_money(st.due, cur),
+                "fee": format_money(st.fee, cur), "expenses": format_money(st.expenses, cur),
+                "due": format_money(st.due, cur),
                 "remitted": format_money(st.remitted, cur), "remaining": format_money(st.remaining, cur)})
         send.save()
         record("owner_statement.send", actor=actor.user, organization=org, obj=send, request=request,
                changes={"owner": [None, owner.name], "month": [None, f"{st.month:%Y-%m}"],
-                        "due": [None, str(st.due)], "remitted": [None, str(st.remitted)],
+                        "expenses": [None, str(st.expenses)], "due": [None, str(st.due)],
+                        "remitted": [None, str(st.remitted)],
                         "email": [None, owner.email], "sms": [None, owner.phone if sms else ""]})
     if owner.email:
         _email(send, st, pdf)
@@ -224,6 +226,7 @@ def _email(send: OwnerStatementSend, st: statements.Statement, pdf: bytes) -> No
         "",
         _("Collected: %(v)s") % {"v": format_money(st.collected, cur)},
         _("Management fee: %(v)s") % {"v": format_money(st.fee, cur)},
+        _("Expenses: %(v)s") % {"v": format_money(st.expenses, cur)},
         _("Due to you: %(v)s") % {"v": format_money(st.due, cur)},
         _("Paid to you: %(v)s") % {"v": format_money(st.remitted, cur)},
         _("Still to pay: %(v)s") % {"v": format_money(st.remaining, cur)},

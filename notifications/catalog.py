@@ -148,12 +148,14 @@ _TYPES: tuple[NotificationType, ...] = (
     # tenants or users, so SMS only, as for the M-Pesa payer. [VERIFY the Swahili]
     NotificationType(
         "owner_statement", _("Owner statement summary (to the owner)"), TENANT, (SMS,),
-        ("org_name", "owner_name", "month", "collected", "fee", "due", "remitted", "remaining"),
+        ("org_name", "owner_name", "month", "collected", "fee", "expenses", "due", "remitted", "remaining"),
         bodies={
             (SMS, EN): "Dear {owner_name}, your statement for {month}: collected {collected}, management fee "
-                       "{fee}, due to you {due}, paid to you {remitted}, still to pay {remaining}. {org_name}",
+                       "{fee}, expenses {expenses}, due to you {due}, paid to you {remitted}, still to pay "
+                       "{remaining}. {org_name}",
             (SMS, SW): "Mpendwa {owner_name}, taarifa yako ya {month}: makusanyo {collected}, ada ya usimamizi "
-                       "{fee}, kiasi chako {due}, umelipwa {remitted}, kilichobaki {remaining}. {org_name}",
+                       "{fee}, matumizi {expenses}, kiasi chako {due}, umelipwa {remitted}, kilichobaki "
+                       "{remaining}. {org_name}",
         },
     ),
     NotificationType(

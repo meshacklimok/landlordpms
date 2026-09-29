@@ -18,6 +18,7 @@ from accounts.models import Membership
 from accounts.permissions import can
 from billing import followups
 from billing import selectors as billing_selectors
+from expenses import services as expense_services
 from inspections.models import ConditionReport
 from inspections.services import visible_reports
 from leases.models import EXPIRING_WITHIN_DAYS, Lease, LeaseTenant
@@ -97,6 +98,14 @@ def _readings_to_approve(m: Membership) -> Task | None:
                 reverse("meters:approvals"))
 
 
+def _expenses_to_approve(m: Membership) -> Task | None:
+    if not can(m, "expenses.approve"):
+        return None
+    n = expense_services.to_approve(m).count()
+    return Task("expenses", n, ngettext("expense to approve", "expenses to approve", n),
+                reverse("expenses:list") + "?status=SUBMITTED")
+
+
 def _statements_to_send(m: Membership, today: datetime.date) -> Task | None:
     n, month = owners.to_send(m, today)
     if not n:
@@ -162,7 +171,7 @@ def home(membership: Membership, today: datetime.date | None = None) -> Home:
     today = today or timezone.localdate()
     out = Home()
     tasks = [_payments_to_confirm(membership), _mpesa_to_match(membership), _codes_to_check(membership),
-             _readings_to_approve(membership),
+             _readings_to_approve(membership), _expenses_to_approve(membership),
              _statements_to_send(membership, today), *_calls(membership, today),
              _draft_leases(membership)]
     # Vacancies are work for someone who can let them, and context for everyone else.

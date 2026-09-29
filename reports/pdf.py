@@ -129,7 +129,7 @@ def render_statement(st: Statement) -> bytes:
     if st.has_fee:
         summary.append([_("Less management fee"), format_money(-st.fee, c)])
     summary += [
-        [_("Less expenses"), _("Not tracked yet")],
+        [_("Less expenses"), format_money(-st.expenses, c)],
         [_("Due to the owner"), format_money(st.due, c)],
     ]
     summary_table = _table(summary, first_width=80 * mm)
@@ -171,6 +171,14 @@ def render_statement(st: Statement) -> bytes:
         if block.fee_percent:
             story.append(_p(_("Management fee: %(fee)s on rent collected of %(rent)s.") % {
                 "fee": format_money(block.fee, c), "rent": format_money(block.rent, c)}, SMALL))
+        if block.expenses:
+            rows = [[_("Expense"), _("Date paid"), _("Category"), _("Paid to"), _("Amount")]]
+            rows += [[e.description[:60], f"{e.paid_on:%d %b}", e.category.name[:30],
+                      (e.supplier.name if e.supplier else "")[:30], _n(e.amount)] for e in block.expenses]
+            rows.append([_("Expenses"), "", "", "", _n(block.expense_total)])
+            table = _table(rows, first_width=70 * mm)
+            table.setStyle(TableStyle([("ALIGN", (0, 0), (3, -1), "LEFT")]))
+            story += [Spacer(1, 3 * mm), table]
     story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}", SMALL) for note in st.notes]
     if org.document_footer:
         story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]

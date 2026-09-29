@@ -2,7 +2,8 @@
 the management fee, what is due to the owner and what was paid out to them (D-058).
 
 Live figures, drawn on request; nothing is stored. Collected is cash: confirmed payments dated
-in the month, split across their invoices as in the income pack (D-050).
+in the month, split across their invoices as in the income pack (D-050). Expenses are approved
+expenses paid in the month (D-067), taken off what is due to the owner.
 """
 
 import datetime
@@ -13,11 +14,13 @@ from django.db.models import Count, DateField, Prefetch, Q, Sum
 from django.db.models.functions import Cast, Coalesce, TruncMonth
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, can, require, visible_properties
 from billing.models import ChargeType, InvoiceLine, LedgerEntry
-from core.money import ZERO, round_money
+from core.money import ZERO, format_money, round_money
+from expenses import services as expense_services
 from leases.models import Lease, LeaseTenant
 from leases.services import occupying_leases
 from payments.models import Payment
@@ -49,10 +52,11 @@ class Line:
 
 @dataclass
 class Block:
-    """One property: its leases, occupancy and fee."""
+    """One property: its leases, occupancy, fee and expenses."""
 
     property: Property
     lines: list[Line] = field(default_factory=list)
+    expenses: list = field(default_factory=list)  # approved Expense rows paid in the month
     rentable: int = 0
     occupied: int = 0
 
@@ -91,6 +95,10 @@ class Block:
     def fee(self) -> Decimal:
         pct = self.fee_percent
         return round_money(self.rent * pct / 100) if pct else ZERO
+
+    @property
+    def expense_total(self) -> Decimal:
+        return sum((e.amount for e in self.expenses), ZERO)
 
 
 @dataclass
@@ -150,9 +158,13 @@ class Statement:
         return self._sum("balance")
 
     @property
+    def expenses(self):
+        return self._sum("expense_total")
+
+    @property
     def due(self) -> Decimal:
-        """Collected less the fee; expenses are not tracked yet."""
-        return self.collected - self.fee
+        """Collected less the fee and expenses. Negative when expenses were more than was collected."""
+        return self.collected - self.fee - self.expenses
 
     @property
     def has_fee(self) -> bool:
@@ -266,18 +278,22 @@ def statement(membership: Membership, owner_key: str, month: datetime.date) -> S
         blocks[r["property_id"]].rentable = r["rentable"]
         blocks[r["property_id"]].occupied = r["occupied"]
 
+    for e in (expense_services.approved(org, props, month, last).select_related("category", "supplier")
+              .order_by("paid_on", "pk")):
+        blocks[e.property_id].expenses.append(e)
+
     for block in blocks.values():
         block.lines.sort(key=lambda row: (row.lease.unit.code, row.lease.start_date, row.lease.pk))
     result = Statement(organization=org, owner=owner, month=month, show_tenants=show_tenants,
-                       blocks=[b for b in blocks.values() if b.lines or b.rentable])
+                       blocks=[b for b in blocks.values() if b.lines or b.rentable or b.expenses])
     if owner is not None and fully_sees(membership, owner):
         result.remittances = list(OwnerRemittance.objects.live().filter(owner=owner, month=month)
                                   .select_related("recorded_by").order_by("paid_on", "pk"))
-    result.notes = _notes(result, membership, last)
+    result.notes = _notes(result, membership, last, expense_services.waiting_summary(org, props, month, last))
     return result
 
 
-def _notes(st: Statement, membership: Membership, last: datetime.date) -> list[str]:
+def _notes(st: Statement, membership: Membership, last: datetime.date, waiting) -> list[str]:
     notes = []
     if last >= timezone.localdate():
         notes.append(_("The month is not over yet; figures will change."))
@@ -285,7 +301,14 @@ def _notes(st: Statement, membership: Membership, last: datetime.date) -> list[s
                    "to an invoice is counted as rent."))
     if st.deposit:
         notes.append(_("Deposits received are held and not included in the amount due to the owner."))
-    notes.append(_("Expenses are not tracked yet, so none are taken off."))
+    notes.append(_("Expenses are approved expenses paid in the month, taken off what is due to the owner."))
+    if waiting.waiting_count:
+        notes.append(ngettext(
+            "%(n)s expense of %(total)s is waiting for approval and is not taken off yet.",
+            "%(n)s expenses totalling %(total)s are waiting for approval and are not taken off yet.",
+            waiting.waiting_count) % {"n": waiting.waiting_count, "total": format_money(waiting.waiting, st.currency)})
+    if st.due < 0:
+        notes.append(_("Expenses were more than was collected, so the amount due is negative."))
     if accessible_property_ids(membership) is not None:
         notes.append(_("Only the properties you can see are included."))
     if st.owner is not None and not st.shows_remittances:

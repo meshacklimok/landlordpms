@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money reports %}
+{% extends "base.html" %}{% load i18n money reports access %}
 {% block title %}{% trans "Profit and loss" %}{% endblock %}
 {% block content %}
 {% with cur=report.currency t=report.total %}
@@ -14,7 +14,8 @@
       <tr><td>{% trans "Other charges collected" %}</td><td class="text-end num">{{ t.other|money:cur }}</td></tr>
       <tr><td>{% trans "Received, not yet applied (counted as rent)" %}</td><td class="text-end num">{{ t.unapplied|money:cur }}</td></tr>
       <tr class="fw-semibold"><td>{% trans "Income" %}</td><td class="text-end num">{{ t.income|money:cur }}</td></tr>
-      <tr><td>{% trans "Expenses" %}</td><td class="text-end text-body-secondary">{% trans "not recorded yet" %}</td></tr>
+      {% for name, amount in report.expense_categories %}<tr><td class="ps-3 text-body-secondary">{{ name }}</td><td class="text-end num text-body-secondary">{{ amount|money:cur }}</td></tr>{% endfor %}
+      <tr><td>{% trans "Less expenses" %}{% if membership|can:"expenses.view" %} <a class="small" href="{% url 'expenses:list' %}?status=APPROVED&amp;from={{ report.start|date:'Y-m' }}&amp;to={{ report.end|date:'Y-m' }}{% if selected %}&amp;property={{ selected.public_id }}{% endif %}">{% trans "see them" %}</a>{% endif %}</td><td class="text-end num">{{ t.expenses|money:cur }}</td></tr>
       <tr class="fw-semibold table-light"><td>{% trans "Net operating income" %}</td><td class="text-end num">{{ t.noi|money:cur }}</td></tr>
     </tbody>
   </table>
@@ -31,7 +32,7 @@
   <thead><tr>
     <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent" %}</th><th class="text-end">{% trans "Other charges" %}</th>
     <th class="text-end">{% trans "Not yet applied" %}</th><th class="text-end">{% trans "Income" %}</th>
-    <th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Rent billed" %}</th>
+    <th class="text-end">{% trans "Expenses" %}</th><th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Rent billed" %}</th>
     <th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Deposits" %}</th>
   </tr></thead>
   <tbody>{% for row in report.months %}{% include "reports/_pl_row.html" %}{% endfor %}</tbody>

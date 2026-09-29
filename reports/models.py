@@ -75,6 +75,7 @@ class OwnerStatementSend(PublicIdModel):
     pdf = models.FileField(upload_to="owner-statements/%Y/", editable=False)
     collected = models.DecimalField(max_digits=14, decimal_places=2)
     fee = models.DecimalField(max_digits=14, decimal_places=2)
+    expenses = models.DecimalField(max_digits=14, decimal_places=2, default=0)  # D-067
     due = models.DecimalField(max_digits=14, decimal_places=2)
     remitted = models.DecimalField(max_digits=14, decimal_places=2)
     email_to = models.EmailField(blank=True)

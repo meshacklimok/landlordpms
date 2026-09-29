@@ -63,7 +63,7 @@ def test_the_statement(owner, jane, january):
     # The fee is on rent only: 10% of 20,000.
     assert (st.collected, st.fee, st.due, st.billed, st.balance) == (
         money(21000), money(2000), money(19000), money(31000), money(10000))
-    assert any("Expenses are not tracked" in n for n in st.notes)
+    assert st.expenses == 0 and any("Expenses are approved expenses" in n for n in st.notes)
 
 
 def test_unapplied_money_counts_as_rent(owner, jane, prop):

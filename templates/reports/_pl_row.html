@@ -4,7 +4,8 @@
   <td class="text-end num text-nowrap">{{ row.other|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.unapplied|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.income|money:cur }}</td>
-  <td class="text-end num text-nowrap">{{ row.noi|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.expenses|money:cur }}</td>
+  <td class="text-end num text-nowrap {% if row.noi < 0 %}text-danger{% endif %}">{{ row.noi|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.rent_billed|money:cur }}</td>
   <td class="text-end">{{ row.collection_rate|percent }}</td>
   <td class="text-end num text-nowrap text-body-secondary">{{ row.deposits|money:cur }}</td>

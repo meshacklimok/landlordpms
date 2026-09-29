@@ -1,0 +1,67 @@
+{% extends "expenses/_base.html" %}{% load i18n money %}
+{% block title %}{{ expense.number }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <a href="{% url 'expenses:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Expenses" %}</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
+    <div>
+      <h1 class="h4 mb-0">{{ expense.description }} {% include "expenses/_status.html" %}</h1>
+      <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }} · {{ expense.category.name }}</div>
+    </div>
+    <div class="h3 num mb-0{% if not expense.is_live %} text-decoration-line-through text-body-secondary{% endif %}">{{ expense.amount|money:currency }}</div>
+  </div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Date paid" %}</dt><dd class="col-sm-8">{{ expense.paid_on|date:"j M Y" }}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Paid by" %}</dt><dd class="col-sm-8">{{ expense.get_method_display }}{% if expense.reference %} · <code>{{ expense.reference }}</code>{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Paid to" %}</dt><dd class="col-sm-8">{% if expense.supplier %}{% if can_suppliers %}<a href="{% url 'expenses:supplier_edit' expense.supplier.public_id %}">{{ expense.supplier.name }}</a>{% else %}{{ expense.supplier.name }}{% endif %}{% else %}—{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Recorded" %}</dt><dd class="col-sm-8">{{ expense.created_at|date:"j M Y, H:i" }} · {{ expense.recorded_by }}</dd>
+      {% if expense.approved_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Approved" %}</dt><dd class="col-sm-8">{{ expense.approved_at|date:"j M Y, H:i" }} · {{ expense.approved_by }}</dd>{% endif %}
+      {% if expense.rejected_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Rejected" %}</dt><dd class="col-sm-8">{{ expense.rejected_at|date:"j M Y, H:i" }} · {{ expense.rejected_by }}<div>{{ expense.reject_reason }}</div></dd>{% endif %}
+      {% if expense.voided_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Voided" %}</dt><dd class="col-sm-8">{{ expense.voided_at|date:"j M Y, H:i" }} · {{ expense.voided_by }}<div>{{ expense.void_reason }}</div></dd>{% endif %}
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Receipt" %}</dt>
+      <dd class="col-sm-8">{% if expense.receipt %}<a href="{% url 'expenses:receipt' expense.public_id %}" target="_blank" rel="noopener"><i class="bi bi-paperclip"></i> {% if expense.receipt_is_pdf %}{% trans "Open the PDF" %}{% else %}{% trans "Open the photo" %}{% endif %}</a>{% else %}<span class="text-body-secondary">{% trans "None" %}</span>{% endif %}</dd>
+    </dl>
+  </div></div>
+
+  {% if can_approve %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Approve" %}</h2>
+    <p class="small text-body-secondary">{% trans "Once approved it counts in reports and owner statements." %}</p>
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="approve">
+      <button class="btn btn-success"><i class="bi bi-check2"></i> {% trans "Approve" %}</button>
+    </form>
+    <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="reject">
+      <div class="input-group">
+        <input type="text" name="reason" maxlength="300" required class="form-control" placeholder="{% trans 'Why reject it?' %}" aria-label="{% trans 'Reason' %}">
+        <button class="btn btn-outline-danger">{% trans "Reject" %}</button>
+      </div>
+    </form>
+  </div></div>
+  {% endif %}
+
+  {% if can_add_receipt %}
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm mb-3">{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="receipt">
+    <h2 class="h6">{% trans "Add the receipt" %}</h2>
+    <div class="input-group">
+      <input type="file" name="receipt" accept="image/*,application/pdf" required class="form-control" aria-label="{% trans 'Receipt photo or PDF' %}">
+      <button class="btn btn-outline-secondary">{% trans "Upload" %}</button>
+    </div>
+  </div></form>
+  {% endif %}
+
+  {% if can_void %}
+  <form method="post" class="card shadow-sm mb-3" novalidate data-confirm="{% trans 'Void this expense? It will no longer count in reports.' %}">{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="void">
+    <h2 class="h6">{% trans "Void" %}</h2>
+    <p class="small text-body-secondary">{% trans "For an expense recorded by mistake. It stays on record but no longer counts." %}</p>
+    <div class="input-group">
+      <input type="text" name="reason" maxlength="300" required class="form-control" placeholder="{% trans 'Why? e.g. recorded twice' %}" aria-label="{% trans 'Reason' %}">
+      <button class="btn btn-outline-danger">{% trans "Void" %}</button>
+    </div>
+  </div></form>
+  {% endif %}
+</div>
+{% endblock %}

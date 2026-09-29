@@ -102,7 +102,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 4 — Payments and receipts
 - [x] Bank payments: `method = BANK`, CSV statement import through the matching engine, bank inbox, bank accounts page; M-Pesa statement import (D-064)
-- [x] P&L, cash flow and aged receivables by property, with CSV (D-065; PDF, accrual basis and expenses later)
+- [x] P&L, cash flow and aged receivables by property, with CSV (D-065; expenses added in D-067; PDF and accrual basis later)
 - [x] PaymentAccount, PropertyPaymentAccount (+ admin UI; bank accounts page in D-064)
 - [x] Payment, PaymentAllocation; partial, over-payment, credit
 - [x] Reversal flow; caretaker cash review queue (any recorder without `payments.confirm`; give a caretaker `payments.record` to use it)
@@ -140,7 +140,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Owner remittance records and sending the statement to the owner (D-058): payments to owners voided not deleted, still to pay on the statement and PDF, 12-month owner account, email with the PDF and an optional SMS summary, each send numbered and kept
 - [x] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set (D-051)
 - [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
-- [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI waits for expenses
+- [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI is income less approved expenses (D-067)
 - [x] Portfolio and per-property dashboards (property and month filters in the URL)
 - [x] Per-role dashboards: the home page shows each member the work waiting and the figures their capabilities allow (D-056)
 - [x] Global search with suggestions as you type, scoped like the list pages (D-054); trigram indexes wait for the performance test
@@ -176,7 +176,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
 - [x] Unverified M-Pesa code check: a typed code no callback or statement brought in within 24h, or with another amount, is flagged; "Codes to check" page, payment warning, home task, daily alert, mark checked with a note (D-066)
 - [ ] Vendor SLA on maintenance (metered water done: D-057)
-- [ ] Expenses (flow C): Expense, ExpenseCategory, Supplier, link to maintenance; property net income
+- [x] Expenses (flow C): expenses with maker/checker approval, receipts, categories and suppliers; net operating income in the P&L, money out in the cash flow, taken off the owner statement (D-067; link to maintenance waits for maintenance)
 - [ ] Maintenance, other metered utilities (electricity sub-meters), documents
 - [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)
 - [ ] Accounting/MRI reports, analytics, WhatsApp/email

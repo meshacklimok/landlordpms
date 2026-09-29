@@ -802,3 +802,41 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
    - Or mark the code **checked** with a note (for example "seen on the Safaricom portal, paid to our other Till"). This needs `mpesa.match`, is audited, and is kept as a `CodeCheck`. A checked payment leaves the list.
    - A code that arrives later (callback or statement) clears the flag without anyone acting.
 6. **Not in this step:** blocking the confirmation of a pending payment, SMS to the tenant, and checks against the Safaricom transaction status API.
+
+### D-067 — Expenses, suppliers and net operating income — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Flow C (D-027, doc 11 §22) is the landlord paying suppliers and contractors. Doc 11 §14 plans `Expense(org, property, category, amount, date, receipt, recorded_by)`, and property net operating income is collected rent less expenses paid. The profit and loss report (D-065), the cash flow report and the owner statement (D-053) all show expenses as "not recorded yet". The capabilities `expenses.view`, `expenses.submit` and `expenses.approve` and `contractors.manage` exist from doc 13. Doc 16 asks for receipt photos taken on a phone. Maintenance is not built yet, so the link from an expense to a maintenance request waits for it.
+
+**Decision.**
+1. **What an expense is.** Money already paid out for one property (cash basis): the property, a category, a description, the amount, the date paid, the method (M-Pesa, bank, cash, cheque, other), a reference, an optional supplier and an optional receipt. Each gets a number `EXP-<year>-000001` per organization. Expenses are never deleted or edited: a wrong one is rejected or voided with a reason, and the right one is recorded again.
+2. **Recording and approval** (maker/checker, doc 13).
+   - Recording needs `expenses.submit` on the property. It waits for approval.
+   - When the recorder also has `expenses.approve` on the property, it is approved at once, as payments are with `payments.confirm`.
+   - `expenses.approve` holders approve or reject (with a reason) a waiting expense, and void (with a reason) an approved one.
+   - Only approved expenses count in reports. Waiting ones are listed, with their total, in a note.
+   - With the default roles, a Manager's expenses wait for the Owner or the Accountant.
+3. **Duplicates.** A reference already on a live expense (waiting or approved) of the same organization is refused, ignoring case and spaces, so an M-Pesa code or a cheque number is recorded once.
+4. **Receipt.** A photo, re-encoded as with condition reports (D-047), or a PDF up to 10 MB that starts with `%PDF-`. It is optional. One can be added later to an expense that has none, by its recorder or an approver. It is served only to members who can see the expense, never cached publicly; a PDF downloads rather than opening in the browser.
+5. **Categories** belong to the organization. The first time expenses are opened, these are created: Repairs and maintenance, Water, Electricity, Security, Cleaning and garbage, Caretaker and staff wages, Insurance, Land rates and ground rent, Professional and legal fees, Other. `expenses.approve` holders with every property add, rename and archive categories. An archived category stays on its expenses.
+6. **Suppliers** belong to the organization: name, phone, email, KRA PIN, how they are paid (free text, e.g. a Till or bank account) and a note. They are managed with `contractors.manage` and archived, not deleted. Anyone recording an expense can pick one. The supplier page shows what has been paid to each (approved expenses on the properties the member can see).
+7. **Pages** (under "Expenses", needing `expenses.view`, scoped by property; anything outside the member's properties is a 404):
+   - the list at `/expenses/`, filtered by property, category, supplier, status and months, with the total, and CSV export with `reports.export`;
+   - record an expense at `/expenses/new/`, phone-first, with the camera for the receipt;
+   - one expense, with approve, reject, void and add receipt;
+   - suppliers and categories.
+   - A home task "expenses to approve" for approvers.
+8. **Reports.**
+   - **Profit and loss:** expenses by category and by month, by date paid. Net operating income is income less expenses.
+   - **Cash flow:** expenses paid are money out.
+   - **Owner statement:** approved expenses on the owner's properties paid in the month are listed under each property and taken off: due to the owner = collected − management fee − expenses. The fee stays a share of rent collected. A statement sent keeps the expenses figure, and the SMS summary gains `{expenses}`. Due can be below zero when expenses are more than what was collected.
+   - **Annual rental income pack:** monthly rental income tax is on gross rent, so expenses are not taken off **[VERIFY with a tax adviser]**. The note now says so.
+9. **Audit.** Recording, approving, rejecting, voiding, adding a receipt, and every change to suppliers and categories.
+10. **Not in this step:**
+    - the link to maintenance requests (maintenance is not built);
+    - bills not yet paid (payables), due dates and part payments;
+    - recurring expenses;
+    - costs for the whole organization, or split across properties;
+    - withholding tax on supplier payments and eTIMS invoices **[VERIFY]**;
+    - paying suppliers from the app;
+    - reading money out from bank statements (D-064 item 8);
+    - budgets.

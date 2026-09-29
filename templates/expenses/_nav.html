@@ -1,0 +1,6 @@
+{% load i18n %}
+<ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
+  <li class="nav-item"><a class="nav-link text-nowrap {% if section == 'list' %}active{% endif %}" href="{% url 'expenses:list' %}"><i class="bi bi-receipt"></i> {% trans "Expenses" %}</a></li>
+  <li class="nav-item"><a class="nav-link text-nowrap {% if section == 'suppliers' %}active{% endif %}" href="{% url 'expenses:suppliers' %}"><i class="bi bi-shop"></i> {% trans "Suppliers" %}</a></li>
+  <li class="nav-item"><a class="nav-link text-nowrap {% if section == 'categories' %}active{% endif %}" href="{% url 'expenses:categories' %}"><i class="bi bi-tags"></i> {% trans "Categories" %}</a></li>
+</ul>

@@ -214,8 +214,10 @@ def test_scope_follows_the_lease_property(owner, org, prop, creds, lease):
 def test_daily_alert_once_a_day_to_those_who_have_codes(owner, org, prop, creds, lease):
     typed(owner, lease)
     elsewhere = add_member(org, "accountant", properties=[make_property(org, name="Other Court")])
-    assert codes.send_alerts(later()) == 1
-    assert codes.send_alerts(later(26)) == 0
+    # Two runs on the same local day, whatever the time the test runs.
+    morning = timezone.localtime(later(48)).replace(hour=9, minute=0)
+    assert codes.send_alerts(morning) == 1
+    assert codes.send_alerts(morning + datetime.timedelta(hours=1)) == 0
     msg = Message.objects.get(type="mpesa_unverified_codes")
     assert msg.user == owner.user and "1 M-Pesa payment" in msg.body
     assert not Message.objects.filter(type="mpesa_unverified_codes", user=elsewhere.user).exists()

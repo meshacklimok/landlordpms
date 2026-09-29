@@ -461,7 +461,7 @@ class ProfitLossView(_FinanceView):
                "Net operating income", "Rent billed", "Collection rate %", "Deposits received (not income)"]
         for row in [*report.months, report.total]:
             yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.unapplied,
-                   row.income, "", row.noi, row.rent_billed, _pct(row.collection_rate), row.deposits]
+                   row.income, row.expenses, row.noi, row.rent_billed, _pct(row.collection_rate), row.deposits]
 
 
 class CashFlowView(_FinanceView):
@@ -469,11 +469,11 @@ class CashFlowView(_FinanceView):
     slug = "cash-flow"
 
     def csv_rows(self, report):
-        yield ["Month", "Rent", "Other charges", "Deposits", "Not yet applied", "Money in", "Deposit refunds",
-               "Payments to owners", "Money out", "Net cash"]
+        yield ["Month", "Rent", "Other charges", "Deposits", "Not yet applied", "Money in", "Expenses",
+               "Deposit refunds", "Payments to owners", "Money out", "Net cash"]
         for row in [*report.months, report.total]:
             yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.deposits,
-                   row.unapplied, row.money_in, row.refunds,
+                   row.unapplied, row.money_in, row.expenses, row.refunds,
                    row.owner_payments if report.whole_organization else "", row.money_out, row.net]
 
 

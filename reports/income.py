@@ -269,7 +269,7 @@ def _notes(pack: Pack, membership: Membership) -> list[str]:
         notes.append(_("Rent for the year is outside %(low)s to %(high)s, the band the monthly rental "
                        "income tax covers. Ask your tax adviser how it is taxed.")
                      % {"low": format_money(low, pack.currency), "high": format_money(high, pack.currency)})
-    notes.append(_("Expenses are not tracked yet, so the pack shows gross income only."))
+    notes.append(_("Monthly rental income tax is on gross rent, so expenses are not taken off in this pack."))
     notes.append(str(DISCLAIMER))
     return notes
 

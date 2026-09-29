@@ -6,7 +6,8 @@
 - Money out is deposit refunds (by entry date; corrected ones left out) and payments to owners
   (not voided, by date paid). Owner payments belong to an owner, not a property, so they are
   counted only when the whole organization is in view.
-- Expenses are not recorded yet (flow C), so net operating income equals income for now.
+- Expenses (D-067) are approved expenses by the date paid. Net operating income is income less
+  expenses; in the cash flow they are money out. Waiting expenses are only mentioned in a note.
 - Receivables come from the arrears aging (FIFO), everything owed including what is not yet due.
 - Only the properties the member can see are counted, optionally one of them.
 """
@@ -18,12 +19,14 @@ from decimal import Decimal
 from django.db.models import DateField, Sum
 from django.db.models.functions import Cast, Coalesce, TruncMonth
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 
 from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require, visible_properties
 from billing import selectors as billing_selectors
 from billing.models import ChargeType, DepositEntry, Invoice, InvoiceLine
-from core.money import ZERO
+from core.money import ZERO, format_money
+from expenses import services as expense_services
 from payments.models import Payment
 from properties.models import Property
 
@@ -79,8 +82,9 @@ class Month:
     rent_billed: Decimal = ZERO
     refunds: Decimal = ZERO
     owner_payments: Decimal = ZERO
+    expenses: Decimal = ZERO
 
-    FIELDS = ("rent", "other", "unapplied", "deposits", "rent_billed", "refunds", "owner_payments")
+    FIELDS = ("rent", "other", "unapplied", "deposits", "rent_billed", "refunds", "owner_payments", "expenses")
 
     @property
     def income(self) -> Decimal:
@@ -88,7 +92,7 @@ class Month:
 
     @property
     def noi(self) -> Decimal:
-        return self.income  # less expenses, once they are recorded
+        return self.income - self.expenses
 
     @property
     def collection_rate(self) -> Decimal | None:
@@ -100,7 +104,7 @@ class Month:
 
     @property
     def money_out(self) -> Decimal:
-        return self.refunds + self.owner_payments
+        return self.expenses + self.refunds + self.owner_payments
 
     @property
     def net(self) -> Decimal:
@@ -120,6 +124,8 @@ class Report:
     months: list[Month]
     total: Month
     whole_organization: bool
+    # (category name, total) for the whole period, largest first.
+    expense_categories: list = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
 
     @property
@@ -181,6 +187,13 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
     for r in refunds:
         months[r["month"]].refunds -= r["total"]
 
+    spent = expense_services.approved(org, properties, first, last)
+    for r in (spent.annotate(bucket=Cast(TruncMonth("paid_on"), DateField())).values("bucket")
+              .annotate(total=Sum("amount"))):
+        months[r["bucket"]].expenses += r["total"]
+    categories = [(r["category__name"], r["total"]) for r in
+                  spent.values("category__name").annotate(total=Sum("amount")).order_by("-total", "category__name")]
+
     whole = prop is None and accessible_property_ids(membership) is None
     if whole:
         for r in (OwnerRemittance.objects.live().filter(organization=org, paid_on__gte=first, paid_on__lte=last)
@@ -192,17 +205,23 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
     for row in months.values():
         total.add(row)
     report = Report(organization=org, start=start, end=end, property=prop, months=list(months.values()),
-                    total=total, whole_organization=whole)
-    report.notes = _notes(report, membership)
+                    total=total, whole_organization=whole, expense_categories=categories)
+    report.notes = _notes(report, membership, expense_services.waiting_summary(org, properties, first, last))
     return report
 
 
-def _notes(report: Report, membership: Membership) -> list[str]:
+def _notes(report: Report, membership: Membership, waiting) -> list[str]:
     notes = [_("Cash basis: money is counted in the month it was received or paid out. Reversed payments "
                "are left out.")]
     if report.total.unapplied:
         notes.append(_("Money received but not yet applied to an invoice is counted as rent."))
-    notes.append(_("Expenses are not recorded yet, so net operating income is the same as income."))
+    notes.append(_("Expenses are counted once approved, in the month they were paid."))
+    if waiting.waiting_count:
+        notes.append(ngettext(
+            "%(n)s expense of %(total)s is waiting for approval and is not counted.",
+            "%(n)s expenses totalling %(total)s are waiting for approval and are not counted.",
+            waiting.waiting_count) % {"n": waiting.waiting_count, "total": format_money(waiting.waiting,
+                                                                                      report.currency)})
     notes.append(_("Deposits are held for tenants and are not income."))
     if report.whole_organization:
         notes.append(_("Payments to owners are counted by the date they were paid."))

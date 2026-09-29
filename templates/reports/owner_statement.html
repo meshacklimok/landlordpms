@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money %}
+{% extends "base.html" %}{% load i18n money access %}
 {% block title %}{% trans "Owner statement" %}{% endblock %}
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
@@ -27,10 +27,10 @@
           <tr><td>{% trans "Other charges collected" %}</td><td class="text-end text-nowrap">{{ st.other|money:cur }}</td></tr>
           <tr class="fw-semibold"><td>{% trans "Total collected" %}</td><td class="text-end text-nowrap">{{ st.collected|money:cur }}</td></tr>
           {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}
-          <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-muted">{% trans "Not tracked yet" %}</td></tr>
+          <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-nowrap">{% if st.expenses %}−{{ st.expenses|money:cur }}{% else %}{{ st.expenses|money:cur }}{% endif %}</td></tr>
         </tbody>
         <tfoot>
-          <tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap">{{ st.due|money:cur }}</td></tr>
+          <tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap {% if st.due < 0 %}text-danger{% endif %}">{{ st.due|money:cur }}</td></tr>
           {% if st.shows_remittances %}
           <tr><td>{% trans "Paid to the owner" %}</td><td class="text-end text-nowrap">−{{ st.remitted|money:cur }}</td></tr>
           <tr class="fw-semibold"><td>{% trans "Still to pay" %}</td><td class="text-end text-nowrap {% if st.remaining > 0 %}text-danger{% endif %}">{{ st.remaining|money:cur }}</td></tr>
@@ -157,6 +157,23 @@
 </table>
 </div>
 {% if block.fee_percent %}<p class="small text-muted">{% blocktrans with fee=block.fee|money:cur rent=block.rent|money:cur %}Management fee: {{ fee }} on rent collected of {{ rent }}.{% endblocktrans %}</p>{% endif %}
+{% if block.expenses %}
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Expense" %}</th><th>{% trans "Date paid" %}</th><th>{% trans "Category" %}</th><th>{% trans "Paid to" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>
+    {% for e in block.expenses %}
+    <tr>
+      <td>{% if membership|can:"expenses.view" %}<a href="{% url 'expenses:detail' e.public_id %}">{{ e.description }}</a>{% else %}{{ e.description }}{% endif %}</td>
+      <td class="text-nowrap">{{ e.paid_on|date:"j M" }}</td><td>{{ e.category.name }}</td><td>{{ e.supplier.name|default:"—" }}</td>
+      <td class="text-end text-nowrap">{{ e.amount|money:cur }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Expenses" %}</td><td class="text-end text-nowrap">{{ block.expense_total|money:cur }}</td></tr></tfoot>
+</table>
+</div>
+{% endif %}
 {% endfor %}
 
 <ul class="small text-muted mt-3">{% for note in st.notes %}<li>{{ note }}</li>{% endfor %}</ul>
