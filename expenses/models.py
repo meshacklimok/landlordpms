@@ -88,6 +88,9 @@ class Expense(PublicIdModel, TimeStampedModel):
     reference_key = models.CharField(max_length=60, blank=True, editable=False)
     # Private: a re-encoded JPEG or a checked PDF, served only through a view that checks scope.
     receipt = models.FileField(upload_to="expense-receipts/%Y/", blank=True, editable=False)
+    # The repair this paid for (D-068 item 6).
+    maintenance_request = models.ForeignKey("maintenance.MaintenanceRequest", on_delete=models.PROTECT, null=True,
+                                            blank=True, related_name="expenses", editable=False)
     status = models.CharField(_("status"), max_length=10, choices=Status.choices, default=Status.SUBMITTED,
                               editable=False)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")

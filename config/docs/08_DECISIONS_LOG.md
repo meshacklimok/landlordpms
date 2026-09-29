@@ -840,3 +840,46 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
     - paying suppliers from the app;
     - reading money out from bank statements (D-064 item 8);
     - budgets.
+
+### D-068 — Maintenance requests and jobs — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Doc 11 §14 plans `MaintenanceRequest(org, unit, tenant?, title, priority, status, assigned_to, cost)`: the Maintenance role sees only the requests assigned to it, and tenants submit and follow their own. Doc 12 and doc 16 (item 10) add an assigned supplier, a due date, status timestamps, photos first and urgency triage. The capabilities `maintenance.view`, `maintenance.view_assigned`, `maintenance.create`, `maintenance.assign`, `maintenance.update`, `maintenance.close`, `maintenance.costs` and `contractors.manage` exist from doc 13, and so do the Maintenance Manager and Maintenance Staff roles. Doc 11 §27 lists "maintenance update" (to the tenant) and "maintenance assigned" (to the assignee). Numbers are `MNT-2026-000031` (doc 11 §19). Expenses (D-067) left the link to maintenance until now.
+
+**Decision.**
+1. **What a request is.** A repair or problem at one property, for one unit or for the common areas (no unit). It has a title, a description, a kind (plumbing, electrical, water supply, doors and locks, roof and walls, painting, appliances, pests, security, cleaning and garbage, other), a priority, a due time, photos and a history of updates. Each gets a number `MNT-<year>-000001` per organization. Requests are never deleted: a wrong or duplicate one is cancelled with a reason.
+2. **Priority and due time** (triage). Emergency (due in 24 hours), High (3 days), Normal (7 days), Low (30 days). The due time is set from the priority when the request is made, and is changed with the priority, or on its own, by `maintenance.assign` holders. An open request past its due time is overdue.
+3. **Status.** New → Assigned → In progress → Done → Closed. On hold (waiting for parts, access or the tenant) can be set from Assigned or In progress and left again. Cancelled (with a reason) from any open status. Done means the worker says the work is finished; Closed means someone with `maintenance.close` has checked it. `maintenance.close` holders can also close straight from any open status, and reopen a Done or Closed request with a reason (it goes back to Assigned, or New when nobody is assigned). The time of the first assignment, the start, Done, Closed and Cancelled is kept, so time to respond and time to fix can be measured.
+4. **Assignment.** `maintenance.assign` holders assign a staff member, a supplier (D-067), or both. A staff member must be able to see the request: `maintenance.view` or `maintenance.view_assigned` on its property. The supplier gets an SMS with the job (number, property, unit, title, priority and the assigner's name) if they have a phone and the box is ticked. Reassigning is allowed and recorded.
+5. **Who sees what** (scoped by property; anything else is a 404).
+   - `maintenance.view`: every request on the member's properties.
+   - `maintenance.view_assigned` alone: only the requests assigned to them.
+   - `maintenance.create`: report a request on a property the member can see.
+   - `maintenance.update`: add notes and photos, start, put on hold and mark done, on requests the member can see.
+   - Costs (below) are shown to holders of `maintenance.costs` or `expenses.view` on the property. With the default roles, Maintenance Staff never see money.
+6. **Costs.** A cost is an expense (D-067) linked to the request: `Expense.maintenance_request`. It is recorded from the request page by members with both `maintenance.costs` and `expenses.submit` on the property, with the request's supplier and the "Repairs and maintenance" category picked in advance, and it is approved like any other expense. The request shows its approved and waiting costs; the expense links back to the request. A voided or rejected expense stops counting, as in D-067.
+7. **Tenants.**
+   - From the portal (D-055), a tenant reports a problem on a unit of one of their active leases: title, what is wrong, whether it is an emergency (Emergency or Normal; staff can change it) and up to 3 photos. At most 5 a day per tenant account.
+   - Staff can mark a request as reported by the tenant of the unit's active lease; it is then theirs in the same way.
+   - In the portal the tenant sees their requests (on their leases) with the number, status, due time and the updates that were shared with them, and can add a comment. Staff notes are private unless "tell the tenant" is ticked. Status changes are shown to the tenant.
+8. **Notifications.**
+   - `maintenance_reported` (in-app, staff): a new request, to `maintenance.assign` holders on the property. Emergencies are urgent.
+   - `maintenance_assigned` (in-app, staff): to the staff member assigned.
+   - `maintenance_supplier_job` (SMS to the supplier's phone): see item 4.
+   - `maintenance_update` (tenant, WhatsApp or SMS): to the reporting tenant when the request is received, when it is Done or Closed (only once), when it is cancelled, and when a staff note is shared with them. **[VERIFY the Swahili]**
+9. **Photos.** Re-encoded as with condition reports (D-047), up to 10 per request. They are served only to members who can see the request and to its tenant, never cached publicly.
+10. **Pages** (under "Maintenance", needing `maintenance.view` or `maintenance.view_assigned`):
+    - the list at `/maintenance/`: open requests first, filtered by property, status, priority, kind, "assigned to me" and "overdue", with open, overdue and average days to close in the last 90 days, and CSV with `reports.export`;
+    - report a request at `/maintenance/new/`, phone-first, with the camera;
+    - one request: details, photos, the history and every action allowed.
+    - Home tasks: "new requests to assign" (`maintenance.assign`), "jobs assigned to you" (open, assigned to the member) and "overdue jobs" (`maintenance.view`).
+    - The unit page shows its open requests with a link to them.
+11. **Audit.** Reporting, every status change, assignment, priority or due change, note, photo and cost.
+12. **Not in this step:**
+    - supplier logins, quotes and approving a quote before the work starts;
+    - supplier bills not yet paid (D-067 item 10);
+    - planned and recurring maintenance;
+    - charging a tenant for damage (use an invoice adjustment for now);
+    - setting the unit to "under maintenance" automatically (the unit page does it);
+    - the tenant rating the work;
+    - spare parts and stock;
+    - working offline (doc 14 C1).

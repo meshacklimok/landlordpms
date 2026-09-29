@@ -21,6 +21,7 @@ from accounts.permissions import can, visible_properties
 from core import ratelimit
 from core.net import client_ip
 from leases.services import with_occupancy
+from maintenance import services as maintenance
 
 from . import forms, selectors, services
 from .models import Building, Property, PropertyOwner, Unit
@@ -388,6 +389,9 @@ class UnitDetailView(CapabilityRequiredMixin, View):
                           if unit.share_token else ""),
             "available": selectors.is_available_to_let(unit),
             "can_see_items": can(m, "inspections.view", unit.property),
+            "repairs": (list(maintenance.open_on_unit(m, unit).order_by("due_at", "pk")[:10])
+                        if can(m, "maintenance.view", unit.property) else None),
+            "can_report_repair": can(m, "maintenance.create", unit.property) and not unit.is_archived,
         }
 
     def get(self, request, public_id):

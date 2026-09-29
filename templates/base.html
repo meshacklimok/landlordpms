@@ -39,6 +39,7 @@
         {% if membership|can:"leases.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'leases:list' %}">{% trans "Leases" %}</a></li>{% endif %}
         {% if membership|can:"meters.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'meters:list' %}">{% trans "Water" %}</a></li>{% endif %}
         {% if membership|can:"expenses.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'expenses:list' %}">{% trans "Expenses" %}</a></li>{% endif %}
+        {% if membership|can:"maintenance.view" or membership|can:"maintenance.view_assigned" %}<li class="nav-item"><a class="nav-link" href="{% url 'maintenance:list' %}">{% trans "Maintenance" %}</a></li>{% endif %}
         {% if membership|can:"invoices.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'billing:invoices' %}">{% trans "Invoices" %}</a></li>{% endif %}
         {% if membership|can:"payments.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'payments:list' %}">{% trans "Payments" %}</a></li>{% endif %}
         {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:inbox' %}">{% trans "M-Pesa" %}</a></li>

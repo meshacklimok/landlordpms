@@ -13,6 +13,7 @@
       <a class="small text-nowrap" href="{% url 'portal:lease' summary.lease.public_id %}">{% trans "Statement and receipts" %} →</a>
     </div>
     {% include "portal/_summary.html" %}
+    {% if summary.lease.status == "ACTIVE" %}<a class="small" href="{% url 'portal:repair_create' summary.lease.public_id %}">{% trans "Something broken? Report a problem" %} →</a>{% endif %}
   </div>
   {% empty %}
   <p class="text-muted">{% trans "You have no leases to show yet." %}</p>

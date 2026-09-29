@@ -290,7 +290,8 @@ def _duplicate(org, key: str) -> Expense | None:
 @transaction.atomic
 def record_expense(actor: Membership, prop: Property, *, category: ExpenseCategory, description: str, amount,
                    paid_on: datetime.date, method: str, reference: str = "", supplier: Supplier | None = None,
-                   receipt=None, today: datetime.date | None = None, request=None) -> Expense:
+                   receipt=None, maintenance_request=None, today: datetime.date | None = None,
+                   request=None) -> Expense:
     """Records a paid expense. Approved at once when the recorder may approve on the property (D-067 item 2)."""
     _check(actor, prop, "expenses.submit")
     today = today or timezone.localdate()
@@ -322,9 +323,12 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
     existing = _duplicate(org, key)
     if existing is not None:
         errors["reference"] = _("That reference is already on expense %(number)s.") % {"number": existing.number}
+    if maintenance_request is not None and (maintenance_request.organization_id != org.id
+                                            or maintenance_request.property_id != prop.pk):
+        errors["property"] = _("The repair is on another property.")
     if errors:
         raise ValidationError(errors)
-    fields = {}
+    fields = {"maintenance_request": maintenance_request}
     if receipt:
         fields["receipt"] = process_receipt(receipt)
     now = timezone.now()
@@ -346,6 +350,7 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
         **({"reference": [None, reference]} if reference else {}),
         **({"supplier": [None, supplier.name]} if supplier else {}),
         **({"receipt": [None, True]} if receipt else {}),
+        **({"maintenance_request": [None, maintenance_request.number]} if maintenance_request else {}),
         "status": [None, expense.status]})
     return expense
 

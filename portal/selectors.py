@@ -8,6 +8,7 @@ import datetime
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from django.db.models import Q
 from django.utils import timezone
 
 from billing import selectors as billing
@@ -15,6 +16,7 @@ from billing.invoicing import lease_balance
 from billing.models import Invoice
 from core.money import ZERO
 from leases.models import Lease, LeaseTenant
+from maintenance.models import MaintenancePhoto, MaintenanceRequest
 from mpesa import paylinks
 from payments.models import Payment
 from reports import metrics
@@ -23,6 +25,7 @@ from .models import TenantAccount
 
 STATEMENT_MONTHS = 12
 PAYMENTS_SHOWN = 24
+REQUESTS_SHOWN = 10
 
 
 def live_accounts(user):
@@ -102,3 +105,32 @@ def statement(lease: Lease, today: datetime.date | None = None) -> dict:
 def payments(lease: Lease) -> list[Payment]:
     return list(Payment.objects.filter(lease=lease, status=Payment.Status.CONFIRMED).select_related("receipt")
                 .order_by("-paid_at", "-pk")[:PAYMENTS_SHOWN])
+
+
+# ---------------------------------------------------------------------------
+# Repairs (D-068 item 7)
+# ---------------------------------------------------------------------------
+
+
+def own_requests(user):
+    """Maintenance requests the tenant follows: those on their leases that they or staff tied to the lease."""
+    return (MaintenanceRequest.objects.filter(lease_id__in=own_lease_ids(user))
+            .select_related("unit__property", "organization", "lease").order_by("-created_at", "-pk"))
+
+
+def own_request(user, public_id):
+    return own_requests(user).filter(public_id=public_id).first()
+
+
+def tenant_updates(req) -> list:
+    """Status changes, their comments and the notes staff chose to share; never internal notes."""
+    return list(req.updates.filter(shared_with_tenant=True).select_related("by"))
+
+
+def tenant_photos(req, user) -> list:
+    return list(req.photos.filter(Q(shared_with_tenant=True) | Q(uploaded_by=user)))
+
+
+def own_photo(user, public_id):
+    return (MaintenancePhoto.objects.filter(request__lease_id__in=own_lease_ids(user), public_id=public_id)
+            .filter(Q(shared_with_tenant=True) | Q(uploaded_by=user)).first())

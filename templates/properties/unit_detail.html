@@ -48,6 +48,26 @@
   </div></div>
   {% endif %}
 
+  {% if repairs is not None %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+      <h2 class="h6 mb-0">{% trans "Open repairs" %}</h2>
+      <span class="d-flex gap-2">
+        {% if repairs %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'maintenance:list' %}?unit={{ unit.public_id }}&amp;status=all">{% trans "All" %}</a>{% endif %}
+        {% if can_report_repair %}<a class="btn btn-outline-primary btn-sm" href="{% url 'maintenance:create' %}?unit={{ unit.public_id }}">{% trans "Report a problem" %}</a>{% endif %}
+      </span>
+    </div>
+    <ul class="list-unstyled small mb-0">
+      {% for req in repairs %}
+      <li class="d-flex justify-content-between gap-2 py-1">
+        <a href="{% url 'maintenance:detail' req.public_id %}">{{ req.title|truncatechars:60 }}</a>
+        <span class="text-nowrap">{% include "maintenance/_status.html" %}</span>
+      </li>
+      {% empty %}<li class="text-muted">{% trans "Nothing reported." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
   {% if can_share %}
   <div class="card shadow-sm mb-3"><div class="card-body">
     <h2 class="h6">{% trans "Vacancy link" %}</h2>

@@ -170,6 +170,40 @@ _TYPES: tuple[NotificationType, ...] = (
         ("org_name", "day", "summary"),
         bodies={(IN_APP, EN): "M-Pesa on {day}. {summary}"},
     ),
+    # Maintenance (D-068 item 8). [VERIFY the Swahili]
+    NotificationType(
+        "maintenance_update", _("Maintenance update (to the tenant)"), TENANT, (WHATSAPP, SMS),
+        (*_TENANCY, "number", "title", "status", "note"),
+        bodies={
+            (SMS, EN): "Dear {tenant_name}, your repair request {number} ({title}) for {unit}: {status}. {note} "
+                       "{org_name}",
+            (SMS, SW): "Mpendwa {tenant_name}, ombi lako la matengenezo {number} ({title}) la {unit}: {status}. "
+                       "{note} {org_name}",
+        },
+    ),
+    # To a supplier's phone when a job is assigned to them. Suppliers are not tenants or users, so SMS only.
+    NotificationType(
+        "maintenance_supplier_job", _("Maintenance job (to the supplier)"), TENANT, (SMS,),
+        ("org_name", "supplier_name", "number", "property", "unit", "title", "priority", "assigned_by"),
+        bodies={
+            (SMS, EN): "Hello {supplier_name}, job {number} at {property}, {unit}: {title}. Priority: {priority}. "
+                       "Assigned by {assigned_by}. {org_name}",
+            (SMS, SW): "Habari {supplier_name}, kazi {number} katika {property}, {unit}: {title}. Kipaumbele: "
+                       "{priority}. Imetolewa na {assigned_by}. {org_name}",
+        },
+    ),
+    NotificationType(
+        "maintenance_reported", _("Maintenance request reported"), STAFF, (IN_APP,),
+        ("org_name", "number", "property", "unit", "title", "priority", "reported_by"),
+        bodies={(IN_APP, EN): "{number} ({priority}) at {property}, {unit}: {title}. Reported by {reported_by}. "
+                              "It needs to be assigned."},
+    ),
+    NotificationType(
+        "maintenance_assigned", _("Maintenance job assigned"), STAFF, (IN_APP,),
+        ("org_name", "number", "property", "unit", "title", "priority", "due", "assigned_by"),
+        bodies={(IN_APP, EN): "{assigned_by} assigned you {number} ({priority}) at {property}, {unit}: {title}. "
+                              "Due by {due}."},
+    ),
     # Sent by `mpesa_daily` to `mpesa.match` holders who have codes to check (D-066 item 4).
     NotificationType(
         "mpesa_unverified_codes", _("M-Pesa codes to check"), STAFF, (IN_APP,),

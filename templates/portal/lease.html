@@ -47,6 +47,21 @@
   </div></div>
 
   <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h6 mb-0">{% trans "Repairs" %}</h2>
+      {% if can_report %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:repair_create' lease.public_id %}">{% trans "Report a problem" %}</a>{% endif %}
+    </div>
+    <ul class="list-unstyled small mb-0">
+      {% for req in repairs %}
+      <li class="d-flex justify-content-between gap-2 py-1">
+        <a href="{% url 'portal:repair' req.public_id %}">{{ req.title|truncatechars:60 }}</a>
+        <span class="text-nowrap text-muted">{{ req.created_at|date:"j M" }} · {% include "maintenance/_status.html" %}</span>
+      </li>
+      {% empty %}<li class="text-muted">{% trans "Something broken? Report it here and follow the repair." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
     <h2 class="h6">{% trans "Payments and receipts" %}</h2>
     <ul class="list-unstyled small mb-0">
       {% for payment in payments %}

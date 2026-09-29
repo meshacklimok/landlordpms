@@ -23,6 +23,7 @@ from inspections.models import ConditionReport
 from inspections.services import visible_reports
 from leases.models import EXPIRING_WITHIN_DAYS, Lease, LeaseTenant
 from leases.services import visible_leases
+from maintenance import services as maintenance
 from meters import services as meter_services
 from mpesa import codes
 from mpesa.inbox import visible_transactions
@@ -106,6 +107,22 @@ def _expenses_to_approve(m: Membership) -> Task | None:
                 reverse("expenses:list") + "?status=SUBMITTED")
 
 
+def _maintenance(m: Membership) -> list[Task | None]:
+    """New requests to assign, the member's own jobs and jobs past their due time (D-068 item 10)."""
+    if not (can(m, "maintenance.view") or can(m, "maintenance.view_assigned")):
+        return []
+    url = reverse("maintenance:list")
+    n_new, n_mine, n_late = (maintenance.to_assign(m).count(), maintenance.my_jobs(m).count(),
+                             maintenance.overdue(m).count())
+    return [
+        Task("repairs_new", n_new, ngettext("repair to assign", "repairs to assign", n_new), url + "?status=NEW"),
+        Task("repairs_mine", n_mine, ngettext("repair job assigned to you", "repair jobs assigned to you", n_mine),
+             url + "?status=open&mine=1"),
+        Task("repairs_late", n_late, ngettext("repair past its due time", "repairs past their due time", n_late),
+             url + "?overdue=1"),
+    ]
+
+
 def _statements_to_send(m: Membership, today: datetime.date) -> Task | None:
     n, month = owners.to_send(m, today)
     if not n:
@@ -173,7 +190,7 @@ def home(membership: Membership, today: datetime.date | None = None) -> Home:
     tasks = [_payments_to_confirm(membership), _mpesa_to_match(membership), _codes_to_check(membership),
              _readings_to_approve(membership), _expenses_to_approve(membership),
              _statements_to_send(membership, today), *_calls(membership, today),
-             _draft_leases(membership)]
+             *_maintenance(membership), _draft_leases(membership)]
     # Vacancies are work for someone who can let them, and context for everyone else.
     if can(membership, "leases.draft") or can(membership, "prospects.manage"):
         tasks.append(_vacant_units(membership))

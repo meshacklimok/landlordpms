@@ -18,6 +18,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from maintenance import services as maintenance
 from properties.models import Property
 from properties.views import _apply_errors
 from reports.metrics import month_end
@@ -174,6 +175,8 @@ class ExpenseDetailView(CapabilityRequiredMixin, View):
             "can_approve": services.can_approve(m, expense), "can_void": services.can_void(m, expense),
             "can_add_receipt": services.can_add_receipt(m, expense), "receipt_form": forms.ReceiptForm(),
             "can_suppliers": can(m, "contractors.manage"),
+            "can_see_repair": (expense.maintenance_request is not None
+                               and maintenance.sees(m, expense.maintenance_request)),
         })
 
     def post(self, request, public_id):

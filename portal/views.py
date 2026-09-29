@@ -13,6 +13,10 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import PORTAL_INVITE_KEY
+from leases.models import Lease
+from maintenance import forms as maintenance_forms
+from maintenance import services as maintenance
+from maintenance.views import photo_response
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
@@ -61,7 +65,82 @@ class LeaseView(PortalRequiredMixin, View):
             "summary": selectors.summary(lease),
             "statement": selectors.statement(lease),
             "payments": selectors.payments(lease),
+            "repairs": list(selectors.own_requests(request.user).filter(lease=lease)[:selectors.REQUESTS_SHOWN]),
+            "can_report": lease.status == Lease.Status.ACTIVE,
         }))
+
+
+class RepairCreateView(PortalRequiredMixin, View):
+    """Report a problem in the unit of an active lease (D-068 item 7)."""
+
+    template_name = "portal/repair_form.html"
+
+    def load(self, request, public_id) -> Lease:
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None or lease.status != Lease.Status.ACTIVE:
+            raise Http404
+        return lease
+
+    def get(self, request, public_id):
+        lease = self.load(request, public_id)
+        return _no_store(render(request, self.template_name,
+                                {"lease": lease, "form": maintenance_forms.PortalRequestForm()}))
+
+    def post(self, request, public_id):
+        lease = self.load(request, public_id)
+        form = maintenance_forms.PortalRequestForm(request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                req = maintenance.portal_report(request.user, lease, request=request, **form.cleaned_data)
+            except ValidationError as exc:
+                if hasattr(exc, "error_dict"):
+                    for name, errors in exc.error_dict.items():
+                        form.add_error(name if name in form.fields else None, errors)
+                else:
+                    form.add_error(None, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Thank you. We have your report %(n)s.") % {"n": req.number})
+                return redirect("portal:repair", public_id=req.public_id)
+        if request.FILES:
+            form.add_error(None, _("Choose the photos again."))
+        return _no_store(render(request, self.template_name, {"lease": lease, "form": form}))
+
+
+class RepairView(PortalRequiredMixin, View):
+    template_name = "portal/repair.html"
+
+    def get(self, request, public_id):
+        req = selectors.own_request(request.user, public_id)
+        if req is None:
+            raise Http404
+        return _no_store(render(request, self.template_name, {
+            "req": req, "updates": selectors.tenant_updates(req), "photos": selectors.tenant_photos(req, request.user),
+            "can_comment": req.status not in (req.Status.CLOSED, req.Status.CANCELLED),
+        }))
+
+    def post(self, request, public_id):
+        req = selectors.own_request(request.user, public_id)
+        if req is None:
+            raise Http404
+        try:
+            maintenance.portal_comment(request.user, req, text=request.POST.get("text", ""), request=request)
+        except ValidationError as exc:
+            messages.error(request, _error_text(exc))
+        except PermissionDenied:
+            raise Http404 from None
+        else:
+            messages.success(request, _("Comment sent."))
+        return redirect("portal:repair", public_id=req.public_id)
+
+
+class RepairPhotoView(PortalRequiredMixin, View):
+    def get(self, request, public_id):
+        photo = selectors.own_photo(request.user, public_id)
+        if photo is None:
+            raise Http404
+        return photo_response(photo)
 
 
 class ReceiptView(PortalRequiredMixin, View):

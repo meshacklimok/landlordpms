@@ -52,6 +52,7 @@ urlpatterns = [
     path("inspections/", include("inspections.urls")),
     path("meters/", include("meters.urls")),
     path("expenses/", include("expenses.urls")),
+    path("maintenance/", include("maintenance.urls")),
     path("letters/", include("letters.urls")),
     path("reports/", include("reports.urls")),
     path("search/", include("search.urls")),

@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ req.number }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'portal:lease' req.lease.public_id %}" class="small">← {{ req.property.name }} · {{ req.where }}</a>
+  <div class="mt-2 mb-3">
+    <h1 class="h4 mb-0">{{ req.title }}</h1>
+    <div class="small text-muted">{{ req.number }} · {{ req.organization.name }} · {% include "maintenance/_status.html" %}{% if req.priority == "EMERGENCY" %} {% include "maintenance/_priority.html" %}{% endif %}</div>
+  </div>
+
+  {% if req.description %}<div class="card shadow-sm mb-3"><div class="card-body small" style="white-space: pre-line">{{ req.description }}</div></div>{% endif %}
+
+  {% if photos %}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for p in photos %}<a href="{% url 'portal:repair_photo' p.public_id %}" target="_blank" rel="noopener"><img src="{% url 'portal:repair_photo' p.public_id %}" alt="{% trans 'Photo' %} {{ forloop.counter }}" width="88" height="88" loading="lazy" class="rounded border object-fit-cover"></a>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Progress" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for u in updates %}
+      <li class="py-2{% if not forloop.last %} border-bottom{% endif %}">
+        <div class="d-flex justify-content-between gap-2">
+          <span class="fw-medium">{% if u.kind == "REPORTED" %}{% trans "Reported" %}{% elif u.kind == "COMMENT" %}{% if u.by == request.user %}{% trans "You" %}{% else %}{% trans "Comment" %}{% endif %}{% elif u.kind == "STATUS" or u.kind == "ASSIGNED" %}{{ u.get_to_status_display|default:u.get_kind_display }}{% else %}{% blocktrans with org=req.organization.name %}From {{ org }}{% endblocktrans %}{% endif %}</span>
+          <span class="text-muted text-nowrap">{{ u.at|date:"j M, H:i" }}</span>
+        </div>
+        {% if u.text and u.kind != "REPORTED" %}<div style="white-space: pre-line">{{ u.text }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+
+  {% if can_comment %}
+  <form method="post" class="card shadow-sm mb-3" novalidate>{% csrf_token %}<div class="card-body">
+    <label class="form-label small" for="c-text">{% trans "Add a comment" %}</label>
+    <textarea id="c-text" name="text" rows="2" maxlength="1000" required class="form-control mb-2" placeholder="{% trans 'e.g. I am home after 5 pm' %}"></textarea>
+    <button class="btn btn-outline-primary">{% trans "Send" %}</button>
+  </div></form>
+  {% else %}
+  <p class="small text-muted">{% trans "This request is finished. If the problem is back, report it again." %}</p>
+  {% endif %}
+</div>
+{% endblock %}
