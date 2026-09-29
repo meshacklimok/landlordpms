@@ -13,6 +13,57 @@
 </div></div>
 {% endif %}
 
+<section class="card shadow-sm mb-3" aria-labelledby="today-heading"><div class="card-body">
+  <h2 class="h6" id="today-heading">{% trans "Today" %}</h2>
+  {% if home.has_work %}
+  {% if home.tasks %}
+  <ul class="list-group list-group-flush mb-2">
+    {% for task in home.tasks %}
+    <li class="list-group-item px-0 d-flex align-items-center gap-2" data-task="{{ task.key }}">
+      <span class="badge rounded-pill text-bg-primary">{{ task.count }}</span>
+      <a href="{{ task.url }}">{{ task.label }}</a>
+      {% if task.detail %}<span class="small text-danger">{{ task.detail }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if home.expiring %}
+  <h3 class="h6 small text-muted mt-3 mb-1">{% blocktrans count n=home.expiring_count %}{{ n }} lease ends within 60 days{% plural %}{{ n }} leases end within 60 days{% endblocktrans %}</h3>
+  <ul class="list-unstyled small mb-2">
+    {% for lease in home.expiring %}
+    <li class="py-1"><a href="{% url 'leases:detail' lease.public_id %}">{{ lease.unit.code }} · {{ lease.unit.property.name }}</a>{% if membership|can:"tenants.view" and lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %} <span class="text-muted">· {% blocktrans with d=lease.end_date|date:"j M Y" %}ends {{ d }}{% endblocktrans %}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if home.reports %}
+  <h3 class="h6 small text-muted mt-3 mb-1">{% trans "Condition reports to finish" %}</h3>
+  <ul class="list-unstyled small mb-0">
+    {% for report in home.reports %}
+    <li class="py-1"><a href="{% url 'inspections:report' report.public_id %}">{{ report.get_kind_display }} · {{ report.unit.code }} · {{ report.unit.property.name }}</a> <span class="text-muted">· {{ report.inspected_on|date:"j M Y" }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <p class="text-muted mb-0">{% trans "Nothing is waiting for you." %}</p>
+  {% endif %}
+</div></section>
+
+{% if home.summary %}
+{% with occ=home.summary.occupancy %}
+<section class="card shadow-sm mb-3" aria-labelledby="summary-heading"><div class="card-body">
+  <h2 class="h6" id="summary-heading">{% trans "Summary" %}</h2>
+  <dl class="row small mb-0">
+    <dt class="col-7 fw-normal text-muted">{% trans "Occupied" %}</dt>
+    <dd class="col-5 mb-1">{% if occ.rentable %}{% blocktrans with o=occ.occupied r=occ.rentable %}{{ o }} of {{ r }} units{% endblocktrans %}{% else %}{% trans "No units yet" %}{% endif %}</dd>
+    <dt class="col-7 fw-normal text-muted">{% trans "Vacant" %}</dt>
+    <dd class="col-5 mb-1">{{ occ.vacant }}{% if occ.reserved or occ.maintenance %} <span class="text-muted">{% blocktrans with r=occ.reserved u=occ.maintenance %}({{ r }} reserved, {{ u }} under repair){% endblocktrans %}</span>{% endif %}</dd>
+    <dt class="col-7 fw-normal text-muted">{% trans "Leases with rent overdue" %}</dt>
+    <dd class="col-5 mb-0">{{ home.summary.overdue_leases }}</dd>
+  </dl>
+</div></section>
+{% endwith %}
+{% endif %}
+
 <div class="row g-3">
   {% if membership|can:"properties.view" %}
   <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">

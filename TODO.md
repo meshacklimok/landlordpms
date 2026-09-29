@@ -142,7 +142,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
 - [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI waits for expenses
 - [x] Portfolio and per-property dashboards (property and month filters in the URL)
-- [ ] Per-role dashboards
+- [x] Per-role dashboards: the home page shows each member the work waiting and the figures their capabilities allow (D-056)
 - [x] Global search with suggestions as you type, scoped like the list pages (D-054); trigram indexes wait for the performance test
 - [x] Arrears aged from due date plus grace, as doc 11 §26 defines (D-054 item 1)
 - [x] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests (D-055)

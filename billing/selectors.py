@@ -180,6 +180,19 @@ def arrears(membership, today: datetime.date, *, overdue_only=True) -> list[Leas
     """Leases that owe money, most overdue first, from the ledger in one query per table."""
     if not can(membership, "invoices.view"):
         return []
+    return _arrears(membership, today, overdue_only=overdue_only)
+
+
+def overdue_lease_count(membership, today: datetime.date) -> int:
+    """How many leases have money overdue, with no amounts or names: the summary figure (D-056).
+
+    The caller checks `dashboard.view_summary`; this needs no `invoices.view` (doc 10: a caretaker
+    sees the arrears count only). It counts exactly the leases `arrears` lists.
+    """
+    return len(_arrears(membership, today, overdue_only=True))
+
+
+def _arrears(membership, today: datetime.date, *, overdue_only: bool) -> list[LeaseArrears]:
     owing = (_in_scope(membership, LedgerEntry.objects.for_org(membership.organization), "lease__unit__property_id")
              .values("lease_id").annotate(s=Sum("amount")).filter(s__gt=0).values("lease_id"))
     leases = {lease.pk: lease for lease in Lease.all_objects.filter(pk__in=owing).select_related(

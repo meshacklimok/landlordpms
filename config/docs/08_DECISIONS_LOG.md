@@ -366,3 +366,19 @@ Phase 7 step 5 (doc 11 §6 and §18; doc 12 "Tenant portal"; D-039 moved it earl
    - staff pages opened by a tenant.
 6. **Routing.** A logged-in user with no staff membership but a live tenant account goes to `/my/` instead of the "create your workspace" page. A user with both sees "My home" in the top bar. Tenant-only users get a small top bar without staff links.
 7. **Not in this step**: maintenance requests, notices and shared documents in the portal; in-app messages to tenants; paying inside the portal other than through the existing pay link; Swahili; per-role staff dashboards (still open in TODO).
+
+### D-056 — Per-role home pages — ACCEPTED (2026-09-29, open to change before merge)
+Phase 7 step 6, the last open item (doc 11 §17; doc 12 "per-role home pages"; D-051 item 8). Built on `feature/phase7-dashboards`. The user said "do it".
+1. **By capability, not by role.** Roles are data (doc 13), so the home page (`/`) has no per-role templates. Each part appears only when the member holds the capability of the page it links to, so a link never ends on "not allowed". The default templates therefore get different home pages, and a renamed or custom role gets the right one without code. The logic is in `reports/home.py`.
+2. **"Today" comes first**: counts of work waiting, each linking to the page that deals with it. An item with nothing waiting is hidden. When nothing is waiting, the page says "Nothing is waiting for you."
+   - *Payments to confirm*: `payments.confirm`; opens the review queue.
+   - *M-Pesa payments to match*: `mpesa.match`; opens the inbox.
+   - *Tenants to call*, with broken promises noted, and *promises to pay due today*: `invoices.view` and `arrears.follow_up`; opens the call list (D-052). A Viewer can open the list but is not given calls to make.
+   - *Draft leases to check and activate*: `leases.activate`.
+   - *Units available to let*: `units.view` and `units.list_vacant`, shown to those who can let them (`leases.draft` or `prospects.manage`).
+   - *Leases ending within 60 days* (the existing "expiring" rule), the soonest 5: `leases.view`. The tenant's name shows only with `tenants.view`.
+   - *Condition reports to finish* (drafts), the oldest 5: `inspections.record`.
+3. **Figures.** With `dashboard.view_financial`, the page shows the existing collections card (D-051). With only `dashboard.view_summary`, which every default template holds, it shows counts and no amounts or names: units occupied out of rentable, vacant (with how many are reserved or under repair), and how many leases have rent overdue. This is doc 10's "occupancy and arrears count only" for a caretaker. The overdue count uses the same aging as the arrears list, without `invoices.view`.
+4. **Scope.** Every count is built from its list page's own visibility helper, so it covers only the member's properties and matches what that page lists.
+5. **Tests**: a table for the eight default templates, a scoped manager, promises (due today and broken), and a caretaker's page showing no money, names or links they cannot open.
+6. **Not in this step**: maintenance jobs (no maintenance app yet), rearranging or hiding cards per person, caching, and notifications for the same items.

@@ -17,7 +17,7 @@ from django.views.generic import TemplateView
 from audit import services as audit
 from leases.models import Lease
 from properties.models import Property, Unit
-from reports import metrics
+from reports import home as reports_home
 from tenants.models import Tenant
 
 from . import forms, identity, services
@@ -221,7 +221,7 @@ class SwitchOrganizationView(LoginRequiredMixin, View):
 
 
 class HomeView(OrgMemberRequiredMixin, TemplateView):
-    """Role-based home shell: cards appear by capability, not role name."""
+    """Each member's home (D-056): work waiting, then figures, then links; all by capability, not role name."""
 
     template_name = "accounts/home.html"
 
@@ -243,8 +243,8 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         ctx["show_checklist"] = can(m, "properties.manage")
         ctx["show_staff"] = can(m, "staff.view")
         ctx["show_roles"] = can(m, "roles.manage")
-        if can(m, "dashboard.view_financial"):
-            ctx["board"] = metrics.dashboard(m)
+        ctx["home"] = home = reports_home.home(m)
+        ctx["board"] = home.board
         return ctx
 
 

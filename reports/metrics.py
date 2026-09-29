@@ -84,8 +84,9 @@ class Scope:
         return qs.filter(pk=self.selected_property.pk) if self.selected_property is not None else qs
 
 
-def scope(membership: Membership, property: Property | None = None) -> Scope:
-    require(membership, "dashboard.view_financial")
+def scope(membership: Membership, property: Property | None = None, *,
+          capability: str = "dashboard.view_financial") -> Scope:
+    require(membership, capability)
     if property is not None and not visible_properties(membership, Property.all_objects.all()).filter(
             pk=property.pk).exists():
         property = None
