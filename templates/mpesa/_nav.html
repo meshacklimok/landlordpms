@@ -2,5 +2,6 @@
 <ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
   {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'inbox' %}active{% endif %}" href="{% url 'mpesa:inbox' %}"><i class="bi bi-inbox"></i> {% trans "Inbox" %}{% if inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>{% endif %}
   {% if membership|can:"mpesa.view_transactions" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'transactions' %}active{% endif %}" href="{% url 'mpesa:transactions' %}"><i class="bi bi-list-ul"></i> {% trans "Transactions" %}</a></li>{% endif %}
+  {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link text-nowrap" href="{% url 'banking:import' %}"><i class="bi bi-upload"></i> {% trans "Import a statement" %}</a></li>{% endif %}
   {% if membership|can:"mpesa.settings" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'settings' %}active{% endif %}" href="{% url 'mpesa:settings' %}"><i class="bi bi-gear"></i> {% trans "Settings" %}</a></li>{% endif %}
 </ul>

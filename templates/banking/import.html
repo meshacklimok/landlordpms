@@ -1,0 +1,43 @@
+{% extends "banking/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Import a statement" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "Import a statement" %}</h1>
+  <p class="small text-body-secondary">{% trans "Upload a bank statement, or an M-Pesa statement from the M-Pesa organization portal, saved as CSV. You see what it contains before anything is imported. Payments whose unit reference is found are confirmed and receipted; the rest wait in the inbox." %}</p>
+  {% include "banking/_nav.html" with section="import" %}
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      {% if has_accounts %}
+      <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
+        {% include "partials/form.html" %}
+        <p class="small text-body-secondary">{% trans "A bank statement needs a header row with a date, and a Credit (or Money in) or Amount column. Lines already imported from an earlier statement are skipped, so overlapping statements are fine." %}</p>
+        <button class="btn btn-dark"><i class="bi bi-eye"></i> {% trans "Check the file" %}</button>
+      </div></form>
+      {% else %}
+      <div class="card shadow-sm"><div class="card-body small">
+        {% trans "There is no bank, Paybill or Till account you can import for." %}
+        {% if can_add_bank %}<a href="{% url 'banking:accounts' %}">{% trans "Add a bank account" %}</a>{% endif %}
+      </div></div>
+      {% endif %}
+    </div>
+    <div class="col-lg-7">
+      <h2 class="h6">{% trans "Recent imports" %}</h2>
+      <div class="list-group shadow-sm">
+        {% for batch in imports %}
+        <a class="list-group-item list-group-item-action small" href="{% url 'banking:import_detail' batch.public_id %}">
+          <div class="d-flex justify-content-between gap-2">
+            <span class="fw-semibold text-truncate">{{ batch.file_name|default:batch.get_kind_display }}</span>
+            <span class="text-body-secondary text-nowrap">{{ batch.get_status_display }}</span>
+          </div>
+          <div class="text-body-secondary">{{ batch.payment_account.display_name }} · {{ batch.created_at|date:"j M Y, H:i" }} · {{ batch.created_by }}
+            {% if batch.status == "APPLIED" %} · {% blocktrans with n=batch.new_count m=batch.matched_count %}{{ n }} lines, {{ m }} matched{% endblocktrans %}{% endif %}</div>
+        </a>
+        {% empty %}
+        <div class="list-group-item text-center text-body-secondary small py-4">{% trans "No statements imported yet." %}</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

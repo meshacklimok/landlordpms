@@ -101,9 +101,9 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Tests: totals, rounding, duplicates, proration, rebill, aging, deposits
 
 ## Phase 4 — Payments and receipts
-- [ ] Bank payments: `method = BANK`, CSV statement import through the matching engine
-- [ ] P&L, cash flow and aged receivables by property
-- [x] PaymentAccount, PropertyPaymentAccount (+ admin UI; in-app page still to do)
+- [x] Bank payments: `method = BANK`, CSV statement import through the matching engine, bank inbox, bank accounts page; M-Pesa statement import (D-064)
+- [x] P&L, cash flow and aged receivables by property, with CSV (D-065; PDF, accrual basis and expenses later)
+- [x] PaymentAccount, PropertyPaymentAccount (+ admin UI; bank accounts page in D-064)
 - [x] Payment, PaymentAllocation; partial, over-payment, credit
 - [x] Reversal flow; caretaker cash review queue (any recorder without `payments.confirm`; give a caretaker `payments.record` to use it)
 - [x] Receipt numbering and PDF

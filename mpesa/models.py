@@ -88,6 +88,7 @@ class MpesaTransaction(TimeStampedModel):
     class Source(models.TextChoices):
         C2B = "C2B", _("Paybill / Till")
         STK = "STK", _("Payment request")
+        STATEMENT = "STM", _("Statement import")
 
     class Status(models.TextChoices):
         RECEIVED = "RECEIVED", _("Received")

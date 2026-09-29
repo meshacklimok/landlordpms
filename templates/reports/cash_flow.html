@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Cash flow" %}{% endblock %}
+{% block content %}
+{% with cur=report.currency t=report.total whole=report.whole_organization %}
+<h1 class="h4 mb-0">{% trans "Cash flow" %}</h1>
+<p class="small text-body-secondary">{{ report.label }} · {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %}</p>
+{% include "reports/_finance_links.html" with section="cash" %}
+{% include "reports/_finance_filter.html" %}
+
+<div class="row g-2 mb-3">
+  <div class="col-4"><div class="card shadow-sm"><div class="card-body py-2"><div class="small text-body-secondary">{% trans "Money in" %}</div><div class="h5 num mb-0">{{ t.money_in|money:cur }}</div></div></div></div>
+  <div class="col-4"><div class="card shadow-sm"><div class="card-body py-2"><div class="small text-body-secondary">{% trans "Money out" %}</div><div class="h5 num mb-0">{{ t.money_out|money:cur }}</div></div></div></div>
+  <div class="col-4"><div class="card shadow-sm"><div class="card-body py-2"><div class="small text-body-secondary">{% trans "Net cash" %}</div><div class="h5 num mb-0 {% if t.net < 0 %}text-danger{% endif %}">{{ t.net|money:cur }}</div></div></div></div>
+</div>
+
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent" %}</th><th class="text-end">{% trans "Other charges" %}</th>
+    <th class="text-end">{% trans "Deposits" %}</th><th class="text-end">{% trans "Not yet applied" %}</th>
+    <th class="text-end">{% trans "Money in" %}</th><th class="text-end">{% trans "Deposit refunds" %}</th>
+    {% if whole %}<th class="text-end">{% trans "Payments to owners" %}</th>{% endif %}
+    <th class="text-end">{% trans "Money out" %}</th><th class="text-end">{% trans "Net cash" %}</th>
+  </tr></thead>
+  <tbody>{% for row in report.months %}{% include "reports/_cash_row.html" %}{% endfor %}</tbody>
+  <tfoot class="fw-semibold">{% include "reports/_cash_row.html" with row=t %}</tfoot>
+</table>
+</div>
+
+<h2 class="h6">{% trans "Notes" %}</h2>
+<ul class="small text-body-secondary">{% for note in report.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% endblock %}

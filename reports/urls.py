@@ -16,6 +16,9 @@ urlpatterns = [
     path("remittances/<uuid:public_id>/void/", views.RemittanceVoidView.as_view(), name="remittance_void"),
     path("owners/<uuid:public_id>/", views.OwnerAccountView.as_view(), name="owner_account"),
     path("income/", views.IncomeView.as_view(), name="income"),
+    path("profit-loss/", views.ProfitLossView.as_view(), name="profit_loss"),
+    path("cash-flow/", views.CashFlowView.as_view(), name="cash_flow"),
+    path("receivables/", views.ReceivablesView.as_view(), name="receivables"),
     path("income/tax-residence/", views.TaxResidenceView.as_view(), name="tax_residence"),
     path("income/<int:year>/<slug:kind>/", views.IncomeExportView.as_view(), name="income_export"),
 ]

@@ -179,19 +179,28 @@ def _active_leases(tx: MpesaTransaction):
     return leases
 
 
+def units_with_reference(organization_id: int, refs):
+    """Units whose payment reference, ignoring case and dashes, is one of `refs` (already normalized)."""
+    return (Unit.objects.filter(organization_id=organization_id)
+            .annotate(ref=Replace(Upper("payment_reference"), Value("-"), Value("")))
+            .filter(ref__in=list(refs)).select_related("property"))
+
+
 def match_reference(tx: MpesaTransaction) -> tuple[Lease | None, str]:
     """(the one active lease on the unit whose reference was typed, or None with the reason)."""
     ref = normalize_reference(tx.bill_ref)
     if not ref:
         return None, "No account reference was given."
-    units = list(Unit.objects.filter(organization_id=tx.organization_id)
-                 .annotate(ref=Replace(Upper("payment_reference"), Value("-"), Value("")))
-                 .filter(ref=ref).select_related("property")[:2])
+    units = list(units_with_reference(tx.organization_id, [ref])[:2])
     if len(units) != 1:
         return None, ("No unit has this account reference." if not units
                       else "Several units have this account reference.")
-    unit = units[0]
-    if not _serves(tx.payment_account_id, unit.property_id):
+    return lease_on_unit(units[0], tx.payment_account_id)
+
+
+def lease_on_unit(unit: Unit, account_id: int) -> tuple[Lease | None, str]:
+    """(the unit's one active lease if this account collects for it, or None with the reason)."""
+    if not _serves(account_id, unit.property_id):
         return None, f"The reference is {unit}, but this account does not collect for {unit.property.name}."
     leases = list(Lease.objects.filter(unit=unit, status=Lease.Status.ACTIVE)[:2])
     if len(leases) != 1:
@@ -308,9 +317,14 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
 
 
 def _alert(tx: MpesaTransaction, *, payer: bool = True) -> None:
-    """Tells the staff who can match it, and the payer. A failure here never undoes the matching."""
+    """Tells the staff who can match it, and the payer. A failure here never undoes the matching.
+
+    Not for a statement import: the member importing sees the summary, and the payment is old news
+    to the payer (D-064 item 7)."""
     from notifications import triggers
 
+    if tx.source == MpesaTransaction.Source.STATEMENT:
+        return
     try:
         with transaction.atomic():
             triggers.mpesa_unmatched(tx)

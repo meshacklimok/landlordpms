@@ -673,3 +673,110 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
    - video tours;
    - impersonation;
    - customer satisfaction ratings.
+
+### D-064 — Bank and M-Pesa statement import, bank matching and the bank inbox — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Phase 4 still lacks bank payments. Doc 12 and doc 16 plan for them to come in as `Payment.method = BANK`, through a CSV bank statement run by the same matching rules as M-Pesa, with an inbox for what cannot be placed. D-045 item 10 left the M-Pesa statement import for the same step. That import catches callbacks that never arrived, and covers Tills and Paybills that have no Daraja app.
+
+**Decision.**
+1. **One upload page** at `/bank/import/`. The member picks a payment account and uploads a CSV (≤ 1 MB, ≤ 5,000 lines). The account type decides how the file is read:
+   - For a bank account, it is a bank statement.
+   - For a Paybill or Till, it is an M-Pesa organization statement.
+   - Personal M-Pesa and cash accounts cannot import. A personal statement comes as a PDF.
+   - Bank accounts are added and linked to the properties they collect for on `/bank/accounts/`, which needs `payment_accounts.manage`. Until now they could only be added in admin.
+   - The file is read at once into a preview. The preview shows:
+     - the new credit lines;
+     - lines already imported (skipped);
+     - debit lines (skipped and counted);
+     - lines that could not be read, with the reason.
+   - Nothing is stored until "Import". The preview row is kept for 24 hours and then emptied by the daily `purge_import_previews`, as with other imports.
+   - There is no undo. A matched line is taken off by reversing its payment, which puts the line back in the inbox. An unwanted line is ignored with a reason.
+2. **Who.**
+   - Importing needs `mpesa.match` ("Match payments in the unallocated inbox"), so no new capability is added.
+   - A member limited to some properties can import only for an account that serves one of their properties. An account that serves no property in particular needs a member with every property.
+   - Automatic matches are made by the system, as with a callback, even on leases the importer cannot see. `StatementImport` records who uploaded the file.
+3. **Reading a bank CSV.**
+   - The header row is found among the first 30 rows by known names, ignoring case and punctuation:
+     - date: transaction, posting, value or booking date;
+     - description: narrative, narration, particulars or details;
+     - reference: ref, cheque or receipt number;
+     - credit: money in, paid in or deposit;
+     - debit: money out or withdrawal;
+     - amount;
+     - balance.
+   - A date and either a credit or an amount column are required. When a file is not recognised, the page names the columns it looks for, so the headers can be renamed. A column map saved per account comes later.
+   - **Dates** are day first (`31/01/2026`, `31-01-2026`, `31.01.2026`, `31 Jan 2026`, `31-Jan-26`), or ISO. A time after the date is allowed.
+   - **Amounts:**
+     - `1,234.50`, `KES 1,234.50` and `1234.5` are all accepted.
+     - `(1,234.50)`, `-1,234.50` and a trailing `DR` mean money out; a trailing `CR` means money in.
+     - With a single amount column, only positive amounts are credits.
+   - Commas, semicolons and tabs are detected, and UTF-8 with or without a BOM is accepted, with a Windows-1252 fallback.
+   - Equity, KCB and Co-op exports are the first targets [VERIFY with real exports].
+4. **Bank lines** (`BankTransaction`) are stored per payment account:
+   - posted date, description, reference, amount and running balance, if given;
+   - the import it came from;
+   - a status: MATCHED, UNMATCHED or IGNORED;
+   - a note, a suggested lease, and the payment once matched (with by whom and when).
+   - **Fingerprint:** a statement line has no unique id, so a fingerprint made from the date, amount, description, reference and balance, plus the occurrence number of identical lines in the file, is unique per account. A statement that overlaps an earlier one therefore adds only the new lines.
+   - Lines are never deleted.
+5. **Bank matching** follows D-045's rules:
+   - **Reference, confident:** the description and reference are split into words, and pairs of neighbouring words are joined (`GV A1` → `GVA1`). If exactly one unit's payment reference is found, ignoring case and dashes, the account serves that unit's property, and the unit has exactly one active lease, the line is confirmed at once with `record_system_payment(method=BANK, reference=<bank reference, else the description>)`, allocated oldest first and receipted. The reference check is shared with M-Pesa.
+   - **Already recorded:** when the line's reference is already on a live payment, or the lease already has a live bank payment of the same amount within 3 days that is not linked to a bank line, it is left UNMATCHED with that lease suggested and a note. Staff check it and ignore one.
+   - **Suggestion only:** among the active leases the account serves, a lease is suggested when at least two words of a tenant's name (three letters or more) appear in the description. If several leases qualify, the one whose balance equals the amount is suggested.
+   - **Otherwise** the line is UNMATCHED with the reason.
+6. **Bank inbox** at `/bank/inbox/`, needing `mpesa.match`. It works like the M-Pesa inbox:
+   - accept the suggestion, choose a lease, ignore with a reason, or put back;
+   - a match confirms at once;
+   - a reversed bank payment returns its line to the inbox.
+   - Scope rule:
+     - An unmatched line is seen by members whose properties the account serves, or by members with every property when the account serves none in particular.
+     - A matched line follows its lease's property.
+   - Bank lines are listed at `/bank/lines/` with `payments.view`.
+   - There are no SMS or email alerts for imported lines; the import summary says how many are waiting.
+7. **M-Pesa statement import** for Paybill and Till accounts.
+   - It reads the org-portal CSV columns [VERIFY]: Receipt No., Completion Time, Details, Transaction Status, Paid In, Withdrawn, Balance, Other Party Info and A/C No.
+   - Only completed money-in rows are taken. When there is no A/C No. column, the account reference is taken from `Acc. <ref>` in Details.
+   - The payer's number and name come from Other Party Info (`2547… - NAME`). A masked number is kept only as the raw value.
+   - For a receipt number not seen before, a new `MpesaTransaction` is created with `source = STATEMENT`. It is matched by the same `process` as a callback, and anything unmatched lands in the existing M-Pesa inbox. No staff or payer alerts are sent.
+   - Known receipt numbers are counted as already received.
+8. **Not in this step:**
+   - PDF statements;
+   - bank APIs;
+   - saved column maps;
+   - reconciling statement balances;
+   - importing money out;
+   - the Kenyan unverified-code check (doc 16, later).
+
+### D-065 — Profit and loss, cash flow and aged receivables by property — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Phase 4 also asks for profit and loss, cash flow and aged receivables by property (doc 04). Doc 11 §22 defines net operating income as collected rent less expenses. §26 says property income is on a cash basis, deposits are shown apart, and arrears use aging buckets. Expenses (flow C) are not built yet.
+
+**Decision.**
+1. **Common rules.**
+   - The pages are under Reports and need `reports.view_financial`. CSV export needs `reports.export`.
+   - Only the properties the member can see are counted, with an optional filter to one property.
+   - A period runs from one month to another, 12 months at most, and defaults to the last 6 months including this one. Figures are shown by month with a total.
+   - Money received is split as in the income pack (D-050): each confirmed payment by its allocations to rent, other charges and deposits, plus money not yet applied. Reversed payments are left out.
+2. **Profit and loss** (`/reports/profit-loss/`), cash basis.
+   - Income is rent collected, other charges collected, and money not yet applied (shown on its own line, counted as rent as in D-050).
+   - Expenses show "not recorded yet" until flow C exists.
+   - Net operating income is income less expenses.
+   - Memo lines: rent billed for each month and the collection rate (rent collected ÷ rent billed), for information. Deposits received are shown as not income.
+3. **Cash flow** (`/reports/cash-flow/`).
+   - Money in: rent, other charges, deposits, and money not yet applied.
+   - Money out:
+     - Deposit refunds (`DepositEntry` REFUNDED, by entry date). A refund later corrected is left out, whenever corrected, as reversed payments are.
+     - Payments to owners (`OwnerRemittance` not voided, by paid-on date).
+     - Owner payments belong to an owner, not a property, so they are shown only when the whole organization is in view (all properties, no filter). Otherwise a note says they are left out.
+   - Net cash is money in less money out.
+4. **Aged receivables by property** (`/reports/receivables/`), as of today.
+   - Each property with money owed gets a row with the aging buckets (current, 1–30, 31–60, 61–90, over 90 days) and a total, from the same FIFO aging as the arrears page.
+   - Each row opens to its leases.
+   - Money that is only current is included, so the total is everything owed.
+   - Credit balances are left out; they are not receivables.
+5. **Not in this step:**
+   - accrual-basis accounts;
+   - budgets;
+   - a balance sheet;
+   - expense entry;
+   - PDF versions of these reports.

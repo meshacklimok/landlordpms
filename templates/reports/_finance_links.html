@@ -1,0 +1,7 @@
+{% load i18n %}
+<nav class="nav nav-pills small mb-3">
+  <a class="nav-link {% if section == 'pl' %}active{% endif %}" href="{% url 'reports:profit_loss' %}">{% trans "Profit and loss" %}</a>
+  <a class="nav-link {% if section == 'cash' %}active{% endif %}" href="{% url 'reports:cash_flow' %}">{% trans "Cash flow" %}</a>
+  <a class="nav-link {% if section == 'ar' %}active{% endif %}" href="{% url 'reports:receivables' %}">{% trans "Aged receivables" %}</a>
+  <a class="nav-link" href="{% url 'reports:income' %}">{% trans "Rental income pack" %}</a>
+</nav>

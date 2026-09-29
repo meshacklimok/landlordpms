@@ -17,9 +17,10 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from billing import selectors as billing_selectors
 from properties.models import Property
 
-from . import forms, income, metrics, owners, statements
+from . import finance, forms, income, metrics, owners, statements
 from .models import OwnerRemittance, OwnerStatementSend
 from .pdf import render_pack, render_statement
 
@@ -394,4 +395,120 @@ class OwnerAccountView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, {
             "account": owners.account(m, owner), "owner": owner, "currency": m.organization.currency,
             "can_remit": can(m, "owners.remit"), "can_owners": can(m, "properties.manage"),
+        })
+
+
+# ---------------------------------------------------------------------------
+# Profit and loss, cash flow, aged receivables (D-065)
+# ---------------------------------------------------------------------------
+
+
+def _finance_filters(request):
+    """The chosen property (or None) and the choices, from ?property=<public id>."""
+    choices = visible_properties(request.membership, Property.objects.all()).order_by("name")
+    value = request.GET.get("property", "").strip()
+    prop = None
+    if value:
+        prop = next((p for p in choices if str(p.public_id) == value), None)
+        if prop is None:
+            raise Http404
+    return prop, choices
+
+
+class _FinanceView(CapabilityRequiredMixin, View):
+    required_capability = "reports.view_financial"
+    template_name = ""
+    slug = ""
+
+    def csv_rows(self, report):
+        raise NotImplementedError
+
+    def build(self, request, prop):
+        today = timezone.localdate()
+        start, end = finance.period(request.GET.get("from", ""), request.GET.get("to", ""), today)
+        return finance.money_report(request.membership, start, end, prop)
+
+    def filename(self, report) -> str:
+        return f"{self.slug}-{report.start:%Y-%m}-to-{report.end:%Y-%m}.csv"
+
+    def get(self, request):
+        m = request.membership
+        prop, choices = _finance_filters(request)
+        report = self.build(request, prop)
+        if request.GET.get("format") == "csv":
+            if not can(m, "reports.export"):
+                raise PermissionDenied("reports.export")
+            response = _csv_response(self.filename(report))
+            writer = csv.writer(response)
+            writer.writerow([_("Scope"), prop.name if prop else _("All your properties")])
+            for row in self.csv_rows(report):
+                writer.writerow(row)
+            return response
+        query = request.GET.copy()
+        query["format"] = "csv"
+        return render(request, self.template_name, {
+            "report": report, "properties": choices, "selected": prop, "can_export": can(m, "reports.export"),
+            "csv_query": query.urlencode(),
+        })
+
+
+class ProfitLossView(_FinanceView):
+    template_name = "reports/profit_loss.html"
+    slug = "profit-and-loss"
+
+    def csv_rows(self, report):
+        yield ["Month", "Rent collected", "Other charges collected", "Not yet applied", "Income", "Expenses",
+               "Net operating income", "Rent billed", "Collection rate %", "Deposits received (not income)"]
+        for row in [*report.months, report.total]:
+            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.unapplied,
+                   row.income, "", row.noi, row.rent_billed, _pct(row.collection_rate), row.deposits]
+
+
+class CashFlowView(_FinanceView):
+    template_name = "reports/cash_flow.html"
+    slug = "cash-flow"
+
+    def csv_rows(self, report):
+        yield ["Month", "Rent", "Other charges", "Deposits", "Not yet applied", "Money in", "Deposit refunds",
+               "Payments to owners", "Money out", "Net cash"]
+        for row in [*report.months, report.total]:
+            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.deposits,
+                   row.unapplied, row.money_in, row.refunds,
+                   row.owner_payments if report.whole_organization else "", row.money_out, row.net]
+
+
+class ReceivablesView(CapabilityRequiredMixin, View):
+    template_name = "reports/receivables.html"
+    required_capability = "reports.view_financial"
+
+    def get(self, request):
+        m = request.membership
+        prop, choices = _finance_filters(request)
+        today = timezone.localdate()
+        rows, total = finance.receivables(m, today, prop)
+        buckets = billing_selectors.AGING_BUCKETS
+        if request.GET.get("format") == "csv":
+            if not can(m, "reports.export"):
+                raise PermissionDenied("reports.export")
+            response = _csv_response(f"aged-receivables-{today.isoformat()}.csv")
+            writer = csv.writer(response)
+            writer.writerow([_("Scope"), prop.name if prop else _("All your properties")])
+            writer.writerow([_("As of"), today.isoformat()])
+            writer.writerow(["Property", "Lease", "Tenant", *[str(label) for _k, label, *_r in buckets], "Total"])
+            for row in rows:
+                writer.writerow([row.property.name, "", "", *[row.buckets[k] for k, *_r in buckets], row.total])
+                for lease_row in row.leases:
+                    lease = lease_row.lease
+                    writer.writerow([row.property.name, lease.number, lease.primary_tenant.name
+                                     if lease.primary_tenant else "",
+                                     *[lease_row.buckets[k] for k, *_r in buckets], sum(lease_row.buckets.values())])
+            writer.writerow([_("Total"), "", "", *[total.buckets[k] for k, *_r in buckets], total.total])
+            return response
+        query = request.GET.copy()
+        query["format"] = "csv"
+        return render(request, self.template_name, {
+            "rows": rows, "total": total, "buckets": [(k, label) for k, label, *_r in buckets], "today": today,
+            "properties": choices, "selected": prop, "can_export": can(m, "reports.export"),
+            "can_arrears": can(m, "invoices.view"), "csv_query": query.urlencode(),
+            "currency": m.organization.currency,
         })

@@ -1,0 +1,42 @@
+{% extends "banking/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Bank inbox" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "Bank inbox" %}</h1>
+  <p class="small text-body-secondary">{% trans "Money-in lines from bank statements that could not be placed on a lease. Matching one confirms it, pays the oldest invoices first and issues a receipt." %}</p>
+  {% include "banking/_nav.html" with section="inbox" inbox_count=count %}
+
+  {% if rows %}
+  <div class="list-group shadow-sm">
+    {% for line in rows %}
+    <div class="list-group-item py-3">
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <div class="min-w-0">
+          <a class="fw-semibold link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'banking:line' line.public_id %}">{{ line.description|default:line.reference|default:_("No description") }}</a>
+          <div class="small text-body-secondary">{{ line.posted_on|date:"j M Y" }} · {{ line.payment_account.display_name }}{% if line.reference %} · {% trans "Ref." %} <code>{{ line.reference }}</code>{% endif %}</div>
+          {% if line.note %}<div class="small mt-1"><i class="bi bi-info-circle text-body-tertiary"></i> {{ line.note }}</div>{% endif %}
+        </div>
+        <div class="h5 num mb-0 text-end">{{ line.amount|money:currency }}</div>
+      </div>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        {% if line.suggested_lease %}
+        <form method="post" class="d-inline" data-confirm="{% blocktrans with lease=line.suggested_lease.number %}Match this payment to {{ lease }}? It is confirmed and receipted at once.{% endblocktrans %}">{% csrf_token %}
+          <input type="hidden" name="line" value="{{ line.public_id }}"><input type="hidden" name="action" value="accept">
+          <button class="btn btn-sm btn-success"><i class="bi bi-check2"></i> {% blocktrans with unit=line.suggested_lease.unit.code property=line.suggested_lease.unit.property.name %}Match to {{ property }} · {{ unit }}{% endblocktrans %}</button>
+        </form>
+        {% endif %}
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="{% url 'banking:line' line.public_id %}">{% if line.suggested_lease %}{% trans "Choose another lease" %}{% else %}{% trans "Choose a lease" %}{% endif %} <i class="bi bi-chevron-right"></i></a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% if more %}<p class="small text-body-secondary mt-2">{% trans "Showing the oldest 200." %}</p>{% endif %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+    <h2 class="h6">{% trans "All caught up" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Every imported bank line has been placed on a lease or ignored." %}</p>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

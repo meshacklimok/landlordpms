@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'billing',
     'payments',
     'mpesa',
+    'banking',
     'notifications',
     'inspections',
     'meters',

@@ -325,11 +325,15 @@ def reverse_payment(actor: Membership, payment: Payment, *, reason: str, request
 
 
 def _reopen_source(payment: Payment, reason: str) -> None:
-    """A reversed M-Pesa payment goes back to the inbox to be matched again (D-045 item 7)."""
+    """A reversed M-Pesa or bank payment goes back to its inbox to be matched again (D-045 item 7, D-064)."""
     if payment.method == Payment.Method.MPESA:
         from mpesa import inbox  # mpesa depends on payments, not the other way round
 
         inbox.payment_reversed(payment, reason)
+    elif payment.method == Payment.Method.BANK:
+        from banking import inbox as bank_inbox
+
+        bank_inbox.payment_reversed(payment, reason)
 
 
 def credit_payments(lease: Lease):

@@ -1,0 +1,45 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Profit and loss" %}{% endblock %}
+{% block content %}
+{% with cur=report.currency t=report.total %}
+<h1 class="h4 mb-0">{% trans "Profit and loss" %}</h1>
+<p class="small text-body-secondary">{{ report.label }} · {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %} · {% trans "cash basis" %}</p>
+{% include "reports/_finance_links.html" with section="pl" %}
+{% include "reports/_finance_filter.html" %}
+
+<div class="card shadow-sm mb-3" style="max-width: 560px"><div class="card-body">
+  <table class="table table-sm small mb-0">
+    <tbody>
+      <tr><td>{% trans "Rent collected" %}</td><td class="text-end num">{{ t.rent|money:cur }}</td></tr>
+      <tr><td>{% trans "Other charges collected" %}</td><td class="text-end num">{{ t.other|money:cur }}</td></tr>
+      <tr><td>{% trans "Received, not yet applied (counted as rent)" %}</td><td class="text-end num">{{ t.unapplied|money:cur }}</td></tr>
+      <tr class="fw-semibold"><td>{% trans "Income" %}</td><td class="text-end num">{{ t.income|money:cur }}</td></tr>
+      <tr><td>{% trans "Expenses" %}</td><td class="text-end text-body-secondary">{% trans "not recorded yet" %}</td></tr>
+      <tr class="fw-semibold table-light"><td>{% trans "Net operating income" %}</td><td class="text-end num">{{ t.noi|money:cur }}</td></tr>
+    </tbody>
+  </table>
+  <div class="small text-body-secondary mt-2">
+    {% trans "Rent billed" %}: <span class="num">{{ t.rent_billed|money:cur }}</span> ·
+    {% trans "Collection rate" %}: {{ t.collection_rate|percent }} ·
+    {% trans "Deposits received (not income)" %}: <span class="num">{{ t.deposits|money:cur }}</span>
+  </div>
+</div></div>
+
+<h2 class="h6">{% trans "By month" %}</h2>
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent" %}</th><th class="text-end">{% trans "Other charges" %}</th>
+    <th class="text-end">{% trans "Not yet applied" %}</th><th class="text-end">{% trans "Income" %}</th>
+    <th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Rent billed" %}</th>
+    <th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Deposits" %}</th>
+  </tr></thead>
+  <tbody>{% for row in report.months %}{% include "reports/_pl_row.html" %}{% endfor %}</tbody>
+  <tfoot class="fw-semibold">{% include "reports/_pl_row.html" with row=t %}</tfoot>
+</table>
+</div>
+
+<h2 class="h6">{% trans "Notes" %}</h2>
+<ul class="small text-body-secondary">{% for note in report.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% endblock %}
