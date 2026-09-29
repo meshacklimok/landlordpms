@@ -1,6 +1,7 @@
 """Payment requests to a tenant's phone: STK push, Lipa na M-Pesa Online (D-045 item 8).
 
-Staff with `payments.record` send a request from the lease. The tenant approves it with their
+Staff with `payments.record` send a request from the lease, or the tenant starts one from the
+lease's payment link (`paylinks`, D-046 item 1). The tenant approves it with their
 M-Pesa PIN; Safaricom's callback then carries the receipt number, and the payment is confirmed on
 that lease with confidence (the request named the lease). A C2B confirmation for the same receipt
 is a duplicate: `trans_id` is unique, so whichever arrives second changes nothing. [VERIFY whether
@@ -90,6 +91,13 @@ def request_payment(actor: Membership, lease: Lease, *, phone: str, amount, paym
         raise PermissionDenied(_("That record belongs to another organization."))
     if lease.status == Lease.Status.DRAFT or lease.archived_at is not None:
         raise ValidationError(_("Payments can only be requested on an activated lease."))
+    return send(lease, phone=phone, amount=amount, payment_account=payment_account, requested_by=actor.user,
+                request=request)
+
+
+def send(lease: Lease, *, phone: str, amount, payment_account: PaymentAccount = None, requested_by=None,
+         pay_link=None, request=None) -> StkRequest:
+    """Checks the phone and amount, then sends the prompt. Callers check who may send it."""
     phone, amount = _phone(phone), _whole_shillings(amount)
     accounts = stk_accounts(lease)
     if payment_account is not None:
@@ -107,20 +115,23 @@ def request_payment(actor: Membership, lease: Lease, *, phone: str, amount, paym
 
     stk = StkRequest.objects.create(
         organization_id=lease.organization_id, payment_account=creds.payment_account, lease=lease,
-        requested_by=actor.user, phone=phone, amount=amount, account_reference=lease.unit.payment_reference[:12])
+        requested_by=requested_by, pay_link=pay_link, phone=phone, amount=amount,
+        account_reference=lease.unit.payment_reference[:12])
     changes = {"lease": [None, lease.number], "phone": [None, phone], "amount": [None, str(amount)]}
+    if pay_link is not None:
+        changes["via"] = [None, "payment link"]
     try:
         data = get_client(creds).stk_push(phone=phone, amount=int(amount), account_reference=stk.account_reference,
                                           description="Rent", callback_url=url)
     except DarajaError as e:
         _finish(stk, Status.FAILED, "", str(e))
-        audit.record("mpesa.stk_request", actor=actor.user, organization=lease.organization, obj=stk,
+        audit.record("mpesa.stk_request", actor=requested_by, organization=lease.organization, obj=stk,
                      request=request, changes={**changes, "error": [None, str(e)]})
         raise ValidationError(_("Safaricom did not send the request: %(error)s") % {"error": e}) from None
     stk.merchant_request_id = str(data.get("MerchantRequestID", ""))[:60]
     stk.checkout_request_id = str(data["CheckoutRequestID"])[:60]
     stk.save(update_fields=["merchant_request_id", "checkout_request_id", "updated_at"])
-    audit.record("mpesa.stk_request", actor=actor.user, organization=lease.organization, obj=stk, request=request,
+    audit.record("mpesa.stk_request", actor=requested_by, organization=lease.organization, obj=stk, request=request,
                  changes=changes)
     return stk
 

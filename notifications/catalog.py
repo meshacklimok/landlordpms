@@ -59,7 +59,9 @@ def _with_whatsapp(ntype: "NotificationType") -> "NotificationType":
     bodies = dict(ntype.bodies)
     for (channel, language), text in ntype.bodies.items():
         if channel == SMS:
-            core = text.removesuffix(" {org_name}")
+            # The payment link is SMS only: it is empty when the lease has none, and a Meta template
+            # cannot have an empty field. The approved WhatsApp wording stays as it was.
+            core = text.removesuffix(" {org_name}").replace(" {pay_link}", "")
             bodies[(WHATSAPP, language)] = _WA_HEAD[language] + core + _WA_FOOT[language]
     return replace(ntype, bodies=bodies)
 
@@ -76,34 +78,36 @@ def whatsapp_language(ntype: "NotificationType", language: str) -> str:
 _TYPES: tuple[NotificationType, ...] = (
     NotificationType(
         "invoice_issued", _("Invoice issued"), TENANT, (WHATSAPP, SMS),
-        (*_TENANCY, "invoice_number", "amount", "due_date", "balance", "pay_reference"),
+        (*_TENANCY, "invoice_number", "amount", "due_date", "balance", "pay_reference", "pay_link"),
         bodies={
             (SMS, EN): "Dear {tenant_name}, invoice {invoice_number} for {unit} of {amount} is due on "
-                       "{due_date}. Balance: {balance}. Pay with reference {pay_reference}. {org_name}",
+                       "{due_date}. Balance: {balance}. Pay with reference {pay_reference}. {pay_link} {org_name}",
             (SMS, SW): "Mpendwa {tenant_name}, ankara {invoice_number} ya {unit} ya {amount} inalipwa "
-                       "tarehe {due_date}. Salio: {balance}. Lipa kwa kumbukumbu {pay_reference}. {org_name}",
+                       "tarehe {due_date}. Salio: {balance}. Lipa kwa kumbukumbu {pay_reference}. "
+                       "{pay_link} {org_name}",
         },
     ),
     NotificationType(
         "rent_due_soon", _("Rent due soon"), TENANT, (WHATSAPP, SMS),
-        (*_TENANCY, "invoice_number", "amount_due", "due_date", "pay_reference"),
+        (*_TENANCY, "invoice_number", "amount_due", "due_date", "pay_reference", "pay_link"),
         offsets=(3,),
         bodies={
             (SMS, EN): "Dear {tenant_name}, a reminder that {amount_due} for {unit} is due on {due_date}. "
-                       "Pay with reference {pay_reference}. {org_name}",
+                       "Pay with reference {pay_reference}. {pay_link} {org_name}",
             (SMS, SW): "Mpendwa {tenant_name}, tunakukumbusha kuwa {amount_due} ya {unit} inalipwa tarehe "
-                       "{due_date}. Lipa kwa kumbukumbu {pay_reference}. {org_name}",
+                       "{due_date}. Lipa kwa kumbukumbu {pay_reference}. {pay_link} {org_name}",
         },
     ),
     NotificationType(
         "rent_overdue", _("Rent overdue"), TENANT, (WHATSAPP, SMS),
-        (*_TENANCY, "invoice_number", "amount_due", "due_date", "balance", "pay_reference"),
+        (*_TENANCY, "invoice_number", "amount_due", "due_date", "balance", "pay_reference", "pay_link"),
         offsets=(2,),
         bodies={
             (SMS, EN): "Dear {tenant_name}, {amount_due} for {unit} was due on {due_date} and is still unpaid. "
-                       "Total balance: {balance}. Pay with reference {pay_reference}. {org_name}",
+                       "Total balance: {balance}. Pay with reference {pay_reference}. {pay_link} {org_name}",
             (SMS, SW): "Mpendwa {tenant_name}, {amount_due} ya {unit} ilitakiwa kulipwa tarehe {due_date} na "
-                       "bado haijalipwa. Salio lote: {balance}. Lipa kwa kumbukumbu {pay_reference}. {org_name}",
+                       "bado haijalipwa. Salio lote: {balance}. Lipa kwa kumbukumbu {pay_reference}. "
+                       "{pay_link} {org_name}",
         },
     ),
     NotificationType(

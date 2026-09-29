@@ -8,7 +8,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import Http404
+from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -17,13 +17,15 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from billing.invoicing import lease_balance
+from core import ratelimit
+from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
 from payments import selectors as payment_selectors
 from payments.models import Payment, PaymentAccount
 
-from . import forms, inbox, services, stk
-from .models import DarajaCredentials, MpesaTransaction, StkRequest
+from . import forms, inbox, paylinks, services, stk
+from .models import DarajaCredentials, MpesaTransaction, PayLink, StkRequest
 
 Status = MpesaTransaction.Status
 PICKER_SIZE = 10
@@ -310,7 +312,10 @@ class RequestPaymentView(CapabilityRequiredMixin, View):
     def context(self, request, lease, accounts, form):
         requests = list(StkRequest.objects.filter(lease=lease).select_related("transaction__payment")[:10])
         now = timezone.now()
+        link = paylinks.link_for(lease) if accounts else None
+        stored = link or PayLink.objects.filter(lease=lease).first()
         return {"lease": lease, "form": form, "accounts": accounts, "requests": requests,
+                "pay_link": stored, "pay_link_url": paylinks.url(link) if link else "",
                 "watching": any(r.status == StkRequest.Status.PENDING and now - r.created_at < WATCH_FOR
                                 for r in requests),
                 "balance": lease_balance(lease), "currency": lease.currency}
@@ -324,7 +329,17 @@ class RequestPaymentView(CapabilityRequiredMixin, View):
     def post(self, request, public_id):
         lease = self.lease(request, public_id)
         m = request.membership
-        if request.POST.get("action") == "check":
+        action = request.POST.get("action")
+        if action in ("link_reset", "link_disable", "link_enable"):
+            try:
+                getattr(paylinks, action.removeprefix("link_"))(m, lease, request=request)
+            except PermissionDenied:
+                raise Http404 from None
+            messages.success(request, {"link_reset": _("New payment link made. The old one no longer works."),
+                                       "link_disable": _("Payment link turned off."),
+                                       "link_enable": _("Payment link turned on.")}[action])
+            return redirect("mpesa:request", public_id=lease.public_id)
+        if action == "check":
             req = StkRequest.objects.filter(lease=lease, public_id=_uuid(request.POST.get("request", ""))).first()
             if req is None:
                 raise Http404
@@ -360,3 +375,70 @@ class RequestPaymentView(CapabilityRequiredMixin, View):
                 messages.success(request, _("Request sent. The tenant should see the M-Pesa prompt now."))
                 return redirect("mpesa:request", public_id=lease.public_id)
         return render(request, self.template_name, self.context(request, lease, accounts, form), status=400)
+
+
+# ---------------------------------------------------------------------------
+# The tenant's payment link (D-046 item 1): no login, the token is the key
+# ---------------------------------------------------------------------------
+
+
+def _no_index(response):
+    response["X-Robots-Tag"] = "noindex, nofollow"
+    response["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+class PayLinkView(View):
+    template_name = "mpesa/pay_link.html"
+
+    def dispatch(self, request, token, *args, **kwargs):
+        if not ratelimit.hit(f"pay_link:ip:{client_ip(request)}", paylinks.PER_IP_HOUR, 3600):
+            return HttpResponse(_("Too many requests. Try again later."), status=429)
+        self.link = paylinks.find(token)
+        if self.link is None:
+            return _no_index(render(request, "mpesa/pay_link_closed.html", status=404))
+        return super().dispatch(request, token, *args, **kwargs)
+
+    def context(self, form):
+        lease = self.link.lease
+        balance = lease_balance(lease)
+        accounts = stk.stk_accounts(lease)
+        return {"link": self.link, "lease": lease, "unit": lease.unit, "property": lease.unit.property,
+                "org": lease.organization, "form": form, "balance": balance, "currency": lease.currency,
+                "paybill": accounts[0].shortcode if accounts else "", "can_prompt": bool(accounts)}
+
+    def get(self, request, token):
+        balance = lease_balance(self.link.lease)
+        initial = {"amount": str(balance.to_integral_value(rounding=ROUND_CEILING))} if balance > 0 else {}
+        return _no_index(render(request, self.template_name, self.context(forms.PayLinkForm(initial=initial))))
+
+    def post(self, request, token):
+        form = forms.PayLinkForm(request.POST)
+        if form.is_valid():
+            try:
+                req = paylinks.request_payment(self.link, phone=form.cleaned_data["phone"],
+                                               amount=form.cleaned_data["amount"], request=request)
+            except ValidationError as e:
+                _add_errors(form, e)
+            else:
+                return redirect("pay_link_status", token=token, request_id=req.public_id)
+        return _no_index(render(request, self.template_name, self.context(form), status=400))
+
+
+class PayLinkStatusView(PayLinkView):
+    template_name = "mpesa/pay_link_status.html"
+
+    def get(self, request, token, request_id):
+        req = get_object_or_404(StkRequest.objects.select_related("transaction__payment__receipt"),
+                                pay_link=self.link, public_id=request_id)
+        receipt = None
+        tx = req.transaction
+        if tx is not None and tx.payment is not None and tx.payment.status == Payment.Status.CONFIRMED:
+            receipt = getattr(tx.payment, "receipt", None)
+        return _no_index(render(request, self.template_name, {
+            "link": self.link, "req": req, "org": self.link.lease.organization, "currency": self.link.lease.currency,
+            "receipt": receipt if receipt is not None and receipt.share_token else None,
+            "watching": req.status == StkRequest.Status.PENDING and timezone.now() - req.created_at < WATCH_FOR}))
+
+    def post(self, request, token, request_id):
+        return redirect("pay_link_status", token=token, request_id=request_id)

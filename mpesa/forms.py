@@ -48,3 +48,18 @@ class StkRequestForm(forms.Form):
             self.fields["account"].required = True
         else:
             del self.fields["account"]
+
+
+class PayLinkForm(forms.Form):
+    """The tenant's side of the payment link. The service checks the phone, the amount and the limits."""
+
+    phone = forms.CharField(label=_("M-Pesa phone number"), max_length=20,
+                            help_text=_("You get a prompt on this phone to enter your M-Pesa PIN."))
+    amount = forms.CharField(label=_("Amount (KES)"), max_length=12,
+                             help_text=_("Any whole amount. You can pay in parts."))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["phone"].widget.attrs.update({"inputmode": "tel", "autocomplete": "tel",
+                                                  "placeholder": "07XX XXX XXX"})
+        self.fields["amount"].widget.attrs.update({"inputmode": "numeric"})

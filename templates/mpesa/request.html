@@ -20,6 +20,25 @@
   <div class="alert alert-warning small">{% trans "No Paybill with a passkey collects for this property, so payment requests cannot be sent." %}{% if membership|can:"mpesa.settings" %} <a href="{% url 'mpesa:settings' %}">{% trans "M-Pesa settings" %}</a>{% endif %}</div>
   {% endif %}
 
+  {% if accounts %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Tenant payment link" %}</h2>
+    {% if pay_link_url %}
+    <p class="small text-body-secondary">{% trans "Goes out in rent messages. Whoever opens it can send an M-Pesa prompt for any amount to a Kenyan phone; the money is confirmed on this lease." %}</p>
+    <div class="input-group input-group-sm mb-2"><input class="form-control" value="{{ pay_link_url }}" readonly aria-label="{% trans 'Payment link' %}" onfocus="this.select()"></div>
+    <div class="d-flex flex-wrap gap-2">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link_reset"><button class="btn btn-sm btn-outline-secondary">{% trans "Make a new link" %}</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link_disable"><button class="btn btn-sm btn-outline-danger">{% trans "Turn off" %}</button></form>
+    </div>
+    {% elif pay_link and not pay_link.is_active %}
+    <p class="small text-body-secondary">{% trans "Turned off. Rent messages go out without a link." %}</p>
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link_enable"><button class="btn btn-sm btn-outline-primary">{% trans "Turn on" %}</button></form>
+    {% else %}
+    <p class="small text-body-secondary mb-0">{% trans "This lease cannot take payments by link now." %}</p>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
   {% if requests %}
   <div class="card shadow-sm"><div class="card-body">
     <h2 class="h6">{% trans "Recent requests" %}{% if watching %} <span class="small fw-normal text-body-secondary">· {% trans "updating…" %}</span>{% endif %}</h2>

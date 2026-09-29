@@ -55,6 +55,13 @@ def _tenancy(lease: Lease, tenant) -> dict:
             "pay_reference": unit.payment_reference}
 
 
+def _pay_link(lease: Lease) -> str:
+    """The lease's payment link for a rent message, or "" (D-046 item 1)."""
+    from mpesa import paylinks
+
+    return paylinks.message_url(lease)
+
+
 def _lease(lease: Lease) -> Lease:
     return (Lease.all_objects.select_related("organization", "unit__property")
             .prefetch_related("lease_tenants__tenant").get(pk=lease.pk))
@@ -80,7 +87,7 @@ def invoice_issued(invoice: Invoice, *, send_now: bool = False) -> int:
     ntype = catalog.get("invoice_issued")
     rule = effective_rule(org, ntype)
     fields = {"invoice_number": invoice.number, "amount": format_money(invoice.total, invoice.currency),
-              "due_date": _date(invoice.due_date), "balance": _balance(lease)}
+              "due_date": _date(invoice.due_date), "balance": _balance(lease), "pay_link": _pay_link(lease)}
     sent = 0
     for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
         if notify(org, ntype.codename, tenant=tenant, context={**_tenancy(lease, tenant), **fields},
@@ -210,7 +217,7 @@ def overdue_offset(invoice: Invoice, offsets, today: datetime.date) -> int | Non
 def _remind(org, ntype, rule, invoice: Invoice, offset: int) -> int:
     lease = _lease(invoice.lease)
     fields = {"invoice_number": invoice.number, "amount_due": format_money(invoice.outstanding, invoice.currency),
-              "due_date": _date(invoice.due_date), "balance": _balance(lease)}
+              "due_date": _date(invoice.due_date), "balance": _balance(lease), "pay_link": _pay_link(lease)}
     sent = 0
     for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
         if notify(org, ntype.codename, tenant=tenant, context={**_tenancy(lease, tenant), **fields},

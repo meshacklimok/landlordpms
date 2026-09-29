@@ -170,7 +170,11 @@ class StkRequest(PublicIdModel, TimeStampedModel):
     payment_account = models.ForeignKey("payments.PaymentAccount", on_delete=models.PROTECT,
                                         related_name="stk_requests")
     lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="stk_requests")
-    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    # Staff who sent it, or empty when the tenant started it from the lease's payment link (D-046 item 1).
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="+")
+    pay_link = models.ForeignKey("PayLink", on_delete=models.PROTECT, null=True, blank=True,
+                                 related_name="requests")
     phone = models.CharField(_("phone"), max_length=16)
     amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
     account_reference = models.CharField(max_length=12)
@@ -192,8 +196,35 @@ class StkRequest(PublicIdModel, TimeStampedModel):
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="mpesa_stkrequest_amount_positive"),
             models.CheckConstraint(condition=~models.Q(status="PAID") | models.Q(transaction__isnull=False),
                                    name="mpesa_stkrequest_paid_has_transaction"),
+            models.CheckConstraint(condition=models.Q(requested_by__isnull=False) | models.Q(pay_link__isnull=False),
+                                   name="mpesa_stkrequest_has_requester"),
         ]
         indexes = [models.Index(fields=["organization", "status"])]
 
     def __str__(self):
         return f"{self.phone} · {self.amount}"
+
+
+class PayLink(TimeStampedModel):
+    """A lease's private payment link, /p/<token>/, sent in rent messages (D-046 item 1).
+
+    Whoever has the link can send an M-Pesa prompt for any amount to a Kenyan phone; the money
+    still goes to the landlord's own Paybill. Resetting gives a new token (the old link stops
+    working); turning it off keeps the row so its requests keep their history.
+    """
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.OneToOneField("leases.Lease", on_delete=models.PROTECT, related_name="pay_link")
+    token = models.CharField(max_length=32, unique=True, editable=False)
+    disabled_at = models.DateTimeField(null=True, blank=True)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+
+    objects = ScopedQuerySet.as_manager()
+
+    def __str__(self):
+        return f"{self.lease_id} · {self.token[:4]}…"
+
+    @property
+    def is_active(self) -> bool:
+        return self.disabled_at is None

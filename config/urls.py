@@ -21,6 +21,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from mpesa.hook_views import DarajaHookView
+from mpesa.views import PayLinkStatusView, PayLinkView
 from notifications.hook_views import AfricasTalkingHookView, WhatsAppHookView
 from payments.views import PublicReceiptView
 from properties.views import VacancyView
@@ -33,6 +34,8 @@ urlpatterns = [
     path("imports/", include("imports.urls")),
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
     path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
+    path("p/<str:token>/", PayLinkView.as_view(), name="pay_link"),
+    path("p/<str:token>/<uuid:request_id>/", PayLinkStatusView.as_view(), name="pay_link_status"),
     path("hooks/sms/africastalking/<str:token>/<slug:kind>/", AfricasTalkingHookView.as_view(),
          name="hook_africastalking"),
     path("hooks/whatsapp/", WhatsAppHookView.as_view(), name="hook_whatsapp"),
