@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load i18n access %}
+{% block title %}{% trans "Home" %}{% endblock %}
+{% block content %}
+<h1 class="h4">{{ user.full_name }}</h1>
+<p class="text-muted">{{ organization.name }} · {{ membership.role.name }}</p>
+
+{% if show_checklist %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Get set up" %}</h2>
+  <ul class="list-unstyled mb-0">
+    {% for label, done in checklist %}<li class="py-1">{% if done %}✅{% else %}⬜{% endif %} {{ label }}</li>{% endfor %}
+  </ul>
+</div></div>
+{% endif %}
+
+<div class="row g-3">
+  {% if membership|can:"dashboard.view_financial" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Collections" %}</h2>
+    <p class="text-muted small mb-0">{% trans "Collection and arrears figures appear here once billing is set up." %}</p>
+  </div></div></div>
+  {% endif %}
+  {% if show_staff %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Staff" %}</h2>
+    <a href="{% url 'accounts:staff' %}">{% trans "Manage staff and invitations" %}</a>
+  </div></div></div>
+  {% endif %}
+  {% if show_roles %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Roles" %}</h2>
+    <a href="{% url 'accounts:roles' %}">{% trans "Edit what each role can do" %}</a>
+  </div></div></div>
+  {% endif %}
+</div>
+{% endblock %}
