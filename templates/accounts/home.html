@@ -13,10 +13,11 @@
 
 {% if show_checklist %}
 <div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Get set up" %}</h2>
+  <h2 class="h6">{% trans "Get set up" %} <span class="text-muted fw-normal">{% blocktrans with n=checklist_done t=checklist_total %}{{ n }} of {{ t }} done{% endblocktrans %}</span></h2>
   <ul class="list-unstyled mb-0">
-    {% for label, done in checklist %}<li class="py-1">{% if done %}✅{% else %}⬜{% endif %} {{ label }}</li>{% endfor %}
+    {% for step in checklist %}<li class="py-1" data-step="{{ step.key }}">{% if step.done %}✅ {{ step.label }}{% else %}⬜ <a href="{{ step.url }}">{{ step.label }}</a>{% endif %}{% if step.optional %} <span class="text-muted small">({% trans "optional" %})</span>{% endif %}</li>{% endfor %}
   </ul>
+  <p class="small text-muted mt-2 mb-0">{% blocktrans with url=help_url %}Stuck? Read <a href="{{ url }}">getting started</a>, or send us your spreadsheet and we will import it for you.{% endblocktrans %}</p>
 </div></div>
 {% endif %}
 

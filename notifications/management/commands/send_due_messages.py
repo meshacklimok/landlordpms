@@ -1,11 +1,9 @@
-from django.core.management.base import BaseCommand
-
+from core.jobs import JobCommand, summarize
 from notifications.delivery import send_due
 
 
-class Command(BaseCommand):
+class Command(JobCommand):
     help = "Send queued messages that are due: held back by quiet hours or waiting to retry. Run every few minutes."
 
-    def handle(self, *args, **options):
-        counts = send_due()
-        self.stdout.write(self.style.SUCCESS(", ".join(f"{k}: {v}" for k, v in counts.items())))
+    def run(self, *args, **options):
+        return summarize(send_due())

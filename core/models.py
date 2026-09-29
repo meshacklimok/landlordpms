@@ -126,3 +126,22 @@ class NumberSequence(models.Model):
 
     def __str__(self):
         return f"{self.prefix} {self.period} → {self.next_value}"
+
+
+class JobRun(models.Model):
+    """One run of a scheduled command (D-062 item 1). Read by the status page and `check_jobs`."""
+
+    name = models.CharField(max_length=60)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    # None while running.
+    ok = models.BooleanField(null=True)
+    summary = models.CharField(max_length=300, blank=True)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-started_at", "-pk"]
+        indexes = [models.Index(fields=["name", "-started_at"], name="core_jobrun_name_started")]
+
+    def __str__(self):
+        return f"{self.name} {self.started_at:%Y-%m-%d %H:%M}"

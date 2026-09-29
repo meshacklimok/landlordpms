@@ -138,7 +138,11 @@ def test_other_org_gets_404(client, owner, tenant):
     assert not Tenant.all_objects.get(pk=tenant.pk).is_archived
 
 
+def _steps(client):
+    return {s.key: s.done for s in client.get(reverse("accounts:home")).context["checklist"]}
+
+
 def test_home_checklist_ticks_tenants(client, owner):
-    assert not dict(client.get(reverse("accounts:home")).context["checklist"])["Add tenants"]
+    assert not _steps(client)["tenant"]
     services.create_tenant(owner, name="X", phone="0712345678")
-    assert dict(client.get(reverse("accounts:home")).context["checklist"])["Add tenants"]
+    assert _steps(client)["tenant"]

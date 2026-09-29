@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Status" %}{% endblock %}
+{% block head %}<meta http-equiv="refresh" content="120">{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% trans "landlordpms status" %}</h1>
+<div class="alert {% if overall == 'ok' %}alert-success{% elif overall == 'degraded' %}alert-warning{% else %}alert-danger{% endif %}">
+  {% if overall == "ok" %}{% trans "Everything is working." %}
+  {% elif overall == "degraded" %}{% trans "Some things are slow or delayed. Your data is safe." %}
+  {% else %}{% trans "landlordpms is not working right now. We are on it." %}{% endif %}
+</div>
+
+<div class="card shadow-sm mb-3"><ul class="list-group list-group-flush">
+  {% for name, state in components %}
+  <li class="list-group-item d-flex justify-content-between">{{ name }}
+    <span class="badge {% if state == 'ok' %}text-bg-success{% elif state == 'degraded' %}text-bg-warning{% else %}text-bg-danger{% endif %}">
+      {% if state == "ok" %}{% trans "Working" %}{% elif state == "degraded" %}{% trans "Slow or partly down" %}{% else %}{% trans "Down" %}{% endif %}</span></li>
+  {% endfor %}
+</ul></div>
+
+{% if open %}<h2 class="h6">{% trans "Current incidents" %}</h2>{% for incident in open %}{% include "support/_incident.html" %}{% endfor %}{% endif %}
+{% if recent %}<h2 class="h6 mt-3">{% trans "Resolved in the last 14 days" %}</h2>{% for incident in recent %}{% include "support/_incident.html" %}{% endfor %}{% endif %}
+{% if not open and not recent %}<p class="small text-muted">{% trans "No incidents in the last 14 days." %}</p>{% endif %}
+
+<p class="small text-muted mt-3">{% blocktrans with t=checked_at|date:"j M Y H:i" %}Checked {{ t }}. The page refreshes every two minutes.{% endblocktrans %}
+  <a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></p>
+{% endblock %}

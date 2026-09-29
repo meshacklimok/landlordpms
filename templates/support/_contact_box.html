@@ -1,0 +1,7 @@
+{% load i18n %}<div class="card shadow-sm"><div class="card-body">
+  <h2 class="h6">{% trans "Still stuck?" %}</h2>
+  <p class="small mb-2">{% trans "Tell us what you need. Send your spreadsheet and we will import your units, tenants and balances for you." %}</p>
+  <a class="btn btn-sm btn-primary" href="{% url 'support:contact' %}">{% trans "Contact support" %}</a>
+  <a class="btn btn-sm btn-outline-primary" href="{% url 'support:contact' %}?kind=IMPORT_HELP">{% trans "Import my data for me" %}</a>
+  {% if support_whatsapp %}<a class="btn btn-sm btn-outline-success" href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">WhatsApp</a>{% endif %}
+</div></div>

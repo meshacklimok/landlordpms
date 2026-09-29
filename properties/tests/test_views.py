@@ -145,8 +145,9 @@ def test_other_org_gets_404(client, owner, prop):
 
 
 def test_home_checklist_ticks_units(client, owner, prop):
-    checklist = dict(client.get(reverse("accounts:home")).context["checklist"])
-    assert not checklist["Add units"]
+    def steps():
+        return {s.key: s.done for s in client.get(reverse("accounts:home")).context["checklist"]}
+
+    assert not steps()["units"]
     services.create_unit(owner, prop, code="A1")
-    checklist = dict(client.get(reverse("accounts:home")).context["checklist"])
-    assert checklist["Add a property"] and checklist["Add units"]
+    assert steps()["property"] and steps()["units"]

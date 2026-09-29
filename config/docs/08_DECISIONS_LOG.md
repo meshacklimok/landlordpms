@@ -524,3 +524,152 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
     - dunning SMS to the owner;
     - plan-included SMS bundles;
     - AI usage limits.
+
+
+### D-061 — Status page, health check and the security page — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Phase 8 asks for a public status page and a security and data-protection page (doc 04, doc 06). Landlords trusting us with rent money want to see that we are up, and what we do with their data.
+
+**Decision.**
+1. **`/healthz`** returns JSON for the load balancer and uptime monitor. It needs no login and is not rate limited.
+   - It checks the database (`SELECT 1`) and the cache (write and read one key).
+   - Everything passing returns 200 `{"status": "ok", "checks": {...}}`. Any failure returns 503 with the failing check named. No versions, hosts or error text are shown.
+2. **`/status/`** is a public page with no login. For each part it shows "Working", "Slow or partly down" or "Down":
+   - **Web app**: it is working when the page renders.
+   - **Database** and **cache**: the same checks as `/healthz`.
+   - **Scheduled jobs**: each known job (below) is working when its last run succeeded within its expected interval. A job that is late or failed counts as partly down. The page shows no job output.
+   - **Incidents**: a Platform Admin writes these in Django admin.
+     - The fields are title, impact (minor, major, outage), status (investigating, identified, monitoring, resolved), public updates with times, start and end.
+     - Open incidents show at the top. Resolved ones stay listed for 14 days.
+     - Nothing is shown about any organization.
+   - The result is cached for 60 seconds, so the page cannot be used to load the database. Saving an incident in admin clears the cache.
+3. **`/security/`** is a public page in plain language covering:
+   - HTTPS everywhere.
+   - Passwords stored hashed.
+   - Two-step login, open to everyone and required for our own staff (D-059).
+   - Provider keys encrypted at rest.
+   - Every change recorded in an audit log.
+   - Staff see only the properties they are given.
+   - Daily backups with a restore test (D-062).
+   - Where the data is hosted **[VERIFY]**.
+   - The Kenya Data Protection Act 2019, and our ODPC registration **[VERIFY]**.
+   - Export on request, and deletion on request after the legal retention period.
+   - The contact for data protection is `DATA_PROTECTION_EMAIL`, and the hosting location is `HOSTING_LOCATION`; each line is left out while its setting is empty.
+   - It is linked, with the status page, from a footer on every page, including the login page.
+4. **Not in this step**:
+   - status history graphs;
+   - email or SMS subscription to status updates;
+   - an external uptime service, which the operator sets up against `/healthz` (doc 18).
+
+
+### D-062 — Operations: job records, backups, alerts, error tracking and logging — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Phase 8 asks for backups, monitoring, error tracking and a production settings review before real landlords' money runs through the system (doc 04, doc 06).
+
+**Decision.**
+1. **Job records.** Every scheduled command records a `JobRun`:
+   - the job name, start and end, whether it succeeded, a short summary, and the error text on failure;
+   - a failure is recorded and then raised again, so cron still sees it.
+
+   The known jobs and how often they must succeed:
+
+   | Job | Must succeed within |
+   |---|---|
+   | `send_due_messages` | 30 minutes |
+   | `billing_daily`, `mpesa_daily`, `subscriptions_daily` | 26 hours |
+   | `backup` | 26 hours |
+   | `purge_otp_codes`, `purge_import_previews` | 8 days |
+
+   `check_jobs` deletes runs older than 90 days.
+2. **Alerts.** `check_jobs`, run every 15 minutes, emails `OPS_ALERT_EMAILS` when:
+   - a known job is late or its last run failed;
+   - the health checks fail.
+
+   It sends the same alert at most once every 6 hours, and sends an "all clear" email when things are fine again.
+3. **Backups.** `manage.py backup` writes a PostgreSQL custom-format dump (`pg_dump -Fc`) and a tar.gz of the media folder to `BACKUP_DIR`, with a date-stamped name. It then:
+   - checks the dump with `pg_restore --list`, and records the sizes;
+   - keeps the latest set of each of the last 7 days, the first set of each of the last 4 weeks and the first set of each of the last 12 months, and deletes the rest. Other files in the folder are never touched.
+
+   A failed dump is deleted and the run is recorded as failed.
+
+   Copying off the server (encrypted object storage) is done by the operator's sync tool, as described in doc 18 **[VERIFY: provider]**.
+
+   The aims are **RPO 24 hours** (at most one day lost), and **RTO 4 hours** to restore on a new server. Point-in-time recovery with WAL archiving is the next step once paying customers pass 50.
+4. **Restore test.** Doc 18 gives the steps. A restore into a scratch database is done monthly, and each test is recorded in the doc's table.
+5. **Error tracking.** When `SENTRY_DSN` is set and `sentry-sdk` is installed, errors go to Sentry with `send_default_pii=False`, 10% of requests traced, and the environment and release from the environment. Otherwise, errors are emailed to `ADMINS` in production.
+6. **Logging.** Plain lines to the console (the process manager keeps them), with the level set by `LOG_LEVEL`. Request bodies, codes and secrets are never logged. `django.security` warnings are always kept.
+7. **Production settings review.** Production now also sets:
+   - HSTS for one year, with preload once the domain is steady **[VERIFY]**;
+   - `SECURE_CONTENT_TYPE_NOSNIFF`;
+   - `SECURE_REFERRER_POLICY = "same-origin"`;
+   - `X_FRAME_OPTIONS = "DENY"`;
+   - the session cookie `HttpOnly` and `SameSite=Lax`;
+   - `CSRF_TRUSTED_ORIGINS` from `SITE_URL`;
+   - a `DB_CONN_MAX_AGE` of 60 seconds;
+   - a `SECRET_KEY` check that it is at least 50 characters and not the development key.
+
+   `manage.py check --deploy` passes in production.
+8. **Doc 18 (`config/docs/18_OPERATIONS.md`)** covers:
+   - the processes;
+   - the cron table;
+   - environment variables;
+   - deploying;
+   - backups and the restore steps;
+   - alerts;
+   - what to do in an incident (including posting on the status page);
+   - rotating `FIELD_ENCRYPTION_KEYS` and `SECRET_KEY`.
+9. **Not in this step**:
+   - infrastructure as code;
+   - WAL archiving;
+   - multi-region;
+   - an on-call rota.
+
+
+### D-063 — Onboarding polish, help pages and support requests — ACCEPTED (2026-09-29, open to change before merge)
+
+**Context.** Phase 8 asks for onboarding polish, help docs and a support channel. It also asks for the import concierge for pilots, with time to first invoice tracked (doc 04, doc 05).
+
+**Decision.**
+1. **Setup checklist.**
+   - Each step on the home checklist is worked out from real data and links to the page that does it:
+     - add a property;
+     - add units;
+     - add a tenant;
+     - start a lease;
+     - set up how tenants pay (a payment account; today these are made on the M-Pesa page);
+     - issue the first invoice;
+     - invite a team member (optional).
+   - It shows "n of 6 done", and hides itself once every required step is done. As before, it is shown to members who hold `properties.manage`.
+2. **Help pages** at `/help/` are written as templates in the repo, so they are reviewed like code. They are open to anyone logged in. They are in English only for now; Swahili follows with the rest of the Swahili review.
+   - Topics:
+     - getting started;
+     - properties and units;
+     - tenants and leases;
+     - invoices and payments;
+     - M-Pesa;
+     - messages and SMS credit;
+     - water meters;
+     - staff and roles;
+     - subscription and billing;
+     - importing data.
+   - An index page lists them, with a simple title search on the page.
+3. **Support requests** at `/help/contact/`, for any member, including members of a frozen or read-only organization. Tenants in the portal are sent back to it, because they contact their landlord, not us.
+   - The kinds are: a question, a problem, or import help ("do my import for me").
+   - It takes a subject, a message, and one optional attachment (≤ 10 MB; spreadsheets, CSV, PDF, text or images). The attachment is stored under a random name and only downloaded through admin.
+   - The request records the organization, the member, the page they came from (only a page on our own site) and the browser.
+   - It emails `SUPPORT_EMAIL` and confirms on screen with the request number (`SUP-YYYY-NNNNNN`).
+   - Platform Admins work the requests in Django admin with a status: open, waiting on the customer, or closed.
+   - A WhatsApp link (`SUPPORT_WHATSAPP`, wa.me) is shown when set.
+4. **Import concierge.**
+   - An import-help request is flagged in admin.
+   - The Platform Admin works it by running the import with the customer's file through the existing import screens. They log in as a member the customer invited; there is no impersonation.
+   - Doc 18 gives the steps.
+5. **Time to first invoice.**
+   - The organization admin list shows how long it took from creation to the first invoice that is not a draft (`Invoice.created_at`), or "—".
+   - It is filterable by "has invoiced".
+6. **Not in this step**:
+   - in-app chat;
+   - a knowledge-base CMS;
+   - video tours;
+   - impersonation;
+   - customer satisfaction ratings.

@@ -1,0 +1,15 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Each lease is billed once a month (or each quarter or year) with its rent and charges.</p>
+<ul>
+  <li><strong>Invoices</strong> are issued a few days before the month and sent to the tenant by SMS. The due date
+    is the lease's due day; after the grace days it is overdue.</li>
+  <li><strong>Payments</strong> go against the oldest invoice first. Payments from M-Pesa are recorded for you; record
+    cash, bank or cheque payments on <a href="{% url 'payments:list' %}">Payments</a>.</li>
+  <li>If your role cannot confirm payments, the payment waits for someone who can.</li>
+  <li>Every confirmed payment gets a numbered <strong>receipt</strong> and the tenant gets a link to it.</li>
+  <li>Nothing is deleted. A wrong invoice is voided; a wrong payment is reversed with a reason.</li>
+  <li><a href="{% url 'billing:arrears' %}">Arrears</a> and the <a href="{% url 'billing:call_list' %}">call list</a>
+    show who owes and who to call today.</li>
+</ul>
+{% endblock %}

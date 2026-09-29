@@ -1,11 +1,9 @@
-from django.core.management.base import BaseCommand
-
+from core.jobs import JobCommand, summarize
 from subscriptions.services import daily
 
 
-class Command(BaseCommand):
+class Command(JobCommand):
     help = "End trials, issue renewal invoices, mark unpaid subscriptions due and lapse them after the grace days."
 
-    def handle(self, *args, **options):
-        counts = daily()
-        self.stdout.write(self.style.SUCCESS(", ".join(f"{k.replace('_', ' ')}: {v}" for k, v in counts.items())))
+    def run(self, *args, **options):
+        return summarize(daily())

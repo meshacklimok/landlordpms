@@ -160,14 +160,15 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 8 — Launch
 - [x] Optional MFA for Owner/Accountant, mandatory for Platform Admin (D-059: authenticator app, recovery codes, admin gate)
-- [ ] Public status page, security and data-protection page
-- [ ] Import concierge process for pilots; track time to first invoice
+- [x] Public status page, security and data-protection page, `/healthz` (D-061)
+- [x] Import concierge process for pilots (doc 18); time to first invoice in admin (D-063)
 - [x] `SubscriptionInvoice.vat_amount` (D-060); still confirm VAT registration and rate for our company [VERIFY]
 - [x] `EtimsAdapter` interface stub (D-060: `subscriptions/etims.py`, null adapter by default)
 - [x] Platform billing (flow A): Plan, Subscription, SubscriptionInvoice, PlatformReceipt, SMS wallet top-up; separate from tenant billing (D-060)
-- [ ] Backups, monitoring, error tracking, HTTPS, prod settings
+- [x] Job records and alerts, backups with pruning, optional Sentry, logging, HTTPS and prod settings review (D-062, doc 18)
+- [ ] Before launch: install pg_dump on the server, set up cron (doc 18), an uptime monitor on `/healthz`, and do the first restore test
 - [x] Subscriptions app and entitlements service (D-060)
-- [ ] Onboarding polish, help docs, support channel
+- [x] Setup checklist with links, help pages, support requests with attachments (D-063)
 
 ## Phase 9 — Later
 - [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement

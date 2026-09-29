@@ -1,0 +1,13 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Bill water by meter reading instead of a flat fee.</p>
+<ol>
+  <li>Add a <strong>meter</strong> to a property on <a href="{% url 'meters:list' %}">Water</a>: the units it serves and
+    the rate per m³. A shared meter splits equally or by weight.</li>
+  <li>The first reading is a starting point and bills nothing.</li>
+  <li>Each month, do a <strong>reading round</strong> on your phone: one box per meter. A photo is optional.</li>
+  <li>Someone who may approve checks the readings. Unusual ones are flagged (lower than last time, no use, much higher,
+    long gap) and need a note.</li>
+  <li>Approved water is billed on the next month's invoice with the readings shown.</li>
+</ol>
+{% endblock %}

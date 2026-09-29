@@ -26,9 +26,11 @@ from mpesa.views import PayLinkStatusView, PayLinkView
 from notifications.hook_views import AfricasTalkingHookView, WhatsAppHookView
 from payments.views import PublicReceiptView
 from properties.views import VacancyView
+from support.views import HealthzView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("healthz", HealthzView.as_view(), name="healthz"),
     path("properties/", include("properties.urls")),
     path("tenants/", include("tenants.urls")),
     path("leases/", include("leases.urls")),
@@ -53,6 +55,7 @@ urlpatterns = [
     path("search/", include("search.urls")),
     path("my/", include("portal.urls")),
     path("subscription/", include("subscriptions.urls")),
+    path("", include("support.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

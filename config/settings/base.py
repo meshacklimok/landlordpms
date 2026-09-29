@@ -124,6 +124,9 @@ DATABASES = {
         "PASSWORD": os.getenv("DB_PASSWORD", ""),
         "HOST": os.getenv("DB_HOST", "localhost"),
         "PORT": os.getenv("DB_PORT", "5432"),
+        # Seconds a connection is reused; 0 opens one per request.
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "0")),
+        "CONN_HEALTH_CHECKS": True,
     }
 }
 
@@ -245,5 +248,55 @@ FIELD_ENCRYPTION_KEYS = os.getenv("FIELD_ENCRYPTION_KEYS", "")
 MPESA_CLIENT = os.getenv("MPESA_CLIENT", "mpesa.daraja.DarajaClient")
 # Optional: only these IPs may call the M-Pesa callbacks (comma-separated). Empty allows any.
 MPESA_ALLOWED_IPS = [ip.strip() for ip in os.getenv("MPESA_ALLOWED_IPS", "").split(",") if ip.strip()]
+
+# Operations (D-062, doc 18).
+# Who gets job and health alerts from `check_jobs`; empty falls back to ADMINS.
+OPS_ALERT_EMAILS = os.getenv("OPS_ALERT_EMAILS", "")
+# "Name <email>, Name <email>": errors are emailed here when Sentry is not used.
+ADMINS = [(a.split("<")[0].strip(), a.split("<")[1].rstrip(">").strip()) if "<" in a else (a.strip(), a.strip())
+          for a in os.getenv("ADMINS", "").split(",") if a.strip()]
+# Where `backup` writes; outside the web root. Empty means <repo>/backups.
+BACKUP_DIR = os.getenv("BACKUP_DIR", "")
+PG_DUMP = os.getenv("PG_DUMP", "")
+PG_RESTORE = os.getenv("PG_RESTORE", "")
+
+# Support and the public pages (D-061, D-063).
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
+SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "")
+DATA_PROTECTION_EMAIL = os.getenv("DATA_PROTECTION_EMAIL", "")
+HOSTING_LOCATION = os.getenv("HOSTING_LOCATION", "")
+
+# Plain lines to the console; the process manager keeps them. Never log request bodies, codes or secrets.
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"}},
+    "filters": {"require_debug_false": {"()": "django.utils.log.RequireDebugFalse"}},
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "plain"},
+        "mail_admins": {"class": "django.utils.log.AdminEmailHandler", "level": "ERROR",
+                        "filters": ["require_debug_false"]},
+    },
+    "root": {"handlers": ["console"], "level": LOG_LEVEL},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        "django.request": {"handlers": ["console", "mail_admins"], "level": "ERROR", "propagate": False},
+        "django.security": {"handlers": ["console", "mail_admins"], "level": "WARNING", "propagate": False},
+    },
+}
+
+# Error tracking (D-062 item 5): only when SENTRY_DSN is set and sentry-sdk is installed.
+SENTRY_DSN = os.getenv("SENTRY_DSN", "")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+    except ImportError as e:
+        raise ImproperlyConfigured("SENTRY_DSN is set but sentry-sdk is not installed.") from e
+    sentry_sdk.init(dsn=SENTRY_DSN, send_default_pii=False, traces_sample_rate=0.1,
+                    environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
+                    release=os.getenv("SENTRY_RELEASE") or None)
+    # Sentry has the errors; do not email them as well.
+    LOGGING["loggers"]["django.request"]["handlers"] = ["console"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

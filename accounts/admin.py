@@ -2,7 +2,7 @@
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.db.models import Count, Q
+from django.db.models import Count, Min, OuterRef, Q, Subquery
 
 from .models import (
     Branch,
@@ -81,19 +81,41 @@ class BranchInline(admin.TabularInline):
         return Branch.all_objects.all()
 
 
+class InvoicedFilter(admin.SimpleListFilter):
+    title = "has invoiced"
+    parameter_name = "invoiced"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "Yes"), ("no", "No")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(_first_invoice__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(_first_invoice__isnull=True)
+        return queryset
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ["name", "org_type", "status", "member_count", "property_count", "created_at", "archived_at"]
-    list_filter = ["status", "org_type"]
+    list_display = ["name", "org_type", "status", "member_count", "property_count", "time_to_first_invoice",
+                    "created_at", "archived_at"]
+    list_filter = ["status", "org_type", InvoicedFilter]
     search_fields = ["name", "kra_pin", "billing_phone", "billing_email"]
     readonly_fields = ["public_id", "created_at", "updated_at", "created_by", "archived_at", "archived_by"]
     inlines = [MembershipInline, BranchInline]
     actions = ["freeze", "unfreeze"]
 
     def get_queryset(self, request):
+        from billing.models import Invoice
+
+        # First invoice that left draft (D-063 item 5): how long a new organization takes to get going.
+        first_invoice = (Invoice.objects.filter(organization=OuterRef("pk")).exclude(status=Invoice.Status.DRAFT)
+                         .values("organization").annotate(first=Min("created_at")).values("first"))
         return Organization.all_objects.annotate(
             _members=Count("memberships", filter=Q(memberships__is_active=True), distinct=True),
             _properties=Count("properties", distinct=True),
+            _first_invoice=Subquery(first_invoice),
         )
 
     @admin.display(ordering="_members", description="Active members")
@@ -103,6 +125,13 @@ class OrganizationAdmin(admin.ModelAdmin):
     @admin.display(ordering="_properties", description="Properties")
     def property_count(self, obj):
         return obj._properties
+
+    @admin.display(ordering="_first_invoice", description="Time to first invoice")
+    def time_to_first_invoice(self, obj):
+        if obj._first_invoice is None:
+            return "—"
+        days = (obj._first_invoice - obj.created_at).days
+        return "same day" if days < 1 else f"{days} day{'s' if days != 1 else ''}"
 
     @admin.action(description="Freeze selected organizations")
     def freeze(self, request, queryset):

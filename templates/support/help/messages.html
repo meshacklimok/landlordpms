@@ -1,0 +1,14 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Tenants get invoices, reminders and receipts by SMS, or WhatsApp if they agreed to it.</p>
+<ul>
+  <li>Choose which messages go out and when reminders are sent on
+    <a href="{% url 'notifications:settings' %}">message settings</a>. Change the wording on
+    <a href="{% url 'notifications:templates' %}">templates</a>.</li>
+  <li>Messages outside quiet hours (21:00 to 07:00 by default) wait until morning.</li>
+  <li>Send an <strong>announcement</strong> to all tenants or a group, with a preview and cost first.</li>
+  <li>Tenants can reply STOP to stop messages. Required messages still go.</li>
+  <li><strong>SMS credit.</strong> Each SMS part is paid from your SMS credit; top up on the
+    <a href="{% url 'subscriptions:page' %}">subscription page</a>. Login codes and invitations are free.</li>
+</ul>
+{% endblock %}

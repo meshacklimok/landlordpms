@@ -1,0 +1,13 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>New workspaces get a <strong>30-day trial</strong> of the Business plan.</p>
+<ul>
+  <li>Plans differ in how many units and team members you can have. Free is for up to 5 units.</li>
+  <li>The owner chooses a plan on the <a href="{% url 'subscriptions:page' %}">subscription page</a>. An invoice is
+    issued; pay it by M-Pesa to our Paybill with the invoice number as the account.</li>
+  <li>We record the payment and send a receipt. The period starts on the day you pay.</li>
+  <li>A renewal invoice comes 7 days before the period ends. Unpaid 14 days after the end, the workspace becomes
+    read only: you can still see and export everything, but not add anything new, until you pay.</li>
+  <li>Changing plan mid-period gives you credit for the days you have not used.</li>
+</ul>
+{% endblock %}

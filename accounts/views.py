@@ -15,12 +15,9 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
 from audit import services as audit
-from leases.models import Lease
-from properties.models import Property, Unit
 from reports import home as reports_home
-from tenants.models import Tenant
 
-from . import forms, identity, mfa, services
+from . import forms, identity, mfa, services, setup
 from .capabilities import OWNER_CRITICAL
 from .middleware import SESSION_KEY
 from .mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin, VerifiedUserRequiredMixin
@@ -290,18 +287,14 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         m = self.request.membership
         org = m.organization
-        has_property = Property.objects.for_org(org).exists()
-        has_unit = Unit.objects.for_org(org).exists()
-        # Derived from data, no table (doc 11 §16). Later steps light up in Phase 2–4.
-        ctx["checklist"] = [
-            (_("Create your workspace"), True),
-            (_("Add a property"), has_property),
-            (_("Add units"), has_unit),
-            (_("Add tenants"), Tenant.objects.for_org(org).exists()),
-            (_("Create leases and set rent"), Lease.all_objects.for_org(org).exists()),
-            (_("Add a payment method"), False),
-        ]
-        ctx["show_checklist"] = can(m, "properties.manage")
+        if can(m, "properties.manage"):
+            steps = setup.checklist(org)
+            required = [s for s in steps if not s.optional]
+            done = sum(s.done for s in required)
+            ctx["checklist"] = steps
+            ctx["checklist_done"], ctx["checklist_total"] = done, len(required)
+            ctx["show_checklist"] = done < len(required)
+            ctx["help_url"] = reverse("support:help_topic", args=["getting-started"])
         ctx["show_staff"] = can(m, "staff.view")
         ctx["show_roles"] = can(m, "roles.manage")
         ctx["suggest_mfa"] = mfa.suggest(m)
