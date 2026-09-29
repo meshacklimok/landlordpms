@@ -29,7 +29,13 @@
           {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}
           <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-muted">{% trans "Not tracked yet" %}</td></tr>
         </tbody>
-        <tfoot><tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap">{{ st.due|money:cur }}</td></tr></tfoot>
+        <tfoot>
+          <tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap">{{ st.due|money:cur }}</td></tr>
+          {% if st.shows_remittances %}
+          <tr><td>{% trans "Paid to the owner" %}</td><td class="text-end text-nowrap">−{{ st.remitted|money:cur }}</td></tr>
+          <tr class="fw-semibold"><td>{% trans "Still to pay" %}</td><td class="text-end text-nowrap {% if st.remaining > 0 %}text-danger{% endif %}">{{ st.remaining|money:cur }}</td></tr>
+          {% endif %}
+        </tfoot>
       </table>
     </div></div>
   </div>
@@ -39,9 +45,80 @@
       <div>{% trans "Owed by tenants at month end" %}: <span class="fw-semibold">{{ st.balance|money:cur }}</span></div>
       {% if st.deposit %}<div>{% trans "Deposits received (held, not included)" %}: <span class="fw-semibold">{{ st.deposit|money:cur }}</span></div>{% endif %}
       {% if can_export %}<a class="btn btn-sm btn-primary mt-2" href="{% url 'reports:owner_statement_pdf' %}?{{ query }}">{% trans "Download PDF" %}</a>{% endif %}
+      {% if st.shows_remittances %}<a class="btn btn-sm btn-outline-secondary mt-2" href="{% url 'reports:owner_account' st.owner.public_id %}">{% trans "Owner account" %}</a>{% endif %}
     </div></div>
   </div>
 </div>
+
+{% if st.shows_remittances %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-2">
+      <h2 class="h6">{% trans "Payments to the owner for this month" %}</h2>
+      {% include "reports/_remittances.html" with remittances=st.remittances back="statement" %}
+      {% if can_remit %}
+      <form method="post" action="{% url 'reports:remittance_create' %}" class="row g-2 mt-1 small">
+        {% csrf_token %}
+        <input type="hidden" name="owner" value="{{ st.owner.public_id }}">
+        <input type="hidden" name="month" value="{{ st.month|date:'Y-m' }}">
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.amount.id_for_label }}">{{ remit_form.amount.label }}</label>{{ remit_form.amount }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.paid_on.id_for_label }}">{{ remit_form.paid_on.label }}</label>{{ remit_form.paid_on }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.method.id_for_label }}">{{ remit_form.method.label }}</label>{{ remit_form.method }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.reference.id_for_label }}">{{ remit_form.reference.label }}</label>{{ remit_form.reference }}</div>
+        <div class="col-md-8"><label class="form-label mb-0" for="{{ remit_form.note.id_for_label }}">{{ remit_form.note.label }}</label>{{ remit_form.note }}</div>
+        <div class="col-12"><button class="btn btn-sm btn-primary">{% trans "Record payment to the owner" %}</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-2 small">
+      <h2 class="h6">{% trans "Send to the owner" %}</h2>
+      {% if can_send_statement %}
+        {% if send_blocker %}
+        <p class="text-muted mb-2">{{ send_blocker }}</p>
+        {% else %}
+        <form method="post" action="{% url 'reports:statement_send' %}" class="mb-2"
+              data-confirm="{% trans 'Send this statement to the owner now?' %}" onsubmit="return confirm(this.dataset.confirm)">
+          {% csrf_token %}
+          <input type="hidden" name="owner" value="{{ st.owner.public_id }}">
+          <input type="hidden" name="month" value="{{ st.month|date:'Y-m' }}">
+          <div class="mb-1">
+            {% if st.owner.email %}{% blocktrans with e=st.owner.email %}The PDF is emailed to {{ e }}.{% endblocktrans %}
+            {% else %}{% trans "The owner has no email, so only an SMS summary can go." %}{% endif %}
+          </div>
+          {% if st.owner.phone %}
+          <div class="form-check mb-1">{{ send_form.sms }} <label class="form-check-label" for="{{ send_form.sms.id_for_label }}">{{ send_form.sms.label }} ({{ st.owner.phone }})</label></div>
+          {% endif %}
+          <button class="btn btn-sm btn-primary">{% trans "Send to owner" %}</button>
+        </form>
+        {% endif %}
+      {% endif %}
+      {% if sends %}
+      <table class="table table-sm mb-0">
+        <thead><tr><th>{% trans "Number" %}</th><th>{% trans "Sent" %}</th><th>{% trans "Email" %}</th><th>{% trans "SMS" %}</th><th class="text-end">{% trans "Due" %}</th><th class="text-end">{% trans "Paid" %}</th></tr></thead>
+        <tbody>
+        {% for send in sends %}
+          <tr>
+            <td><a href="{% url 'reports:statement_send_pdf' send.public_id %}">{{ send.number }}</a></td>
+            <td class="text-nowrap">{{ send.sent_at|date:"d M Y H:i" }}{% if send.sent_by %}<br><span class="text-muted">{{ send.sent_by }}</span>{% endif %}</td>
+            <td>{% if send.email_status == "SENT" %}<span class="badge text-bg-success">{% trans "Emailed" %}</span>
+                {% elif send.email_status == "FAILED" %}<span class="badge text-bg-danger" title="{{ send.email_error }}">{% trans "Email failed" %}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if send.sms %}{{ send.sms.get_status_display }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end text-nowrap">{{ send.due|money:cur }}</td>
+            <td class="text-end text-nowrap">{{ send.remitted|money:cur }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% elif not can_send_statement %}
+      <p class="text-muted mb-0">{% trans "Not sent yet." %}</p>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+{% endif %}
 
 {% for block in st.blocks %}
 <h2 class="h6 mt-3">{{ block.property.name }}

@@ -27,7 +27,7 @@ from mpesa.inbox import visible_transactions
 from mpesa.models import MpesaTransaction
 from payments.selectors import pending_review
 from properties import selectors as property_selectors
-from reports import metrics
+from reports import metrics, owners
 
 # Rows listed on the home page before "see all".
 SHORT_LIST = 5
@@ -89,6 +89,14 @@ def _readings_to_approve(m: Membership) -> Task | None:
                 reverse("meters:approvals"))
 
 
+def _statements_to_send(m: Membership, today: datetime.date) -> Task | None:
+    n, month = owners.to_send(m, today)
+    if not n:
+        return None
+    return Task("statements", n, owners.to_send_label(n), reverse("reports:owner_statement"),
+                f"{month:%B %Y}")
+
+
 def _calls(m: Membership, today: datetime.date) -> list[Task]:
     # Calls are work only for those who record them; a read-only viewer can still open the list.
     if not (can(m, "invoices.view") and can(m, "arrears.follow_up")):
@@ -146,7 +154,7 @@ def home(membership: Membership, today: datetime.date | None = None) -> Home:
     today = today or timezone.localdate()
     out = Home()
     tasks = [_payments_to_confirm(membership), _mpesa_to_match(membership), _readings_to_approve(membership),
-             *_calls(membership, today),
+             _statements_to_send(membership, today), *_calls(membership, today),
              _draft_leases(membership)]
     # Vacancies are work for someone who can let them, and context for everyone else.
     if can(membership, "leases.draft") or can(membership, "prospects.manage"):

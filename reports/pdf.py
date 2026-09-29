@@ -133,6 +133,13 @@ def render_statement(st: Statement) -> bytes:
         [_("Due to the owner"), format_money(st.due, c)],
     ]
     summary_table = _table(summary, first_width=80 * mm)
+    paid = []
+    if st.shows_remittances:
+        paid = [["", ""], [_("Paid to the owner"), format_money(st.remitted, c)]]
+        paid += [["  " + _("%(day)s, %(method)s %(ref)s") % {
+            "day": f"{r.paid_on:%d %b %Y}", "method": r.get_method_display(), "ref": r.reference},
+            format_money(r.amount, c)] for r in st.remittances]
+        paid.append([_("Still to pay"), format_money(st.remaining, c)])
     story = [
         _p(org.display_name, HEAD),
         _p(_("Owner statement for %(month)s") % {"month": st.label}, TITLE),
@@ -145,6 +152,8 @@ def render_statement(st: Statement) -> bytes:
              [_("Owed by tenants at month end"), format_money(st.balance, c)]]
     if st.deposit:
         extra.insert(0, [_("Deposits received (held, not included)"), format_money(st.deposit, c)])
+    if paid:
+        story += [Spacer(1, 3 * mm), _table(paid, first_width=80 * mm)]
     story += [Spacer(1, 3 * mm), _table([["", ""], *extra], total=False, first_width=80 * mm)]
     head = [_("Unit"), _("Tenant"), _("Billed"), _("Collected"), _("Deposit"), _("Owed at month end")]
     for block in st.blocks:

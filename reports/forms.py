@@ -1,7 +1,11 @@
+from decimal import Decimal
+
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from accounts.models import Organization
+
+from .models import OwnerRemittance
 
 
 class TaxResidenceForm(forms.Form):
@@ -46,3 +50,23 @@ class OwnerStatementForm(forms.Form):
             return None
         self.is_valid()
         return None if name in self.errors else self.cleaned_data.get(name)
+
+
+class RemittanceForm(forms.Form):
+    """A payment to the owner against the statement month shown (D-058)."""
+
+    amount = forms.DecimalField(label=_("Amount"), max_digits=14, decimal_places=2, min_value=Decimal("0.01"),
+                                widget=forms.NumberInput(attrs={"class": "form-control form-control-sm",
+                                                                "step": "0.01"}))
+    paid_on = forms.DateField(label=_("Date paid"), widget=forms.DateInput(
+        attrs={"type": "date", "class": "form-control form-control-sm"}, format="%Y-%m-%d"))
+    method = forms.ChoiceField(label=_("Method"), choices=OwnerRemittance.Method.choices,
+                               widget=forms.Select(attrs={"class": "form-select form-select-sm"}))
+    reference = forms.CharField(label=_("Reference"), max_length=60, required=False,
+                                widget=forms.TextInput(attrs={"class": "form-control form-control-sm"}))
+    note = forms.CharField(label=_("Note"), max_length=300, required=False,
+                           widget=forms.TextInput(attrs={"class": "form-control form-control-sm"}))
+
+
+class SendStatementForm(forms.Form):
+    sms = forms.BooleanField(label=_("Also text the summary by SMS"), required=False)

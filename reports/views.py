@@ -1,4 +1,5 @@
-"""Reports: the dashboard (D-051), the annual rental income pack (D-050) and the owner statement (D-053).
+"""Reports: the dashboard (D-051), the annual rental income pack (D-050), the owner statement (D-053)
+and payments to owners (D-058).
 
 Thin views; reports.metrics and reports.income do the work.
 """
@@ -7,7 +8,7 @@ import csv
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -18,7 +19,8 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from properties.models import Property
 
-from . import forms, income, metrics, statements
+from . import forms, income, metrics, owners, statements
+from .models import OwnerRemittance, OwnerStatementSend
 from .pdf import render_pack, render_statement
 
 CSV_KINDS = ("months", "properties", "receipts")
@@ -239,17 +241,33 @@ def _statement(request):
     return form, st
 
 
+def _statement_url(owner_key, month) -> str:
+    return f"{reverse('reports:owner_statement')}?owner={owner_key}&month={month:%Y-%m}"
+
+
 class OwnerStatementView(CapabilityRequiredMixin, View):
     template_name = "reports/owner_statement.html"
     required_capability = "reports.view_financial"
 
     def get(self, request):
         form, st = _statement(request)
+        m = request.membership
         query = f"owner={st.owner.public_id if st.owner else statements.NO_OWNER}&month={st.month:%Y-%m}" if st else ""
-        return render(request, self.template_name, {
-            "form": form, "st": st, "query": query, "can_export": can(request.membership, "reports.export"),
-            "can_owners": can(request.membership, "properties.manage"),
-        })
+        context = {
+            "form": form, "st": st, "query": query, "can_export": can(m, "reports.export"),
+            "can_owners": can(m, "properties.manage"),
+        }
+        if st is not None and st.shows_remittances:
+            context.update({
+                "can_remit": can(m, "owners.remit"),
+                "remit_form": forms.RemittanceForm(initial={
+                    "paid_on": timezone.localdate(), "amount": st.remaining if st.remaining > 0 else None}),
+                "send_blocker": owners.send_blocker(m, st),
+                "can_send_statement": can(m, "owners.send_statement"),
+                "send_form": forms.SendStatementForm(initial={"sms": not st.owner.email}),
+                "sends": owners.visible_sends(m, st.owner, st.month),
+            })
+        return render(request, self.template_name, context)
 
 
 class OwnerStatementPdfView(CapabilityRequiredMixin, View):
@@ -262,7 +280,118 @@ class OwnerStatementPdfView(CapabilityRequiredMixin, View):
         if st is None:
             raise Http404
         response = HttpResponse(render_statement(st), content_type="application/pdf")
-        name = st.owner.name if st.owner else request.organization.name
-        slug = "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-")[:40] or "owner"
-        response["Content-Disposition"] = f'attachment; filename="owner-statement-{slug}-{st.month:%Y-%m}.pdf"'
+        response["Content-Disposition"] = f'attachment; filename="{owners.statement_filename(st)}"'
         return response
+
+
+# ---------------------------------------------------------------------------
+# Payments to owners and sending the statement (D-058)
+# ---------------------------------------------------------------------------
+
+
+def _posted_statement(request):
+    """The owner and month a form on the statement page was posted for."""
+    owner = owners.visible_owner(request.membership, request.POST.get("owner", ""))
+    if owner is None:
+        raise Http404
+    form = forms.OwnerStatementForm(request.POST, owners=[(str(owner.public_id), owner.name)])
+    month = form.value("month")
+    if month is None:
+        raise Http404
+    return owner, metrics.month_start(month)
+
+
+class RemittanceCreateView(CapabilityRequiredMixin, View):
+    required_capability = "owners.remit"
+
+    def post(self, request):
+        owner, month = _posted_statement(request)
+        form = forms.RemittanceForm(request.POST)
+        if form.is_valid():
+            try:
+                owners.record_remittance(request.membership, owner, month=month, request=request, **form.cleaned_data)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            else:
+                messages.success(request, _("Payment to the owner recorded."))
+        else:
+            messages.error(request, " ".join(e for errors in form.errors.values() for e in errors))
+        return redirect(_statement_url(owner.public_id, month))
+
+
+class RemittanceVoidView(CapabilityRequiredMixin, View):
+    required_capability = "owners.remit"
+
+    def post(self, request, public_id):
+        m = request.membership
+        remittance = OwnerRemittance.objects.filter(organization=m.organization, public_id=public_id).first()
+        if remittance is None or owners.visible_owner(m, remittance.owner.public_id) is None:
+            raise Http404
+        try:
+            owners.void_remittance(m, remittance, request.POST.get("reason", ""), request=request)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, _("Payment voided."))
+        if request.POST.get("back") == "account":
+            return redirect("reports:owner_account", remittance.owner.public_id)
+        return redirect(_statement_url(remittance.owner.public_id, remittance.month))
+
+
+class StatementSendView(CapabilityRequiredMixin, View):
+    required_capability = "owners.send_statement"
+
+    def post(self, request):
+        m = request.membership
+        owner, month = _posted_statement(request)
+        st = statements.statement(m, str(owner.public_id), month)
+        if st is None:
+            raise Http404
+        form = forms.SendStatementForm(request.POST)
+        form.is_valid()
+        try:
+            send = owners.send_statement(m, st, sms=form.cleaned_data.get("sms", False), request=request)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            if send.email_status == send.EmailStatus.FAILED:
+                messages.error(request, _("Statement %(n)s saved, but the email failed: %(e)s")
+                               % {"n": send.number, "e": send.email_error})
+            else:
+                messages.success(request, _("Statement %(n)s sent.") % {"n": send.number})
+        return redirect(_statement_url(owner.public_id, month))
+
+
+class StatementSendPdfView(CapabilityRequiredMixin, View):
+    """The PDF exactly as it was sent. Never public."""
+
+    required_capability = "reports.view_financial"
+
+    def get(self, request, public_id):
+        m = request.membership
+        send = OwnerStatementSend.objects.filter(organization=m.organization, public_id=public_id).first()
+        if send is None or owners.visible_owner(m, send.owner.public_id) is None:
+            raise Http404
+        try:
+            handle = send.pdf.open("rb")
+        except FileNotFoundError:
+            raise Http404 from None
+        response = FileResponse(handle, content_type="application/pdf", filename=f"{send.number}.pdf")
+        response["Cache-Control"] = "private, max-age=3600"
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+
+class OwnerAccountView(CapabilityRequiredMixin, View):
+    template_name = "reports/owner_account.html"
+    required_capability = "reports.view_financial"
+
+    def get(self, request, public_id):
+        m = request.membership
+        owner = owners.visible_owner(m, public_id)
+        if owner is None:
+            raise Http404
+        return render(request, self.template_name, {
+            "account": owners.account(m, owner), "owner": owner, "currency": m.organization.currency,
+            "can_remit": can(m, "owners.remit"), "can_owners": can(m, "properties.manage"),
+        })

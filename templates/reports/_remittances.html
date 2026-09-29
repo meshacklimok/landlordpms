@@ -1,0 +1,35 @@
+{% load i18n money %}
+{% if remittances %}
+<table class="table table-sm small align-middle mb-0">
+  <thead><tr>
+    {% if show_month %}<th>{% trans "Month" %}</th>{% endif %}
+    <th>{% trans "Paid" %}</th><th>{% trans "Method" %}</th><th>{% trans "Reference" %}</th><th class="text-end">{% trans "Amount" %}</th>{% if can_remit %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for r in remittances %}
+  <tr{% if r.is_void %} class="text-muted"{% endif %}>
+    {% if show_month %}<td class="text-nowrap">{{ r.month|date:"M Y" }}</td>{% endif %}
+    <td class="text-nowrap">{{ r.paid_on|date:"d M Y" }}{% if r.recorded_by %}<br><span class="text-muted">{{ r.recorded_by }}</span>{% endif %}</td>
+    <td>{{ r.get_method_display }}</td>
+    <td>{{ r.reference|default:"—" }}{% if r.note %}<br><span class="text-muted">{{ r.note }}</span>{% endif %}
+      {% if r.is_void %}<br><span class="badge text-bg-secondary">{% trans "Voided" %}</span> {{ r.void_reason }}{% endif %}</td>
+    <td class="text-end text-nowrap">{% if r.is_void %}<s>{{ r.amount|money:cur }}</s>{% else %}{{ r.amount|money:cur }}{% endif %}</td>
+    {% if can_remit %}
+    <td class="text-end">
+      {% if not r.is_void %}
+      <form method="post" action="{% url 'reports:remittance_void' r.public_id %}" class="d-flex gap-1 justify-content-end"
+            data-confirm="{% trans 'Void this payment to the owner?' %}" onsubmit="return confirm(this.dataset.confirm)">
+        {% csrf_token %}<input type="hidden" name="back" value="{{ back }}">
+        <input name="reason" class="form-control form-control-sm" style="max-width:10rem" placeholder="{% trans 'Reason' %}" aria-label="{% trans 'Reason' %}" required>
+        <button class="btn btn-sm btn-outline-danger">{% trans "Void" %}</button>
+      </form>
+      {% endif %}
+    </td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="small text-muted mb-0">{% trans "No payments to the owner recorded." %}</p>
+{% endif %}

@@ -400,3 +400,38 @@ D-046 item 2, moved to right after Phase 7. Built on `feature/metered-water`, cu
 8. **Capabilities**: `meters.view` (Owner, Manager, Accountant, Caretaker, Viewer), `meters.record` (Owner, Manager, Caretaker), `meters.approve` (Owner, Manager, Accountant) and `meters.manage` to add meters and set rates (Owner, Manager). They are granted to existing roles by a data migration, as with 0010.
 9. **Pages** (`/meters/`): the meters of each property, with their last reading; a phone-friendly **reading round** for a property (one box per meter, the last value shown, an optional photo each); the approval queue with flags and bulk approval of unflagged readings; a meter page with its history and charges. The home page gets a "meter readings to approve" item.
 10. **Not in this step**: electricity meters, tenant-submitted readings, readings in the portal (the invoice line already shows them), SMS about high usage, tiered (block) tariffs, and a standing charge.
+
+### D-058 — Owner remittances and sending the owner statement — ACCEPTED (2026-09-29, open to change before merge)
+D-053 item 7, taken right after metered water. Built on `feature/owner-remittances`, cut from `feature/metered-water`. The user asked for this step before Phase 8.
+1. **Remittances** (`reports.OwnerRemittance`) record money paid out to a property owner. Each has:
+   - the owner and the statement month it pays (the first of the month);
+   - the amount (above zero) and the date paid (not in the future);
+   - the method (M-Pesa, bank, cash, cheque, other), a reference and a note;
+   - who recorded it and when.
+   A mistake is **voided with a reason**, never deleted. Recording and voiding are audited. The app only records the payout: it does not send the money.
+2. **On the statement.** When the statement is for a real owner, it adds "Paid to the owner" (the live remittances for that month) and "Still to pay" (due − paid), and lists the remittances. The PDF shows both figures.
+   - This needs the member to see **every** property of that owner. Otherwise the due figure is partial, so remittances are hidden and a note says why.
+   - "No owner set" (the organization's own properties) has no remittances.
+3. **Owner account page** (`/reports/owners/<id>/`). It shows, for the last 12 months: collected, fee, due, paid and still to pay, with the total still to pay, and every remittance, including voided ones. It needs `reports.view_financial` and full visibility of the owner; otherwise it returns 404.
+4. **Sending the statement.** A "Send to owner" button on the statement page shows only when all of these hold: the owner is real, the member sees every property of that owner, and the month is over.
+   - **Email** with the PDF attached, when the owner has an email.
+   - An optional **SMS summary** (collected, fee, due, paid), when the owner has a phone. It uses the new `owner_statement` notification type (SMS only), sent to the bare number as with the M-Pesa payer (D-045 item 7).
+   - Each send is kept (`OwnerStatementSend`). A send stores:
+     - a number, OST-YYYY-NNNNNN;
+     - the PDF, private and served only to members who can see the statement;
+     - the figures as sent;
+     - the email address with sent/failed and the error;
+     - the SMS message.
+   - Sends are listed on the statement page, and a statement can be sent again after a correction; each send gets a new number. Each send is audited.
+5. **Capabilities.**
+   - `owners.remit`: record and void remittances. Granted to Owner and Accountant.
+   - `owners.send_statement`: send statements. Granted to Owner, Manager and Accountant.
+   - Both are granted to existing roles by a data migration, as with 0010 and 0011.
+6. **Home page.** A new "owner statements to send" item shows, under `owners.send_statement`. It counts owners the member fully sees who have an email or phone and have no statement sent for last month.
+7. **Not in this step**:
+   - paying owners through M-Pesa B2C or the bank;
+   - expenses on the statement;
+   - carrying amounts still to pay beyond the 12 months shown;
+   - WhatsApp;
+   - sending statements automatically;
+   - an owner login beyond the existing Viewer role.

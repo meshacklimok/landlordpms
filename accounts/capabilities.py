@@ -125,6 +125,9 @@ CAPABILITIES: tuple[Cap, ...] = (
     _view("reports.export", "Export reports", sensitive=True),
     _view("dashboard.view_summary", "See the summary dashboard"),
     _view("dashboard.view_financial", "See financial dashboard figures"),
+    # property owners (D-058)
+    Cap("owners.remit", "Record and void payments made to property owners"),
+    Cap("owners.send_statement", "Send monthly statements to property owners"),
     # audit
     _view("audit.view_own", "See my own activity"),
     _view("audit.view_all", "See the organization's full audit log", org_wide=True),
@@ -175,7 +178,7 @@ _MANAGER = _caps(
     "expenses.view", "expenses.submit",
     "documents.view", "documents.upload", "documents.manage", "documents.share_with_tenant",
     "reports.view_basic", "reports.view_financial", "reports.export",
-    "dashboard.view_summary", "dashboard.view_financial",
+    "dashboard.view_summary", "dashboard.view_financial", "owners.send_statement",
     "audit.view_own",
 )
 
@@ -196,7 +199,8 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
             "payment_accounts.view", "mpesa.view_transactions", "mpesa.match",
             "expenses.view", "expenses.submit", "expenses.approve",
             "reports.view_basic", "reports.view_financial", "reports.export",
-            "dashboard.view_summary", "dashboard.view_financial", "audit.view_own",
+            "dashboard.view_summary", "dashboard.view_financial", "owners.remit", "owners.send_statement",
+            "audit.view_own",
         ),
     ),
     TemplateDef(

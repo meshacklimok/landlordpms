@@ -1,5 +1,5 @@
 """The monthly owner statement (D-053): what was billed and collected on an owner's properties,
-the management fee, and what is due to the owner.
+the management fee, what is due to the owner and what was paid out to them (D-058).
 
 Live figures, drawn on request; nothing is stored. Collected is cash: confirmed payments dated
 in the month, split across their invoices as in the income pack (D-050).
@@ -25,6 +25,7 @@ from properties.models import Property, PropertyOwner, Unit
 
 from .income import _invoice_shares, _split
 from .metrics import LIVE_INVOICE, add_months, month_end, month_start
+from .models import OwnerRemittance
 
 NO_OWNER = "none"
 
@@ -101,6 +102,9 @@ class Statement:
     show_tenants: bool
     notes: list[str] = field(default_factory=list)
     generated_at: datetime.datetime = field(default_factory=timezone.now)
+    # Live payments to the owner for the month (D-058). None when not shown: no owner, or the
+    # member does not see all of the owner's properties, so the due figure is partial.
+    remittances: list | None = None
 
     @property
     def recipient(self) -> str:
@@ -154,10 +158,30 @@ class Statement:
     def has_fee(self) -> bool:
         return any(b.fee_percent for b in self.blocks)
 
+    @property
+    def shows_remittances(self) -> bool:
+        return self.remittances is not None
+
+    @property
+    def remitted(self) -> Decimal:
+        return sum((r.amount for r in self.remittances or ()), ZERO)
+
+    @property
+    def remaining(self) -> Decimal:
+        return self.due - self.remitted
+
 
 def default_month(today: datetime.date | None = None) -> datetime.date:
     """Last month: the one a statement is usually sent for."""
     return add_months(month_start(today or timezone.localdate()), -1)
+
+
+def fully_sees(membership: Membership, owner: PropertyOwner) -> bool:
+    """Whether the member sees every property of this owner, archived ones included."""
+    ids = accessible_property_ids(membership)
+    if ids is None:
+        return True
+    return not Property.all_objects.filter(owner=owner).exclude(pk__in=ids).exists()
 
 
 def owner_choices(membership: Membership) -> list[tuple[str, str]]:
@@ -246,6 +270,9 @@ def statement(membership: Membership, owner_key: str, month: datetime.date) -> S
         block.lines.sort(key=lambda row: (row.lease.unit.code, row.lease.start_date, row.lease.pk))
     result = Statement(organization=org, owner=owner, month=month, show_tenants=show_tenants,
                        blocks=[b for b in blocks.values() if b.lines or b.rentable])
+    if owner is not None and fully_sees(membership, owner):
+        result.remittances = list(OwnerRemittance.objects.live().filter(owner=owner, month=month)
+                                  .select_related("recorded_by").order_by("paid_on", "pk"))
     result.notes = _notes(result, membership, last)
     return result
 
@@ -261,6 +288,8 @@ def _notes(st: Statement, membership: Membership, last: datetime.date) -> list[s
     notes.append(_("Expenses are not tracked yet, so none are taken off."))
     if accessible_property_ids(membership) is not None:
         notes.append(_("Only the properties you can see are included."))
+    if st.owner is not None and not st.shows_remittances:
+        notes.append(_("Payments to the owner are not shown: you do not see all of this owner's properties."))
     if not st.show_tenants:
         notes.append(_("Tenant names are left out for your role."))
     notes.append(_("Figures as recorded on %(day)s: a late payment or a correction changes past months.")

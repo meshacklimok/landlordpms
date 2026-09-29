@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n access %}
 {% block title %}{{ owner.name }}{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
@@ -12,5 +12,8 @@
   <h2 class="h6 mt-4">{% trans "Properties" %}</h2>
   <ul class="small">{% for p in props %}<li>{{ p.name }}{% if p.management_fee_percent is not None %} · {% blocktrans with f=p.management_fee_percent|floatformat:"-2" %}fee {{ f }}%{% endblocktrans %}{% endif %}</li>{% endfor %}</ul>
   {% endif %}{% endwith %}
+  {% if membership|can:"reports.view_financial" %}
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:owner_account' owner.public_id %}">{% trans "Owner account: statements and payments" %}</a>
+  {% endif %}
 </div>
 {% endblock %}
