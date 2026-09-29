@@ -1,12 +1,16 @@
-"""Invoices and the rent ledger (doc 11 §8, doc 14 A2–A3, D-042).
+"""Invoices and the rent ledger (doc 11 §8, doc 14 A2–A3, D-042, D-049).
 
-Monthly generation is idempotent: every generated line carries its billing month, and
+Generation is idempotent: every generated line carries its billing month, and
 (lease, billing_month, charge_type) is unique among lines that are not void. Running the job
 again, or two people pressing Generate at once, adds only what is missing.
 
-Invoices go out `invoice_lead_days` before the month (rent is paid in advance), are due on the
-lease's due day and become overdue after its grace days. Partial months are prorated by days
-unless the organization bills them in full.
+A lease is billed per period: one month, or three or twelve months counted from its start
+month (D-049). A period's invoice has one line per month per charge, so every month is still
+prorated, rebilled and checked on its own.
+
+Invoices go out `invoice_lead_days` before the period (rent is paid in advance), are due on the
+lease's due day in the period's first month and become overdue after its grace days. Partial
+months are prorated by days unless the organization bills them in full.
 """
 
 import calendar
@@ -51,6 +55,24 @@ def next_month(day: datetime.date) -> datetime.date:
     return month_end(day) + DAY
 
 
+def add_months(month: datetime.date, n: int) -> datetime.date:
+    """The first day of the month `n` months after `month`."""
+    years, index = divmod(month.month - 1 + n, 12)
+    return datetime.date(month.year + years, index + 1, 1)
+
+
+def period_months(lease: Lease, month: datetime.date) -> list[datetime.date]:
+    """The months of the lease's billing period that holds `month` (D-049)."""
+    month = month_start(month)
+    n = lease.months_per_period
+    anchor = month_start(lease.start_date)
+    if n == 1 or month < anchor:
+        return [month]
+    offset = (month.year - anchor.year) * 12 + month.month - anchor.month
+    first = add_months(anchor, offset - offset % n)
+    return [add_months(first, i) for i in range(n)]
+
+
 def months_to_bill(org: Organization, today: datetime.date) -> list[datetime.date]:
     """This month, plus next month once we are within the organization's lead days of it."""
     months = [month_start(today)]
@@ -76,6 +98,7 @@ class DraftLine:
     amount: Decimal
     service_start: datetime.date
     service_end: datetime.date
+    billing_month: datetime.date
 
 
 @dataclass
@@ -165,7 +188,7 @@ def lines_for_month(lease: Lease, month: datetime.date) -> list[DraftLine]:
         amount = _amount(charge, month, prorate)
         if amount > 0:
             lines.append(DraftLine(charge.charge_type, _describe(charge, month, prorate), amount,
-                                   charge.pieces[0].start, charge.pieces[-1].end))
+                                   charge.pieces[0].start, charge.pieces[-1].end, month_start(month)))
     return lines
 
 
@@ -180,7 +203,7 @@ def rent_charge_type(org: Organization) -> ChargeType:
 
 
 def _due_date(lease: Lease, month: datetime.date, start: datetime.date, issued: datetime.date) -> datetime.date:
-    """The lease's due day in the billed month, but never before the tenant moves in or the invoice exists."""
+    """The lease's due day in the period's first month, but never before the tenant moves in or the invoice exists."""
     due = month.replace(day=min(lease.due_day, calendar.monthrange(month.year, month.month)[1]))
     return max(due, start, issued)
 
@@ -206,27 +229,29 @@ def _billable(lease: Lease) -> bool:
     return lease.status != Lease.Status.DRAFT and lease.archived_at is None
 
 
-def generate_lease_month(lease: Lease, month: datetime.date, *, actor=None, today=None, due_date=None,
-                         request=None) -> Invoice | None:
-    """Bills whatever of `month` is not billed yet for one lease, as one issued invoice.
+def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, today=None, due_date=None,
+                          request=None) -> Invoice | None:
+    """Bills whatever is not billed yet of the period holding `month` for one lease, as one issued invoice.
 
-    Returns None when there is nothing new to bill. Safe to call any number of times.
-    `due_date` keeps the original due date when a month is billed again after a correction.
+    For a monthly lease the period is the month itself. Returns None when there is nothing new
+    to bill. Safe to call any number of times. `due_date` keeps the original due date when a
+    period is billed again after a correction.
     """
     today = today or timezone.localdate()
-    month = month_start(month)
     with transaction.atomic():
         lease = _lock_lease(lease)
         if not _billable(lease):
             return None
-        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month=month, is_void=False)
-                     .values_list("charge_type_id", flat=True))
-        lines = [ln for ln in lines_for_month(lease, month) if ln.charge_type.pk not in billed]
+        months = period_months(lease, month)
+        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False)
+                     .values_list("billing_month", "charge_type_id"))
+        lines = [ln for m in months for ln in lines_for_month(lease, m)
+                 if (ln.billing_month, ln.charge_type.pk) not in billed]
         if not lines:
             return None
         start = min(ln.service_start for ln in lines)
         end = max(ln.service_end for ln in lines)
-        due = due_date or _due_date(lease, month, start, today)
+        due = due_date or _due_date(lease, months[0], start, today)
         subtotal = sum((ln.amount for ln in lines), ZERO)
         invoice = Invoice.objects.create(
             organization=lease.organization, lease=lease, period_start=start, period_end=end, due_date=due,
@@ -239,16 +264,19 @@ def generate_lease_month(lease: Lease, month: datetime.date, *, actor=None, toda
                     InvoiceLine(organization=lease.organization, invoice=invoice, lease=lease,
                                 charge_type=ln.charge_type, description=ln.description, quantity=1,
                                 unit_price=ln.amount, amount=ln.amount, service_start=ln.service_start,
-                                service_end=ln.service_end, billing_month=month)
+                                service_end=ln.service_end, billing_month=ln.billing_month)
                     for ln in lines])
         except IntegrityError:
             # Billed by someone else after our check; the lease lock makes this a backstop only.
-            raise ValidationError(_("This month was billed at the same time. Refresh and try again.")) from None
+            raise ValidationError(_("This period was billed at the same time. Refresh and try again.")) from None
         _issue(invoice, actor_user=actor.user if actor else None, today=today)
+        first, last = min(ln.billing_month for ln in lines), max(ln.billing_month for ln in lines)
         audit.record("invoice.issue", actor=actor.user if actor else None, organization=lease.organization,
                      obj=invoice, request=request, changes={
                          "number": [None, invoice.number], "lease": [None, lease.number],
-                         "month": [None, month.strftime("%Y-%m")], "total": [None, str(invoice.total)],
+                         "month": [None, first.strftime("%Y-%m") if first == last
+                                   else f"{first:%Y-%m} to {last:%Y-%m}"],
+                         "total": [None, str(invoice.total)],
                          **({} if actor else {"source": [None, "monthly job"]}),
                      })
     return invoice
@@ -274,7 +302,7 @@ class RunResult:
 
 def generate_month(org: Organization, month: datetime.date, *, actor: Membership | None = None,
                    today=None, request=None) -> RunResult:
-    """Bills one month for every lease the actor may bill (every lease when run by the job)."""
+    """Bills the period holding `month` for every lease the actor may bill (every lease when run by the job)."""
     from notifications import triggers  # notifications depends on billing, not the other way round
     if actor is not None:
         if actor.organization_id != org.pk:
@@ -288,7 +316,7 @@ def generate_month(org: Organization, month: datetime.date, *, actor: Membership
         if actor is not None and not can(actor, "invoices.generate", lease.unit.property):
             continue
         try:
-            invoice = generate_lease_month(lease, month, actor=actor, today=today, request=request)
+            invoice = generate_lease_period(lease, month, actor=actor, today=today, request=request)
         except ValidationError as e:
             result.errors.append((lease, e.messages[0]))
             continue
@@ -374,39 +402,41 @@ def rebill_from(lease: Lease, day: datetime.date, *, actor: Membership, reason: 
 
     Rent is billed in advance, so ending a lease, changing its rent or stopping a charge can
     make an issued invoice wrong. For each month billed from `day` on whose lines no longer
-    match the lease, the unpaid invoices are voided and the month billed again with the new
-    terms and the original due date. Invoices with payments are left alone and returned, to be
-    corrected by hand. Runs inside the caller's transaction, which holds the lease lock.
+    match the lease, the unpaid invoices holding it are voided and their periods billed again
+    with the new terms and the original due date. A quarterly or yearly invoice is voided whole,
+    so its earlier months are billed again unchanged. Invoices with payments are left alone and
+    returned, to be corrected by hand. Runs inside the caller's transaction, which holds the
+    lease lock.
     """
-    lines = list(InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day))
-                 .select_related("invoice"))
-    kept: list[Invoice] = []
+    lines = list(InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day)))
+    wrong: set[int] = set()
     for month in sorted({ln.billing_month for ln in lines}):
         billed = [ln for ln in lines if ln.billing_month == month]
         now = {(ln.charge_type.pk, ln.amount, ln.service_start, ln.service_end)
                for ln in lines_for_month(lease, month)}
-        if now == {(ln.charge_type_id, ln.amount, ln.service_start, ln.service_end) for ln in billed}:
+        if now != {(ln.charge_type_id, ln.amount, ln.service_start, ln.service_end) for ln in billed}:
+            wrong |= {ln.invoice_id for ln in billed}
+    kept: list[Invoice] = []
+    freed: dict[datetime.date, datetime.date] = {}  # first month of a period -> its earliest due date
+    for invoice in Invoice.objects.select_for_update().filter(pk__in=wrong, status__in=Invoice.OPEN).order_by("pk"):
+        if invoice.amount_paid > 0:
+            kept.append(invoice)
             continue
-        invoices = Invoice.objects.select_for_update().filter(
-            pk__in={ln.invoice_id for ln in billed}, status__in=Invoice.OPEN).order_by("pk")
-        due = None
-        for invoice in invoices:
-            if invoice.amount_paid > 0:
-                kept.append(invoice)
-                continue
-            due = min(due or invoice.due_date, invoice.due_date)
-            _void(invoice, user=actor.user, reason=reason, request=request)
-        if due is not None:
-            generate_lease_month(lease, month, actor=actor, due_date=due, request=request)
+        months = set(invoice.lines.exclude(billing_month=None).values_list("billing_month", flat=True))
+        _void(invoice, user=actor.user, reason=reason, request=request)
+        for first in {period_months(lease, m)[0] for m in months}:
+            freed[first] = min(freed.get(first, invoice.due_date), invoice.due_date)
+    for first, due in sorted(freed.items()):
+        generate_lease_period(lease, first, actor=actor, due_date=due, request=request)
     return kept
 
 
 def bill_missing(lease: Lease, day: datetime.date, *, actor: Membership, request=None) -> None:
-    """Bills a charge added from `day` for the months that were already billed without it."""
+    """Bills a charge added from `day` for the periods that were already billed without it."""
     months = (InvoiceLine.objects.filter(lease=lease, is_void=False, billing_month__gte=month_start(day))
-              .values_list("billing_month", flat=True).distinct().order_by("billing_month"))
-    for month in list(months):
-        generate_lease_month(lease, month, actor=actor, request=request)
+              .values_list("billing_month", flat=True).distinct())
+    for first in sorted({period_months(lease, m)[0] for m in months}):
+        generate_lease_period(lease, first, actor=actor, request=request)
 
 
 # ---------------------------------------------------------------------------

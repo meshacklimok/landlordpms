@@ -164,6 +164,16 @@ class Invoice(PublicIdModel, TimeStampedModel):
         return self.number or str(_("Draft invoice"))
 
     @property
+    def period_label(self) -> str:
+        """"Mar 2026" for a month, "Mar – May 2026" for a longer period (D-049)."""
+        start, end = self.period_start, self.period_end
+        if (start.year, start.month) == (end.year, end.month):
+            return f"{start:%b %Y}"
+        if start.year == end.year:
+            return f"{start:%b} – {end:%b %Y}"
+        return f"{start:%b %Y} – {end:%b %Y}"
+
+    @property
     def outstanding(self) -> Decimal:
         if self.status in (self.Status.DRAFT, self.Status.VOID):
             return ZERO

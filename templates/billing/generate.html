@@ -7,6 +7,7 @@
   <p class="small text-muted">
     {% trans "Invoices are issued every day on their own for the current month and, a few days before it starts, the next one." %}
     {% trans "Billing a month here issues whatever is not billed yet for the leases you manage. Nothing is billed twice." %}
+    {% trans "Quarterly and yearly leases are billed for the whole period that holds the month." %}
   </p>
   {% if due_months %}<p class="small">{% trans "Billed automatically now:" %} {% for m in due_months %}{{ m|date:"F Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
   <form method="post" novalidate class="mb-3">{% csrf_token %}

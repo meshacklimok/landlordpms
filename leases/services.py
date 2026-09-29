@@ -38,7 +38,8 @@ from tenants.services import visible_tenants
 
 from .models import Lease, LeaseCharge, LeasePayer, LeaseRentChange, LeaseTenant
 
-LEASE_FIELDS = ("start_date", "end_date", "due_day", "grace_days", "notice_days", "deposit_amount", "terms")
+LEASE_FIELDS = ("start_date", "end_date", "billing_frequency", "due_day", "grace_days", "notice_days",
+                "deposit_amount", "terms")
 OPEN_STATUSES = (Lease.Status.DRAFT, Lease.Status.ACTIVE)
 
 
@@ -223,8 +224,8 @@ def open_successor(lease: Lease) -> Lease | None:
 
 @transaction.atomic
 def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_date: datetime.date, rent,
-                 end_date=None, deposit_amount=0, due_day=1, grace_days=3, notice_days=30, terms="",
-                 request=None) -> Lease:
+                 end_date=None, deposit_amount=0, billing_frequency=Lease.Frequency.MONTHLY, due_day=1,
+                 grace_days=3, notice_days=30, terms="", request=None) -> Lease:
     """Creates a DRAFT lease. The first tenant is the primary tenant."""
     _same_org(actor, unit)
     require(actor, "leases.draft", unit.property)
@@ -237,7 +238,8 @@ def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_
     rent = _money(rent, "rent", allow_zero=False)
     lease = Lease(organization=actor.organization, unit=unit, start_date=start_date, end_date=end_date,
                   deposit_amount=_money(deposit_amount or 0, "deposit_amount", allow_zero=True),
-                  due_day=due_day, grace_days=grace_days, notice_days=notice_days, terms=(terms or "").strip(),
+                  billing_frequency=billing_frequency, due_day=due_day, grace_days=grace_days,
+                  notice_days=notice_days, terms=(terms or "").strip(),
                   created_by=actor.user)
     _check_dates(lease)
     lease.save()
@@ -700,7 +702,8 @@ def _start_successor(actor: Membership, lease: Lease, *, unit: Unit, start_date:
         raise ValidationError({"start_date": _("The new lease must start after this one started.")})
     rent = _money(rent, "rent", allow_zero=False)
     new = Lease(organization=lease.organization, unit=unit, start_date=start_date, end_date=end_date,
-                deposit_amount=lease.deposit_amount, due_day=lease.due_day, grace_days=lease.grace_days,
+                deposit_amount=lease.deposit_amount, billing_frequency=lease.billing_frequency,
+                due_day=lease.due_day, grace_days=lease.grace_days,
                 notice_days=lease.notice_days, terms=lease.terms, previous_lease=lease, created_by=actor.user)
     _check_dates(new)
     new.save()

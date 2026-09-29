@@ -71,7 +71,7 @@
           <thead><tr><th>{% trans "Invoice" %}</th><th>{% trans "Period" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
           <tbody>
             {% for a in allocations %}
-            <tr><td><a href="{% url 'billing:invoice' a.invoice.public_id %}">{{ a.invoice.number }}</a></td><td>{{ a.invoice.period_start|date:"M Y" }}</td><td class="text-end num">{{ a.amount|money:lease.currency }}</td></tr>
+            <tr><td><a href="{% url 'billing:invoice' a.invoice.public_id %}">{{ a.invoice.number }}</a></td><td>{{ a.invoice.period_label }}</td><td class="text-end num">{{ a.amount|money:lease.currency }}</td></tr>
             {% endfor %}
             {% if unallocated > 0 %}<tr class="text-body-secondary"><td colspan="2">{% trans "Held as credit" %}{% if payment.state == "confirmed" %} <span class="small">· {% trans "goes to the next invoice when credit is applied" %}</span>{% endif %}</td><td class="text-end num">{{ unallocated|money:lease.currency }}</td></tr>{% endif %}
           </tbody>

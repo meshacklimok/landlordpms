@@ -35,7 +35,8 @@
       <dt class="col-5">{% trans "Dates" %}</dt><dd class="col-7">{{ lease.start_date|date:"j M Y" }} – {% if lease.end_date %}{{ lease.end_date|date:"j M Y" }}{% else %}{% trans "periodic" %}{% endif %}</dd>
       <dt class="col-5">{% trans "Monthly rent" %}</dt><dd class="col-7">{{ lease.currency }} {{ lease.current_rent|floatformat:"2g" }}</dd>
       <dt class="col-5">{% trans "Deposit" %}</dt><dd class="col-7">{{ lease.currency }} {{ lease.deposit_amount|floatformat:"2g" }}</dd>
-      <dt class="col-5">{% trans "Rent due" %}</dt><dd class="col-7">{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of the month, {{ g }} grace days{% endblocktrans %}</dd>
+      <dt class="col-5">{% trans "Billing" %}</dt><dd class="col-7">{{ lease.get_billing_frequency_display }}{% if lease.months_per_period > 1 %} · {% blocktrans with c=lease.currency r=lease.rent_per_period|floatformat:"2g" n=lease.months_per_period %}{{ c }} {{ r }} rent per invoice ({{ n }} months){% endblocktrans %}{% endif %}</dd>
+      <dt class="col-5">{% trans "Rent due" %}</dt><dd class="col-7">{% if lease.months_per_period > 1 %}{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of each period's first month, {{ g }} grace days{% endblocktrans %}{% else %}{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of the month, {{ g }} grace days{% endblocktrans %}{% endif %}</dd>
       <dt class="col-5">{% trans "Notice period" %}</dt><dd class="col-7">{% blocktrans with n=lease.notice_days %}{{ n }} days{% endblocktrans %}</dd>
       {% if lease.activated_at %}<dt class="col-5">{% trans "Activated" %}</dt><dd class="col-7">{{ lease.activated_at|date:"j M Y" }}</dd>{% endif %}
       {% if lease.ended_on %}<dt class="col-5">{% trans "Ended on" %}</dt><dd class="col-7">{{ lease.ended_on|date:"j M Y" }}{% if lease.end_reason %} · {{ lease.end_reason }}{% endif %}</dd>{% endif %}

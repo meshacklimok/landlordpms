@@ -30,6 +30,10 @@ class LeaseForm(forms.Form):
     rent = forms.DecimalField(label=_("Monthly rent (KES)"), max_digits=14, decimal_places=2, min_value=0)
     deposit_amount = forms.DecimalField(label=_("Deposit (KES)"), max_digits=14, decimal_places=2, min_value=0,
                                         initial=0)
+    billing_frequency = forms.ChoiceField(
+        label=_("Billing"), choices=Lease.Frequency.choices, initial=Lease.Frequency.MONTHLY, required=False,
+        help_text=_("Quarterly and yearly leases get one invoice for 3 or 12 months, counted from the start "
+                    "month. Rent and charges are still entered per month."))
     due_day = forms.IntegerField(label=_("Rent due day"), min_value=1, max_value=28, initial=1,
                                  help_text=_("Day of the month rent is due (1–28)."))
     grace_days = forms.IntegerField(label=_("Grace days"), min_value=0, max_value=31, initial=3,
@@ -48,6 +52,9 @@ class LeaseForm(forms.Form):
             del self.fields["tenant"]
             del self.fields["co_tenants"]
 
+    def clean_billing_frequency(self):
+        return self.cleaned_data["billing_frequency"] or Lease.Frequency.MONTHLY
+
     def clean(self):
         data = super().clean()
         tenant = data.get("tenant")
@@ -59,7 +66,8 @@ class LeaseForm(forms.Form):
     def initial_for(lease: Lease) -> dict:
         return {
             "start_date": lease.start_date, "end_date": lease.end_date, "rent": lease.rent_on(lease.start_date),
-            "deposit_amount": lease.deposit_amount, "due_day": lease.due_day, "grace_days": lease.grace_days,
+            "deposit_amount": lease.deposit_amount, "billing_frequency": lease.billing_frequency,
+            "due_day": lease.due_day, "grace_days": lease.grace_days,
             "notice_days": lease.notice_days, "terms": lease.terms,
         }
 

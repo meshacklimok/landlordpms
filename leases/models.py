@@ -44,8 +44,10 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         RENEWED = "RENEWED", _("Renewed")
 
     class Frequency(models.TextChoices):
-        # Quarterly and yearly come with billing support for them.
+        # One invoice per period, counted from the lease's start month (D-049).
         MONTHLY = "MONTHLY", _("Monthly")
+        QUARTERLY = "QUARTERLY", _("Quarterly")
+        YEARLY = "YEARLY", _("Yearly")
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     unit = models.ForeignKey("properties.Unit", on_delete=models.PROTECT, related_name="leases")
@@ -118,6 +120,16 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.number or f"{_('Draft lease')} · {self.unit.code}"
 
     @property
+    def months_per_period(self) -> int:
+        return MONTHS_PER_PERIOD[self.billing_frequency]
+
+    @property
+    def rent_per_period(self):
+        """Today's monthly rent times the months each invoice covers (D-049)."""
+        rent = self.current_rent
+        return rent * self.months_per_period if rent is not None else None
+
+    @property
     def is_draft(self) -> bool:
         return self.status == self.Status.DRAFT
 
@@ -152,6 +164,9 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
     def primary_tenant(self):
         link = next((lt for lt in self.lease_tenants.all() if lt.is_primary), None)
         return link.tenant if link else None
+
+
+MONTHS_PER_PERIOD = {Lease.Frequency.MONTHLY: 1, Lease.Frequency.QUARTERLY: 3, Lease.Frequency.YEARLY: 12}
 
 
 class LeaseTenant(TimeStampedModel):
@@ -204,6 +219,8 @@ class LeaseCharge(TimeStampedModel):
     lease = models.ForeignKey(Lease, on_delete=models.PROTECT, related_name="charges")
     charge_type = models.ForeignKey("billing.ChargeType", on_delete=models.PROTECT, related_name="lease_charges")
     amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
+    # The amount is per month. Charges are billed with the lease's own frequency (D-049), so
+    # this stays MONTHLY.
     frequency = models.CharField(_("billing"), max_length=10, choices=Lease.Frequency.choices,
                                  default=Lease.Frequency.MONTHLY)
     active_from = models.DateField(_("from"))

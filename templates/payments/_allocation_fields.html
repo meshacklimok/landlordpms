@@ -18,7 +18,7 @@
       <tbody>
         {% for invoice, f in rows %}
         <tr>
-          <td><label for="{{ f.id_for_label }}" class="mb-0">{{ invoice.number }}</label><div class="text-body-secondary">{{ invoice.period_start|date:"M Y" }}</div></td>
+          <td><label for="{{ f.id_for_label }}" class="mb-0">{{ invoice.number }}</label><div class="text-body-secondary">{{ invoice.period_label }}</div></td>
           <td class="d-none d-sm-table-cell text-nowrap">{{ invoice.due_date|date:"j M Y" }}</td>
           <td class="text-end num">{{ invoice.outstanding|money:invoice.currency }}</td>
           <td>

@@ -62,7 +62,7 @@
     <h2 class="h6">{% trans "Recent invoices" %}</h2>
     <ul class="list-unstyled small mb-0">
       {% for invoice in invoices %}
-      <li class="d-flex justify-content-between gap-2"><span><a href="{% url 'billing:invoice' invoice.public_id %}">{{ invoice.number|default:_("Draft") }}</a> · {{ invoice.period_start|date:"M Y" }}</span><span class="text-nowrap">{{ invoice.total|money:invoice.currency }} {% include "billing/_invoice_status.html" %}</span></li>
+      <li class="d-flex justify-content-between gap-2"><span><a href="{% url 'billing:invoice' invoice.public_id %}">{{ invoice.number|default:_("Draft") }}</a> · {{ invoice.period_label }}</span><span class="text-nowrap">{{ invoice.total|money:invoice.currency }} {% include "billing/_invoice_status.html" %}</span></li>
       {% empty %}<li class="text-muted">{% trans "No invoices yet." %}</li>{% endfor %}
     </ul>
   </div></div>

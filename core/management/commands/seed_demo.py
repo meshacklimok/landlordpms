@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from accounts.models import Membership, Organization
 from billing import deposits
-from billing.invoicing import generate_lease_month, month_start, months_to_bill, next_month
+from billing.invoicing import generate_lease_period, month_start, months_to_bill, next_month
 from billing.models import ChargeType, Invoice
 from billing.services import ensure_default_charge_types
 from core.kenya import County
@@ -273,7 +273,7 @@ class Command(BaseCommand):
             for lease, spec in leases:
                 lease.refresh_from_db()
                 issue_day = min(max(month, spec["start"]) - lead, self.today)
-                invoice = generate_lease_month(lease, month, actor=self.actor, today=issue_day)
+                invoice = generate_lease_period(lease, month, actor=self.actor, today=issue_day)
                 if invoice is None:
                     continue
                 self._pay(lease, spec, invoice, invoices_paid.get(lease.pk, 0))

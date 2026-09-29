@@ -121,7 +121,7 @@
           <ul class="list-unstyled small mb-0">
             {% for invoice in invoices %}
             <li class="d-flex justify-content-between gap-2 py-1{% if not forloop.last %} border-bottom{% endif %}">
-              <span><a href="{% url 'billing:invoice' invoice.public_id %}" target="_blank" rel="noopener">{{ invoice.number }}</a> <span class="text-body-secondary">· {{ invoice.period_start|date:"M Y" }}</span>{% if invoice.overdue %} <span class="badge bg-danger-subtle text-danger-emphasis">{% trans "overdue" %}</span>{% endif %}</span>
+              <span><a href="{% url 'billing:invoice' invoice.public_id %}" target="_blank" rel="noopener">{{ invoice.number }}</a> <span class="text-body-secondary">· {{ invoice.period_label }}</span>{% if invoice.overdue %} <span class="badge bg-danger-subtle text-danger-emphasis">{% trans "overdue" %}</span>{% endif %}</span>
               <span class="num">{{ invoice.outstanding|money:lease.currency }}</span>
             </li>
             {% empty %}<li class="text-body-secondary">{% trans "Nothing owed on invoices. Money paid now is kept as credit." %}</li>{% endfor %}

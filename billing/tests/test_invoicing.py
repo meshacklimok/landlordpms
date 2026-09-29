@@ -47,7 +47,7 @@ def water(org):
 
 
 def bill(lease, month, today=None, actor=None):
-    return invoicing.generate_lease_month(lease, month, today=today or month - datetime.timedelta(days=5),
+    return invoicing.generate_lease_period(lease, month, today=today or month - datetime.timedelta(days=5),
                                           actor=actor)
 
 
@@ -313,7 +313,7 @@ def test_fifty_parallel_invoice_issues_get_distinct_numbers():
     def issue(lease):
         try:
             barrier.wait()
-            numbers.append(invoicing.generate_lease_month(lease, FEB, today=D(2026, 1, 27)).number)
+            numbers.append(invoicing.generate_lease_period(lease, FEB, today=D(2026, 1, 27)).number)
         except Exception as e:  # noqa: BLE001 - reported below
             errors.append(e)
         finally:
