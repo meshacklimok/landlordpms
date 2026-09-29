@@ -1,0 +1,5 @@
+{% load i18n %}<form method="post" enctype="multipart/form-data" class="d-flex gap-1 align-items-center mt-1 d-print-none">{% csrf_token %}
+  <input type="hidden" name="action" value="add_photo">{% if line %}<input type="hidden" name="line" value="{{ line.pk }}">{% endif %}
+  <input type="file" name="image" accept="image/*" class="form-control form-control-sm" aria-label="{% trans 'Photo' %}" required>
+  <button class="btn btn-sm btn-outline-secondary text-nowrap"><i class="bi bi-camera"></i> {% trans "Add" %}</button>
+</form>

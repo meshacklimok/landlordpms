@@ -329,6 +329,7 @@ class UnitDetailView(CapabilityRequiredMixin, View):
             "share_url": (request.build_absolute_uri(reverse("vacancy", args=[unit.share_token]))
                           if unit.share_token else ""),
             "available": selectors.is_available_to_let(unit),
+            "can_see_items": can(m, "inspections.view", unit.property),
         }
 
     def get(self, request, public_id):

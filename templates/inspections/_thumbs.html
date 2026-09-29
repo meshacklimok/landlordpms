@@ -1,0 +1,7 @@
+{% load i18n %}{% if photos %}<div class="d-flex flex-wrap gap-2 mt-1">{% for p in photos %}
+  <div class="position-relative">
+    <a href="{% url 'inspections:photo' p.public_id %}" target="_blank" rel="noopener"><img src="{% url 'inspections:photo' p.public_id %}" alt="{{ p.caption|default:_('Photo') }}" loading="lazy" class="rounded border" style="width:72px;height:72px;object-fit:cover"></a>
+    {% if removable %}<form method="post" class="position-absolute top-0 end-0 d-print-none">{% csrf_token %}<input type="hidden" name="action" value="remove_photo"><input type="hidden" name="photo" value="{{ p.public_id }}"><button class="btn btn-sm btn-light border p-0 px-1 lh-1" aria-label="{% trans 'Remove photo' %}" onclick="return confirm('{% trans "Remove this photo?" %}')">×</button></form>{% endif %}
+    <div class="text-muted" style="font-size:.7rem;max-width:72px">{{ p.uploaded_at|date:"j M H:i" }}</div>
+  </div>
+{% endfor %}</div>{% endif %}

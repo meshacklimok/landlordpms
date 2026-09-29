@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'payments',
     'mpesa',
     'notifications',
+    'inspections',
 
     # LandlordPMS — Business Operations
     'maintenance',

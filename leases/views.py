@@ -144,6 +144,18 @@ class LeaseEditView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, {"form": form, "unit": lease.unit, "lease": lease})
 
 
+def _condition_reports(m, lease) -> list[dict]:
+    """The move-in and move-out report of this lease, or whether one can be started (D-047)."""
+    from inspections import services as inspections
+    from inspections.models import ConditionReport
+
+    may_record = can(m, "inspections.record", lease.unit.property)
+    return [{"kind": kind, "label": label, "slug": slug, "report": inspections.current(lease, kind),
+             "can_start": may_record and not inspections.start_problem(lease, kind)}
+            for kind, label, slug in ((ConditionReport.Kind.MOVE_IN, _("Move-in"), "move-in"),
+                                      (ConditionReport.Kind.MOVE_OUT, _("Move-out"), "move-out"))]
+
+
 class LeaseDetailView(CapabilityRequiredMixin, View):
     """The lease with its tenants, rent history, charges and payers. Small forms post back here."""
 
@@ -183,6 +195,8 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
             "can_renew": is_active and can_draft and successor is None,
             "can_transfer": can_terminate and successor is None,
         }
+        if not lease.is_draft and can(m, "inspections.view", prop):
+            ctx["condition_reports"] = _condition_reports(m, lease)
         if not lease.is_draft and can(m, "invoices.view", prop):
             ctx["account"] = {"balance": invoicing.lease_balance(lease), "deposit_held": deposits.held(lease)}
         if not lease.is_draft and lease.archived_at is None and can(m, "payments.record", prop):

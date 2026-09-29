@@ -319,6 +319,9 @@ class DepositEntry(AppendOnlyModel):
                                         related_name="deposit_entry")
     reversal_of = models.OneToOneField("self", on_delete=models.PROTECT, null=True, blank=True,
                                        related_name="reversed_by")
+    # The move-out condition report a deduction cites as evidence (D-047).
+    condition_report = models.ForeignKey("inspections.ConditionReport", on_delete=models.PROTECT, null=True,
+                                         blank=True, related_name="deposit_entries")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)

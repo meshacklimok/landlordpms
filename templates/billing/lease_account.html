@@ -112,7 +112,7 @@
         {% for e in t.entries %}
         <tr>
           <td class="text-nowrap">{{ e.entry_date|date:"j M Y" }}</td>
-          <td>{{ e.get_kind_display }}{% if e.reference %} · <code>{{ e.reference }}</code>{% endif %}{% if e.reason %}<div class="text-muted">{{ e.reason }}</div>{% endif %}</td>
+          <td>{{ e.get_kind_display }}{% if e.reference %} · <code>{{ e.reference }}</code>{% endif %}{% if e.reason %}<div class="text-muted">{{ e.reason }}</div>{% endif %}{% if e.condition_report %}<div><a href="{% url 'inspections:report' e.condition_report.public_id %}"><i class="bi bi-clipboard-check"></i> {% trans "Move-out report" %} {{ e.condition_report.inspected_on|date:"j M Y" }}</a></div>{% endif %}</td>
           <td class="text-end text-nowrap">{{ e.amount|money:e.currency }}</td>
           <td class="text-end d-print-none">
             {% if e.kind != "TRANSFERRED" and e.kind != "REVERSAL" and e.pk not in reversed_ids %}{% if e.kind == "DEDUCTION" and can_deduct or e.kind != "DEDUCTION" and can_record %}

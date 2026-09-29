@@ -44,6 +44,7 @@ urlpatterns = [
     path("payments/", include("payments.urls")),
     path("messages/", include("notifications.urls")),
     path("mpesa/", include("mpesa.urls")),
+    path("inspections/", include("inspections.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

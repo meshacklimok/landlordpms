@@ -169,6 +169,25 @@
   </div></div>
   {% endif %}
 
+  {% if condition_reports %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "Condition reports" %}</h2>
+      <a class="small" href="{% url 'inspections:register' unit.public_id %}">{% trans "Unit items" %} →</a>
+    </div>
+    <ul class="list-unstyled small mb-0 mt-2">
+      {% for c in condition_reports %}
+      <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+        <span>{{ c.label }}</span>
+        {% if c.report %}<a href="{% url 'inspections:report' c.report.public_id %}">{{ c.report.get_status_display }} · {{ c.report.inspected_on|date:"j M Y" }}</a>
+        {% elif c.can_start %}<form method="post" action="{% url 'inspections:start' lease.public_id c.slug %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% trans "Start" %}</button></form>
+        {% else %}<span class="text-muted">{% trans "None" %}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
   {% if can_terminate or can_renew or can_transfer %}
   <div class="card shadow-sm mb-3"><div class="card-body">
     <h2 class="h6">{% trans "Lease actions" %}</h2>
