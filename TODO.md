@@ -163,7 +163,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 ## Phase 9 — Later
 - [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement
 - [x] Move-in/move-out condition reports with photos and item register (D-047)
-- [ ] Tenant good-standing letter (D-046)
+- [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
 - [ ] Unverified M-Pesa code check (typed code not confirmed by Daraja or statement within 24h), after statement import
 - [ ] Vendor SLA on maintenance; metered water readings by caretaker with photo and anomaly flags (D-046 proposes moving this to right after Phase 7)
 - [ ] Tenant portal (may move earlier)

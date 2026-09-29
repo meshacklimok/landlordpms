@@ -54,6 +54,7 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("tenants.manage", "Add and edit tenants"),
     _view("tenants.view_sensitive", "See national ID and tenant documents", sensitive=True),
     Cap("tenants.invite_portal", "Invite tenants to the tenant portal"),
+    Cap("tenants.issue_letter", "Issue tenancy and payment record letters"),
     # prospects
     _view("prospects.view", "See prospects and viewings"),
     Cap("prospects.manage", "Manage prospects and viewings, convert to tenant"),
@@ -152,7 +153,7 @@ _MANAGER = _caps(
     "staff.view",
     "properties.view", "properties.manage",
     "units.view", "units.manage", "units.set_status", "units.list_vacant",
-    "tenants.view", "tenants.manage", "tenants.view_sensitive", "tenants.invite_portal",
+    "tenants.view", "tenants.manage", "tenants.view_sensitive", "tenants.invite_portal", "tenants.issue_letter",
     "prospects.view", "prospects.manage",
     "leases.view", "leases.draft", "leases.activate", "leases.terminate", "leases.change_rent",
     "inspections.view", "inspections.record",

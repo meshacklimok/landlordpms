@@ -20,6 +20,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from letters.views import CheckView as LetterCheckView
 from mpesa.hook_views import DarajaHookView
 from mpesa.views import PayLinkStatusView, PayLinkView
 from notifications.hook_views import AfricasTalkingHookView, WhatsAppHookView
@@ -35,6 +36,7 @@ urlpatterns = [
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
     path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
     path("p/<str:token>/", PayLinkView.as_view(), name="pay_link"),
+    path("l/<str:code>/", LetterCheckView.as_view(), name="letter_check"),
     path("p/<str:token>/<uuid:request_id>/", PayLinkStatusView.as_view(), name="pay_link_status"),
     path("hooks/sms/africastalking/<str:token>/<slug:kind>/", AfricasTalkingHookView.as_view(),
          name="hook_africastalking"),
@@ -45,6 +47,7 @@ urlpatterns = [
     path("messages/", include("notifications.urls")),
     path("mpesa/", include("mpesa.urls")),
     path("inspections/", include("inspections.urls")),
+    path("letters/", include("letters.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

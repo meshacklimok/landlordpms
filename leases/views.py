@@ -197,6 +197,7 @@ class LeaseDetailView(CapabilityRequiredMixin, View):
         }
         if not lease.is_draft and can(m, "inspections.view", prop):
             ctx["condition_reports"] = _condition_reports(m, lease)
+        ctx["can_issue_letter"] = not lease.is_draft and can(m, "tenants.issue_letter", prop)
         if not lease.is_draft and can(m, "invoices.view", prop):
             ctx["account"] = {"balance": invoicing.lease_balance(lease), "deposit_held": deposits.held(lease)}
         if not lease.is_draft and lease.archived_at is None and can(m, "payments.record", prop):

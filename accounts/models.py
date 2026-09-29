@@ -179,6 +179,11 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     # Notifications (doc 11 §27, D-044): non-urgent messages wait until quiet hours end.
     quiet_hours_start = models.TimeField(_("quiet hours start"), default=datetime.time(21, 0))
     quiet_hours_end = models.TimeField(_("quiet hours end"), default=datetime.time(7, 0))
+    # What tenancy letters state besides the tenants, units and dates (D-048).
+    letter_show_payment_record = models.BooleanField(_("on-time payment record"), default=True)
+    letter_show_balance = models.BooleanField(_("balance owed"), default=True)
+    letter_show_deposit = models.BooleanField(_("deposit status"), default=True)
+    letter_show_rent = models.BooleanField(_("monthly rent"), default=True)
     # Branding for agencies and white-label (D-040): design-in only. Receipts, statements and
     # public pages will use these; there is no settings page yet.
     brand_name = models.CharField(_("brand name"), max_length=150, blank=True,
