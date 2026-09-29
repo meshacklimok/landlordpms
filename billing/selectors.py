@@ -22,7 +22,8 @@ STATUS_FILTERS = {
     "void": (_("Void"), Q(status=Invoice.Status.VOID)),
 }
 
-# (key, label, lowest days past due, highest or None)
+# (key, label, lowest days past due, highest or None). Days count from the due date plus grace
+# (`Invoice.overdue_after`), as doc 11 §26 defines arrears, so "current" includes the grace days.
 AGING_BUCKETS = [
     ("current", _("Not yet due"), None, 0),
     ("d1_30", _("1–30 days"), 1, 30),
@@ -100,10 +101,15 @@ def statement(lease: Lease, *, start: datetime.date | None = None, end: datetime
 
 @dataclass
 class Debt:
-    """Part of the balance still unpaid, from one debit, and the day it fell due."""
+    """Part of the balance still unpaid, from one debit, the day it fell due and the day it became late."""
     due: datetime.date
     amount: Decimal
     invoice: Invoice | None = None
+    late_from: datetime.date | None = None
+
+    def __post_init__(self):
+        if self.late_from is None:
+            self.late_from = self.due
 
 
 @dataclass
@@ -113,9 +119,11 @@ class LeaseArrears:
     debts: list[Debt]
     buckets: dict[str, Decimal] = field(default_factory=dict)
     oldest_due: datetime.date | None = None
+    # The oldest unpaid amount's due date plus grace: days overdue count from here.
+    late_from: datetime.date | None = None
 
     def days_overdue(self, today: datetime.date) -> int:
-        return max((today - self.oldest_due).days, 0) if self.oldest_due else 0
+        return max((today - self.late_from).days, 0) if self.late_from else 0
 
 
 def _bucket(days: int) -> str:
@@ -142,8 +150,10 @@ def unpaid_debts(entries: list[LedgerEntry]) -> list[Debt]:
         if e.pk in cancelled or (e.invoice_id and ("inv", e.invoice_id) in cancelled):
             continue
         if e.amount > 0:
-            due = e.invoice.due_date if e.kind == Kind.INVOICE and e.invoice else e.entry_date
-            debits.append(Debt(due, e.amount, e.invoice if e.kind == Kind.INVOICE else None))
+            invoice = e.invoice if e.kind == Kind.INVOICE else None
+            due = invoice.due_date if invoice else e.entry_date
+            late_from = (invoice.overdue_after or due) if invoice else due
+            debits.append(Debt(due, e.amount, invoice, late_from))
         else:
             credit -= e.amount
     debits.sort(key=lambda d: (d.due, d.invoice.pk if d.invoice else 0))
@@ -152,7 +162,7 @@ def unpaid_debts(entries: list[LedgerEntry]) -> list[Debt]:
         paid = min(credit, debt.amount)
         credit -= paid
         if debt.amount > paid:
-            unpaid.append(Debt(debt.due, debt.amount - paid, debt.invoice))
+            unpaid.append(Debt(debt.due, debt.amount - paid, debt.invoice, debt.late_from))
     return unpaid
 
 
@@ -160,9 +170,10 @@ def lease_arrears(lease: Lease, entries: list[LedgerEntry], today: datetime.date
     debts = unpaid_debts(entries)
     buckets = {key: ZERO for key, *_rest in AGING_BUCKETS}
     for debt in debts:
-        buckets[_bucket((today - debt.due).days)] += debt.amount
+        buckets[_bucket((today - debt.late_from).days)] += debt.amount
     return LeaseArrears(lease=lease, balance=sum((e.amount for e in entries), ZERO), debts=debts, buckets=buckets,
-                        oldest_due=debts[0].due if debts else None)
+                        oldest_due=debts[0].due if debts else None,
+                        late_from=min((d.late_from for d in debts), default=None))
 
 
 def arrears(membership, today: datetime.date, *, overdue_only=True) -> list[LeaseArrears]:
@@ -179,7 +190,7 @@ def arrears(membership, today: datetime.date, *, overdue_only=True) -> list[Leas
     rows = [lease_arrears(leases[pk], grouped[pk], today) for pk in leases]
     if overdue_only:
         rows = [r for r in rows if r.buckets["current"] < r.balance]
-    rows.sort(key=lambda r: (r.oldest_due or today, -r.balance))
+    rows.sort(key=lambda r: (r.late_from or today, -r.balance))
     return rows
 
 

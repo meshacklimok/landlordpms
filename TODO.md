@@ -143,7 +143,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI waits for expenses
 - [x] Portfolio and per-property dashboards (property and month filters in the URL)
 - [ ] Per-role dashboards
-- [ ] Global search
+- [x] Global search with suggestions as you type, scoped like the list pages (D-054); trigram indexes wait for the performance test
+- [x] Arrears aged from due date plus grace, as doc 11 §26 defines (D-054 item 1)
 - [ ] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests
 - [x] Tenant payment link: STK push started by the tenant from the rent SMS, any amount (D-046 item 1; built early on the Phase 6 branch, mpesa 0004)
 - [ ] Payment link: try it end to end in the Daraja sandbox; check how long a rent SMS gets with the link and what it costs

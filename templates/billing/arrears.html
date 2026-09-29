@@ -8,7 +8,7 @@
   <a href="?{% if not show_all %}all=1{% endif %}">{% if show_all %}{% trans "Only overdue" %}{% else %}{% trans "Include balances not yet due" %}{% endif %}</a>
   </div>
 </div>
-<p class="small text-muted">{% trans "What each lease owes, aged by how long past its due date. Payments and credits clear the oldest amounts first." %}</p>
+<p class="small text-muted">{% trans "What each lease owes, aged by days past the due date plus grace days. Payments and credits clear the oldest amounts first." %}</p>
 <div class="table-responsive">
 <table class="table table-sm align-middle">
   <thead>

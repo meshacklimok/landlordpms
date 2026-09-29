@@ -273,7 +273,7 @@ Answers doc 15 §8. The owner said to use the recommended defaults. Built on `fe
    - *Collected for the month* is each confirmed payment's allocation, split across its invoice's live lines by their share (as in D-050), keeping the rent lines of that month. It is rounded per invoice and month.
    - *Collection rate* is collected ÷ expected, with no rate when nothing was billed ("no rent billed yet", not 0%).
    - *Cash received* is confirmed payments dated in the month, including advances and arrears clearing.
-   - *Arrears* is what is overdue today, from the existing FIFO aging (billing.selectors), in buckets 1–30, 31–60, 61–90 and 90+ days.
+   - *Arrears* is what is overdue today, from the existing FIFO aging (billing.selectors), in buckets 1–30, 31–60, 61–90 and 90+ days (counted from due date plus grace since D-054).
    - *Unmatched M-Pesa* is the count and amount waiting in the inbox the member can see.
 6. **Scope**: the page needs `dashboard.view_financial` and counts only the properties the member can see. A scoped manager never sees organization totals. Filters are one property and a month, and they are kept in the URL. Counts sit beside rates ("8 of 10 units").
 7. **Drill-down**: occupancy opens the units list, cash received opens the payments list for that month and property, and arrears opens the arrears page.
@@ -315,3 +315,25 @@ Phase 7 step 3 (D-051 item 4; doc 12 Tier 2; doc 16 Tier 2 item 8). It builds th
 5. **Due to the owner** = rent and other charges collected − the management fee − expenses. Expenses show as "not tracked yet" until the expenses app (flow C). Deposits received are listed, but they are held and not paid over.
 6. **Owner login**: invite the owner with the existing Viewer role, limited to their properties. It is read-only and has no tenant names, because Viewer lacks `tenants.view`. Tenant names show on the statement only for members with `tenants.view`. There is no new role or capability.
 7. **Not in this step**: remittance records (money paid over to the owner), stored numbered statements, sending the statement by email or SMS, expenses, and a tax residence for each owner (D-050 item 1).
+
+### D-054 — Arrears aged from due date plus grace; global search with suggestions — ACCEPTED (2026-09-29, open to change before merge)
+Phase 7 step 4 (doc 11 §17 and §26; doc 12 "Global search"). Built on `feature/phase7-dashboards`. The user said: "do that professionally, add also autocomplete".
+1. **Aging basis corrected.** Doc 11 §26 defines arrears as what is outstanding past the due date plus grace. The FIFO aging in `billing.selectors` counted from the due date. Each unpaid amount now carries `late_from`: `Invoice.overdue_after` for an invoice, and the entry date for any other debit (opening balance, deposit deduction). The buckets, `LeaseArrears.days_overdue`, the arrears list order, the call list's overdue amount and days (D-052), the dashboard arrears figure (D-051) and the announcement filter by days overdue all follow it. Money within its grace days now shows as current. `oldest_due` still reports the due date itself.
+2. **One search box** in the top bar for every member, plus a results page at `/search/?q=`. It searches:
+   - **tenants**: name, contact person, phone or other phone (full number in any format, or 4 or more digits of it), and ID number when the member has `tenants.view_sensitive`;
+   - **properties**: name, or the exact code;
+   - **units**: code, or the exact payment reference;
+   - **leases**: number, exact unit code, or the tenant's name when the member has `tenants.view`;
+   - **invoices**: number;
+   - **payments**: reference or receipt number;
+   - **M-Pesa transactions**: code (exact or leading), account reference, payer phone.
+3. **The same rules as the list pages.** A group appears only with that list's view capability (`tenants.view`, `properties.view`, `units.view`, `leases.view`, `invoices.view`, `payments.view`, `mpesa.view_transactions`). It is built from the list's own visibility helper, so a scoped member sees only their properties and nothing crosses organizations. Tenant names are left out of lease results without `tenants.view`. Archived tenants, properties, units and leases are not searched; invoices and payments are, as on their lists.
+4. **Ranking**: exact match, then leading match, then anything else, then by name or newest first. Queries shorter than 2 characters return nothing. Queries are trimmed, whitespace collapsed and capped at 60 characters.
+5. **Suggestions** (`/search/suggest/?q=`, JSON, `Cache-Control: private, no-store`) return the first 5 per group, with a flag when there are more and a link to that group's own list filtered by the same words. The results page shows 20 per group. The script (`static/js/search.js`, no library):
+   - waits 180 ms after typing;
+   - cancels a request that a newer one replaces, and caches answers for the page;
+   - ignores an answer to a query that is no longer in the box;
+   - follows the ARIA combobox pattern (arrow keys, Enter opens, Escape closes, `/` focuses the box), announces the count to screen readers, and highlights the match using text nodes only.
+   The box is a plain GET form, so search works without JavaScript.
+6. **Indexes**: every query is first limited to one organization, which is indexed. Matching inside a value (`icontains`) scans that organization's rows, which is fine at the sizes in doc 11 §27. Postgres trigram indexes (`pg_trgm`) wait until the performance test shows a need. No migration.
+7. **Not in this step**: searching notes, messages, letters or inspections; spelling tolerance; recent searches.
