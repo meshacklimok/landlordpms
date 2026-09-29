@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Roles" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">{% trans "Roles" %}</h1>
+  <a class="btn btn-primary btn-sm" href="{% url 'accounts:role_create' %}">{% trans "New role" %}</a>
+</div>
+<div class="list-group">
+  {% for r in roles %}
+  <a href="{% url 'accounts:role_edit' r.public_id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+    <div>
+      <div class="fw-semibold">{{ r.name }}{% if r.is_owner_role %} <span class="badge text-bg-dark">{% trans "Owner" %}</span>{% endif %}</div>
+      <div class="small text-muted">{{ r.description }}</div>
+    </div>
+    <div class="small text-muted text-end text-nowrap">
+      {% blocktrans count n=r.member_count %}{{ n }} member{% plural %}{{ n }} members{% endblocktrans %}<br>
+      {% blocktrans count n=r.capability_count %}{{ n }} permission{% plural %}{{ n }} permissions{% endblocktrans %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

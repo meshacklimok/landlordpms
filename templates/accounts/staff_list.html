@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Staff" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">{% trans "Staff" %}</h1>
+  {% if can_manage %}<a class="btn btn-primary btn-sm" href="{% url 'accounts:invite' %}">{% trans "Invite" %}</a>{% endif %}
+</div>
+
+<div class="list-group mb-4">
+  {% for m in members %}
+  {% if can_manage %}<a href="{% url 'accounts:member' m.public_id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">{% else %}<div class="list-group-item d-flex justify-content-between align-items-center">{% endif %}
+    <div>
+      <div class="fw-semibold">{{ m.user.full_name }}</div>
+      <div class="small text-muted">{{ m.user.phone }}</div>
+    </div>
+    <div class="text-end">
+      <span class="badge text-bg-light border">{{ m.role.name }}</span>
+      {% if not m.is_active %}<span class="badge text-bg-warning">{% trans "Suspended" %}</span>{% endif %}
+    </div>
+  {% if can_manage %}</a>{% else %}</div>{% endif %}
+  {% endfor %}
+</div>
+
+{% if invitations %}
+<h2 class="h6">{% trans "Pending invitations" %}</h2>
+<div class="list-group">
+  {% for i in invitations %}
+  <div class="list-group-item d-flex justify-content-between align-items-center">
+    <div>
+      <div>{{ i.full_name|default:i.phone }}</div>
+      <div class="small text-muted">{{ i.phone }} · {{ i.role.name }} · {% trans "expires" %} {{ i.expires_at|date:"j M" }}</div>
+    </div>
+    {% if can_manage %}
+    <form method="post" action="{% url 'accounts:revoke_invite' i.public_id %}">{% csrf_token %}
+      <button class="btn btn-sm btn-outline-danger">{% trans "Revoke" %}</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,9 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Create account" %}{% endblock %}
+{% block heading %}{% trans "Create your account" %}{% endblock %}
+{% block card %}
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <button class="btn btn-primary w-100">{% trans "Continue" %}</button>
+</form>
+{% endblock %}
+{% block links %}{% trans "Already have an account?" %} <a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a>{% endblock %}

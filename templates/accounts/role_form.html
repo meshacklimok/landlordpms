@@ -1,0 +1,64 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if role %}{{ role.name }}{% else %}{% trans "New role" %}{% endif %}{% endblock %}
+{% block content %}
+<a href="{% url 'accounts:roles' %}" class="small">← {% trans "Roles" %}</a>
+<h1 class="h4 mt-2">{% if role %}{{ role.name }}{% else %}{% trans "New role" %}{% endif %}</h1>
+{% if role.is_owner_role %}
+<div class="alert alert-info small">{% trans "The Owner role always keeps organization, roles, staff and subscription management." %}</div>
+{% endif %}
+
+<form method="post" novalidate>{% csrf_token %}
+  {% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+  <div class="row g-2">
+    <div class="col-12 col-md-5">
+      <label class="form-label" for="id_name">{% trans "Role name" %}</label>
+      <input id="id_name" name="name" maxlength="80" required class="form-control{% if form.name.errors %} is-invalid{% endif %}" value="{{ form.name.value|default:'' }}">
+      {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+    </div>
+    <div class="col-12 col-md-7">
+      <label class="form-label" for="id_description">{% trans "Description" %}</label>
+      <input id="id_description" name="description" maxlength="255" class="form-control" value="{{ form.description.value|default:'' }}">
+    </div>
+  </div>
+  {% for e in form.capabilities.errors %}<div class="alert alert-danger mt-2">{{ e }}</div>{% endfor %}
+  <p class="small text-muted mt-3">{% trans "⚠ marks sensitive permissions. Greyed-out items are ones you don't hold yourself, so you can't grant them." %}</p>
+
+  {% for module, caps in groups %}
+  <fieldset class="card mb-2"><div class="card-body py-2">
+    <legend class="h6 text-uppercase small text-muted mb-1">{{ module }}</legend>
+    {% for cap in caps %}
+    {% with cid="cap_"|add:cap.codename %}
+    <div class="form-check">
+      {% if cap.codename in locked %}
+      <input type="hidden" name="capabilities" value="{{ cap.codename }}">
+      <input class="form-check-input" type="checkbox" id="{{ cid }}" checked disabled>
+      {% else %}
+      <input class="form-check-input" type="checkbox" name="capabilities" value="{{ cap.codename }}" id="{{ cid }}"
+        {% if cap.codename in selected %}checked{% endif %}
+        {% if cap.codename not in actor_caps and cap.codename not in selected %}disabled{% endif %}>
+      {% endif %}
+      <label class="form-check-label small{% if cap.sensitive %} cap-sensitive{% endif %}" for="{{ cid }}">
+        {{ cap.description }} <code class="text-muted">{{ cap.codename }}</code>
+      </label>
+    </div>
+    {% endwith %}
+    {% endfor %}
+  </div></fieldset>
+  {% endfor %}
+  <button class="btn btn-primary">{% trans "Save role" %}</button>
+</form>
+
+{% if role %}
+<div class="d-flex flex-wrap gap-2 mt-4">
+  <form method="post" action="{% url 'accounts:role_clone' role.public_id %}" class="d-flex gap-2">{% csrf_token %}
+    <input name="name" class="form-control form-control-sm" value="{{ clone_form.name.value }}" aria-label="{% trans 'New role name' %}">
+    <button class="btn btn-sm btn-outline-secondary text-nowrap">{% trans "Copy role" %}</button>
+  </form>
+  {% if not role.is_owner_role %}
+  <form method="post" action="{% url 'accounts:role_archive' role.public_id %}" onsubmit="return confirm(this.dataset.confirm)" data-confirm="{% trans 'Remove this role?' %}">{% csrf_token %}
+    <button class="btn btn-sm btn-outline-danger">{% trans "Remove role" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

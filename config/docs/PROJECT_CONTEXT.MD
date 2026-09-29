@@ -1,6 +1,6 @@
-# RentFlow Kenya — Project Context & Development Roadmap
+# landlordpms — Project Context & Development Roadmap
 
-> **Purpose:** This document is the master context for the RentFlow Kenya project.
+> **Purpose:** This document is the master context for the landlordpms project.
 > It records what the project is, what has been completed, important architectural decisions, the current development state, and what remains to be built.
 >
 > **Important:** Update this document whenever a major feature, architectural decision, database change, deployment change, or development milestone is completed.
@@ -11,9 +11,9 @@
 
 ## Project Name
 
-**RentFlow Kenya**
+**landlordpms**
 
-Working name. The name can be changed later if a better brand is selected.
+Official project name: landlordpms.
 
 ## Project Type
 
@@ -46,7 +46,7 @@ The long-term goal is to build a **Property Operating System for Kenya** that ha
 
 # 2. CORE PRODUCT VISION
 
-RentFlow Kenya should allow a landlord or property manager to manage their rental business from one platform.
+landlordpms should allow a landlord or property manager to manage their rental business from one platform.
 
 The platform should eventually cover:
 
@@ -481,7 +481,7 @@ The final organization/ownership architecture must be designed carefully before 
 
 # 11. MULTI-TENANCY / SAAS ARCHITECTURE
 
-RentFlow Kenya is intended to become a SaaS.
+landlordpms is intended to become a SaaS.
 
 Therefore, the architecture must consider:
 
@@ -662,7 +662,7 @@ Safaricom
    ↓
 Callback
    ↓
-RentFlow
+landlordpms
    ↓
 Identify Tenant
    ↓
@@ -1385,7 +1385,7 @@ Do not design desktop-only interfaces and attempt to shrink them later.
 
 # 42. MONETIZATION
 
-RentFlow Kenya is intended to become a paid SaaS.
+landlordpms is intended to become a paid SaaS.
 
 Potential pricing structure discussed:
 
@@ -1451,7 +1451,7 @@ Analytics
 AI
 ```
 
-The objective is to make RentFlow a complete operating platform for rental businesses.
+The objective is to make landlordpms a complete operating platform for rental businesses.
 
 ---
 
@@ -1694,7 +1694,7 @@ Only after this foundation is stable should the main property, tenant, lease, bi
 
 # 52. PROJECT STATUS SUMMARY
 
-At the moment, RentFlow Kenya is at the:
+At the moment, landlordpms is at the:
 
 **FOUNDATION / ARCHITECTURE STAGE**
 
@@ -1734,7 +1734,7 @@ The project should now proceed from the account architecture into the core prope
 
 If this project is resumed in another conversation, the essential context is:
 
-> **RentFlow Kenya is a Kenyan property-management SaaS being built with Django/Python. It is intended to become a complete Property Operating System rather than a simple rent tracker. The core MVP consists of accounts, properties, tenants, leases, billing, payments, M-Pesa and notifications. The project is designed to be multi-tenant, mobile-first, scalable and monetizable. The Django project and app structure have already been created. SQLite is temporarily being used while PostgreSQL setup is postponed. The next major task is designing the custom User + Organization + Membership + Roles/Permissions architecture before building the main business models.**
+> **landlordpms is a Kenyan property-management SaaS being built with Django/Python. It is intended to become a complete Property Operating System rather than a simple rent tracker. The core MVP consists of accounts, properties, tenants, leases, billing, payments, M-Pesa and notifications. The project is designed to be multi-tenant, mobile-first, scalable and monetizable. The Django project and app structure have already been created. SQLite is temporarily being used while PostgreSQL setup is postponed. The next major task is designing the custom User + Organization + Membership + Roles/Permissions architecture before building the main business models.**
 
 ---
 
