@@ -1,9 +1,10 @@
 import datetime
+from decimal import Decimal
 
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from .models import ChargeType, DepositEntry
+from .models import ChargeType, DepositEntry, FollowUp
 
 
 class ChargeTypeForm(forms.Form):
@@ -73,3 +74,33 @@ class DeductForm(DepositForm):
 
 class ReverseDepositForm(forms.Form):
     reason = forms.CharField(label=_("Why is it being corrected?"), max_length=300)
+
+
+class FollowUpForm(forms.Form):
+    outcome = forms.ChoiceField(label=_("What happened"), choices=FollowUp.Outcome.choices)
+    promised_on = forms.DateField(label=_("Will pay by"), required=False, widget=DateInput)
+    promised_amount = forms.DecimalField(label=_("Amount promised"), required=False, max_digits=14, decimal_places=2,
+                                         min_value=Decimal("0.01"))
+    note = forms.CharField(label=_("Note"), required=False, max_length=300)
+
+    def clean(self):
+        data = super().clean()
+        if data.get("outcome") == FollowUp.Outcome.PROMISED and not data.get("promised_on"):
+            self.add_error("promised_on", _("Enter the date they will pay by."))
+        return data
+
+
+class CallListFilterForm(forms.Form):
+    property = forms.ModelChoiceField(label=_("Property"), queryset=None, required=False, to_field_name="public_id",
+                                      empty_label=_("All properties"))
+    grade = forms.ChoiceField(label=_("Grade"), required=False,
+                              choices=[("", _("All grades")), *[(g, g) for g in "ABCDE"], ("new", _("New"))])
+
+    def __init__(self, *args, properties, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["property"].queryset = properties
+        for f in self.fields.values():
+            f.widget.attrs["class"] = "form-select form-select-sm w-auto"
+
+    def value(self, name):
+        return self.cleaned_data.get(name) if self.is_valid() else None

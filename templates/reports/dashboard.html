@@ -59,7 +59,7 @@
       <div class="small">
         {% if can_arrears %}<a href="{% url 'billing:arrears' %}">{% endif %}
         {% blocktrans count n=board.arrears.leases %}{{ n }} lease owes{% plural %}{{ n }} leases owe{% endblocktrans %}
-        {% if can_arrears %}</a>{% endif %}
+        {% if can_arrears %}</a> · <a href="{% url 'billing:call_list' %}">{% trans "Who to call" %}</a>{% endif %}
       </div>
     </div></div>
   </div>

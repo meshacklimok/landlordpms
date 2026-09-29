@@ -8,19 +8,20 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
-from accounts.permissions import can
+from accounts.permissions import can, visible_properties
 from leases.models import Lease, LeaseTenant
 from leases.services import visible_leases
 from payments import selectors as payment_selectors
 from payments import services as payment_services
 from properties.views import _apply_errors
 
-from . import deposits, forms, invoicing, selectors, services
+from . import deposits, followups, forms, invoicing, selectors, services
 from .models import ChargeType, DepositEntry, Invoice, LedgerEntry
 
 PAGE_SIZE = 25
@@ -180,6 +181,43 @@ class ArrearsView(CapabilityRequiredMixin, View):
             "rows": rows, "totals": selectors.aging_totals(rows), "buckets": selectors.AGING_BUCKETS,
             "today": today, "show_all": show_all,
         })
+
+
+class CallListView(CapabilityRequiredMixin, View):
+    """Who to call today about money overdue (D-052)."""
+
+    template_name = "billing/call_list.html"
+    required_capability = "invoices.view"
+
+    def get(self, request, form=None, follow_up_lease=None):
+        m = request.membership
+        today = timezone.localdate()
+        filters = forms.CallListFilterForm(request.GET or None, properties=visible_properties(m))
+        board = followups.call_list(m, today, property=filters.value("property"), grade=filters.value("grade") or "")
+        return render(request, self.template_name, {
+            "board": board, "filters": filters, "today": today, "form": form or forms.FollowUpForm(),
+            "follow_up_lease": follow_up_lease, "can_follow_up": can(m, "arrears.follow_up"),
+            "can_tenants": can(m, "tenants.view"), "query": request.GET.urlencode(),
+        })
+
+
+class FollowUpView(CapabilityRequiredMixin, View):
+    required_capability = "arrears.follow_up"
+
+    def post(self, request, public_id):
+        lease = _get_lease(request, public_id)
+        form = forms.FollowUpForm(request.POST)
+        if form.is_valid():
+            try:
+                followups.record_follow_up(request.membership, lease, request=request, **form.cleaned_data)
+            except ValidationError as e:
+                _apply_errors(form, e)
+            else:
+                messages.success(request, _("Saved for %(lease)s.") % {
+                    "lease": getattr(lease.primary_tenant, "name", "") or lease.number})
+                query = request.POST.get("next_query", "")
+                return redirect(reverse("billing:call_list") + (f"?{query}" if query else ""))
+        return CallListView().get(request, form=form, follow_up_lease=lease)
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ChargeType, DepositEntry, Invoice, InvoiceLine, LedgerEntry
+from .models import ChargeType, DepositEntry, FollowUp, Invoice, InvoiceLine, LedgerEntry
 
 
 @admin.register(ChargeType)
@@ -66,4 +66,12 @@ class DepositEntryAdmin(ReadOnlyAdmin):
     list_filter = ["kind", "deposit_type"]
     search_fields = ["lease__number", "reference", "organization__name"]
     date_hierarchy = "entry_date"
+    list_select_related = ["lease", "organization"]
+
+
+@admin.register(FollowUp)
+class FollowUpAdmin(ReadOnlyAdmin):
+    list_display = ["created_at", "outcome", "promised_on", "promised_amount", "lease", "organization"]
+    list_filter = ["outcome"]
+    search_fields = ["lease__number", "organization__name"]
     list_select_related = ["lease", "organization"]

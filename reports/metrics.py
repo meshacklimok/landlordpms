@@ -17,12 +17,14 @@ from decimal import Decimal
 from django.db.models import Count, DateField, Q, Sum
 from django.db.models.functions import Cast, Coalesce, TruncMonth
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from accounts.models import Membership
 from accounts.permissions import accessible_property_ids, can, require, visible_properties
 from billing import selectors as billing_selectors
 from billing.models import ChargeType, Invoice, InvoiceLine
 from core.money import ZERO, round_money
+from leases.models import Lease
 from leases.services import occupying_leases
 from mpesa.inbox import visible_transactions
 from mpesa.models import MpesaTransaction
@@ -260,6 +262,108 @@ def unmatched_mpesa(sc: Scope) -> Unmatched | None:
         txs = txs.filter(payment_account__properties__property=sc.selected_property).distinct()
     agg = txs.order_by().aggregate(n=Count("pk", distinct=True), s=Sum("amount"))
     return Unmatched(count=agg["n"] or 0, amount=agg["s"] or ZERO)
+
+
+# ---------------------------------------------------------------------------
+# Collectability grade (D-052)
+# ---------------------------------------------------------------------------
+
+GRADE_INVOICES = 6
+GRADE_WINDOW = datetime.timedelta(days=365)
+GRADE_MIN_INVOICES = 2
+# (grade, highest average days late); A needs every invoice paid in time.
+GRADE_LIMITS = (("B", 5), ("C", 15), ("D", 30))
+GRADES = ("A", "B", "C", "D", "E")
+
+
+@dataclass
+class Grade:
+    """How reliably a tenancy pays: A (always in time) to E, or None ("New") without enough history."""
+
+    grade: str | None = None
+    invoices: int = 0
+    on_time: int = 0
+    average_late: Decimal = ZERO
+    # Days the oldest invoice still unpaid is past its due date plus grace.
+    open_late: int = 0
+
+    @property
+    def label(self) -> str:
+        return self.grade or _("New")
+
+
+def tenancies(leases) -> dict[int, list[int]]:
+    """Each lease's tenancy: its pk and the leases it renewed or moved from, in one query per org."""
+    leases = list(leases)
+    if not leases:
+        return {}
+    previous = dict(Lease.all_objects.filter(organization_id__in={lease.organization_id for lease in leases})
+                    .exclude(status=Lease.Status.DRAFT).values_list("pk", "previous_lease_id"))
+    out = {}
+    for lease in leases:
+        chain, pk = [], lease.pk
+        while pk is not None and pk not in chain and len(chain) < 100:
+            chain.append(pk)
+            pk = previous.get(pk)
+        out[lease.pk] = chain
+    return out
+
+
+def _grade(days: list[int], open_late: int) -> Grade:
+    g = Grade(invoices=len(days), on_time=sum(1 for d in days if d == 0), open_late=open_late)
+    if not days:
+        return g
+    g.average_late = (Decimal(sum(days)) / len(days)).quantize(Decimal("0.1"))
+    if len(days) < GRADE_MIN_INVOICES:
+        return g
+    if g.on_time == len(days):
+        grade = "A"
+    else:
+        grade = next((letter for letter, limit in GRADE_LIMITS if g.average_late <= limit), "E")
+    if open_late > 60:
+        grade = "E"
+    elif open_late > 30:
+        grade = max(grade, "D")
+    g.grade = grade
+    return g
+
+
+def grades(leases, today: datetime.date) -> dict[int, Grade]:
+    """The grade of each lease's tenancy from its last invoices past due (D-052)."""
+    chains = tenancies(leases)
+    owner_of = {pk: lease_pk for lease_pk, chain in chains.items() for pk in chain}
+    invoices = (Invoice.objects.filter(lease_id__in=owner_of, status__in=(*Invoice.OPEN, Invoice.Status.PAID),
+                                       total__gt=0, overdue_after__lt=today,
+                                       overdue_after__gte=today - GRADE_WINDOW)
+                .order_by("-overdue_after", "-pk").only("pk", "lease_id", "total", "overdue_after"))
+    window: dict[int, list[Invoice]] = defaultdict(list)
+    for inv in invoices:
+        # A lease in two tenancies (it cannot be, but be safe) counts for the first.
+        rows = window[owner_of[inv.lease_id]]
+        if len(rows) < GRADE_INVOICES:
+            rows.append(inv)
+    ids = [inv.pk for rows in window.values() for inv in rows]
+    paid: dict[int, list[tuple[datetime.date, Decimal]]] = defaultdict(list)
+    for invoice_id, paid_at, amount in (PaymentAllocation.objects
+                                        .filter(invoice_id__in=ids, payment__status=Payment.Status.CONFIRMED)
+                                        .order_by("payment__paid_at", "pk")
+                                        .values_list("invoice_id", "payment__paid_at", "amount")):
+        paid[invoice_id].append((paid_at, amount))
+    out = {}
+    for lease_pk in chains:
+        days, open_late = [], 0
+        for inv in window.get(lease_pk, []):
+            settled, running = None, ZERO
+            for paid_at, amount in paid.get(inv.pk, []):
+                running += amount
+                if running >= inv.total:
+                    settled = paid_at
+                    break
+            if settled is None:
+                open_late = max(open_late, (today - inv.overdue_after).days)
+            days.append(max(((settled or today) - inv.overdue_after).days, 0))
+        out[lease_pk] = _grade(days, open_late)
+    return out
 
 
 # ---------------------------------------------------------------------------

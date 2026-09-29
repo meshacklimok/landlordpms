@@ -278,3 +278,26 @@ Answers doc 15 §8. The owner said to use the recommended defaults. Built on `fe
 6. **Scope**: the page needs `dashboard.view_financial` and counts only the properties the member can see. A scoped manager never sees organization totals. Filters are one property and a month, and they are kept in the URL. Counts sit beside rates ("8 of 10 units").
 7. **Drill-down**: occupancy opens the units list, cash received opens the payments list for that month and property, and arrears opens the arrears page.
 8. Not in this step: caching, `DailySnapshot`, per-role dashboards, and the Swahili labels (strings are wrapped, but there is no translation yet).
+
+### D-052 — Collectability grade and the daily who-to-call list — ACCEPTED (2026-09-29, open to change before merge)
+Phase 7 step 2 (D-051 item 4; doc 16 Tier 2 item 7). The rules are rule-based and explainable; there is no machine learning. Built on `feature/phase7-dashboards`.
+1. **Tenancy, not lease**: a grade covers a lease and the leases it renewed or moved from (`previous_lease`), so a renewal keeps its history.
+2. **Days late per invoice**: this is how long after `overdue_after` (due date plus grace) the invoice was paid in full, using the dates of its confirmed allocations. It is 0 when paid in time, which is the same "on time" the tenancy letter uses (D-048). An invoice still unpaid counts its days late up to today. Opening balances have no invoice and are not graded.
+3. **Window**: the tenancy's last 6 invoices whose `overdue_after` has passed, within 12 months. A tenancy with fewer than 2 such invoices gets no grade and shows as "New".
+4. **Grade from the average days late**:
+   - **A**: every invoice was paid in time.
+   - **B**: 5 days or fewer.
+   - **C**: 15 days or fewer.
+   - **D**: 30 days or fewer.
+   - **E**: more than 30 days.
+
+   An invoice unpaid more than 30 days past `overdue_after` caps the grade at D, and more than 60 days caps it at E. The page shows the average and the count ("4 of 6 paid in time"), so a grade can be checked.
+5. **Follow-ups** (`billing.FollowUp`, append-only) record an outcome: spoke to them, no answer, promised to pay, disputes the amount, or other. Each has a short note, and a promise has a date and an optional amount. Recording one needs the new capability `arrears.follow_up`, granted to Owner, Manager and Accountant by accounts 0010. Only the latest follow-up counts.
+6. **Promise state**: a promise is *pending* until its date. It is *kept* when confirmed payments dated from the day it was made to its date add up to the promised amount (or any payment, when no amount was given). Otherwise it is *broken* once its date passes.
+7. **The list** (`/billing/call-list/`, `invoices.view`) covers leases with money overdue today, in the member's property scope. It has three sections:
+   - *To call*: broken promises first, then the largest amount overdue.
+   - *Promised*: pending promises, by date.
+   - *Done today*: leases followed up today.
+
+   It can be filtered by property and grade. Phone numbers show to people with `tenants.view`, as `tel:` links.
+8. Not in this step: reminder sequences, the grade in the tenancy letter or visible to tenants, and grade history.

@@ -362,3 +362,40 @@ class DepositEntry(AppendOnlyModel):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount}"
+
+
+class FollowUp(AppendOnlyModel):
+    """A call or visit about money owed, and any promise to pay (D-052). Only the latest counts."""
+
+    class Outcome(models.TextChoices):
+        SPOKE = "SPOKE", _("Spoke to them")
+        NO_ANSWER = "NO_ANSWER", _("No answer")
+        PROMISED = "PROMISED", _("Promised to pay")
+        DISPUTED = "DISPUTED", _("Disputes the amount")
+        OTHER = "OTHER", _("Other")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="follow_ups")
+    outcome = models.CharField(_("outcome"), max_length=10, choices=Outcome.choices)
+    note = models.CharField(_("note"), max_length=300, blank=True)
+    promised_on = models.DateField(_("will pay by"), null=True, blank=True)
+    promised_amount = models.DecimalField(_("amount promised"), max_digits=14, decimal_places=2, null=True,
+                                          blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(outcome="PROMISED", promised_on__isnull=False)
+                           | (~Q(outcome="PROMISED") & Q(promised_on__isnull=True, promised_amount__isnull=True))),
+                name="billing_followup_promise_has_date"),
+            models.CheckConstraint(condition=Q(promised_amount__isnull=True) | Q(promised_amount__gt=0),
+                                   name="billing_followup_promised_amount_positive"),
+        ]
+        indexes = [models.Index(fields=["lease", "created_at"])]
+
+    def __str__(self):
+        return self.get_outcome_display()

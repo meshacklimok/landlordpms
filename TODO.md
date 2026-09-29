@@ -135,7 +135,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [ ] Safaricom go-live (checklist: config/docs/17_MPESA_GO_LIVE.md)
 
 ## Phase 7 — Dashboards, search, tenant portal
-- [ ] Collectability score (A to E) and daily who-to-call list
+- [x] Collectability grade (A to E) and daily who-to-call list with calls and promises to pay (D-052)
 - [ ] Read-only Owner membership and monthly owner statement PDF
 - [x] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set (D-051)
 - [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
