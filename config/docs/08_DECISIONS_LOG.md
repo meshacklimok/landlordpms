@@ -461,3 +461,66 @@ Phase 8, first item (doc 12 Tier 1; doc 16 item 14; doc 06). Built on `feature/p
    - passkeys/WebAuthn;
    - an organization setting that makes MFA mandatory for its members;
    - SMS or email as a second factor.
+
+### D-060 — Platform billing, plans and entitlements, SMS wallet — ACCEPTED (2026-09-29, open to change before merge)
+Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and 10 for prices and limits). Built on `feature/phase8-platform-billing`, cut from `feature/phase8-mfa`. The user said "finish" Phase 8; defaults taken.
+1. **Plans** live in a table seeded from docs 05 and 10, editable by Platform Admins in Django admin. Prices are **[VERIFY with pilots]**.
+
+   | Plan | Units | Staff seats | KES / month | KES / year |
+   |------|------|------|------|------|
+   | Free | 5 | 2 | 0 | 0 |
+   | Starter | 25 | 4 | 799 | 7,990 |
+   | Business | 100 | 10 | 1,999 | 19,990 |
+   | Professional | 300 | 30 | 4,999 | 49,990 |
+   | Enterprise | no limit | no limit | set per customer | set per customer |
+
+   A year costs ten months. Enterprise is not self-serve: a Platform Admin sets it up.
+2. **Subscription**: one per organization. Status is TRIAL, ACTIVE, PAST_DUE or LAPSED. It has a plan, a billing interval (monthly or yearly) and the current paid period.
+   - A new organization starts a **30-day trial on Business**.
+   - An existing organization without a subscription is given the same trial the first time it is looked at.
+3. **The money flow is kept apart from rent** (doc 11 §22): own tables, own numbers (`LPM-INV-2026-000001`, `LPM-RCT-2026-000001` from a platform sequence), no link to tenant invoices, and nothing in an organization's ledgers or reports.
+4. **Invoices.**
+   - `SubscriptionInvoice` snapshots the plan, interval, period and the customer's name and KRA PIN. It stores the net amount, `vat_amount` and total.
+   - VAT is added only while `PLATFORM_VAT_REGISTERED` is on, at `PLATFORM_VAT_RATE` (16%). Both are **[VERIFY with our accountant]**, and plan prices are before VAT.
+   - An invoice is OPEN, PAID or VOID. It is never deleted: a mistake is voided with a reason.
+5. **How an invoice is raised.**
+   - **Choosing a plan** (Owner, or anyone with `subscription.manage`) issues an invoice at once. When it is paid, the new period starts on the payment date.
+   - Moving from a paid plan credits the unused days of the current paid period as a line on the new invoice. The credit is never more than the new amount.
+   - A downgrade is refused while usage is over the new plan's limits.
+   - Choosing Free needs no invoice: it applies at once if usage fits.
+6. **Renewal.** The daily job `subscriptions_daily`:
+   - Issues the renewal invoice 7 days before a paid period ends, due on the last day.
+   - Ends trials. An organization whose usage fits Free moves to Free; otherwise it goes PAST_DUE with an open invoice for Business monthly.
+   - Moves a subscription past its due date to PAST_DUE.
+   - After **14 days of grace**, moves it to LAPSED and sets the organization **read-only** (doc 14 A12). Data stays visible and exportable, nothing new can be created, and nothing is deleted.
+   - When payment arrives, the subscription is ACTIVE and the organization ACTIVE again. A FROZEN organization stays frozen.
+7. **Payments.** Until our own Paybill exists, a Platform Admin records each payment in Django admin: invoice, amount, method (M-Pesa, bank, other), reference (unique) and date.
+   - Recording a payment that covers the invoice marks it paid, issues a `PlatformReceipt` and starts the period.
+   - The subscription page shows how to pay: Paybill `PLATFORM_PAYBILL` with the invoice number as the account.
+   - Self-serve STK push to our Paybill and C2B matching come with the go-live of our own Daraja account **[VERIFY]**.
+8. **Documents.** The invoice and the receipt are PDFs from the subscription page. Any member with `subscription.view` can download them.
+9. **Entitlements**: one service, `subscriptions.entitlements`, and nothing else knows about plans.
+   - `check(org, "units", adding=n)` is called where units are created (the unit form, the single-house main unit and the CSV import).
+   - `check(org, "seats", adding=1)` is called when staff are invited (not for the Viewer role). Accepting is not checked again, because a pending invitation already holds its seat.
+   - Seats count active members and pending invitations, except in the Viewer role (doc 10: tenants and viewers are not seats).
+   - Over the limit, *creating* is refused with a message naming the plan. Viewing is never blocked, and data over a limit after a downgrade stays.
+10. **SMS wallet** (doc 14 A13): an append-only list of entries per organization (top-up, message, adjustment), with the balance held on a locked row.
+    - A Platform Admin records top-ups in Django admin, with the payment reference, and the top-up gets a receipt.
+    - Each SMS the organization sends is charged `SMS_PRICE` per segment (KES 1.00 **[VERIFY]**) when it is sent.
+    - When the balance is zero or below, `sms_available(org)` is false and messages fall back to the next channel or are skipped with "Channel not available".
+    - The balance may go slightly negative from a message already queued.
+    - Login codes, invitations and other platform messages are never charged.
+    - `SMS_WALLET_ENFORCED` switches the check on. It is on in production and off by default elsewhere, so development and tests are unchanged.
+11. **eTIMS**: `subscriptions.etims.EtimsAdapter` is an interface with `submit(invoice)`. The default `NullEtimsAdapter` submits nothing. `SubscriptionInvoice.etims_reference` is there for the control-unit number when a real adapter arrives, after the accountant's go/no-go (D-039) **[VERIFY]**.
+12. **Pages**: `/subscription/` shows the plan, usage against limits, the trial or period end, the open invoice with how to pay, invoice and receipt history, the SMS wallet balance with its last entries, and plan choice.
+    - `subscription.view` (org-wide) sees the page.
+    - `subscription.manage` changes the plan. It is read-only-safe, so a lapsed organization can still pay.
+    - The top bar shows a warning while in trial (last 7 days), PAST_DUE or LAPSED.
+13. **Not in this step**:
+    - self-serve M-Pesa payment;
+    - automatic matching of payments to our Paybill;
+    - seat add-ons;
+    - a platform revenue report beyond admin lists;
+    - dunning SMS to the owner;
+    - plan-included SMS bundles;
+    - AI usage limits.

@@ -80,3 +80,6 @@ try:
         Fernet(_key.strip())
 except ValueError as e:
     raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS must be comma-separated Fernet keys.") from e
+
+# Organizations pay for their SMS in production (D-060 item 10).
+SMS_WALLET_ENFORCED = os.getenv("SMS_WALLET_ENFORCED", "1") == "1"

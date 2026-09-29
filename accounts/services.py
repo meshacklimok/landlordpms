@@ -127,6 +127,9 @@ def create_organization(*, user: User, name: str, org_type: str = Organization.T
     roles = copy_role_templates(org)
     owner_role = next(r for r in roles.values() if r.is_owner_role)
     membership = Membership.objects.create(user=user, organization=org, role=owner_role, all_properties=True)
+    from subscriptions.services import subscription_for
+
+    subscription_for(org)  # the 30-day trial (D-060 item 2)
     audit.record("organization.create", actor=user, organization=org, obj=org, request=request,
                  changes={"name": org.name, "type": org.org_type})
     return membership
@@ -439,6 +442,10 @@ def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = 
     email = (email or "").strip().lower()
     if Membership.objects.filter(organization=actor.organization, user__phone=phone).exists():
         raise ValidationError(_("This person is already a member."))
+    from subscriptions import entitlements
+
+    if not entitlements.is_viewer_role(role):
+        entitlements.check(actor.organization, "seats")
 
     token = secrets.token_urlsafe(32)
     invitation = Invitation.objects.create(

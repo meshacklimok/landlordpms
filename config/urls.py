@@ -52,6 +52,7 @@ urlpatterns = [
     path("reports/", include("reports.urls")),
     path("search/", include("search.urls")),
     path("my/", include("portal.urls")),
+    path("subscription/", include("subscriptions.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

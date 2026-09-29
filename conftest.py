@@ -1,3 +1,5 @@
+import importlib
+
 import pytest
 from django.core.cache import cache
 
@@ -21,6 +23,21 @@ def _test_settings(settings):
     MemorySmsSender.outbox.clear()
     FakeDarajaClient.calls.clear()
     FakeDarajaClient.fail = ""
+
+
+@pytest.fixture(autouse=True)
+def _seeded_plans(request):
+    """A transactional test flushes the database, removing the plans migration 0002 seeds; put them back."""
+    marker = request.node.get_closest_marker("django_db")
+    if marker is None:
+        return
+    request.getfixturevalue("transactional_db" if marker.kwargs.get("transaction") else "db")
+    from django.apps import apps
+
+    from subscriptions.models import Plan
+
+    if not Plan.objects.exists():
+        importlib.import_module("subscriptions.migrations.0002_seed_plans").seed(apps, None)
 
 
 @pytest.fixture

@@ -74,7 +74,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Onboarding: create organization + Owner in one transaction, setup checklist
 - [x] Base template (mobile-first), role-based home page shell
 - [x] Tests: cross-organization isolation, role checks
-- [~] Platform Admin: Django admin with org, user overview (done); subscription overview (waits for subscription model)
+- [x] Platform Admin: Django admin with org, user overview; subscription overview (D-060)
 
 ## Phase 2 — Properties, tenants, leases
 - [x] Unit types include BED_SPACE (design-in); Property.category includes ESTATE
@@ -162,11 +162,11 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Optional MFA for Owner/Accountant, mandatory for Platform Admin (D-059: authenticator app, recovery codes, admin gate)
 - [ ] Public status page, security and data-protection page
 - [ ] Import concierge process for pilots; track time to first invoice
-- [ ] `SubscriptionInvoice.vat_amount`; confirm VAT/eTIMS for our company
-- [ ] `EtimsAdapter` interface stub
-- [ ] Platform billing (flow A): Plan, Subscription, SubscriptionInvoice, PlatformReceipt, SMS wallet top-up; separate from tenant billing
+- [x] `SubscriptionInvoice.vat_amount` (D-060); still confirm VAT registration and rate for our company [VERIFY]
+- [x] `EtimsAdapter` interface stub (D-060: `subscriptions/etims.py`, null adapter by default)
+- [x] Platform billing (flow A): Plan, Subscription, SubscriptionInvoice, PlatformReceipt, SMS wallet top-up; separate from tenant billing (D-060)
 - [ ] Backups, monitoring, error tracking, HTTPS, prod settings
-- [ ] Subscriptions app and entitlements service
+- [x] Subscriptions app and entitlements service (D-060)
 - [ ] Onboarding polish, help docs, support channel
 
 ## Phase 9 — Later

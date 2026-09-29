@@ -104,6 +104,7 @@ TEMPLATES = [
                 "accounts.context_processors.organization",
                 "notifications.context_processors.bell",
                 "portal.context_processors.portal",
+                "subscriptions.context_processors.banner",
             ],
         },
     },
@@ -222,6 +223,19 @@ WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
 WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN", "")
 WA_APP_SECRET = os.getenv("WA_APP_SECRET", "")
 WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN", "")
+
+# Platform billing: what landlords pay us (D-060). Prices are before VAT; VAT is added only when we are
+# registered. [VERIFY] the rate and the SMS price with the accountant and the SMS provider.
+PLATFORM_VAT_REGISTERED = os.getenv("PLATFORM_VAT_REGISTERED", "0") == "1"
+PLATFORM_VAT_RATE = os.getenv("PLATFORM_VAT_RATE", "16")
+PLATFORM_PAYBILL = os.getenv("PLATFORM_PAYBILL", "")
+PLATFORM_KRA_PIN = os.getenv("PLATFORM_KRA_PIN", "")
+# KES charged to the organization's SMS wallet per SMS part sent.
+SMS_PRICE = os.getenv("SMS_PRICE", "1.00")
+# Off in development and tests: organizations send SMS without a wallet. On in production.
+SMS_WALLET_ENFORCED = os.getenv("SMS_WALLET_ENFORCED", "0") == "1"
+# KRA eTIMS adapter for our invoices (subscriptions/etims.py); the default sends nothing.
+ETIMS_ADAPTER = os.getenv("ETIMS_ADAPTER", "subscriptions.etims.NullEtimsAdapter")
 
 # Keys that encrypt provider secrets at rest (core/crypto.py): comma-separated Fernet keys, the first
 # encrypts. Empty in development means a key derived from SECRET_KEY; production must set them.

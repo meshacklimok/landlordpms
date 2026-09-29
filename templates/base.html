@@ -51,6 +51,7 @@
         {% if membership|can:"units.manage" or membership|can:"tenants.manage" or membership|can:"invoices.adjust" %}<li class="nav-item"><a class="nav-link" href="{% url 'imports:list' %}">{% trans "Import" %}</a></li>{% endif %}
         {% if membership|can:"staff.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:staff' %}">{% trans "Staff" %}</a></li>{% endif %}
         {% if membership|can:"roles.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:roles' %}">{% trans "Roles" %}</a></li>{% endif %}
+        {% if membership|can:"subscription.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'subscriptions:page' %}">{% trans "Subscription" %}</a></li>{% endif %}
       </ul>
       {% if membership %}
       <form method="get" action="{% url 'search:results' %}" class="global-search position-relative me-md-2 my-2 my-md-0" role="search"
@@ -93,6 +94,8 @@
   <div class="alert alert-warning">{% trans "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created." %}</div>
   {% elif organization and organization.status == "FROZEN" %}
   <div class="alert alert-danger">{% trans "This organization is frozen. Contact support." %}</div>
+  {% elif subscription_banner %}
+  <div class="alert alert-{{ subscription_banner.level }}">{{ subscription_banner.text }} <a href="{% url 'subscriptions:page' %}" class="alert-link">{% trans "Subscription" %}</a></div>
   {% endif %}
   {% for message in messages %}
   <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %}">{{ message }}</div>

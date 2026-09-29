@@ -288,6 +288,9 @@ def _save_unit(unit: Unit) -> None:
 
 
 def _create_unit(actor: Membership, prop: Property, *, code: str, request=None, **fields) -> Unit:
+    from subscriptions import entitlements
+
+    entitlements.check(prop.organization, "units")
     unit = Unit(organization=prop.organization, property=prop, code=clean_code(code),
                 **{k: v for k, v in fields.items() if k in UNIT_FIELDS})
     unit.payment_reference = payment_reference_for(prop.code, unit.code)

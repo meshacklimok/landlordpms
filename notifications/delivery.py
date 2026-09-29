@@ -60,8 +60,10 @@ def effective_rule(org: Organization, ntype: catalog.NotificationType) -> Rule:
 
 
 def sms_available(org: Organization) -> bool:
-    """Whether the organization can send SMS. The SMS wallet check arrives with platform billing (Phase 8)."""
-    return True
+    """Whether the organization can send SMS: its SMS wallet is in credit (D-060 item 10)."""
+    from subscriptions import services as billing
+
+    return billing.sms_available(org)
 
 
 def whatsapp_available(org: Organization) -> bool:
@@ -313,6 +315,10 @@ def send_one(pk: int, now: datetime.datetime | None = None) -> str | None:
             message.provider_id = result.provider_id
             message.cost = result.cost
             message.error = ""
+            if message.channel == catalog.SMS:
+                from subscriptions import services as billing
+
+                billing.charge_message(message)
         else:
             message.error = (result.error or "")[:300]
             if result.permanent or message.attempts >= Message.MAX_ATTEMPTS:
