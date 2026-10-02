@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ topic_title }}{% endblock %}
+{% block content %}
+<nav class="small mb-2"><a href="{% url 'support:help' %}">{% trans "Help" %}</a> / {{ topic_title }}</nav>
+<h1 class="h4 mb-3">{{ topic_title }}</h1>
+<div class="card shadow-sm mb-3"><div class="card-body small">{% block body %}{% endblock %}</div></div>
+{% include "support/_contact_box.html" %}
+{% endblock %}

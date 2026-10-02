@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Report a problem" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'portal:lease' lease.public_id %}" class="small">← {{ lease.unit.property.name }} · {{ lease.unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Report a problem" %}</h1>
+  <p class="small text-muted">{% blocktrans with org=lease.organization.name %}{{ org }} will see it and tell you when it is fixed. For a fire or a break-in, call the emergency services first.{% endblocktrans %}</p>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Send" %}</button>
+  </div></form>
+</div>
+{% endblock %}

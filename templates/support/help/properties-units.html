@@ -1,0 +1,13 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>A <strong>property</strong> is a building or plot you let. It can have <strong>buildings</strong>
+(blocks) and <strong>units</strong> (houses, flats, shops or rooms).</p>
+<ul>
+  <li>Each unit has its rent, a type and a <strong>payment reference</strong>. Tenants use that reference as the
+    M-Pesa account number so the payment is matched to them.</li>
+  <li>A property can have an <strong>owner</strong> when you manage it for someone. Owners get a monthly statement
+    and you can record what you pay them.</li>
+  <li>Archive a property or unit you no longer let. Its history stays.</li>
+  <li>Your plan sets how many units you can have; see <a href="{% url 'support:help_topic' 'subscription' %}">Subscription</a>.</li>
+</ul>
+{% endblock %}

@@ -58,10 +58,10 @@ Names are `module.action`. Views check these, never role names.
 | subscription | `subscription.view`, `subscription.manage` |
 | properties | `properties.view`, `properties.manage` (add/edit/archive property, buildings, units) |
 | units & letting | `units.view`, `units.manage`, `units.set_status`, `units.list_vacant` (see vacancy/availability) |
-| tenants | `tenants.view`, `tenants.manage`, `tenants.view_sensitive`, `tenants.invite_portal` |
+| tenants | `tenants.view`, `tenants.manage`, `tenants.view_sensitive`, `tenants.invite_portal`, `tenants.issue_letter` |
 | prospects | `prospects.view`, `prospects.manage` (leads/viewings, convert to tenant) |
 | leases | `leases.view`, `leases.draft`, `leases.activate`, `leases.terminate`, `leases.change_rent` |
-| billing | `invoices.view`, `invoices.generate`, `invoices.adjust`, `invoices.approve_adjustment`, `invoices.void`, `charges.manage` |
+| billing | `invoices.view`, `invoices.generate`, `invoices.adjust`, `invoices.approve_adjustment`, `invoices.void`, `charges.manage`, `deposits.record`, `deposits.deduct` (sensitive) |
 | payments | `payments.view`, `payments.record`, `payments.confirm`, `payments.reverse`, `payments.allocate`, `receipts.issue` |
 | payment accounts | `payment_accounts.view`, `payment_accounts.manage`, `mpesa.settings` |
 | mpesa | `mpesa.view_transactions`, `mpesa.match` (unallocated inbox) |
@@ -94,6 +94,7 @@ Maintenance and expenses capabilities exist from the start, so roles can be desi
 | leases.activate / terminate / change_rent | ● | ● | ○ | ○ | ◐ | ○ | ○ | ○ |
 | invoices.view | ● | ● | ● | ◐ balances | ◐ | ○ | ○ | ● |
 | invoices.generate / adjust / void | ● | ● | ◐ propose | ○ | ○ | ○ | ○ | ○ |
+| deposits.record / deduct | ● | ● / ● | ● / ○ | ○ | ○ | ○ | ○ | ○ |
 | payments.view | ● | ● | ● | ◐ | ○ | ○ | ○ | ● |
 | payments.record | ● | ● | ● | ◐ **owner/manager decides** | ○ | ○ | ○ | ○ |
 | payments.confirm / reverse | ● | ● / ◐ limit | ◐ | ○ | ○ | ○ | ○ | ○ |

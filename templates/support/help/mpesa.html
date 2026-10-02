@@ -1,0 +1,15 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Tenants pay into <strong>your own</strong> Paybill or Till. We never hold your money.</p>
+<ol>
+  <li>Create an app on Safaricom Daraja and ask Safaricom to put your shortcode live on it.</li>
+  <li>On <a href="{% url 'mpesa:settings' %}">M-Pesa settings</a>, add the shortcode, consumer key and secret (and the
+    passkey for a Paybill), then register the payment links.</li>
+  <li>Tell tenants to use their unit's payment reference as the account number.</li>
+</ol>
+<p>A payment with the right reference is recorded and receipted at once. Others wait in the
+<a href="{% url 'mpesa:inbox' %}">M-Pesa inbox</a> with a suggestion, for you to match or ignore. Each morning you get
+a summary of the day before.</p>
+<p>With a Paybill and passkey you can also send a payment request to a tenant's phone, and tenants get a private pay
+link in their rent messages.</p>
+{% endblock %}

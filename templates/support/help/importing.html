@@ -1,0 +1,13 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Bring your records in from a spreadsheet on <a href="{% url 'imports:list' %}">Import</a>.</p>
+<ol>
+  <li>Download the CSV template for units, tenants or opening balances.</li>
+  <li>Fill it in with Excel or Google Sheets and save as CSV.</li>
+  <li>Upload it. You see every row checked, with any problems, before anything is saved.</li>
+  <li>Import the rows that are fine and fix the rest.</li>
+</ol>
+<p>Import units first, then tenants, then opening balances for what tenants already owe.</p>
+<p>Rather have us do it? <a href="{% url 'support:contact' %}?kind=IMPORT_HELP">Send us your spreadsheet</a> in any shape
+and we will import it for you.</p>
+{% endblock %}

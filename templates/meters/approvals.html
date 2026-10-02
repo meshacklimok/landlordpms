@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Readings to approve" %}{% endblock %}
+{% block content %}
+<a href="{% url 'meters:list' %}" class="small">← {% trans "Water meters" %}</a>
+<h1 class="h4 mt-2">{% trans "Readings to approve" %}</h1>
+{% if readings %}
+<p class="small text-muted">{% trans "Flagged readings need a note and are approved one at a time. A reading lower than the last one cannot be approved: reject it, or record it again as a new meter." %}</p>
+{% if clean %}<form method="post" id="bulk">{% csrf_token %}<input type="hidden" name="action" value="approve_selected"></form>{% endif %}
+<ul class="list-group mb-3">
+{% for reading in readings %}
+  <li class="list-group-item">
+    <div class="d-flex gap-2 align-items-start">
+      {% if not reading.flags %}<input class="form-check-input mt-1" type="checkbox" form="bulk" name="reading" value="{{ reading.public_id }}" checked aria-label="{% trans 'Select' %}">{% endif %}
+      <div class="flex-grow-1">
+        <a href="{% url 'meters:detail' reading.meter.public_id %}">{{ reading.meter.label }}</a> · {{ reading.meter.property.name }}
+        <div><strong class="font-monospace">{{ reading.value }} m³</strong> · {{ reading.read_on|date:"j M Y" }}
+          {% if reading.is_baseline %}<span class="badge text-bg-info">{% trans "Start of count" %}</span>
+          {% elif reading.usage is not None %}<span class="small text-muted">· {% blocktrans with prev=reading.previous.value u=reading.usage d=reading.days %}from {{ prev }}: {{ u }} m³ used over {{ d }} days{% endblocktrans %}</span>{% endif %}
+          {% if reading.photo %}<a class="small ms-1" href="{% url 'meters:photo' reading.public_id %}" target="_blank" rel="noopener">{% trans "Photo" %}</a>{% endif %}
+        </div>
+        {% for label in reading.flag_labels %}<span class="badge text-bg-danger me-1">{{ label }}</span>{% endfor %}
+        <div class="small text-muted">{% blocktrans with who=reading.recorded_by.get_full_name|default:reading.recorded_by %}Recorded by {{ who }}{% endblocktrans %}{% if reading.note %} · “{{ reading.note }}”{% endif %}</div>
+        {% if not reading.meter.is_prepaid %}<div class="small">{% trans "Would bill" %} {{ reading.estimate|money }}</div>{% endif %}
+        {% if reading.flags %}{% include "meters/_approve_one.html" %}{% else %}{% include "meters/_reject_one.html" %}{% endif %}
+      </div>
+    </div>
+  </li>
+{% endfor %}
+</ul>
+{% if clean %}<button class="btn btn-success" form="bulk">{% trans "Approve selected" %}</button>{% endif %}
+{% else %}
+<p class="text-muted">{% trans "Nothing waiting. All readings are dealt with." %}</p>
+{% endif %}
+{% endblock %}

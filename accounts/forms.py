@@ -4,6 +4,7 @@ from django.contrib.auth.password_validation import password_validators_help_tex
 from django.utils.translation import gettext_lazy as _
 
 from core import ratelimit
+from core.net import client_ip
 from core.phone import InvalidPhoneNumber, normalize_phone
 
 from .capabilities import CAPABILITIES
@@ -58,7 +59,7 @@ class LoginForm(forms.Form):
         password = data.get("password")
         if not identifier or not password:
             return data
-        ip = self.request.META.get("REMOTE_ADDR", "")
+        ip = client_ip(self.request)
         # Key on the normalized phone so "0712…", "+254 712…" etc. share one counter.
         key = identifier
         if "@" not in identifier:
@@ -160,3 +161,19 @@ class OverrideForm(forms.Form):
 
     def granted(self):
         return {"grant": True, "deny": False}.get(self.cleaned_data["state"])
+
+
+class MFACodeForm(forms.Form):
+    """A code from the authenticator app, or one of the recovery codes (D-059)."""
+
+    code = forms.CharField(label=_("Code from your app"), max_length=20,
+                           help_text=_("Lost your phone? Enter one of your recovery codes instead."),
+                           widget=forms.TextInput(attrs={"inputmode": "text", "autocomplete": "one-time-code",
+                                                         "autofocus": True, "autocapitalize": "off"}))
+
+
+class MFADisableForm(forms.Form):
+    password = forms.CharField(label=_("Password"),
+                               widget=forms.PasswordInput(attrs={"autocomplete": "current-password"}))
+    code = forms.CharField(label=_("Code from your app"), max_length=20,
+                           widget=forms.TextInput(attrs={"autocomplete": "one-time-code", "autocapitalize": "off"}))

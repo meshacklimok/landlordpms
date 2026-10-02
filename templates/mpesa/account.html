@@ -1,0 +1,49 @@
+{% extends "mpesa/_base.html" %}{% load i18n %}
+{% block title %}{{ account.display_name }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 640px">
+  <a href="{% url 'mpesa:settings' %}" class="small">← {% trans "M-Pesa" %}</a>
+  <h1 class="h4 mt-2 mb-0">{{ account.display_name }}</h1>
+  <div class="small text-body-secondary mb-3">{{ account.get_type_display }} {{ account.number }}</div>
+
+  {% if creds %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6 mb-2">{% trans "Connection" %}</h2>
+    {% if creds.urls_registered_at %}
+      <p class="small mb-2"><i class="bi bi-check-circle-fill text-success"></i> {% blocktrans with when=creds.urls_registered_at|date:"j M Y H:i" %}Registered with Safaricom on {{ when }}. Payments to {{ account.number }} arrive here.{% endblocktrans %}</p>
+    {% else %}
+      <p class="small mb-2"><i class="bi bi-exclamation-triangle-fill text-warning"></i> {% trans "Not registered yet: Safaricom does not know where to send this account's payments." %}</p>
+    {% endif %}
+    {% if creds.registration_error %}<div class="alert alert-danger small py-2">{% trans "Last attempt failed:" %} {{ creds.registration_error }}</div>{% endif %}
+    <form method="post" class="d-flex flex-wrap gap-2">{% csrf_token %}
+      <button class="btn btn-sm btn-primary" name="action" value="register">{% if creds.urls_registered_at %}{% trans "Register again" %}{% else %}{% trans "Register with Safaricom" %}{% endif %}</button>
+      <button class="btn btn-sm btn-outline-secondary" name="action" value="new_token" onclick="return confirm('{% trans "Make a new secret callback link? Payments stop arriving until you register again." %}')">{% trans "New callback link" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+
+  <form method="post" class="card shadow-sm" novalidate autocomplete="off">{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="save">
+    <h2 class="h6">{% trans "Daraja keys" %}</h2>
+    <p class="small text-body-secondary">{% trans "From your app on the Safaricom developer portal. Keys are stored encrypted and never shown again; leave a key blank to keep the saved one." %}</p>
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    {% for field in form %}
+    <div class="mb-3">
+      <label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {% if field.name == "environment" %}
+        <select name="environment" id="{{ field.id_for_label }}" class="form-select{% if field.errors %} is-invalid{% endif %}">
+          {% for value, label in field.field.choices %}<option value="{{ value }}"{% if field.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      {% elif field.name == "shortcode" %}
+        <input type="text" name="shortcode" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" placeholder="{{ account.number }}" inputmode="numeric" class="form-control{% if field.errors %} is-invalid{% endif %}">
+      {% else %}
+        {{ field }}
+      {% endif %}
+      {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+    </div>
+    {% endfor %}
+    <button class="btn btn-dark">{% trans "Save" %}</button>
+  </div></form>
+</div>
+{% endblock %}

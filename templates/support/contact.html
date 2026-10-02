@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Contact support" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 640px">
+<h1 class="h4 mb-3">{% trans "Contact support" %}</h1>
+<div class="card shadow-sm"><div class="card-body">
+<form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+  {% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+  {{ form.page }}
+  {% for field in form.visible_fields %}
+  <div class="mb-3">
+    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% if field.name == "kind" %}<select name="kind" id="{{ field.id_for_label }}" class="form-select">{% for value, label in field.field.choices %}<option value="{{ value }}" {% if field.value == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+    {% elif field.name == "message" %}<textarea name="message" id="{{ field.id_for_label }}" rows="6" maxlength="5000" class="form-control{% if field.errors %} is-invalid{% endif %}">{{ field.value|default_if_none:"" }}</textarea>
+    {% elif field.name == "attachment" %}<input type="file" name="attachment" id="{{ field.id_for_label }}" class="form-control{% if field.errors %} is-invalid{% endif %}">
+    {% else %}<input type="text" name="{{ field.name }}" id="{{ field.id_for_label }}" maxlength="150" value="{{ field.value|default_if_none:'' }}" class="form-control{% if field.errors %} is-invalid{% endif %}">{% endif %}
+    {% for error in field.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+    {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+  </div>
+  {% endfor %}
+  <button class="btn btn-primary">{% trans "Send" %}</button>
+</form>
+</div></div>
+<p class="small text-muted mt-3">{% trans "We reply within one working day." %}
+{% if support_email %}{% trans "Email" %} <a href="mailto:{{ support_email }}">{{ support_email }}</a>.{% endif %}
+{% if support_whatsapp %}<a href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">WhatsApp</a>.{% endif %}
+<a href="{% url 'support:help' %}">{% trans "Help pages" %}</a></p>
+</div>
+{% endblock %}

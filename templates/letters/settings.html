@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Tenancy letters" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  {% if next %}<a href="{{ next }}" class="small">← {% trans "Back" %}</a>{% endif %}
+  <h1 class="h4 mt-2">{% trans "Tenancy letters" %}</h1>
+  <p class="small text-muted">{% trans "Every letter names the tenants, the units and the tenancy dates. Choose what else your letters state. This applies to letters issued from now on; letters already issued do not change." %}</p>
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      {% for field in form %}
+      <div class="form-check mb-3">
+        <input type="checkbox" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-check-input" {% if field.value %}checked{% endif %}>
+        <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        <div class="form-text small">{{ field.help_text }}</div>
+      </div>
+      {% endfor %}
+      <button class="btn btn-primary btn-sm">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

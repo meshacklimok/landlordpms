@@ -1,0 +1,69 @@
+{% extends "payments/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Payments to review" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'payments:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Payments" %}</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
+    <div>
+      <h1 class="h3 mb-0">{% trans "Payments to review" %}</h1>
+      <div class="small text-body-secondary">{% trans "Recorded by staff who cannot confirm payments. They do not count towards any balance until confirmed." %}</div>
+    </div>
+    {% if payments %}
+    <div class="text-end">
+      <div class="small text-body-secondary">{% blocktrans count n=totals.count %}{{ n }} waiting{% plural %}{{ n }} waiting{% endblocktrans %}</div>
+      <div class="h5 num mb-0">{% for cur, amount in totals.amounts.items %}{{ amount|money:cur }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if payments %}
+  <form method="post" data-bulk data-currency="{{ organization.currency }}" data-confirm="{% trans 'Confirm the ticked payments? Each one is posted, paid to the oldest invoices first, and gets a receipt.' %}">{% csrf_token %}
+    <div class="card shadow-sm overflow-hidden">
+      <div class="table-responsive">
+        <table class="table pay-table align-middle">
+          <thead><tr>
+            <th style="width: 2.5rem"><input type="checkbox" class="form-check-input" data-bulk-all aria-label="{% trans 'Select all' %}"></th>
+            <th>{% trans "Date paid" %}</th>
+            <th>{% trans "Tenant" %}</th>
+            <th class="d-none d-md-table-cell">{% trans "Method" %}</th>
+            <th class="d-none d-lg-table-cell">{% trans "Recorded by" %}</th>
+            <th class="text-end">{% trans "Amount" %}</th>
+          </tr></thead>
+          <tbody>
+            {% for payment in payments %}
+            <tr data-href="{% url 'payments:detail' payment.public_id %}">
+              <td><input type="checkbox" class="form-check-input" name="payment" value="{{ payment.public_id }}" data-bulk-item data-amount="{{ payment.amount|stringformat:'.2f' }}" aria-label="{% trans 'Select' %}"></td>
+              <td class="num">{{ payment.paid_at|date:"j M Y" }}<div class="small text-body-secondary">{% blocktrans with age=payment.created_at|timesince %}{{ age }} ago{% endblocktrans %}</div></td>
+              <td>
+                <a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'payments:detail' payment.public_id %}">{{ payment.tenant.name|default:"—" }}</a>
+                <div class="small text-body-secondary">{{ payment.lease.unit.property.name }} · {{ payment.lease.unit.code }}</div>
+              </td>
+              <td class="d-none d-md-table-cell">
+                <div class="d-flex align-items-center gap-2">
+                  {% include "payments/_method.html" with method=payment.method %}
+                  <div><div class="small">{{ payment.get_method_display }}</div>{% if payment.reference %}<code class="small">{{ payment.reference }}</code>{% endif %}
+                  {% if payment.has_duplicate %}<div><span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle" title="{% trans 'Another payment has the same reference' %}"><i class="bi bi-exclamation-triangle"></i> {% trans "Duplicate reference" %}</span></div>{% endif %}</div>
+                </div>
+              </td>
+              <td class="d-none d-lg-table-cell small">{{ payment.recorded_by|default:"—" }}</td>
+              <td class="text-end num fw-semibold">{{ payment.amount|money:payment.lease.currency }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card-footer bg-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <span class="small text-body-secondary">{% trans "To split a payment across chosen invoices, or reject it, open it." %}</span>
+        <button class="btn btn-success" data-bulk-submit disabled><i class="bi bi-check2-all"></i> {% trans "Confirm selected" %} <span class="small opacity-75" data-bulk-count></span></button>
+      </div>
+    </div>
+  </form>
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+    <h2 class="h6">{% trans "All caught up" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Nothing is waiting for review." %}</p>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

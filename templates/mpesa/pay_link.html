@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Pay rent" %} · {{ org.display_name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    <div class="small text-body-secondary">{{ org.display_name }}</div>
+    <h1 class="h4 mb-1">{% trans "Pay rent by M-Pesa" %}</h1>
+    <div class="text-body-secondary mb-3">{{ property.name }} · {% trans "Unit" %} {{ unit.code }}</div>
+    {% if balance > 0 %}
+    <p class="mb-3">{% trans "Amount owed" %}: <span class="num fw-semibold text-danger">{{ balance|money:currency }}</span></p>
+    {% elif balance < 0 %}
+    <p class="mb-3">{% trans "Nothing owed" %} · {{ balance|absolute|money:currency }} {% trans "in credit" %}</p>
+    {% else %}
+    <p class="mb-3">{% trans "Nothing owed right now." %}</p>
+    {% endif %}
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-success w-100"><i class="bi bi-phone-vibrate"></i> {% trans "Send M-Pesa prompt" %}</button>
+    </form>
+    <p class="small text-body-secondary mt-3 mb-0">{% trans "Enter your PIN on the phone to pay. Nothing is paid if you cancel. You get a receipt by SMS." %}</p>
+  </div></div>
+  {% if paybill %}
+  <p class="small text-body-secondary text-center mt-3">{% blocktrans with pb=paybill ref=unit.payment_reference %}Or pay with Paybill {{ pb }}, account {{ ref }}.{% endblocktrans %}</p>
+  {% endif %}
+</div>
+{% endblock %}

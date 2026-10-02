@@ -66,6 +66,8 @@ Avoid a heavy SPA framework; the audience is on low-end phones and slow data.
 - Performance test with 10,000 units and 50,000 invoices (doc 14 C6).
 
 ## 8. Decisions needed
+Answered by D-051 (2026-09-29): Chart.js; live queries first, no snapshots yet; "as recorded now"; the dashboard first, then the who-to-call list and the owner statement.
+
 1. Chart library: Chart.js (recommended) vs ApexCharts.
 2. Do trends use nightly snapshots from day one (recommended from Phase 7) or live queries first?
 3. "As recorded now" vs "as at date" for historic trends (recommend as recorded now).

@@ -1,0 +1,36 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Notification settings" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <div class="mb-2">
+    <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
+    <div class="small text-body-secondary">{% trans "Which notifications go out, and when." %}</div>
+  </div>
+  {% include "notifications/_tabs.html" with tab="settings" %}
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Quiet hours" %}</h2>
+    <p class="small text-body-secondary">{% trans "SMS due in these hours wait until they end. Set both to the same time to switch quiet hours off." %}</p>
+    <form method="post" class="row g-2 align-items-end">{% csrf_token %}
+      <input type="hidden" name="action" value="quiet">
+      <div class="col-5 col-sm-3">
+        <label class="form-label small mb-1" for="{{ quiet_form.start.id_for_label }}">{{ quiet_form.start.label }}</label>
+        {{ quiet_form.start }}
+      </div>
+      <div class="col-5 col-sm-3">
+        <label class="form-label small mb-1" for="{{ quiet_form.end.id_for_label }}">{{ quiet_form.end.label }}</label>
+        {{ quiet_form.end }}
+      </div>
+      <div class="col-2 col-sm-auto"><button class="btn btn-dark">{% trans "Save" %}</button></div>
+      {% if quiet_form.errors %}<div class="col-12 small text-danger">{% trans "Enter both times as HH:MM." %}</div>{% endif %}
+      {% if quiet_off %}<div class="col-12 small text-body-secondary">{% trans "Quiet hours are off: messages go out at any time." %}</div>{% endif %}
+    </form>
+  </div></div>
+
+  <h2 class="h6">{% trans "To tenants" %}</h2>
+  {% for row in tenant_rows %}{% include "notifications/_rule.html" %}{% endfor %}
+
+  <h2 class="h6 mt-4">{% trans "To staff" %}</h2>
+  {% for row in staff_rows %}{% include "notifications/_rule.html" %}{% endfor %}
+</div>
+{% endblock %}

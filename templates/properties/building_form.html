@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ building.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:detail' building.property.public_id %}" class="small">← {{ building.property.name }}</a>
+  <h1 class="h4 mt-2">{{ building.name }}</h1>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+  </form>
+  <form method="post" class="mt-4">{% csrf_token %}
+    <input type="hidden" name="action" value="archive">
+    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this building?" %}')">{% trans "Archive building" %}</button>
+    <div class="form-text">{% trans "Only possible once it has no active units." %}</div>
+  </form>
+</div>
+{% endblock %}

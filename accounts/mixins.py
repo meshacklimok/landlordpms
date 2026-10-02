@@ -31,7 +31,9 @@ class OrgMemberRequiredMixin(VerifiedUserRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and request.user.phone_verified:
             if request.membership is None:
-                return redirect("accounts:onboarding")
+                from portal.selectors import has_access  # portal imports this module's app
+
+                return redirect("portal:home" if has_access(request.user) else "accounts:onboarding")
             if not is_membership_usable(request.membership):
                 raise PermissionDenied("This organization is not available.")
         return super().dispatch(request, *args, **kwargs)

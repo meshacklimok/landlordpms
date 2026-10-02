@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Add a charge to all leases" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Add a charge to all leases" %}</h1>
+  <p class="small text-muted">{% trans "For a fee every unit pays, such as garbage collection. It is added to every open lease here that does not have it yet, and billed with the rent. Change or end it on each lease." %}</p>
+  <form method="post" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    {% if preview %}
+    <h2 class="h6 mt-3">{% blocktrans count n=to_add|length %}{{ n }} lease will get it{% plural %}{{ n }} leases will get it{% endblocktrans %}</h2>
+    {% if to_add %}
+    <ul class="list-unstyled small mb-3">
+      {% for lease, day in to_add %}
+      <li class="py-1{% if not forloop.last %} border-bottom{% endif %} d-flex justify-content-between gap-2">
+        <span><span class="fw-medium">{{ lease.unit.code }}</span>{% if lease.primary_tenant %} · {{ lease.primary_tenant }}{% endif %}{% if lease.is_draft %} <span class="badge text-bg-light border">{% trans "Draft" %}</span>{% endif %}</span>
+        <span class="text-muted text-nowrap">{% blocktrans with d=day|date:"j M Y" %}from {{ d }}{% endblocktrans %}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if skipped %}
+    <h2 class="h6">{% blocktrans count n=skipped|length %}{{ n }} lease left alone{% plural %}{{ n }} leases left alone{% endblocktrans %}</h2>
+    <ul class="list-unstyled small text-muted mb-3">
+      {% for lease, reason in skipped %}<li><span class="fw-medium">{{ lease.unit.code }}</span>{% if lease.primary_tenant %} · {{ lease.primary_tenant }}{% endif %} — {{ reason }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    <div class="d-flex gap-2">
+      {% if to_add %}<button class="btn btn-primary flex-fill" name="action" value="apply">{% blocktrans count n=to_add|length %}Add to {{ n }} lease{% plural %}Add to {{ n }} leases{% endblocktrans %}</button>{% endif %}
+      <button class="btn btn-outline-secondary flex-fill" name="action" value="preview">{% trans "Check again" %}</button>
+    </div>
+    {% else %}
+    <button class="btn btn-primary w-100" name="action" value="preview">{% trans "Show the leases" %}</button>
+    {% endif %}
+  </div></form>
+</div>
+{% endblock %}

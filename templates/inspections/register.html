@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Items" %} · {{ unit.code }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:unit' unit.public_id %}" class="small">← {{ property.name }} · {% trans "Unit" %} {{ unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Items and condition reports" %}</h1>
+  <p class="small text-muted">{% trans "The unit's items are copied into each new move-in or move-out report. Changing them here does not change reports already made." %}</p>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Condition reports" %}</h2>
+    <div class="list-group list-group-flush">
+      {% for r in reports %}
+      <a href="{% url 'inspections:report' r.public_id %}" class="list-group-item list-group-item-action px-0 d-flex justify-content-between align-items-center small">
+        <span>{{ r.get_kind_display }} · {{ r.inspected_on|date:"j M Y" }} · {{ r.lease }}</span>
+        <span class="badge {% if r.status == 'COMPLETED' %}text-bg-success{% elif r.status == 'CANCELLED' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ r.get_status_display }}</span>
+      </a>
+      {% empty %}
+      <div class="text-muted small">{% trans "No reports yet. Start one from the lease." %}</div>
+      {% endfor %}
+    </div>
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Items" %}</h2>
+    <div class="list-group list-group-flush">
+      {% for item in items %}
+      <div class="list-group-item px-0 small">
+        {% if can_edit and item.pk|stringformat:"s" == edit_id %}
+        <form method="post" class="row g-2 align-items-end">{% csrf_token %}
+          <input type="hidden" name="action" value="edit"><input type="hidden" name="item" value="{{ item.pk }}">
+          <div class="col-sm-3"><input name="area" value="{{ item.area }}" maxlength="60" class="form-control form-control-sm" placeholder="{% trans 'Area' %}" aria-label="{% trans 'Area' %}"></div>
+          <div class="col-sm-4"><input name="name" value="{{ item.name }}" maxlength="100" required class="form-control form-control-sm" aria-label="{% trans 'Item' %}"></div>
+          <div class="col-sm-2"><input name="quantity" type="number" min="1" max="999" value="{{ item.quantity }}" class="form-control form-control-sm" aria-label="{% trans 'Quantity' %}"></div>
+          <div class="col-sm-3"><input name="notes" value="{{ item.notes }}" maxlength="200" class="form-control form-control-sm" placeholder="{% trans 'Note' %}" aria-label="{% trans 'Note' %}"></div>
+          <div class="col-12 d-flex gap-2"><button class="btn btn-sm btn-primary">{% trans "Save" %}</button><a class="btn btn-sm btn-link" href="{% url 'inspections:register' unit.public_id %}">{% trans "Cancel" %}</a></div>
+        </form>
+        {% else %}
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <span><span class="text-muted">{{ item.area }}{% if item.area %} · {% endif %}</span>{{ item.name }}{% if item.quantity > 1 %} × {{ item.quantity }}{% endif %}{% if item.notes %} <span class="text-muted">— {{ item.notes }}</span>{% endif %}</span>
+          {% if can_edit %}<span class="d-flex gap-2 text-nowrap">
+            <a href="?edit={{ item.pk }}">{% trans "Edit" %}</a>
+            <form method="post">{% csrf_token %}<input type="hidden" name="action" value="archive"><input type="hidden" name="item" value="{{ item.pk }}"><button class="btn btn-link btn-sm p-0 text-danger">{% trans "Archive" %}</button></form>
+          </span>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+      {% empty %}
+      <div class="text-muted small">{% trans "No items yet. The standard list for this kind of unit is added when the first report starts." %}</div>
+      {% endfor %}
+    </div>
+    {% if can_edit and not items and not archived %}
+    <form method="post" class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="defaults"><button class="btn btn-sm btn-outline-primary">{% trans "Add the standard items now" %}</button></form>
+    {% endif %}
+    {% if form %}
+    <details class="mt-3" {% if form.errors %}open{% endif %}><summary class="small">{% trans "Add an item" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="add">
+        {% include "partials/form.html" %}
+        <button class="btn btn-sm btn-primary">{% trans "Add item" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {% if archived %}
+  <details class="mb-4"><summary class="small">{% blocktrans count n=archived|length %}{{ n }} archived item{% plural %}{{ n }} archived items{% endblocktrans %}</summary>
+    <ul class="list-unstyled small mt-2">
+      {% for item in archived %}
+      <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+        <span class="text-muted">{{ item.area }}{% if item.area %} · {% endif %}{{ item.name }}</span>
+        {% if can_edit %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="item" value="{{ item.pk }}"><button class="btn btn-link btn-sm p-0">{% trans "Restore" %}</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

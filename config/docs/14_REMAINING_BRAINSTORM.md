@@ -60,7 +60,7 @@ Commercial leases differ: VAT, longer terms, rent escalation clauses (e.g. 5–1
 
 ### A9. Agency features: commission and owner remittance
 Management companies earn a % of collected rent and pay the rest to property owners.
-- **Recommend:** **design-in only.** Nullable `Property.owner` (a person/company, not a login), `Property.management_fee_percent`. Later: monthly **owner statement** (collected − fee − expenses = remittance) and remittance records. 
+- **Recommend:** **design-in only.** Nullable `Property.owner` (a person/company, not a login), `Property.management_fee_percent`. Later: monthly **owner statement** (collected − fee − expenses = remittance) and remittance records.
 
 ### A10. Organization context in the app (URLs and switching)
 - **Recommend:** the active organization is stored in the session and shown in a header switcher (users with several organizations). Every object URL uses UUIDs, with the organization enforced on the server. No subdomain-per-organization at the start. Revisit for branded agency portals.

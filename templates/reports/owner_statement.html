@@ -1,0 +1,184 @@
+{% extends "base.html" %}{% load i18n money access %}
+{% block title %}{% trans "Owner statement" %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% trans "Owner statement" %}</h1>
+  {% if form.fields.owner.choices %}
+  <form method="get" class="d-flex flex-wrap gap-2">
+    {{ form.owner }}
+    {{ form.month }}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  </form>
+  {% endif %}
+</div>
+
+{% if st %}{% with cur=st.currency %}
+<p class="small text-muted mb-3">
+  {% blocktrans with m=st.label o=st.recipient %}{{ m }}, for {{ o }}.{% endblocktrans %}
+  {% if can_owners %}<a href="{% url 'properties:owners' %}">{% trans "Owners and fees" %}</a>{% endif %}
+</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card shadow-sm"><div class="card-body p-2">
+      <table class="table table-sm small mb-0">
+        <tbody>
+          <tr><td>{% trans "Rent collected" %}</td><td class="text-end text-nowrap">{{ st.rent|money:cur }}</td></tr>
+          <tr><td>{% trans "Other charges collected" %}</td><td class="text-end text-nowrap">{{ st.other|money:cur }}</td></tr>
+          <tr class="fw-semibold"><td>{% trans "Total collected" %}</td><td class="text-end text-nowrap">{{ st.collected|money:cur }}</td></tr>
+          {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}
+          <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-nowrap">{% if st.expenses %}−{{ st.expenses|money:cur }}{% else %}{{ st.expenses|money:cur }}{% endif %}</td></tr>
+        </tbody>
+        <tfoot>
+          <tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap {% if st.due < 0 %}text-danger{% endif %}">{{ st.due|money:cur }}</td></tr>
+          {% if st.shows_remittances %}
+          <tr><td>{% trans "Paid to the owner" %}</td><td class="text-end text-nowrap">−{{ st.remitted|money:cur }}</td></tr>
+          <tr class="fw-semibold"><td>{% trans "Still to pay" %}</td><td class="text-end text-nowrap {% if st.remaining > 0 %}text-danger{% endif %}">{{ st.remaining|money:cur }}</td></tr>
+          {% endif %}
+        </tfoot>
+      </table>
+    </div></div>
+  </div>
+  <div class="col-md-6 small">
+    <div class="card h-100"><div class="card-body p-2">
+      <div>{% trans "Rent and charges billed for the month" %}: <span class="fw-semibold">{{ st.billed|money:cur }}</span></div>
+      <div>{% trans "Owed by tenants at month end" %}: <span class="fw-semibold">{{ st.balance|money:cur }}</span></div>
+      {% if st.deposit %}<div>{% trans "Deposits received (held, not included)" %}: <span class="fw-semibold">{{ st.deposit|money:cur }}</span></div>{% endif %}
+      {% if can_export %}<a class="btn btn-sm btn-primary mt-2" href="{% url 'reports:owner_statement_pdf' %}?{{ query }}">{% trans "Download PDF" %}</a>{% endif %}
+      {% if st.shows_remittances %}<a class="btn btn-sm btn-outline-secondary mt-2" href="{% url 'reports:owner_account' st.owner.public_id %}">{% trans "Owner account" %}</a>{% endif %}
+    </div></div>
+  </div>
+</div>
+
+{% if st.shows_remittances %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-2">
+      <h2 class="h6">{% trans "Payments to the owner for this month" %}</h2>
+      {% include "reports/_remittances.html" with remittances=st.remittances back="statement" %}
+      {% if can_remit %}
+      <form method="post" action="{% url 'reports:remittance_create' %}" class="row g-2 mt-1 small">
+        {% csrf_token %}
+        <input type="hidden" name="owner" value="{{ st.owner.public_id }}">
+        <input type="hidden" name="month" value="{{ st.month|date:'Y-m' }}">
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.amount.id_for_label }}">{{ remit_form.amount.label }}</label>{{ remit_form.amount }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.paid_on.id_for_label }}">{{ remit_form.paid_on.label }}</label>{{ remit_form.paid_on }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.method.id_for_label }}">{{ remit_form.method.label }}</label>{{ remit_form.method }}</div>
+        <div class="col-6 col-md-4"><label class="form-label mb-0" for="{{ remit_form.reference.id_for_label }}">{{ remit_form.reference.label }}</label>{{ remit_form.reference }}</div>
+        <div class="col-md-8"><label class="form-label mb-0" for="{{ remit_form.note.id_for_label }}">{{ remit_form.note.label }}</label>{{ remit_form.note }}</div>
+        <div class="col-12"><button class="btn btn-sm btn-primary">{% trans "Record payment to the owner" %}</button></div>
+      </form>
+      {% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-2 small">
+      <h2 class="h6">{% trans "Send to the owner" %}</h2>
+      {% if can_send_statement %}
+        {% if send_blocker %}
+        <p class="text-muted mb-2">{{ send_blocker }}</p>
+        {% else %}
+        <form method="post" action="{% url 'reports:statement_send' %}" class="mb-2"
+              data-confirm="{% trans 'Send this statement to the owner now?' %}" onsubmit="return confirm(this.dataset.confirm)">
+          {% csrf_token %}
+          <input type="hidden" name="owner" value="{{ st.owner.public_id }}">
+          <input type="hidden" name="month" value="{{ st.month|date:'Y-m' }}">
+          <div class="mb-1">
+            {% if st.owner.email %}{% blocktrans with e=st.owner.email %}The PDF is emailed to {{ e }}.{% endblocktrans %}
+            {% else %}{% trans "The owner has no email, so only an SMS summary can go." %}{% endif %}
+          </div>
+          {% if st.owner.phone %}
+          <div class="form-check mb-1">{{ send_form.sms }} <label class="form-check-label" for="{{ send_form.sms.id_for_label }}">{{ send_form.sms.label }} ({{ st.owner.phone }})</label></div>
+          {% endif %}
+          <button class="btn btn-sm btn-primary">{% trans "Send to owner" %}</button>
+        </form>
+        {% endif %}
+      {% endif %}
+      {% if sends %}
+      <table class="table table-sm mb-0">
+        <thead><tr><th>{% trans "Number" %}</th><th>{% trans "Sent" %}</th><th>{% trans "Email" %}</th><th>{% trans "SMS" %}</th><th class="text-end">{% trans "Due" %}</th><th class="text-end">{% trans "Paid" %}</th></tr></thead>
+        <tbody>
+        {% for send in sends %}
+          <tr>
+            <td><a href="{% url 'reports:statement_send_pdf' send.public_id %}">{{ send.number }}</a></td>
+            <td class="text-nowrap">{{ send.sent_at|date:"d M Y H:i" }}{% if send.sent_by %}<br><span class="text-muted">{{ send.sent_by }}</span>{% endif %}</td>
+            <td>{% if send.email_status == "SENT" %}<span class="badge text-bg-success">{% trans "Emailed" %}</span>
+                {% elif send.email_status == "FAILED" %}<span class="badge text-bg-danger" title="{{ send.email_error }}">{% trans "Email failed" %}</span>
+                {% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td>{% if send.sms %}{{ send.sms.get_status_display }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+            <td class="text-end text-nowrap">{{ send.due|money:cur }}</td>
+            <td class="text-end text-nowrap">{{ send.remitted|money:cur }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% elif not can_send_statement %}
+      <p class="text-muted mb-0">{% trans "Not sent yet." %}</p>
+      {% endif %}
+    </div></div>
+  </div>
+</div>
+{% endif %}
+
+{% for block in st.blocks %}
+<h2 class="h6 mt-3">{{ block.property.name }}
+  <span class="small text-muted fw-normal">
+    {% if block.rentable %}· {% blocktrans with o=block.occupied r=block.rentable %}{{ o }} of {{ r }} units occupied{% endblocktrans %}{% endif %}
+    {% if block.fee_percent %}· {% blocktrans with f=block.fee_percent|floatformat:"-2" %}fee {{ f }}% of rent{% endblocktrans %}{% endif %}
+  </span>
+</h2>
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Unit" %}</th>{% if st.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Collected" %}</th>
+    <th class="text-end">{% trans "Deposit" %}</th><th class="text-end">{% trans "Owed at month end" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for line in block.lines %}
+    <tr>
+      <td>{{ line.lease.unit.code }}</td>{% if st.show_tenants %}<td>{{ line.tenant }}</td>{% endif %}
+      <td class="text-end text-nowrap">{{ line.billed|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ line.collected|money:cur }}</td>
+      <td class="text-end text-nowrap">{% if line.deposit %}{{ line.deposit|money:cur }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td class="text-end text-nowrap {% if line.balance > 0 %}text-danger{% endif %}">{{ line.balance|money:cur }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="text-muted">{% trans "No tenants or payments this month." %}</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if block.lines %}
+  <tfoot><tr class="fw-semibold">
+    <td{% if st.show_tenants %} colspan="2"{% endif %}>{% trans "Total" %}</td>
+    <td class="text-end text-nowrap">{{ block.billed|money:cur }}</td><td class="text-end text-nowrap">{{ block.collected|money:cur }}</td>
+    <td class="text-end text-nowrap">{{ block.deposit|money:cur }}</td><td class="text-end text-nowrap">{{ block.balance|money:cur }}</td>
+  </tr></tfoot>
+  {% endif %}
+</table>
+</div>
+{% if block.fee_percent %}<p class="small text-muted">{% blocktrans with fee=block.fee|money:cur rent=block.rent|money:cur %}Management fee: {{ fee }} on rent collected of {{ rent }}.{% endblocktrans %}</p>{% endif %}
+{% if block.expenses %}
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Expense" %}</th><th>{% trans "Date paid" %}</th><th>{% trans "Category" %}</th><th>{% trans "Paid to" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>
+    {% for e in block.expenses %}
+    <tr>
+      <td>{% if membership|can:"expenses.view" %}<a href="{% url 'expenses:detail' e.public_id %}">{{ e.description }}</a>{% else %}{{ e.description }}{% endif %}</td>
+      <td class="text-nowrap">{{ e.paid_on|date:"j M" }}</td><td>{{ e.category.name }}</td><td>{{ e.supplier.name|default:"—" }}</td>
+      <td class="text-end text-nowrap">{{ e.amount|money:cur }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Expenses" %}</td><td class="text-end text-nowrap">{{ block.expense_total|money:cur }}</td></tr></tfoot>
+</table>
+</div>
+{% endif %}
+{% endfor %}
+
+<ul class="small text-muted mt-3">{% for note in st.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% else %}
+<p class="text-muted">{% trans "No properties to show yet." %}</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,152 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ report.get_kind_display }} {% trans "report" %} · {{ unit.code }}{% endblock %}
+{% block head %}<style>
+@media print { nav, .d-print-none, .alert-dismissible { display: none !important; } .card { box-shadow: none !important; break-inside: avoid; } body { background: #fff; } }
+</style>{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small d-print-none">← {{ lease }} · {{ unit.code }}</a>
+  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+    <div>
+      <h1 class="h4 mb-0">{% blocktrans with kind=report.get_kind_display %}{{ kind }} condition report{% endblocktrans %}</h1>
+      <div class="small text-muted">{{ property.name }} · {% trans "Unit" %} {{ unit.code }} · {{ lease }}{% if lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %}</div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      {% if report.status == "COMPLETED" %}<span class="badge text-bg-success">{{ report.get_status_display }}</span>
+      {% elif report.status == "CANCELLED" %}<span class="badge text-bg-secondary">{{ report.get_status_display }}</span>
+      {% else %}<span class="badge text-bg-warning">{{ report.get_status_display }}</span>{% endif %}
+      {% if report.status == "COMPLETED" %}<button type="button" class="btn btn-outline-secondary btn-sm d-print-none" onclick="window.print()"><i class="bi bi-printer"></i> {% trans "Print" %}</button>{% endif %}
+    </div>
+  </div>
+
+  {% if report.status == "CANCELLED" %}
+  <div class="alert alert-secondary small">{% blocktrans with by=report.cancelled_by.full_name on=report.cancelled_at|date:"j M Y" reason=report.cancel_reason %}Cancelled by {{ by }} on {{ on }}: {{ reason }}{% endblocktrans %}</div>
+  {% elif report.status == "COMPLETED" %}
+  <div class="alert alert-success small">{% blocktrans with by=report.completed_by.full_name on=report.completed_at|date:"j M Y H:i" %}Completed by {{ by }} on {{ on }}. It can no longer be changed.{% endblocktrans %}</div>
+  {% elif can_edit and left_count %}
+  <div class="alert alert-info small d-print-none">{% blocktrans count n=left_count %}{{ n }} item still needs a condition before the report can be completed.{% plural %}{{ n }} items still need a condition before the report can be completed.{% endblocktrans %}</div>
+  {% endif %}
+
+  {% if report.kind == "MOVE_OUT" %}
+    {% if before %}
+    <div class="alert alert-light border small">{% url 'inspections:report' before.public_id as before_url %}{% blocktrans with date=before.inspected_on|date:"j M Y" %}Compared with the <a href="{{ before_url }}">move-in report of {{ date }}</a>.{% endblocktrans %}
+      {% if worse_count %}<strong class="text-danger">{% blocktrans count n=worse_count %}{{ n }} item is worse than at move-in.{% plural %}{{ n }} items are worse than at move-in.{% endblocktrans %}</strong>{% endif %}
+    </div>
+    {% else %}
+    <div class="alert alert-light border small">{% trans "There is no completed move-in report for this tenancy to compare with." %}</div>
+    {% endif %}
+  {% endif %}
+
+  {# The day #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    {% if details_form %}
+    <form method="post" id="details" novalidate>{% csrf_token %}
+      {% with form=details_form %}{% include "partials/form.html" %}{% endwith %}
+    </form>
+    <div class="small text-muted">{% blocktrans with by=report.inspected_by.full_name %}Inspected by {{ by }}{% endblocktrans %}</div>
+    {% else %}
+    <dl class="row small mb-0">
+      <dt class="col-5">{% trans "Inspection date" %}</dt><dd class="col-7">{{ report.inspected_on|date:"j M Y" }}</dd>
+      <dt class="col-5">{% trans "Inspected by" %}</dt><dd class="col-7">{{ report.inspected_by.full_name }}</dd>
+      <dt class="col-5">{% trans "Tenant present" %}</dt><dd class="col-7">{% if report.tenant_present %}{% trans "Yes" %}{% else %}{% trans "No" %}{% endif %}</dd>
+      {% if report.keys_handed is not None %}<dt class="col-5">{% trans "Keys handed over" %}</dt><dd class="col-7">{{ report.keys_handed }}</dd>{% endif %}
+      {% if report.tenant_comments %}<dt class="col-5">{% trans "Tenant's comments" %}</dt><dd class="col-7" style="white-space:pre-line">{{ report.tenant_comments }}</dd>{% endif %}
+      {% if report.notes %}<dt class="col-5">{% trans "General notes" %}</dt><dd class="col-7" style="white-space:pre-line">{{ report.notes }}</dd>{% endif %}
+    </dl>
+    {% endif %}
+  </div></div>
+
+  {# Items #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Items" %}</h2>
+    <div class="list-group list-group-flush">
+      {% for r in rows %}{% with line=r.line %}
+      <div class="list-group-item px-0{% if r.worse %} border-start border-3 border-danger ps-2{% endif %}">
+        <div class="d-flex justify-content-between align-items-start gap-2">
+          <div class="small"><span class="text-muted">{{ line.area }}{% if line.area %} · {% endif %}</span><strong>{{ line.name }}</strong>{% if line.quantity > 1 %} × {{ line.quantity }}{% endif %}</div>
+          {% if not can_edit %}<div class="text-nowrap">{% include "inspections/_condition.html" with value=line.condition label=line.get_condition_display %}{% if r.worse %} <span class="badge text-bg-danger">{% trans "Worse" %}</span>{% endif %}</div>{% endif %}
+        </div>
+        {% if r.before %}
+        <div class="small text-muted mt-1">{% trans "At move-in:" %} {% include "inspections/_condition.html" with value=r.before.condition label=r.before.get_condition_display %}{% if r.before.notes %} · {{ r.before.notes }}{% endif %}</div>
+        {% include "inspections/_thumbs.html" with photos=r.before.photos.all removable=False %}
+        {% endif %}
+        {% if can_edit %}
+        <div class="row g-2 mt-1">
+          <div class="col-sm-5">
+            <select name="condition-{{ line.pk }}" form="details" class="form-select form-select-sm" aria-label="{% trans 'Condition' %}">
+              <option value="">{% trans "Condition…" %}</option>
+              {% for value, label in conditions %}<option value="{{ value }}"{% if value == line.condition %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="col-sm-7"><input name="note-{{ line.pk }}" form="details" value="{{ line.notes }}" maxlength="300" class="form-control form-control-sm" placeholder="{% trans 'Note, e.g. scratch on left door' %}" aria-label="{% trans 'Note' %}"></div>
+        </div>
+        {% elif line.notes %}<div class="small mt-1">{{ line.notes }}</div>{% endif %}
+        {% include "inspections/_thumbs.html" with photos=r.photos removable=can_edit %}
+        {% if can_edit %}{% include "inspections/_upload.html" with line=line %}{% endif %}
+      </div>
+      {% endwith %}{% empty %}
+      <div class="text-muted small">{% trans "No items. Add what the unit has below." %}</div>
+      {% endfor %}
+    </div>
+    {% if item_form %}
+    <details class="mt-3 d-print-none" {% if item_form.errors %}open{% endif %}><summary class="small">{% trans "Add an item found on the day" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="add_line">
+        {% with form=item_form %}{% include "partials/form.html" %}{% endwith %}
+        <div class="form-text small mb-2">{% trans "It is also added to the unit's item register for later reports." %}</div>
+        <button class="btn btn-sm btn-outline-primary">{% trans "Add item" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {# General photos #}
+  {% if general_photos or can_edit %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Other photos" %}</h2>
+    {% include "inspections/_thumbs.html" with photos=general_photos removable=can_edit %}
+    {% if can_edit %}{% include "inspections/_upload.html" with line=None %}{% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if can_edit %}
+  <div class="d-flex gap-2 mb-4 d-print-none">
+    <button form="details" name="action" value="save" class="btn btn-outline-primary">{% trans "Save" %}</button>
+    <button form="details" name="action" value="complete" class="btn btn-primary" onclick="return confirm('{% trans "Complete this report? It is locked after this and cannot be changed." %}')">{% trans "Complete report" %}</button>
+  </div>
+  {% endif %}
+
+  {# Deposit #}
+  {% if deductions %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Deposit deductions citing this report" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for e in deductions %}<li>{{ e.entry_date|date:"j M Y" }} · {{ e.get_deposit_type_display }} · {{ e.amount|money:e.currency }} · {{ e.reason }}</li>{% endfor %}
+    </ul>
+    {% if can_see_account %}<a class="small" href="{% url 'billing:lease_account' lease.public_id %}">{% trans "Deposit clearance" %} →</a>{% endif %}
+  </div></div>
+  {% endif %}
+  {% if deduct_form %}
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Deduct from the deposit" %}</h2>
+    <p class="small text-muted">{% blocktrans with held=held|money:lease.currency %}{{ held }} is held. The deduction is recorded on the deposit ledger and cites this report as evidence.{% endblocktrans %}</p>
+    <form method="post" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="deduct">
+      {% with form=deduct_form %}{% include "partials/form.html" %}{% endwith %}
+      <button class="btn btn-sm btn-primary" onclick="return confirm('{% trans "Record this deduction?" %}')">{% trans "Record deduction" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+
+  {% if cancel_form %}
+  <details class="mb-4 d-print-none" {% if cancel_form.errors %}open{% endif %}><summary class="small text-danger">{% trans "Cancel this report" %}</summary>
+    <form method="post" class="mt-2" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="cancel">
+      {% with form=cancel_form %}{% include "partials/form.html" %}{% endwith %}
+      <p class="small text-muted">{% trans "A cancelled report is kept. A new one can then be started from the lease." %}</p>
+      <button class="btn btn-sm btn-outline-danger">{% trans "Cancel report" %}</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

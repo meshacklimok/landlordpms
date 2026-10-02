@@ -1,0 +1,68 @@
+{% extends "banking/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Bank lines" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "Bank lines" %}</h1>
+  <p class="small text-body-secondary">{% trans "Every money-in line imported from a bank statement, and what happened to it." %}</p>
+  {% include "banking/_nav.html" with section="lines" %}
+
+  <form method="get" class="card shadow-sm mb-3"><div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md">
+        <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
+        <input type="search" id="f-q" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Description or reference' %}">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-body-secondary mb-1" for="f-status">{% trans "Status" %}</label>
+        <select id="f-status" name="status" class="form-select">
+          <option value="">{% trans "Any status" %}</option>
+          {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-auto d-flex gap-2">
+        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+        {% if q or status %}<a class="btn btn-link text-body-secondary" href="{% url 'banking:lines' %}">{% trans "Clear" %}</a>{% endif %}
+      </div>
+    </div>
+  </div></form>
+
+  {% if page.object_list %}
+  <div class="card shadow-sm overflow-hidden">
+    <div class="table-responsive">
+      <table class="table pay-table align-middle mb-0">
+        <thead><tr>
+          <th>{% trans "Date" %}</th>
+          <th>{% trans "Description" %}</th>
+          <th class="d-none d-lg-table-cell">{% trans "Placed on" %}</th>
+          <th>{% trans "Status" %}</th>
+          <th class="text-end">{% trans "Amount" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for line in page.object_list %}
+          <tr data-href="{% url 'banking:line' line.public_id %}">
+            <td class="num text-nowrap">{{ line.posted_on|date:"j M Y" }}</td>
+            <td><a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'banking:line' line.public_id %}">{{ line.description|default:"—"|truncatechars:70 }}</a>
+              <div class="small text-body-secondary">{{ line.payment_account.display_name }}{% if line.reference %} · <code>{{ line.reference }}</code>{% endif %}</div></td>
+            <td class="d-none d-lg-table-cell small">{% if line.payment %}{{ line.payment.lease.unit.property.name }} · {{ line.payment.lease.unit.code }}{% else %}—{% endif %}</td>
+            <td>{% include "banking/_status.html" %}</td>
+            <td class="text-end num fw-semibold">{{ line.amount|money:currency }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="small text-body-secondary mt-2">
+    <span>{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span>
+  </div>
+  {% include "partials/pager.html" %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-bank"></i></div>
+    {% if q or status %}<h2 class="h6">{% trans "No lines match" %}</h2>
+    {% else %}<h2 class="h6">{% trans "No bank lines yet" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Import a bank statement to see its money-in lines here." %}</p>{% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

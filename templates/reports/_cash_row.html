@@ -1,0 +1,13 @@
+{% load money %}<tr>
+  <td class="text-nowrap">{{ row.label }}</td>
+  <td class="text-end num text-nowrap">{{ row.rent|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.other|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.deposits|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.unapplied|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.money_in|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.expenses|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.refunds|money:cur }}</td>
+  {% if whole %}<td class="text-end num text-nowrap">{{ row.owner_payments|money:cur }}</td>{% endif %}
+  <td class="text-end num text-nowrap">{{ row.money_out|money:cur }}</td>
+  <td class="text-end num text-nowrap {% if row.net < 0 %}text-danger{% endif %}">{{ row.net|money:cur }}</td>
+</tr>

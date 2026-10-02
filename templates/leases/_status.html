@@ -1,0 +1,1 @@
+{% load i18n leases %}{% if lease.status == "ACTIVE" and lease|expiring:today %}<span class="badge text-bg-warning">{% trans "Expiring" %}</span>{% else %}<span class="badge {% if lease.status == 'ACTIVE' %}text-bg-success{% elif lease.status == 'DRAFT' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ lease.get_status_display }}</span>{% endif %}

@@ -1,0 +1,47 @@
+{% load i18n %}{% with t=row.type rule=row.rule %}
+<form method="post" id="type-{{ t.codename }}" class="card shadow-sm mb-2{% if not rule.enabled %} opacity-75{% endif %}">{% csrf_token %}
+  <input type="hidden" name="type" value="{{ t.codename }}">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-2">
+      <div>
+        <div class="fw-medium">{{ t.label }}{% if row.changed %} <span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Changed" %}</span>{% endif %}</div>
+        <div class="small text-body-secondary">{% for c in rule.channels %}{% if c == "SMS" %}{% trans "SMS" %}{% elif c == "IN_APP" %}{% trans "In-app" %}{% else %}{{ c }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if t.mandatory %} · {% trans "Always sent" %}{% endif %}</div>
+      </div>
+      {% if t.mandatory %}
+      <span class="badge bg-secondary-subtle text-secondary-emphasis">{% trans "Required" %}</span>
+      {% else %}
+      <div class="form-check form-switch m-0">
+        <input class="form-check-input" type="checkbox" role="switch" name="enabled" id="en-{{ t.codename }}" {% if rule.enabled %}checked{% endif %}>
+        <label class="form-check-label small" for="en-{{ t.codename }}">{% trans "On" %}</label>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if t.offsets or t.audience == "tenant" %}
+    <div class="row g-2 mt-1 align-items-end">
+      {% if t.offsets %}
+      <div class="col-sm-6">
+        <label class="form-label small mb-1" for="off-{{ t.codename }}">{% if t.codename == "rent_overdue" %}{% trans "Days after it becomes overdue" %}{% else %}{% trans "Days before the due date" %}{% endif %}</label>
+        <input type="text" inputmode="numeric" name="offsets" id="off-{{ t.codename }}" value="{{ row.offsets }}" class="form-control form-control-sm{% if row.error %} is-invalid{% endif %}" placeholder="7, 3">
+        <div class="form-text">{% trans "Up to three, separated by commas." %}</div>
+      </div>
+      {% endif %}
+      {% if t.audience == "tenant" %}
+      <div class="col-sm-6">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="include_co_tenants" id="co-{{ t.codename }}" {% if rule.include_co_tenants %}checked{% endif %}>
+          <label class="form-check-label small" for="co-{{ t.codename }}">{% trans "Also send to co-tenants on the lease" %}</label>
+        </div>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {% if row.error %}<div class="small text-danger mt-2">{{ row.error }}</div>{% endif %}
+
+    <div class="d-flex gap-2 mt-2">
+      <button class="btn btn-sm btn-dark" name="action" value="save">{% trans "Save" %}</button>
+      {% if row.changed %}<button class="btn btn-sm btn-link text-body-secondary" name="action" value="reset">{% trans "Back to default" %}</button>{% endif %}
+    </div>
+  </div>
+</form>
+{% endwith %}

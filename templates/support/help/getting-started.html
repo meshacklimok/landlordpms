@@ -1,0 +1,16 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>A few steps get you from an empty workspace to your first rent invoice. The checklist on your
+<a href="{% url 'accounts:home' %}">home page</a> shows which are done.</p>
+<ol>
+  <li><strong>Add a property</strong> on <a href="{% url 'properties:list' %}">Properties</a>: its name, where it is
+    and, if you manage it for someone, its owner.</li>
+  <li><strong>Add units</strong> with their rent. Many units at once? Use <a href="{% url 'imports:list' %}">Import</a>.</li>
+  <li><strong>Add tenants</strong> on <a href="{% url 'tenants:list' %}">Tenants</a>. A phone number is enough to start.</li>
+  <li><strong>Start a lease</strong> from the unit page: tenant, start date, rent, due day and deposit.</li>
+  <li><strong>Set up how tenants pay</strong>: connect your M-Pesa Paybill or Till, or add a payment instruction.</li>
+  <li><strong>Issue invoices</strong>: the daily job bills each lease a few days before the month starts, or press
+    Generate on <a href="{% url 'billing:invoices' %}">Invoices</a>.</li>
+</ol>
+<p>Then invite your caretaker or accountant from <a href="{% url 'accounts:staff' %}">Staff</a> so they can help.</p>
+{% endblock %}

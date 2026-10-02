@@ -1,0 +1,7 @@
+{% load i18n access %}
+<ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
+  {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'inbox' %}active{% endif %}" href="{% url 'banking:inbox' %}"><i class="bi bi-inbox"></i> {% trans "Inbox" %}{% if inbox_count %}<span class="count">{{ inbox_count }}</span>{% endif %}</a></li>{% endif %}
+  {% if membership|can:"payments.view" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'lines' %}active{% endif %}" href="{% url 'banking:lines' %}"><i class="bi bi-list-ul"></i> {% trans "Bank lines" %}</a></li>{% endif %}
+  {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'import' %}active{% endif %}" href="{% url 'banking:import' %}"><i class="bi bi-upload"></i> {% trans "Import a statement" %}</a></li>{% endif %}
+  {% if membership|can:"payment_accounts.view" %}<li class="nav-item"><a class="nav-link text-nowrap {% if section == 'accounts' %}active{% endif %}" href="{% url 'banking:accounts' %}"><i class="bi bi-bank"></i> {% trans "Bank accounts" %}</a></li>{% endif %}
+</ul>

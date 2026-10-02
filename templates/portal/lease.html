@@ -1,0 +1,76 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ lease.unit.property.name }} · {{ lease.unit.code }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'portal:home' %}" class="small">← {% trans "My home" %}</a>
+  <div class="mt-2 mb-3">
+    <h1 class="h4 mb-0">{{ lease.unit.property.name }} · {{ lease.unit.code }}</h1>
+    <div class="small text-muted">{{ lease.organization.name }} · {{ lease.number }} · {{ lease.get_status_display }}</div>
+  </div>
+
+  {% include "portal/_summary.html" %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Open invoices" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for invoice in summary.open_invoices %}
+      <li class="d-flex justify-content-between gap-2"><span>{{ invoice.number }} · {{ invoice.period_label }} · {% blocktrans with day=invoice.due_date|date:"j M Y" %}due {{ day }}{% endblocktrans %}</span><span class="text-nowrap">{{ invoice.outstanding|money:invoice.currency }}</span></li>
+      {% empty %}<li class="text-muted">{% trans "Nothing to pay right now." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h6 mb-0">{% trans "Statement" %}</h2>
+      <button type="button" class="btn btn-outline-secondary btn-sm d-print-none" onclick="window.print()">{% trans "Print" %}</button>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Detail" %}</th><th class="text-end">{% trans "Charged" %}</th><th class="text-end">{% trans "Paid" %}</th><th class="text-end">{% trans "Balance" %}</th></tr></thead>
+      <tbody>
+        <tr class="text-muted"><td>{{ statement.start|date:"j M Y" }}</td><td>{% trans "Brought forward" %}</td><td></td><td></td><td class="text-end text-nowrap">{{ statement.brought_forward|money:lease.currency }}</td></tr>
+        {% for row in statement.rows %}
+        <tr>
+          <td class="text-nowrap">{{ row.entry.entry_date|date:"j M Y" }}</td>
+          <td>{{ row.entry.get_kind_display }}{% if row.entry.invoice %} · {{ row.entry.invoice.number }}{% endif %}{% if row.entry.payment.reference %} · <code>{{ row.entry.payment.reference }}</code>{% endif %}</td>
+          <td class="text-end text-nowrap">{% if row.debit %}{{ row.debit|money:lease.currency }}{% endif %}</td>
+          <td class="text-end text-nowrap">{% if row.credit %}{{ row.credit|money:lease.currency }}{% endif %}</td>
+          <td class="text-end text-nowrap">{{ row.balance|money:lease.currency }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">{% trans "Nothing in the last 12 months." %}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Balance now" %}</td><td class="text-end text-nowrap">{{ statement.closing|money:lease.currency }}</td></tr></tfoot>
+    </table>
+    </div>
+  </div></div>
+
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h6 mb-0">{% trans "Repairs" %}</h2>
+      {% if can_report %}<a class="btn btn-outline-primary btn-sm" href="{% url 'portal:repair_create' lease.public_id %}">{% trans "Report a problem" %}</a>{% endif %}
+    </div>
+    <ul class="list-unstyled small mb-0">
+      {% for req in repairs %}
+      <li class="d-flex justify-content-between gap-2 py-1">
+        <a href="{% url 'portal:repair' req.public_id %}">{{ req.title|truncatechars:60 }}</a>
+        <span class="text-nowrap text-muted">{{ req.created_at|date:"j M" }} · {% include "maintenance/_status.html" %}</span>
+      </li>
+      {% empty %}<li class="text-muted">{% trans "Something broken? Report it here and follow the repair." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Payments and receipts" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for payment in payments %}
+      <li class="d-flex justify-content-between gap-2 py-1">
+        <span>{{ payment.paid_at|date:"j M Y" }} · {{ payment.get_method_display }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</span>
+        <span class="text-nowrap">{{ payment.amount|money:lease.currency }}{% if payment.receipt.pdf %} · <a href="{% url 'portal:receipt' payment.public_id %}">{% trans "Receipt" %}</a>{% endif %}</span>
+      </li>
+      {% empty %}<li class="text-muted">{% trans "No payments yet." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+</div>
+{% endblock %}

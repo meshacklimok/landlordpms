@@ -1,0 +1,27 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Payment" %} · {{ org.display_name }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% if watching %}<meta http-equiv="refresh" content="5">{% endif %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body text-center">
+    <div class="small text-body-secondary">{{ org.display_name }}</div>
+    <p class="num h4 my-2">{{ req.amount|money:currency }}</p>
+    {% if req.status == "PAID" %}
+      <p class="text-success fw-semibold mb-1"><i class="bi bi-check-circle"></i> {% trans "Paid. Thank you." %}</p>
+      {% if receipt %}<a class="btn btn-outline-primary btn-sm" href="{% url 'receipt_link' receipt.share_token %}">{% trans "View receipt" %} {{ receipt.number }}</a>
+      {% else %}<p class="small text-body-secondary mb-0">{% trans "Your receipt will come by SMS." %}</p>{% endif %}
+    {% elif req.status == "FAILED" %}
+      <p class="fw-semibold mb-1">{% trans "Not paid." %}</p>
+      {% if req.result_desc %}<p class="small text-body-secondary">{{ req.result_desc }}</p>{% endif %}
+      <a class="btn btn-success btn-sm" href="{% url 'pay_link' link.token %}">{% trans "Try again" %}</a>
+    {% elif watching %}
+      <p class="fw-semibold mb-1">{% trans "Check your phone" %}</p>
+      <p class="small text-body-secondary mb-0">{% blocktrans with phone=req.phone %}Enter your M-Pesa PIN in the prompt sent to {{ phone }}. This page updates by itself.{% endblocktrans %}</p>
+    {% else %}
+      <p class="fw-semibold mb-1">{% trans "No answer from M-Pesa yet." %}</p>
+      <p class="small text-body-secondary">{% trans "If you paid, your receipt will come by SMS. If you did not see a prompt, try again." %}</p>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'pay_link' link.token %}">{% trans "Try again" %}</a>
+    {% endif %}
+  </div></div>
+</div>
+{% endblock %}

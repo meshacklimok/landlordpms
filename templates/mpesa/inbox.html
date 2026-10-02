@@ -1,0 +1,59 @@
+{% extends "mpesa/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "M-Pesa inbox" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "M-Pesa inbox" %}</h1>
+  <p class="small text-body-secondary">{% trans "Payments that arrived but could not be placed on a lease. Matching one confirms it, pays the oldest invoices first and issues a receipt." %}</p>
+  {% include "mpesa/_nav.html" with section="inbox" inbox_count=unmatched|add:flagged %}
+
+  <ul class="nav nav-pills small gap-1 mb-3">
+    <li class="nav-item"><a class="nav-link py-1 {% if tab == 'UNMATCHED' %}active{% endif %}" href="{% url 'mpesa:inbox' %}">{% trans "Unmatched" %} <span class="opacity-75">{{ unmatched }}</span></a></li>
+    <li class="nav-item"><a class="nav-link py-1 {% if tab == 'FLAGGED' %}active{% endif %}" href="{% url 'mpesa:inbox' %}?tab=flagged">{% trans "Flagged" %} <span class="opacity-75">{{ flagged }}</span></a></li>
+  </ul>
+  {% if tab == "FLAGGED" %}<p class="small text-body-secondary">{% trans "Flagged payments could not be read properly or were sent to a different shortcode. Check them with Safaricom, then ignore them with a note." %}</p>{% endif %}
+
+  {% if rows %}
+  <div class="list-group shadow-sm">
+    {% for tx in rows %}
+    <div class="list-group-item py-3">
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <div class="min-w-0">
+          <a class="fw-semibold link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'mpesa:transaction' tx.trans_id %}">{{ tx.payer_name|default:tx.payer_phone|default:_("Unknown payer") }}</a>
+          <div class="small text-body-secondary">
+            <code>{{ tx.trans_id }}</code> · {{ tx.paid_at|date:"j M Y, H:i" }} · {{ tx.payment_account.display_name }}
+            · {% trans "Account no." %} {% if tx.bill_ref %}“{{ tx.bill_ref }}”{% else %}<em>{% trans "none" %}</em>{% endif %}
+          </div>
+          {% if tx.note %}<div class="small mt-1"><i class="bi bi-info-circle text-body-tertiary"></i> {{ tx.note }}</div>{% endif %}
+        </div>
+        <div class="text-end">
+          <div class="h5 num mb-0">{{ tx.amount|money:currency }}</div>
+          <div class="small text-body-secondary">{% blocktrans with age=tx.paid_at|timesince %}{{ age }} ago{% endblocktrans %}</div>
+        </div>
+      </div>
+      {% if tx.status == "UNMATCHED" %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        {% if tx.suggested_lease %}
+        <form method="post" class="d-inline" data-confirm="{% blocktrans with lease=tx.suggested_lease.number %}Match this payment to {{ lease }}? It is confirmed and receipted at once.{% endblocktrans %}">{% csrf_token %}
+          <input type="hidden" name="trans_id" value="{{ tx.trans_id }}"><input type="hidden" name="action" value="accept">
+          <button class="btn btn-sm btn-success"><i class="bi bi-check2"></i> {% blocktrans with unit=tx.suggested_lease.unit.code property=tx.suggested_lease.unit.property.name %}Match to {{ property }} · {{ unit }}{% endblocktrans %}</button>
+        </form>
+        <span class="small text-body-secondary">{% trans "Suggested from the payer's number" %}</span>
+        {% endif %}
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="{% url 'mpesa:transaction' tx.trans_id %}">{% if tx.suggested_lease %}{% trans "Choose another lease" %}{% else %}{% trans "Choose a lease" %}{% endif %} <i class="bi bi-chevron-right"></i></a>
+      </div>
+      {% else %}
+      <div class="mt-2 text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'mpesa:transaction' tx.trans_id %}">{% trans "Open" %} <i class="bi bi-chevron-right"></i></a></div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if more %}<p class="small text-body-secondary mt-2">{% trans "Showing the oldest 200." %}</p>{% endif %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+    <h2 class="h6">{% trans "All caught up" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Every M-Pesa payment has been placed on a lease." %}</p>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

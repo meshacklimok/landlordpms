@@ -4,13 +4,17 @@ User ≠ Organization ≠ Role (doc 11 §0, D-014). Roles are per-organization c
 of platform templates and fully editable (doc 13, D-023, D-024).
 """
 
+import datetime
+
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.mail import send_mail
+from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
-from django.db.models.functions import Lower
+from django.db.models.functions import Lower, Upper
 from django.utils import timezone
+from django.utils.crypto import salted_hmac
 from django.utils.translation import gettext_lazy as _
 
 from core.models import (
@@ -73,6 +77,8 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False, help_text=_("Platform Admin: can use Django admin."))
     date_joined = models.DateTimeField(default=timezone.now)
+    # Raised to end every other session, e.g. when MFA is switched on or off (D-059).
+    session_epoch = models.PositiveIntegerField(default=0, editable=False)
 
     objects = UserManager()
 
@@ -104,6 +110,13 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     def phone_verified(self) -> bool:
         return self.phone_verified_at is not None
 
+    def _get_session_auth_hash(self, secret=None):
+        """Django's hash of the password, with the epoch added once it is raised, so sessions made
+        before any raise stay valid."""
+        value = self.password if not self.session_epoch else f"{self.password}:{self.session_epoch}"
+        key_salt = "django.contrib.auth.models.AbstractBaseUser.get_session_auth_hash"
+        return salted_hmac(key_salt, value, secret=secret, algorithm="sha256").hexdigest()
+
     def get_full_name(self):
         return self.full_name
 
@@ -114,6 +127,37 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
         """No-op when the user has no email (email is optional)."""
         if self.email:
             send_mail(subject, message, from_email, [self.email], **kwargs)
+
+
+class TOTPDevice(models.Model):
+    """A user's authenticator app (D-059). Not in use until a code has been checked (confirmed_at)."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="totp")
+    # Base32 secret, encrypted with core.crypto.
+    secret = models.TextField()
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    # The last 30-second step accepted, so a code cannot be used twice.
+    last_step = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"TOTP {self.user}"
+
+    @property
+    def is_confirmed(self) -> bool:
+        return self.confirmed_at is not None
+
+
+class RecoveryCode(models.Model):
+    """A single-use code for when the phone is lost. Stored hashed; shown once (D-059)."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Recovery code {self.user}"
 
 
 class OTPCode(models.Model):
@@ -158,7 +202,11 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         # Frozen by the Platform Admin for abuse or security (doc 14 D14).
         FROZEN = "FROZEN", _("Frozen")
 
-    name = models.CharField(_("name"), max_length=150)
+    class TaxResidence(models.TextChoices):
+        RESIDENT = "RESIDENT", _("Resident in Kenya")
+        NON_RESIDENT = "NON_RESIDENT", _("Non-resident")
+
+    name =models.CharField(_("name"), max_length=150)
     org_type = models.CharField(_("type"), max_length=20, choices=Type.choices, default=Type.INDIVIDUAL)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True)
     currency = models.CharField(max_length=3, default="KES")
@@ -167,6 +215,31 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
+    # Picks the rate in the rental income tax estimate (D-050). An estimate only, never filed.
+    landlord_tax_residence = models.CharField(
+        _("landlord tax residence"), max_length=12, choices=TaxResidence.choices, default=TaxResidence.RESIDENT)
+    # Rent billing (doc 14 A3, D-036). Partial first and last months are prorated by days
+    # unless the organization bills them as a full month.
+    prorate_partial_months = models.BooleanField(_("prorate partial months"), default=True)
+    invoice_lead_days = models.PositiveSmallIntegerField(
+        _("invoice lead days"), default=5, validators=[MaxValueValidator(28)],
+        help_text=_("How many days before the month starts its invoices go out."))
+    # Notifications (doc 11 §27, D-044): non-urgent messages wait until quiet hours end.
+    quiet_hours_start = models.TimeField(_("quiet hours start"), default=datetime.time(21, 0))
+    quiet_hours_end = models.TimeField(_("quiet hours end"), default=datetime.time(7, 0))
+    # What tenancy letters state besides the tenants, units and dates (D-048).
+    letter_show_payment_record = models.BooleanField(_("on-time payment record"), default=True)
+    letter_show_balance = models.BooleanField(_("balance owed"), default=True)
+    letter_show_deposit = models.BooleanField(_("deposit status"), default=True)
+    letter_show_rent = models.BooleanField(_("monthly rent"), default=True)
+    # Branding for agencies and white-label (D-040): design-in only. Receipts, statements and
+    # public pages will use these; there is no settings page yet.
+    brand_name = models.CharField(_("brand name"), max_length=150, blank=True,
+                                  help_text=_("Shown to tenants instead of the organization name."))
+    logo = models.ImageField(_("logo"), upload_to="org-logos/", blank=True)
+    brand_color = models.CharField(_("brand colour"), max_length=7, blank=True, validators=[
+        RegexValidator(r"^#[0-9A-Fa-f]{6}$", _("Use a hex colour like #1A73E8."))])
+    document_footer = models.CharField(_("document footer"), max_length=200, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -175,8 +248,34 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.name
 
     @property
+    def display_name(self) -> str:
+        return self.brand_name or self.name
+
+    @property
     def is_operational(self) -> bool:
         return self.status == self.Status.ACTIVE and not self.is_archived
+
+
+class Branch(PublicIdModel, TimeStampedModel, ArchivableModel):
+    """An agency's office (D-040): design-in only. Properties may point at one; nothing scopes by it yet."""
+
+    organization = models.ForeignKey(Organization, on_delete=models.PROTECT, related_name="branches")
+    name = models.CharField(_("name"), max_length=100)
+    phone = models.CharField(_("phone"), max_length=16, blank=True)
+    email = models.EmailField(_("email"), blank=True)
+
+    objects = LiveManager()
+    all_objects = AllObjectsManager()
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "branches"
+        constraints = [
+            models.UniqueConstraint("organization", Upper("name"), name="accounts_branch_org_name_unique"),
+        ]
+
+    def __str__(self):
+        return self.name
 
 
 # ---------------------------------------------------------------------------

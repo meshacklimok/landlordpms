@@ -1,0 +1,7 @@
+{% load i18n %}{% if page.paginator.num_pages > 1 %}
+<nav class="mt-3 d-flex justify-content-between align-items-center small">
+  {% if page.has_previous %}<a href="{% querystring page=page.previous_page_number %}">← {% trans "Previous" %}</a>{% else %}<span></span>{% endif %}
+  <span class="text-muted">{% blocktrans with n=page.number total=page.paginator.num_pages %}Page {{ n }} of {{ total }}{% endblocktrans %}</span>
+  {% if page.has_next %}<a href="{% querystring page=page.next_page_number %}">{% trans "Next" %} →</a>{% else %}<span></span>{% endif %}
+</nav>
+{% endif %}

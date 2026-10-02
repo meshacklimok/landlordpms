@@ -1,0 +1,11 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Link not working" %}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    <h1 class="h5">{% trans "This payment link is not working" %}</h1>
+    <p class="small text-body-secondary mb-0">{% trans "It may have been replaced by a newer link, or the tenancy has ended. Ask your landlord or agent for the current link, or pay with the Paybill and account number they gave you." %}</p>
+  </div></div>
+</div>
+{% endblock %}

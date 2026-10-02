@@ -1,0 +1,34 @@
+{% extends "banking/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Bank accounts" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "Bank accounts" %}</h1>
+  <p class="small text-body-secondary">{% trans "Accounts tenants pay rent into. Import their statements to match the payments to leases." %}</p>
+  {% include "banking/_nav.html" with section="accounts" %}
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="list-group shadow-sm">
+        {% for account in accounts %}
+        <div class="list-group-item py-3">
+          <div class="fw-semibold">{{ account.display_name }}</div>
+          <div class="small text-body-secondary">{% trans "Account" %} <code>{{ account.number }}</code> ·
+            {% for link in account.properties.all %}{{ link.property.name }}{% if not forloop.last %}, {% endif %}{% empty %}{% trans "every property" %}{% endfor %}</div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center text-body-secondary small py-4">{% trans "No bank accounts yet." %}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% if can_manage %}
+    <div class="col-lg-5">
+      <form method="post" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
+        <h2 class="h6">{% trans "Add a bank account" %}</h2>
+        {% include "partials/form.html" %}
+        <button class="btn btn-dark">{% trans "Add" %}</button>
+      </div></form>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

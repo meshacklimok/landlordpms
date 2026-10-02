@@ -1,0 +1,11 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Invite people from <a href="{% url 'accounts:staff' %}">Staff</a>. They get an SMS link and choose a password.</p>
+<ul>
+  <li>A <strong>role</strong> decides what someone can do: Owner, Manager, Accountant, Caretaker, Leasing agent,
+    Maintenance or Viewer. Copy a role to make your own on <a href="{% url 'accounts:roles' %}">Roles</a>.</li>
+  <li>You can limit a person to some properties.</li>
+  <li>Viewers can only look, and do not count against your plan's team members.</li>
+  <li>Everyone can turn on two-step login on their <a href="{% url 'accounts:security' %}">security page</a>.</li>
+</ul>
+{% endblock %}

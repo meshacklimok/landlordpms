@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load i18n access %}
+{% block title %}{% if lease %}{% trans "Edit draft lease" %}{% else %}{% trans "New lease" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  {% if lease %}<a href="{% url 'leases:detail' lease.public_id %}" class="small">← {% trans "Lease" %}</a>{% else %}<a href="{% url 'properties:unit' unit.public_id %}" class="small">← {{ unit.property.name }} · {{ unit.code }}</a>{% endif %}
+  <h1 class="h4 mt-2 mb-0">{% if lease %}{% trans "Edit draft lease" %}{% else %}{% trans "New lease" %}{% endif %}</h1>
+  <p class="small text-muted">{{ unit.property.name }} · {% trans "Unit" %} {{ unit.code }} · <code>{{ unit.payment_reference }}</code></p>
+  {% if not lease %}<p class="small">{% trans "This saves a draft. Nothing is billed until the lease is activated." %}{% if membership|can:"tenants.manage" %} <a href="{% url 'tenants:create' %}" target="_blank" rel="noopener">{% trans "Add a new tenant" %}</a>{% endif %}</p>{% endif %}
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Save draft" %}</button>
+  </form>
+</div>
+{% endblock %}

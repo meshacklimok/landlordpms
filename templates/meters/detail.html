@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ meter.label }} · {% trans "Water meter" %}{% endblock %}
+{% block content %}
+<a href="{% url 'meters:list' %}" class="small">← {% trans "Water meters" %}</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 mb-3">
+  <h1 class="h4 mb-0">{{ meter.label }} <span class="text-muted fs-6">· {{ property.name }}</span>
+    {% if meter.is_archived %}<span class="badge text-bg-secondary">{% trans "Archived" %}</span>{% endif %}
+    {% if meter.is_prepaid %}<span class="badge text-bg-secondary">{% trans "Prepaid · not billed" %}</span>{% endif %}</h1>
+  {% if can_manage %}
+  <span class="d-flex gap-2">
+    {% if not meter.is_archived %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:edit' meter.public_id %}">{% trans "Edit" %}</a>{% endif %}
+    <form method="post" action="{% url 'meters:edit' meter.public_id %}">{% csrf_token %}
+      {% if meter.is_archived %}<button class="btn btn-sm btn-outline-secondary" name="action" value="restore">{% trans "Restore" %}</button>
+      {% else %}<button class="btn btn-sm btn-outline-danger" name="action" value="archive">{% trans "Archive" %}</button>{% endif %}
+    </form>
+  </span>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-3"><div class="card-body small">
+      <dl class="row mb-0">
+        {% if meter.serial %}<dt class="col-6">{% trans "Serial" %}</dt><dd class="col-6">{{ meter.serial }}</dd>{% endif %}
+        <dt class="col-6">{% trans "Price per m³" %}</dt><dd class="col-6">{{ meter.rate|money }}</dd>
+        <dt class="col-6">{% trans "Minimum charge" %}</dt><dd class="col-6">{% if meter.minimum_charge %}{{ meter.minimum_charge|money }}{% else %}—{% endif %}</dd>
+        <dt class="col-6">{% trans "Serves" %}</dt>
+        <dd class="col-6">{% for mu in served %}{{ mu.unit.code }}{% if meter.split == "WEIGHTED" and served|length > 1 %} ×{{ mu.weight|floatformat:"-2" }}{% endif %}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+        {% if served|length > 1 %}<dt class="col-6">{% trans "Split" %}</dt><dd class="col-6">{{ meter.get_split_display }}</dd>{% endif %}
+        <dt class="col-6">{% trans "Last reading" %}</dt><dd class="col-6">{% if latest %}{{ latest.value }} m³ · {{ latest.read_on|date:"j M Y" }}{% else %}—{% endif %}</dd>
+      </dl>
+    </div></div>
+
+    {% if reading_form %}
+    <div class="card shadow-sm"><div class="card-body">
+      <h2 class="h6">{% trans "Record a reading" %}</h2>
+      <form method="post" enctype="multipart/form-data">{% csrf_token %}
+        <input type="hidden" name="action" value="record">
+        {% with form=reading_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-primary">{% trans "Save reading" %}</button>
+      </form>
+    </div></div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm"><div class="card-body">
+      <h2 class="h6">{% trans "Readings" %}</h2>
+      <ul class="list-group list-group-flush">
+      {% for reading in readings %}
+        <li class="list-group-item px-0">
+          <div class="d-flex flex-wrap justify-content-between gap-2">
+            <div>
+              <strong class="font-monospace">{{ reading.value }} m³</strong> · {{ reading.read_on|date:"j M Y" }}
+              {% if reading.is_baseline %}<span class="badge text-bg-info">{% trans "Start of count" %}</span>
+              {% elif reading.usage is not None %}<span class="text-muted small">· {% blocktrans with u=reading.usage d=reading.days %}{{ u }} m³ used over {{ d }} days{% endblocktrans %}</span>{% endif %}
+              {% if reading.photo %}<a class="small ms-1" href="{% url 'meters:photo' reading.public_id %}" target="_blank" rel="noopener">{% trans "Photo" %}</a>{% endif %}
+            </div>
+            <span class="badge {% if reading.status == 'APPROVED' %}text-bg-success{% elif reading.status == 'REJECTED' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ reading.get_status_display }}</span>
+          </div>
+          {% for label in reading.flag_labels %}<span class="badge text-bg-danger me-1">{{ label }}</span>{% endfor %}
+          <div class="small text-muted">
+            {% blocktrans with who=reading.recorded_by.get_full_name|default:reading.recorded_by %}Recorded by {{ who }}{% endblocktrans %}{% if reading.note %} · “{{ reading.note }}”{% endif %}
+            {% if reading.approved_by %}· {% blocktrans with who=reading.approved_by.get_full_name|default:reading.approved_by %}approved by {{ who }}{% endblocktrans %}{% if reading.approval_note %} (“{{ reading.approval_note }}”){% endif %}{% endif %}
+            {% if reading.rejected_by %}· {% blocktrans with who=reading.rejected_by.get_full_name|default:reading.rejected_by %}rejected by {{ who }}{% endblocktrans %}: “{{ reading.reject_reason }}”{% endif %}
+          </div>
+          {% if reading.can_approve and not meter.is_prepaid %}<div class="small">{% trans "Would bill" %} {{ reading.estimate|money }}</div>{% endif %}
+          {% if reading.live_charges %}
+          <ul class="small mb-0 mt-1">
+            {% for charge in reading.live_charges %}
+            <li>{{ charge.unit.code }} · {{ charge.amount|money }} · {% blocktrans with m=charge.billing_month|date:"M Y" %}bills in {{ m }}{% endblocktrans %}
+              {% for line in charge.lines.all %}{% if not line.is_void %} · {% if can_see_invoices %}<a href="{% url 'billing:invoice' line.invoice.public_id %}">{{ line.invoice.number }}</a>{% else %}{{ line.invoice.number }}{% endif %}{% endif %}{% endfor %}
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% include "meters/_reading_actions.html" %}
+        </li>
+      {% empty %}
+        <li class="list-group-item px-0 text-muted small">{% trans "No readings yet. The first reading starts the count and bills nothing." %}</li>
+      {% endfor %}
+      </ul>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

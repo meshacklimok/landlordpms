@@ -1,0 +1,92 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ property.name }}{% endblock %}
+{% block content %}
+<a href="{% url 'properties:list' %}" class="small">← {% trans "Properties" %}</a>
+<div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+  <div>
+    <h1 class="h4 mb-0">{{ property.name }} <span class="badge text-bg-light border">{{ property.code }}</span></h1>
+    <div class="small text-muted">{{ property.get_category_display }}{% if property.address_line %} · {{ property.address_line }}{% endif %}</div>
+    {% if property.owner %}<div class="small text-muted">{% blocktrans with o=property.owner.name %}Owner: {{ o }}{% endblocktrans %}{% if property.management_fee_percent is not None %} · {% blocktrans with f=property.management_fee_percent|floatformat:"-2" %}Fee {{ f }}% of rent collected{% endblocktrans %}{% endif %}</div>{% endif %}
+  </div>
+  <span class="d-flex gap-2">
+    {% load access %}{% if membership|can:"meters.view" %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'meters:list' %}#property-{{ property.public_id }}">{% trans "Water meters" %}</a>{% endif %}
+    {% if can_add_charges %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:charges' property.public_id %}">{% trans "Add a charge to all leases" %}</a>{% endif %}
+    {% if can_manage and not property.is_archived %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:edit' property.public_id %}">{% trans "Edit" %}</a>{% endif %}
+  </span>
+</div>
+
+{% if property.is_archived %}
+<div class="alert alert-secondary d-flex justify-content-between align-items-center">
+  <span>{% trans "This property is archived." %}</span>
+  {% if can_manage %}
+  <form method="post" action="{% url 'properties:archive' property.public_id %}">{% csrf_token %}
+    <input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if show_units %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h2 class="h6 mb-0">{% trans "Units" %} <span class="text-muted">({{ unit_total }})</span></h2>
+    {% if can_manage_units and not property.is_archived %}<div class="d-flex gap-2"><a class="btn btn-outline-secondary btn-sm" href="{% url 'imports:list' %}">{% trans "Import CSV" %}</a><a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}">{% trans "Add unit" %}</a></div>{% endif %}
+  </div>
+  {% if status_counts %}
+  <div class="small text-muted mb-2">
+    {% for key, label, n in status_counts %}{% if not forloop.first %} · {% endif %}<a href="{% querystring status=key page=None %}" class="link-secondary">{{ label }}: {{ n }}</a>{% endfor %}
+    {% if status %} · <a href="{% querystring status=None page=None %}">{% trans "Show all" %}</a>{% endif %}
+  </div>
+  {% endif %}
+  {% if unit_total > 10 or q %}
+  <form method="get" class="d-flex gap-2 mb-2">
+    <input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="{% trans 'Find a unit' %}" aria-label="{% trans 'Find a unit' %}">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Search" %}</button>
+  </form>
+  {% endif %}
+  <div class="list-group list-group-flush">
+    {% for u in units %}
+    <a href="{% url 'properties:unit' u.public_id %}" class="list-group-item list-group-item-action px-0 d-flex justify-content-between align-items-center">
+      <div>
+        <span class="fw-semibold">{{ u.code }}</span>
+        <span class="small text-muted">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.building %} · {{ u.building.name }}{% endif %}</span>
+        <div class="small text-muted">{% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></div>
+      </div>
+      {% include "properties/_unit_status_badge.html" %}
+    </a>
+    {% empty %}
+    <div class="text-muted small py-2">{% if q or status %}{% trans "No units match." %}{% else %}{% trans "No units yet." %}{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% include "partials/pager.html" with page=units %}
+  {% if archived_units %}
+  <details class="mt-2 small"><summary class="text-muted">{% blocktrans count n=archived_units|length %}{{ n }} archived unit{% plural %}{{ n }} archived units{% endblocktrans %}</summary>
+    <ul class="mb-0 mt-1">{% for u in archived_units %}<li><a href="{% url 'properties:unit' u.public_id %}">{{ u.code }}</a></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</div></div>
+{% endif %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Buildings" %} <span class="small text-muted fw-normal">{% trans "(optional, for large developments)" %}</span></h2>
+  <ul class="list-unstyled mb-2">
+    {% for b in buildings %}
+    <li class="py-1">{% if can_manage %}<a href="{% url 'properties:building_edit' b.public_id %}">{{ b.name }}</a>{% else %}{{ b.name }}{% endif %}
+      <span class="small text-muted">· {% blocktrans count n=b.unit_count %}{{ n }} unit{% plural %}{{ n }} units{% endblocktrans %}</span></li>
+    {% empty %}<li class="small text-muted">{% trans "No buildings. Units sit directly under the property." %}</li>{% endfor %}
+  </ul>
+  {% if can_manage and not property.is_archived %}
+  <form method="post" action="{% url 'properties:building_create' property.public_id %}" class="d-flex gap-2">{% csrf_token %}
+    <input name="name" maxlength="100" required class="form-control form-control-sm" placeholder="{% trans 'Building name, e.g. Block A' %}" aria-label="{% trans 'Building name' %}">
+    <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Add building" %}</button>
+  </form>
+  {% endif %}
+</div></div>
+
+{% if can_manage and not property.is_archived %}
+<form method="post" action="{% url 'properties:archive' property.public_id %}" class="mt-4">{% csrf_token %}
+  <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this property with all its buildings and units?" %}')">{% trans "Archive property" %}</button>
+</form>
+{% endif %}
+{% endblock %}

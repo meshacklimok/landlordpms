@@ -1,0 +1,148 @@
+{% extends "payments/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Record payment" %} · {{ lease.number }}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'billing:lease_account' lease.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Account" %} · {{ lease.number }}</a>
+  <h1 class="h3 mt-2 mb-3">{% trans "Record payment" %}</h1>
+
+  <div class="row g-4">
+    {# The form #}
+    <div class="col-lg-7 order-2 order-lg-1">
+      {% if not will_confirm %}
+      <div class="alert alert-info small d-flex gap-2"><i class="bi bi-info-circle"></i><span>{% trans "A manager will review this payment before it counts towards the balance." %}</span></div>
+      {% endif %}
+      <form method="post" novalidate class="card shadow-sm"><div class="card-body p-4">{% csrf_token %}
+        {% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+
+        {# Amount #}
+        {% with f=form.amount %}
+        <label class="form-label fw-medium" for="{{ f.id_for_label }}">{{ f.label }}</label>
+        <div class="input-group input-group-lg">
+          <span class="input-group-text">{{ lease.currency }}</span>
+          <input type="text" inputmode="decimal" autocomplete="off" name="{{ f.html_name }}" id="{{ f.id_for_label }}" value="{{ f.value|default_if_none:'' }}" class="form-control num{% if f.errors %} is-invalid{% endif %}" placeholder="0.00" required autofocus>
+        </div>
+        {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        {% endwith %}
+        {% if balance > 0 or invoices %}
+        <div class="d-flex flex-wrap gap-2 mt-2 mb-4">
+          {% if balance > 0 %}<button type="button" class="btn btn-sm btn-outline-secondary" data-fill="#{{ form.amount.id_for_label }}" data-value="{{ balance|stringformat:'.2f' }}">{% trans "Full balance" %} · <span class="num">{{ balance|money:lease.currency }}</span></button>{% endif %}
+          {% with first=invoices.0 %}{% if first and first.outstanding != balance %}<button type="button" class="btn btn-sm btn-outline-secondary" data-fill="#{{ form.amount.id_for_label }}" data-value="{{ first.outstanding|stringformat:'.2f' }}">{{ first.number }} · <span class="num">{{ first.outstanding|money:lease.currency }}</span></button>{% endif %}{% endwith %}
+        </div>
+        {% else %}<div class="mb-4"></div>{% endif %}
+
+        {# Method #}
+        {% with f=form.method %}
+        <div class="mb-4">
+          <div class="form-label fw-medium">{{ f.label }}</div>
+          <div class="d-flex flex-wrap gap-2 method-picker" role="radiogroup" aria-label="{{ f.label }}">
+            {% for value, label, icon in methods %}
+            <input type="radio" class="btn-check" name="{{ f.html_name }}" id="method-{{ value }}" value="{{ value }}" autocomplete="off" {% if f.value|stringformat:"s" == value %}checked{% endif %}>
+            <label class="btn btn-outline-secondary" for="method-{{ value }}"><i class="bi {{ icon }} d-block fs-5"></i><span class="small">{{ label }}</span></label>
+            {% endfor %}
+          </div>
+          {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        </div>
+        {% endwith %}
+
+        <div class="row g-3 mb-3">
+          {% with f=form.paid_at %}
+          <div class="col-sm-5">
+            <label class="form-label fw-medium" for="{{ f.id_for_label }}">{{ f.label }}</label>
+            <input type="date" name="{{ f.html_name }}" id="{{ f.id_for_label }}" value="{{ f.value|default_if_none:''|stringformat:'s'|slice:':10' }}" max="{% now 'Y-m-d' %}" class="form-control{% if f.errors %} is-invalid{% endif %}" required>
+            {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          </div>
+          {% endwith %}
+          {% with f=form.reference %}
+          <div class="col-sm-7">
+            <label class="form-label fw-medium" for="{{ f.id_for_label }}">{{ f.label }}</label>
+            <input type="text" name="{{ f.html_name }}" id="{{ f.id_for_label }}" value="{{ f.value|default_if_none:'' }}" maxlength="60" autocomplete="off" class="form-control font-monospace{% if f.errors %} is-invalid{% endif %}" data-reference="reference-hints">
+            {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+            {% if not f.errors %}<div class="form-text">{{ f.help_text }}</div>{% endif %}
+          </div>
+          {% endwith %}
+        </div>
+        {{ reference_hints|json_script:"reference-hints" }}
+
+        {% if form.duplicate %}
+        <div class="alert alert-warning small">
+          <div class="fw-semibold mb-1"><i class="bi bi-exclamation-triangle"></i> {% trans "Possible double entry" %}</div>
+          {% if form.visible_duplicate %}{% with d=form.visible_duplicate %}
+          {% blocktrans with amount=d.amount|money:d.lease.currency day=d.paid_at|date:"j M Y" unit=d.lease.unit.code %}The same reference is on a payment of {{ amount }} paid {{ day }} for unit {{ unit }}.{% endblocktrans %}
+          <a href="{% url 'payments:detail' d.public_id %}" target="_blank" rel="noopener">{% trans "Open it" %} <i class="bi bi-box-arrow-up-right"></i></a>
+          {% endwith %}{% else %}{% trans "The same reference is already on a payment in this organization." %}{% endif %}
+          <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="{{ form.allow_duplicate.html_name }}" id="{{ form.allow_duplicate.id_for_label }}" value="on">
+            <label class="form-check-label" for="{{ form.allow_duplicate.id_for_label }}">{% trans "This is a different payment. Record it anyway." %}</label>
+          </div>
+        </div>
+        {% endif %}
+
+        {% if form.payment_account or form.tenant %}
+        <div class="row g-3 mb-3">
+          {% for f in form %}{% if f.name == "payment_account" or f.name == "tenant" %}
+          <div class="col-sm-6">
+            <label class="form-label fw-medium" for="{{ f.id_for_label }}">{{ f.label }}</label>
+            <select name="{{ f.html_name }}" id="{{ f.id_for_label }}" class="form-select{% if f.errors %} is-invalid{% endif %}">
+              {% for value, label in f.field.choices %}<option value="{{ value }}" {% if value|stringformat:"s" == f.value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          </div>
+          {% endif %}{% endfor %}
+        </div>
+        {% endif %}
+
+        {% with total_from="#"|add:form.amount.id_for_label %}{% include "payments/_allocation_fields.html" %}{% endwith %}
+
+        <hr class="my-4">
+        <button class="btn btn-primary btn-lg w-100">{% if will_confirm %}<i class="bi bi-check2-circle"></i> {% trans "Record and issue receipt" %}{% else %}<i class="bi bi-send"></i> {% trans "Record for review" %}{% endif %}</button>
+        <div class="form-text text-center mt-2">{% if will_confirm %}{% trans "It is posted to the account now and a numbered receipt is created." %}{% else %}{% trans "Nothing changes on the account until it is confirmed." %}{% endif %}</div>
+      </div></form>
+    </div>
+
+    {# The account #}
+    <div class="col-lg-5 order-1 order-lg-2">
+      <div class="sticky-lg">
+        <div class="card shadow-sm mb-3"><div class="card-body">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="min-w-0">
+              <div class="fw-semibold text-truncate">{{ lease.primary_tenant.name|default:"—" }}</div>
+              <div class="small text-body-secondary">{{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }}</div>
+              <div class="small"><span class="text-body-secondary">{% trans "Account ref." %}</span> <code>{{ lease.unit.payment_reference }}</code></div>
+            </div>
+            <a class="small text-nowrap" href="{% url 'billing:lease_account' lease.public_id %}">{% trans "Statement" %}</a>
+          </div>
+          <hr>
+          <div class="small text-body-secondary">{% if balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</div>
+          <div class="h3 num mb-0 {% if balance > 0 %}text-danger{% elif balance < 0 %}text-success{% endif %}">{{ balance|absolute|money:lease.currency }}</div>
+        </div></div>
+
+        <div class="card shadow-sm mb-3"><div class="card-body">
+          <h2 class="h6 d-flex justify-content-between"><span>{% trans "Open invoices" %}</span>{% if invoices %}<span class="num text-body-secondary">{{ open_total|money:lease.currency }}</span>{% endif %}</h2>
+          <ul class="list-unstyled small mb-0">
+            {% for invoice in invoices %}
+            <li class="d-flex justify-content-between gap-2 py-1{% if not forloop.last %} border-bottom{% endif %}">
+              <span><a href="{% url 'billing:invoice' invoice.public_id %}" target="_blank" rel="noopener">{{ invoice.number }}</a> <span class="text-body-secondary">· {{ invoice.period_label }}</span>{% if invoice.overdue %} <span class="badge bg-danger-subtle text-danger-emphasis">{% trans "overdue" %}</span>{% endif %}</span>
+              <span class="num">{{ invoice.outstanding|money:lease.currency }}</span>
+            </li>
+            {% empty %}<li class="text-body-secondary">{% trans "Nothing owed on invoices. Money paid now is kept as credit." %}</li>{% endfor %}
+          </ul>
+        </div></div>
+
+        {% if recent %}
+        <div class="card shadow-sm"><div class="card-body">
+          <h2 class="h6">{% trans "Recent payments" %}</h2>
+          <ul class="list-unstyled small mb-0">
+            {% for payment in recent %}
+            <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+              <span><a href="{% url 'payments:detail' payment.public_id %}">{{ payment.paid_at|date:"j M Y" }}</a> · {{ payment.get_method_display }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</span>
+              <span class="text-nowrap"><span class="num">{{ payment.amount|money:lease.currency }}</span> {% include "payments/_status.html" %}</span>
+            </li>
+            {% endfor %}
+          </ul>
+        </div></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

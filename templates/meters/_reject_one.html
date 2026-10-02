@@ -1,0 +1,5 @@
+{% load i18n %}<form method="post" class="d-flex flex-wrap gap-1 mt-1">{% csrf_token %}
+  <input type="hidden" name="reading" value="{{ reading.public_id }}">
+  <input class="form-control form-control-sm" style="max-width:16rem" name="reason" placeholder="{% trans 'Reason for rejecting' %}" maxlength="300" required>
+  <button class="btn btn-sm btn-outline-danger" name="action" value="reject">{% trans "Reject" %}</button>
+</form>

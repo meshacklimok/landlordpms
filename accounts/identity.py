@@ -11,7 +11,7 @@ from core.phone import normalize_phone
 from core.sms import send_sms
 
 from .models import OTPCode, User
-from .otp import issue_otp, verify_otp
+from .otp import issue_otp, pretend_issue_otp, verify_otp
 
 
 @transaction.atomic
@@ -52,15 +52,19 @@ def verify_phone(user: User, code: str, request=None) -> bool:
 
 
 def request_password_reset(phone: str) -> None:
-    """Silent when the phone is unknown, so the form doesn't reveal who has an account."""
+    """Behaves the same for unknown phones, limits included, so the form doesn't reveal who has an account."""
     phone = normalize_phone(phone)
     if User.objects.filter(phone=phone, is_active=True).exists():
         issue_otp(phone, OTPCode.Purpose.RESET_PASSWORD)
+    else:
+        pretend_issue_otp(phone, OTPCode.Purpose.RESET_PASSWORD)
 
 
 @transaction.atomic
 def reset_password(*, phone: str, code: str, new_password: str, request=None) -> User | None:
     phone = normalize_phone(phone)
+    # Checked before looking the user up, so a weak password is refused the same way for every phone.
+    validate_password(new_password)
     user = User.objects.filter(phone=phone, is_active=True).first()
     if user is None:
         return None

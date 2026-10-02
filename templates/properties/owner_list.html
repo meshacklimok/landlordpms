@@ -1,0 +1,34 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Owners" %}{% endblock %}
+{% block content %}
+<a href="{% url 'properties:list' %}" class="small">← {% trans "Properties" %}</a>
+<h1 class="h4 mt-2">{% trans "Owners" %}</h1>
+<p class="small text-muted">{% trans "Who owns each property. The monthly owner statement goes to the owner; choose the owner and the management fee on each property." %}
+{% if unowned %}{% blocktrans count n=unowned %}{{ n }} property has no owner set; it gets a statement addressed to your organization.{% plural %}{{ n }} properties have no owner set; they get a statement addressed to your organization.{% endblocktrans %}{% endif %}</p>
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="list-group">
+      {% for owner in owners %}
+      <a class="list-group-item list-group-item-action" href="{% url 'properties:owner_edit' owner.public_id %}">
+        <div class="d-flex justify-content-between"><span class="fw-semibold">{{ owner.name }}</span>
+          <span class="small text-muted">{% blocktrans count n=owner.property_count %}{{ n }} property{% plural %}{{ n }} properties{% endblocktrans %}</span></div>
+        <div class="small text-muted">{{ owner.phone }}{% if owner.phone and owner.email %} · {% endif %}{{ owner.email }}</div>
+      </a>
+      {% empty %}
+      <div class="list-group-item small text-muted">{% trans "No owners yet." %}</div>
+      {% endfor %}
+    </div>
+    <p class="small text-muted mt-2">{% trans "To let an owner look in, invite them as a Viewer limited to their properties. Viewers can see figures and statements but not tenant names, and cannot change anything." %}
+    {% if can_invite %}<a href="{% url 'accounts:invite' %}">{% trans "Invite someone" %}</a>{% endif %}</p>
+  </div>
+  <div class="col-md-5">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">{% trans "Add an owner" %}</h2>
+      <form method="post" novalidate>{% csrf_token %}
+        {% include "partials/form.html" %}
+        <button class="btn btn-primary w-100">{% trans "Add owner" %}</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

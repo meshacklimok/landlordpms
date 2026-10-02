@@ -1,0 +1,166 @@
+{% extends "payments/_base.html" %}{% load i18n money access %}
+{% block title %}{% trans "Payment" %}{% if receipt %} · {{ receipt.number }}{% endif %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'payments:list' %}" class="small link-secondary link-underline-opacity-0 d-print-none"><i class="bi bi-arrow-left"></i> {% trans "Payments" %}</a>
+
+  {# Header #}
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mt-2 mb-3">
+    <div class="d-flex align-items-center gap-3">
+      {% include "payments/_method.html" with method=payment.method size="lg" %}
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <span class="hero-amount num{% if payment.state == 'rejected' or payment.state == 'reversed' %} text-decoration-line-through text-body-secondary{% endif %}">{{ payment.amount|money:lease.currency }}</span>
+          {% include "payments/_status.html" %}
+        </div>
+        <div class="small text-body-secondary">
+          {{ payment.tenant.name|default:"—" }} · {{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} ·
+          <a href="{% url 'billing:lease_account' lease.public_id %}">{{ lease.number }}</a>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 d-print-none">
+      {% if receipt %}
+      <div class="btn-group btn-group-sm">
+        <a class="btn btn-outline-secondary" href="{% url 'payments:receipt' payment.public_id %}" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> {% trans "Receipt" %}</a>
+        <a class="btn btn-outline-secondary" href="{% url 'payments:receipt' payment.public_id %}?download=1" aria-label="{% trans 'Download receipt' %}" title="{% trans 'Download receipt' %}"><i class="bi bi-download"></i></a>
+      </div>
+      {% endif %}
+      {% if can_record %}<a class="btn btn-outline-primary btn-sm" href="{% url 'payments:record' lease.public_id %}"><i class="bi bi-plus-lg"></i> {% trans "Another payment" %}</a>{% endif %}
+    </div>
+  </div>
+
+  {# What state it is in #}
+  {% if payment.state == "pending" %}
+  <div class="alert alert-warning d-flex gap-2 small"><i class="bi bi-hourglass-split"></i><div>{% trans "Waiting for review. It does not count towards the balance yet." %}</div></div>
+  {% elif payment.state == "rejected" %}
+  <div class="alert alert-danger d-flex gap-2 small"><i class="bi bi-x-circle"></i><div><span class="fw-semibold">{% blocktrans with on=payment.reversed_at|date:"j M Y" %}Rejected on {{ on }}{% endblocktrans %}</span>{% if payment.reversal_reason %}: {{ payment.reversal_reason }}{% endif %}<div>{% trans "It never counted towards the balance." %}</div></div></div>
+  {% elif payment.state == "reversed" %}
+  <div class="alert alert-secondary d-flex gap-2 small"><i class="bi bi-arrow-counterclockwise"></i><div><span class="fw-semibold">{% blocktrans with on=payment.reversed_at|date:"j M Y" %}Reversed on {{ on }}{% endblocktrans %}</span>{% if payment.reversal_reason %}: {{ payment.reversal_reason }}{% endif %}<div>{% trans "The invoices and balance went back as they were. The receipt is kept." %}</div></div></div>
+  {% endif %}
+
+  {% if code_flag %}
+  <div class="alert alert-danger d-flex gap-2 small"><i class="bi bi-patch-question"></i><div>
+    <span class="fw-semibold">{% if code_flag.amount_differs %}{% trans "The M-Pesa amount does not match" %}{% else %}{% trans "M-Pesa code not found" %}{% endif %}</span>
+    <div>{% if code_flag.amount_differs %}{% blocktrans with found=code_flag.found_amount|money:lease.currency %}Safaricom reported {{ found }} for this code. Check it before relying on this payment.{% endblocktrans %}{% else %}{% trans "No callback or imported statement has this code, a day after it was typed in. Check it with Safaricom before relying on this payment." %}{% endif %}
+    {% if membership|can:"mpesa.match" %}<a href="{% url 'mpesa:codes' %}">{% trans "Codes to check" %}</a>{% endif %}</div>
+  </div></div>
+  {% elif code_check %}
+  <div class="alert alert-light border d-flex gap-2 small"><i class="bi bi-patch-check"></i><div>{% blocktrans with who=code_check.checked_by.get_full_name|default:code_check.checked_by.email on=code_check.created_at|date:"j M Y" %}M-Pesa code checked by {{ who }} on {{ on }}{% endblocktrans %}: {{ code_check.note }}</div></div>
+  {% endif %}
+
+  {% if duplicates %}
+  <div class="alert alert-warning small">
+    <div class="fw-semibold"><i class="bi bi-exclamation-triangle"></i> {% trans "Same reference on another payment" %}</div>
+    <ul class="mb-0 ps-3">
+      {% for d in duplicates %}<li><a href="{% url 'payments:detail' d.public_id %}">{{ d.amount|money:d.lease.currency }} · {{ d.paid_at|date:"j M Y" }} · {% trans "Unit" %} {{ d.lease.unit.code }}</a> · {{ d.get_state_display|lower }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="row g-4">
+    <div class="col-lg-8">
+      {# Details #}
+      <div class="card shadow-sm mb-4"><div class="card-body">
+        <h2 class="h6 mb-3">{% trans "Details" %}</h2>
+        <dl class="row row-cols-2 row-cols-md-3 g-3 small mb-0">
+          <div><dt class="text-body-secondary fw-normal">{% trans "Date paid" %}</dt><dd class="mb-0">{{ payment.paid_at|date:"j M Y" }}</dd></div>
+          <div><dt class="text-body-secondary fw-normal">{% trans "Method" %}</dt><dd class="mb-0">{{ payment.get_method_display }}</dd></div>
+          <div><dt class="text-body-secondary fw-normal">{% trans "Reference" %}</dt><dd class="mb-0">{% if payment.reference %}<code>{{ payment.reference }}</code>{% else %}—{% endif %}</dd></div>
+          <div><dt class="text-body-secondary fw-normal">{% trans "Paid by" %}</dt><dd class="mb-0">{% if payment.tenant and membership|can:"tenants.view" %}<a href="{% url 'tenants:detail' payment.tenant.public_id %}">{{ payment.tenant.name }}</a>{% else %}{{ payment.tenant.name|default:"—" }}{% endif %}</dd></div>
+          <div><dt class="text-body-secondary fw-normal">{% trans "Received into" %}</dt><dd class="mb-0">{{ payment.payment_account|default:"—" }}</dd></div>
+          <div><dt class="text-body-secondary fw-normal">{% trans "Account ref." %}</dt><dd class="mb-0"><code>{{ lease.unit.payment_reference }}</code></dd></div>
+        </dl>
+      </div></div>
+
+      {# Where the money went #}
+      {% if payment.state != "pending" and payment.state != "rejected" %}
+      <div class="card shadow-sm mb-4"><div class="card-body">
+        <h2 class="h6 mb-3">{% trans "Applied to" %}</h2>
+        <table class="table table-sm small align-middle mb-0">
+          <thead><tr><th>{% trans "Invoice" %}</th><th>{% trans "Period" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+          <tbody>
+            {% for a in allocations %}
+            <tr><td><a href="{% url 'billing:invoice' a.invoice.public_id %}">{{ a.invoice.number }}</a></td><td>{{ a.invoice.period_label }}</td><td class="text-end num">{{ a.amount|money:lease.currency }}</td></tr>
+            {% endfor %}
+            {% if unallocated > 0 %}<tr class="text-body-secondary"><td colspan="2">{% trans "Held as credit" %}{% if payment.state == "confirmed" %} <span class="small">· {% trans "goes to the next invoice when credit is applied" %}</span>{% endif %}</td><td class="text-end num">{{ unallocated|money:lease.currency }}</td></tr>{% endif %}
+          </tbody>
+          <tfoot><tr class="fw-semibold"><td colspan="2">{% trans "Total" %}</td><td class="text-end num">{{ payment.amount|money:lease.currency }}</td></tr></tfoot>
+        </table>
+        {% if payment.state == "reversed" and allocations %}<p class="small text-body-secondary mt-2 mb-0">{% trans "Taken back from these invoices when the payment was reversed." %}</p>{% endif %}
+      </div></div>
+      {% endif %}
+
+      {# Review #}
+      {% if can_confirm %}
+      <div class="card shadow-sm mb-4 border-success-subtle d-print-none"><div class="card-body">
+        <h2 class="h6">{% trans "Review this payment" %}</h2>
+        <p class="small text-body-secondary">{% trans "Check the money has arrived. Confirming posts it to the tenant's account and issues a receipt." %}</p>
+        <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="confirm">
+          {% for error in confirm_form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
+          {% with form=confirm_form total=payment.amount %}{% include "payments/_allocation_fields.html" %}{% endwith %}
+          <button class="btn btn-success"><i class="bi bi-check2-circle"></i> {% trans "Confirm and issue receipt" %}</button>
+        </form>
+        <details class="mt-3" {% if reject_form.errors %}open{% endif %}><summary class="small text-danger">{% trans "Reject it instead" %}</summary>
+          <form method="post" novalidate class="mt-2" data-confirm="{% trans 'Reject this payment? It will not count towards the balance.' %}">{% csrf_token %}<input type="hidden" name="action" value="reject">
+            {% with form=reject_form %}{% include "partials/form.html" %}{% endwith %}
+            <button class="btn btn-outline-danger btn-sm">{% trans "Reject payment" %}</button>
+          </form>
+        </details>
+      </div></div>
+      {% endif %}
+
+      {% if can_reverse %}
+      <div class="card shadow-sm mb-4 border-danger-subtle d-print-none"><div class="card-body">
+        <details {% if reverse_form.errors %}open{% endif %}><summary class="fw-medium text-danger">{% trans "Reverse this payment" %}</summary>
+          <p class="small text-body-secondary mt-2">{% trans "For a bounced cheque or money that never arrived. The invoices and balance go back as they were; the receipt is kept and marked reversed." %}</p>
+          <form method="post" novalidate data-confirm="{% trans 'Reverse this payment? The tenant will owe this amount again.' %}">{% csrf_token %}<input type="hidden" name="action" value="reverse">
+            {% with form=reverse_form %}{% include "partials/form.html" %}{% endwith %}
+            <button class="btn btn-danger btn-sm">{% trans "Reverse payment" %}</button>
+          </form>
+        </details>
+      </div></div>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+      {% if receipt %}
+      <div class="card shadow-sm mb-4"><div class="card-body d-flex gap-3 align-items-center">
+        <div class="fs-2 text-danger-emphasis"><i class="bi bi-file-earmark-pdf"></i></div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold">{{ receipt.number }}</div>
+          <div class="small text-body-secondary">{% blocktrans with on=receipt.issued_at|date:"j M Y, H:i" %}Issued {{ on }}{% endblocktrans %}{% if payment.state == "reversed" %} · {% trans "payment since reversed" %}{% endif %}</div>
+        </div>
+      </div></div>
+      {% endif %}
+
+      <div class="card shadow-sm"><div class="card-body">
+        <h2 class="h6 mb-3">{% trans "Activity" %}</h2>
+        <ul class="timeline small">
+          <li style="--dot: var(--bs-primary)">
+            <div class="fw-medium">{% trans "Recorded" %}</div>
+            <div class="text-body-secondary">{{ payment.created_at|date:"j M Y, H:i" }}{% if payment.recorded_by %} · {{ payment.recorded_by }}{% endif %}</div>
+          </li>
+          {% if payment.confirmed_at %}
+          <li style="--dot: var(--bs-success)">
+            <div class="fw-medium">{% trans "Confirmed" %}{% if receipt %} · {{ receipt.number }}{% endif %}</div>
+            <div class="text-body-secondary">{{ payment.confirmed_at|date:"j M Y, H:i" }}{% if payment.confirmed_by %} · {{ payment.confirmed_by }}{% endif %}</div>
+          </li>
+          {% endif %}
+          {% if payment.reversed_at %}
+          <li style="--dot: {% if payment.state == 'rejected' %}var(--bs-danger){% else %}var(--bs-secondary){% endif %}">
+            <div class="fw-medium">{{ payment.get_state_display }}</div>
+            <div class="text-body-secondary">{{ payment.reversed_at|date:"j M Y, H:i" }}{% if payment.reversed_by %} · {{ payment.reversed_by }}{% endif %}</div>
+            {% if payment.reversal_reason %}<div class="mt-1 fst-italic">“{{ payment.reversal_reason }}”</div>{% endif %}
+          </li>
+          {% elif payment.state == "pending" %}
+          <li style="--dot: var(--bs-warning)">
+            <div class="fw-medium text-body-secondary">{% trans "Waiting for a manager" %}</div>
+          </li>
+          {% endif %}
+        </ul>
+      </div></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

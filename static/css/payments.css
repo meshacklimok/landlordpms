@@ -1,0 +1,65 @@
+/* Payments pages. Bootstrap 5.3 does the heavy lifting; this adds the finance details. */
+
+.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wide { max-width: 1100px; }
+body:has(.wide) main.page { max-width: 1140px; }
+.min-w-0 { min-width: 0; }
+
+/* Summary tiles */
+.stat { border: 0; border-radius: .75rem; }
+.stat .stat-label { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color); }
+.stat .stat-value { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
+.stat .stat-sub { font-size: .8rem; color: var(--bs-secondary-color); }
+.stat-accent { border-left: 4px solid var(--accent, var(--bs-border-color)) !important; }
+
+/* Status pills (tabs) */
+.state-tabs { scrollbar-width: none; }
+.state-tabs::-webkit-scrollbar { display: none; }
+.state-tabs .nav-link { white-space: nowrap; color: var(--bs-body-color); border-radius: 999px; padding: .3rem .8rem; font-size: .875rem; }
+.state-tabs .nav-link.active { background: var(--bs-dark); color: #fff; }
+.state-tabs .count { font-size: .75rem; opacity: .7; margin-left: .25rem; }
+
+/* Tables */
+.pay-table { margin-bottom: 0; }
+.pay-table th { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color);
+                font-weight: 500; background: var(--bs-tertiary-bg); white-space: nowrap; }
+.pay-table td { vertical-align: middle; }
+.pay-table tr[data-href] { cursor: pointer; }
+.pay-table tr[data-href]:hover td { background: var(--bs-tertiary-bg); }
+.pay-table tr.is-muted td { color: var(--bs-secondary-color); }
+.pay-table tr.is-muted .amount { text-decoration: line-through; }
+
+/* Method glyph */
+.method { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem;
+          border-radius: .5rem; font-size: 1rem; flex: none;
+          background: var(--bs-secondary-bg); color: var(--bs-secondary-text-emphasis); }
+.method-lg { width: 3rem; height: 3rem; border-radius: .75rem; font-size: 1.4rem; }
+.method-MPESA { background: #e7f6ec; color: #1b7a3a; }
+.method-BANK { background: #e8f0fe; color: #1a56db; }
+.method-CASH { background: #fef3e2; color: #9a5b00; }
+.method-CHEQUE { background: #f1ecfb; color: #6b3fc4; }
+
+/* Amount hero on the detail page */
+.hero-amount { font-size: 2rem; font-weight: 650; letter-spacing: -.01em; }
+
+/* Activity timeline */
+.timeline { list-style: none; padding: 0; margin: 0; position: relative; }
+.timeline li { position: relative; padding: 0 0 1rem 1.5rem; }
+.timeline li:last-child { padding-bottom: 0; }
+.timeline li::before { content: ""; position: absolute; left: .3rem; top: .35rem; bottom: -.35rem; width: 2px; background: var(--bs-border-color); }
+.timeline li:last-child::before { display: none; }
+.timeline li::after { content: ""; position: absolute; left: 0; top: .3rem; width: .75rem; height: .75rem; border-radius: 50%;
+                      background: var(--dot, var(--bs-secondary)); box-shadow: 0 0 0 3px var(--bs-body-bg); }
+
+/* Method picker on the record form */
+.method-picker .btn { flex: 1 1 0; }
+
+/* Allocation table */
+.alloc-summary.over { color: var(--bs-danger); }
+
+.sticky-lg { position: sticky; top: 1rem; }
+@media (max-width: 991.98px) { .sticky-lg { position: static; } }
+
+@media print {
+  .navbar, .d-print-none { display: none !important; }
+}

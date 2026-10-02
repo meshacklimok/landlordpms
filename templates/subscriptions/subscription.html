@@ -1,0 +1,102 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Subscription" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% trans "Subscription" %}</h1>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6 text-muted">{% trans "Your plan" %}</h2>
+    <p class="h5 mb-1">{{ sub.plan.name }}
+      <span class="badge {% if sub.status == 'ACTIVE' %}text-bg-success{% elif sub.status == 'TRIAL' %}text-bg-info{% else %}text-bg-warning{% endif %}">{{ sub.get_status_display }}</span></p>
+    {% if sub.status == "TRIAL" %}
+      <p class="small mb-0">{% blocktrans with d=sub.trial_ends_on|date:"j M Y" %}Free trial until {{ d }}. Then you move to Free if you fit its limits, or are asked to pay.{% endblocktrans %}</p>
+    {% elif sub.period_end %}
+      <p class="small mb-0">{% blocktrans with i=sub.get_interval_display|lower s=sub.period_start|date:"j M Y" e=sub.period_end|date:"j M Y" %}Paid {{ i }}, {{ s }} to {{ e }}.{% endblocktrans %}</p>
+    {% endif %}
+    <table class="table table-sm small mt-3 mb-0">
+      <thead><tr><th></th><th class="text-end">{% trans "Using" %}</th><th class="text-end">{% trans "Plan allows" %}</th></tr></thead>
+      <tbody>{% for label, used, limit in usage %}
+        <tr><td>{{ label|capfirst }}</td><td class="text-end">{{ used }}</td><td class="text-end">{% if limit is None %}{% trans "No limit" %}{% else %}{{ limit }}{% endif %}</td></tr>
+      {% endfor %}</tbody>
+    </table>
+    <p class="small text-muted mt-2 mb-0">{% trans "Viewers do not count as team members." %}</p>
+  </div></div></div>
+
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6 text-muted">{% trans "To pay" %}</h2>
+    {% if open_invoice %}
+      <p class="h5 mb-1">KES {{ open_invoice.outstanding|floatformat:2 }}</p>
+      <p class="small">{% blocktrans with n=open_invoice.number p=open_invoice.plan_name d=open_invoice.due_on|date:"j M Y" %}Invoice {{ n }} for {{ p }}, due {{ d }}.{% endblocktrans %}
+        <a href="{% url 'subscriptions:invoice_pdf' open_invoice.public_id %}">PDF</a></p>
+      {% if paybill %}<p class="small mb-0">{% blocktrans with n=open_invoice.number %}Pay by M-Pesa: Paybill <strong>{{ paybill }}</strong>, account <strong>{{ n }}</strong>.{% endblocktrans %}</p>
+      {% else %}<p class="small mb-0">{% trans "Contact us for payment details." %}</p>{% endif %}
+      <p class="small text-muted mt-2 mb-0">{% trans "We record your payment and send a receipt; the plan starts on the day you pay." %}</p>
+    {% else %}
+      <p class="small mb-0">{% trans "Nothing to pay." %}</p>
+    {% endif %}
+    <hr>
+    <h2 class="h6 text-muted">{% trans "SMS credit" %}</h2>
+    <p class="h5 mb-1">KES {{ sms_balance|floatformat:2 }}</p>
+    <p class="small mb-0">{% blocktrans %}Each SMS part costs KES {{ sms_price }}. Login codes and invitations are free.{% endblocktrans %}
+      {% if sms_enforced and sms_balance <= 0 %}<span class="text-danger">{% trans "No credit: messages go by email where possible." %}</span>{% endif %}</p>
+    {% if paybill %}<p class="small mb-0">{% blocktrans %}To top up, pay Paybill {{ paybill }} with account SMS and send us the M-Pesa code.{% endblocktrans %}</p>{% endif %}
+  </div></div></div>
+</div>
+
+{% if can_manage %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Choose a plan" %}</h2>
+  <p class="small text-muted">{% trans "Prices are in KES before VAT. Moving up mid-period credits the unused days of what you paid." %}</p>
+  <div class="row row-cols-1 row-cols-md-4 g-2">
+  {% for plan in plans %}
+    <div class="col"><div class="border rounded p-2 h-100 {% if plan.current %}border-success{% endif %}">
+      <div class="fw-semibold">{{ plan.name }}{% if plan.current %} <span class="badge text-bg-success">{% trans "Current" %}</span>{% endif %}</div>
+      <div class="small">{% if plan.unit_limit is None %}{% trans "Any number of units" %}{% else %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }} units{% endblocktrans %}{% endif %},
+        {% if plan.seat_limit is None %}{% trans "any team" %}{% else %}{% blocktrans with n=plan.seat_limit %}{{ n }} team members{% endblocktrans %}{% endif %}</div>
+      {% if plan.is_free %}<div class="small mb-2">{% trans "Free" %}</div>
+      {% else %}<div class="small mb-2">{% blocktrans with m=plan.monthly_price|floatformat:0 y=plan.yearly_price|floatformat:0 %}{{ m }} a month, or {{ y }} a year{% endblocktrans %}</div>{% endif %}
+      {% if plan.over %}
+        <div class="small text-muted">{% trans "Too small for you now:" %} {{ plan.over|join:"; " }}</div>
+      {% else %}
+      <form method="post" class="d-flex gap-1">{% csrf_token %}
+        <input type="hidden" name="plan" value="{{ plan.key }}">
+        {% if plan.is_free %}<input type="hidden" name="interval" value="MONTHLY">
+        {% else %}<select name="interval" class="form-select form-select-sm" aria-label="{% trans 'How often' %}">{% for value, label in intervals %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>{% endif %}
+        <button class="btn btn-sm btn-outline-primary">{% trans "Choose" %}</button>
+      </form>
+      {% endif %}
+    </div></div>
+  {% endfor %}
+  </div>
+  <p class="small text-muted mt-2 mb-0">{% trans "Larger portfolios: ask us about Enterprise." %}</p>
+</div></div>
+{% endif %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Invoices" %}</h2>
+  {% if invoices %}
+  <div class="table-responsive"><table class="table table-sm small mb-0">
+    <thead><tr><th>{% trans "Number" %}</th><th>{% trans "Plan" %}</th><th>{% trans "Issued" %}</th><th class="text-end">{% trans "Total" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
+    <tbody>{% for inv in invoices %}
+      <tr><td>{{ inv.number }}</td><td>{{ inv.plan_name }} ({{ inv.get_interval_display|lower }})</td><td>{{ inv.issued_on|date:"j M Y" }}</td>
+        <td class="text-end">{{ inv.total|floatformat:2 }}</td><td>{{ inv.get_status_display }}</td>
+        <td><a href="{% url 'subscriptions:invoice_pdf' inv.public_id %}">PDF</a></td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="small text-muted mb-0">{% trans "No invoices yet." %}</p>{% endif %}
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Payments and receipts" %}</h2>
+  {% if payments %}
+  <div class="table-responsive"><table class="table table-sm small mb-0">
+    <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Reference" %}</th><th>{% trans "For" %}</th><th class="text-end">{% trans "Amount" %}</th><th></th></tr></thead>
+    <tbody>{% for p in payments %}
+      <tr><td>{{ p.paid_on|date:"j M Y" }}</td><td>{{ p.reference }}</td><td>{% if p.invoice %}{{ p.invoice.number }}{% else %}{% trans "SMS credit" %}{% endif %}</td>
+        <td class="text-end">{{ p.amount|floatformat:2 }}</td>
+        <td>{% if p.receipt %}<a href="{% url 'subscriptions:receipt_pdf' p.receipt.public_id %}">{{ p.receipt.number }}</a>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+  {% else %}<p class="small text-muted mb-0">{% trans "No payments yet." %}</p>{% endif %}
+</div></div>
+{% endblock %}

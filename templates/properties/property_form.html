@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if property %}{% trans "Edit property" %}{% else %}{% trans "Add property" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  {% if property %}<a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>{% else %}<a href="{% url 'properties:list' %}" class="small">← {% trans "Properties" %}</a>{% endif %}
+  <h1 class="h4 mt-2">{% if property %}{% trans "Edit property" %}{% else %}{% trans "Add property" %}{% endif %}</h1>
+  {% if property %}<p class="small text-muted">{% blocktrans with code=property.code %}Code {{ code }} is fixed because payment references use it.{% endblocktrans %}</p>{% endif %}
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+  </form>
+</div>
+{% endblock %}

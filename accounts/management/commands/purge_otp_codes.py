@@ -1,10 +1,9 @@
-from django.core.management.base import BaseCommand
-
 from accounts.otp import purge_expired
+from core.jobs import JobCommand
 
 
-class Command(BaseCommand):
+class Command(JobCommand):
     help = "Delete one-time codes older than a day."
 
-    def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS(f"Deleted {purge_expired()} codes."))
+    def run(self, *args, **options):
+        return f"Deleted {purge_expired()} codes."

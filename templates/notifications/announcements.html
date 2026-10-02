@@ -1,0 +1,43 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Announcements" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+    <div>
+      <h1 class="h3 mb-0">{% trans "Announcements" %}</h1>
+      <div class="small text-body-secondary">{% trans "Notices to a group of tenants: a building, tenants who owe, leases ending soon." %}</div>
+    </div>
+    <a class="btn btn-primary text-nowrap" href="{% url 'notifications:announcement_new' %}"><i class="bi bi-megaphone"></i> {% trans "New" %}</a>
+  </div>
+  {% include "notifications/_tabs.html" with tab="announcements" %}
+
+  {% if page.object_list %}
+  <div class="list-group shadow-sm">
+    {% for a in page %}
+    <a class="list-group-item list-group-item-action" href="{% url 'notifications:announcement' a.public_id %}">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="fw-medium text-truncate">{{ a.text }}</span>
+        <span class="small text-body-secondary text-nowrap">{{ a.created_at|date:"j M Y, H:i" }}</span>
+      </div>
+      <div class="small text-body-secondary text-truncate">{{ a.summary }}{% if a.created_by %} · {{ a.created_by }}{% endif %}</div>
+      <div class="small mt-1 d-flex flex-wrap gap-3">
+        <span>{% blocktrans count n=a.recipient_count %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}</span>
+        <span class="text-success">{% blocktrans with n=a.sent %}{{ n }} sent{% endblocktrans %}</span>
+        {% if a.waiting %}<span class="text-body-secondary">{% blocktrans with n=a.waiting %}{{ n }} waiting{% endblocktrans %}</span>{% endif %}
+        {% if a.failed %}<span class="text-danger">{% blocktrans with n=a.failed %}{{ n }} failed{% endblocktrans %}</span>{% endif %}
+        {% if a.skipped %}<span class="text-body-secondary">{% blocktrans with n=a.skipped %}{{ n }} skipped{% endblocktrans %}</span>{% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% include "partials/pager.html" %}
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-megaphone"></i></div>
+    <h2 class="h6">{% trans "No announcements yet" %}</h2>
+    <p class="small text-body-secondary">{% trans "Tell a building about a water outage, remind tenants who owe, or reach leases ending soon." %}</p>
+    <a class="btn btn-primary btn-sm" href="{% url 'notifications:announcement_new' %}">{% trans "New announcement" %}</a>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

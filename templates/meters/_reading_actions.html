@@ -1,0 +1,8 @@
+{% load i18n %}{% if reading.can_approve %}
+{% include "meters/_approve_one.html" %}
+{% elif reading.can_undo %}
+<form method="post" class="mt-2" data-confirm="{% trans 'Undo this approval and cancel its water charges?' %}" onsubmit="return confirm(this.dataset.confirm)">{% csrf_token %}
+  <input type="hidden" name="reading" value="{{ reading.public_id }}">
+  <button class="btn btn-sm btn-outline-secondary" name="action" value="undo">{% trans "Undo approval" %}</button>
+</form>
+{% endif %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Add unit" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Add unit" %}</h1>
+  <p class="small text-muted">{% blocktrans with code=property.code %}The payment reference will be {{ code }}-&lt;unit code&gt;.{% endblocktrans %}</p>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="d-flex gap-2">
+      <button class="btn btn-primary flex-fill">{% trans "Save" %}</button>
+      <button class="btn btn-outline-primary flex-fill" name="add_another" value="1">{% trans "Save and add another" %}</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

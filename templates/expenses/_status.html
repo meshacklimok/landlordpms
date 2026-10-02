@@ -1,0 +1,1 @@
+{% if expense.status == "APPROVED" %}<span class="badge text-bg-success">{{ expense.get_status_display }}</span>{% elif expense.status == "SUBMITTED" %}<span class="badge text-bg-warning">{{ expense.get_status_display }}</span>{% else %}<span class="badge text-bg-secondary">{{ expense.get_status_display }}</span>{% endif %}

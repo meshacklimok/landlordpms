@@ -1,23 +1,108 @@
-{% extends "base.html" %}{% load i18n access %}
+{% extends "base.html" %}{% load i18n access money reports %}
 {% block title %}{% trans "Home" %}{% endblock %}
 {% block content %}
 <h1 class="h4">{{ user.full_name }}</h1>
 <p class="text-muted">{{ organization.name }} · {{ membership.role.name }}</p>
 
+{% if suggest_mfa %}
+<div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <span>{% trans "Your role can move money and see private records. Protect your account with two-step login." %}</span>
+  <a class="btn btn-sm btn-primary" href="{% url 'accounts:security' %}">{% trans "Set it up" %}</a>
+</div>
+{% endif %}
+
 {% if show_checklist %}
 <div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Get set up" %}</h2>
+  <h2 class="h6">{% trans "Get set up" %} <span class="text-muted fw-normal">{% blocktrans with n=checklist_done t=checklist_total %}{{ n }} of {{ t }} done{% endblocktrans %}</span></h2>
   <ul class="list-unstyled mb-0">
-    {% for label, done in checklist %}<li class="py-1">{% if done %}✅{% else %}⬜{% endif %} {{ label }}</li>{% endfor %}
+    {% for step in checklist %}<li class="py-1" data-step="{{ step.key }}">{% if step.done %}✅ {{ step.label }}{% else %}⬜ <a href="{{ step.url }}">{{ step.label }}</a>{% endif %}{% if step.optional %} <span class="text-muted small">({% trans "optional" %})</span>{% endif %}</li>{% endfor %}
   </ul>
+  <p class="small text-muted mt-2 mb-0">{% blocktrans with url=help_url %}Stuck? Read <a href="{{ url }}">getting started</a>, or send us your spreadsheet and we will import it for you.{% endblocktrans %}</p>
 </div></div>
 {% endif %}
 
+<section class="card shadow-sm mb-3" aria-labelledby="today-heading"><div class="card-body">
+  <h2 class="h6" id="today-heading">{% trans "Today" %}</h2>
+  {% if home.has_work %}
+  {% if home.tasks %}
+  <ul class="list-group list-group-flush mb-2">
+    {% for task in home.tasks %}
+    <li class="list-group-item px-0 d-flex align-items-center gap-2" data-task="{{ task.key }}">
+      <span class="badge rounded-pill text-bg-primary">{{ task.count }}</span>
+      <a href="{{ task.url }}">{{ task.label }}</a>
+      {% if task.detail %}<span class="small text-danger">{{ task.detail }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if home.expiring %}
+  <h3 class="h6 small text-muted mt-3 mb-1">{% blocktrans count n=home.expiring_count %}{{ n }} lease ends within 60 days{% plural %}{{ n }} leases end within 60 days{% endblocktrans %}</h3>
+  <ul class="list-unstyled small mb-2">
+    {% for lease in home.expiring %}
+    <li class="py-1"><a href="{% url 'leases:detail' lease.public_id %}">{{ lease.unit.code }} · {{ lease.unit.property.name }}</a>{% if membership|can:"tenants.view" and lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %} <span class="text-muted">· {% blocktrans with d=lease.end_date|date:"j M Y" %}ends {{ d }}{% endblocktrans %}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if home.reports %}
+  <h3 class="h6 small text-muted mt-3 mb-1">{% trans "Condition reports to finish" %}</h3>
+  <ul class="list-unstyled small mb-0">
+    {% for report in home.reports %}
+    <li class="py-1"><a href="{% url 'inspections:report' report.public_id %}">{{ report.get_kind_display }} · {{ report.unit.code }} · {{ report.unit.property.name }}</a> <span class="text-muted">· {{ report.inspected_on|date:"j M Y" }}</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <p class="text-muted mb-0">{% trans "Nothing is waiting for you." %}</p>
+  {% endif %}
+</div></section>
+
+{% if home.summary %}
+{% with occ=home.summary.occupancy %}
+<section class="card shadow-sm mb-3" aria-labelledby="summary-heading"><div class="card-body">
+  <h2 class="h6" id="summary-heading">{% trans "Summary" %}</h2>
+  <dl class="row small mb-0">
+    <dt class="col-7 fw-normal text-muted">{% trans "Occupied" %}</dt>
+    <dd class="col-5 mb-1">{% if occ.rentable %}{% blocktrans with o=occ.occupied r=occ.rentable %}{{ o }} of {{ r }} units{% endblocktrans %}{% else %}{% trans "No units yet" %}{% endif %}</dd>
+    <dt class="col-7 fw-normal text-muted">{% trans "Vacant" %}</dt>
+    <dd class="col-5 mb-1">{{ occ.vacant }}{% if occ.reserved or occ.maintenance %} <span class="text-muted">{% blocktrans with r=occ.reserved u=occ.maintenance %}({{ r }} reserved, {{ u }} under repair){% endblocktrans %}</span>{% endif %}</dd>
+    <dt class="col-7 fw-normal text-muted">{% trans "Leases with rent overdue" %}</dt>
+    <dd class="col-5 mb-0">{{ home.summary.overdue_leases }}</dd>
+  </dl>
+</div></section>
+{% endwith %}
+{% endif %}
+
 <div class="row g-3">
+  {% if membership|can:"properties.view" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Properties" %}</h2>
+    <a href="{% url 'properties:list' %}">{% trans "Properties, buildings and units" %}</a>
+  </div></div></div>
+  {% endif %}
+  {% if membership|can:"tenants.view" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Tenants" %}</h2>
+    <a href="{% url 'tenants:list' %}">{% trans "Tenants and prospects" %}</a>
+  </div></div></div>
+  {% endif %}
+  {% if membership|can:"leases.view" %}
+  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Leases" %}</h2>
+    <a href="{% url 'leases:list' %}">{% trans "Leases, rent and charges" %}</a>
+    {% if membership|can:"charges.manage" %}<br><a class="small" href="{% url 'billing:charge_types' %}">{% trans "Charge types" %}</a>{% endif %}
+  </div></div></div>
+  {% endif %}
   {% if membership|can:"dashboard.view_financial" %}
   <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
     <h2 class="h6">{% trans "Collections" %}</h2>
-    <p class="text-muted small mb-0">{% trans "Collection and arrears figures appear here once billing is set up." %}</p>
+    {% with c=board.current cur=board.currency %}
+    <dl class="row small mb-2">
+      <dt class="col-7 fw-normal text-muted">{% trans "Occupancy" %}</dt><dd class="col-5 mb-1">{{ board.occupancy.rate|percent }} <span class="text-muted">({{ board.occupancy.occupied }}/{{ board.occupancy.rentable }})</span></dd>
+      <dt class="col-7 fw-normal text-muted">{% blocktrans with m=c.label %}Rent collected, {{ m }}{% endblocktrans %}</dt><dd class="col-5 mb-1">{% if c.rate is None %}{% trans "No rent billed yet" %}{% else %}{{ c.rate|percent }}{% endif %}</dd>
+      <dt class="col-7 fw-normal text-muted">{% trans "Arrears today" %}</dt><dd class="col-5 mb-0 text-nowrap">{{ board.arrears.total|money:cur }}</dd>
+    </dl>
+    {% endwith %}
+    <a href="{% url 'reports:dashboard' %}">{% trans "Open the dashboard" %}</a>
   </div></div></div>
   {% endif %}
   {% if show_staff %}

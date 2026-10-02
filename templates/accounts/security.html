@@ -1,0 +1,66 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Security" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+<h1 class="h4 mb-3">{% trans "Security" %}</h1>
+
+{% if codes %}
+<div class="card border-warning shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Your recovery codes" %}</h2>
+  <p class="small">{% trans "Each code works once, if you lose your phone. Write them down or save them somewhere safe now: they will not be shown again." %}</p>
+  <ul class="list-unstyled font-monospace row row-cols-2 g-1 mb-2" id="recovery-codes">
+    {% for c in codes %}<li class="col">{{ c }}</li>{% endfor %}
+  </ul>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('recovery-codes').innerText)">{% trans "Copy" %}</button>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">{% trans "Print" %}</button>
+</div></div>
+{% endif %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Two-step login" %}
+    {% if enabled %}<span class="badge text-bg-success">{% trans "On" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Off" %}</span>{% endif %}</h2>
+  <p class="small text-muted">{% trans "After your password, you also enter a code from an authenticator app on your phone, such as Google Authenticator or Microsoft Authenticator. Someone who learns your password still cannot log in." %}</p>
+  {% if required and not enabled %}<div class="alert alert-warning small">{% trans "Platform Admins must use two-step login to open the admin." %}</div>{% endif %}
+
+  {% if enabled %}
+    <p class="small mb-0">{% blocktrans count n=left %}{{ n }} recovery code left.{% plural %}{{ n }} recovery codes left.{% endblocktrans %}</p>
+  {% elif qr %}
+    <ol class="small ps-3">
+      <li>{% trans "In your authenticator app, add an account and scan this code." %}</li>
+      <li>{% trans "Enter the 6-digit code the app shows." %}</li>
+    </ol>
+    <div class="text-center mb-2">{{ qr|safe }}</div>
+    <p class="small text-center">{% trans "Can't scan? Enter this key:" %}<br><code class="user-select-all">{{ secret }}</code><br>
+      <a href="{{ uri }}">{% trans "Open in an app on this phone" %}</a></p>
+    <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="confirm">
+      {% with form=confirm_form %}{% include "partials/form.html" %}{% endwith %}
+      <button class="btn btn-primary">{% trans "Switch on" %}</button>
+    </form>
+  {% else %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="action" value="start">
+      <button class="btn btn-primary">{% trans "Set up two-step login" %}</button>
+    </form>
+  {% endif %}
+</div></div>
+
+{% if enabled %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "New recovery codes" %}</h2>
+  <p class="small text-muted">{% trans "Makes a new set of 10 and stops the old ones working." %}</p>
+  <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="renew">
+    {% with form=renew_form %}{% include "partials/form.html" %}{% endwith %}
+    <button class="btn btn-outline-primary">{% trans "Make new codes" %}</button>
+  </form>
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{% trans "Switch off two-step login" %}</h2>
+  <p class="small text-muted">{% trans "Your other devices will be logged out." %}</p>
+  <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="disable">
+    {% with form=disable_form %}{% include "partials/form.html" %}{% endwith %}
+    <button class="btn btn-outline-danger">{% trans "Switch off" %}</button>
+  </form>
+</div></div>
+{% endif %}
+</div>
+{% endblock %}

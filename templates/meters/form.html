@@ -1,0 +1,29 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if meter %}{% trans "Edit meter" %}{% else %}{% trans "Add meter" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% if meter %}{% url 'meters:detail' meter.public_id %}{% else %}{% url 'meters:list' %}{% endif %}" class="small">← {% if meter %}{{ meter.label }}{% else %}{% trans "Water meters" %}{% endif %}</a>
+  <h1 class="h4 mt-2">{% if meter %}{% trans "Edit meter" %}{% else %}{% trans "Add a meter" %}{% endif %} · {{ property.name }}</h1>
+  <form method="post" class="card shadow-sm"><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <fieldset class="mb-3">
+      <legend class="form-label fs-6">{% trans "Units it serves" %}</legend>
+      <p class="small text-muted">{% trans "Tick one unit for its own meter, or several for a shared meter. Weights are used only when a shared meter is split by weight." %}</p>
+      <div class="row g-2">
+        {% for row in units %}
+        <div class="col-6 col-sm-4 col-md-3">
+          <div class="input-group input-group-sm">
+            <div class="input-group-text"><input class="form-check-input mt-0" type="checkbox" name="unit-{{ row.unit.pk }}" id="unit-{{ row.unit.pk }}" {% if row.checked %}checked{% endif %}></div>
+            <label class="input-group-text flex-grow-1" for="unit-{{ row.unit.pk }}">{{ row.unit.code }}</label>
+            <input class="form-control" style="max-width:4.5rem" name="weight-{{ row.unit.pk }}" value="{{ row.weight }}" inputmode="decimal" aria-label="{% blocktrans with code=row.unit.code %}Weight for {{ code }}{% endblocktrans %}">
+          </div>
+        </div>
+        {% empty %}
+        <p class="small text-muted">{% trans "This property has no units yet." %}</p>
+        {% endfor %}
+      </div>
+    </fieldset>
+    <button class="btn btn-primary">{% trans "Save meter" %}</button>
+  </div></form>
+</div>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Security and your data" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% trans "Security and your data" %}</h1>
+<div class="card shadow-sm"><div class="card-body">
+<h2 class="h6">{% trans "Your data is yours" %}</h2>
+<p class="small">{% trans "Each landlord's records are kept apart from every other landlord's; every page and search checks which organization you belong to. You can export your tenants, invoices, payments and statements at any time, including after a subscription lapses." %}</p>
+<h2 class="h6">{% trans "Signing in" %}</h2>
+<p class="small">{% trans "Passwords are stored hashed, never as text. Phone numbers are confirmed with a one-time code. Owners and staff can add a second step with an authenticator app, and our own administrators must use one. Repeated wrong passwords are slowed down." %}</p>
+<h2 class="h6">{% trans "Who can see what" %}</h2>
+<p class="small">{% trans "The owner decides what each staff member can do. Money, exports and settings need their own permissions. Important actions, such as changing a payment or a role, are written to an audit log that cannot be edited." %}</p>
+<h2 class="h6">{% trans "Money records" %}</h2>
+<p class="small">{% trans "Invoices, payments and receipts are never deleted. Mistakes are corrected with a reversal that keeps the original, so balances can always be traced." %}</p>
+<h2 class="h6">{% trans "Storage and backups" %}</h2>
+<p class="small">{% trans "Every connection uses HTTPS. M-Pesa and other provider keys are encrypted in the database. The database and uploaded files are backed up every day and kept for up to a year, and restores are practised. Documents such as ID copies and meter photos are only shown to signed-in people allowed to see them." %}
+{% if hosting %}{% blocktrans %}Data is hosted in {{ hosting }}.{% endblocktrans %}{% endif %}</p>
+<h2 class="h6">{% trans "Kenya Data Protection Act" %}</h2>
+<p class="small mb-0">{% trans "You are the data controller for your tenants' records and we process them for you. Tenants may ask you for their data; we help you answer. We export your data on request, and delete it on request once the period the law requires us to keep records has passed." %}
+{% if dpo_email %}{% trans "Questions about personal data:" %} <a href="mailto:{{ dpo_email }}">{{ dpo_email }}</a>.{% endif %}</p>
+</div></div>
+<p class="small text-muted mt-3"><a href="{% url 'support:status' %}">{% trans "Service status" %}</a></p>
+{% endblock %}

@@ -135,3 +135,99 @@ Second pass over the feature pages of Pangoni, Nyumba Zetu, PMS.co.ke, RentalDes
 
 ## Additional sources
 [Pangoni](https://pangoni.io/), [Nyumba Zetu](https://www.nyumbazetu.com/), [PMS.co.ke](https://pms.co.ke/), [RentalDesk](https://rentaldesk.co.ke/property-management-software-kenya), [EZEN guide](https://www.ezenfinancials.com/property/blog-property-management-software-kenya), [Safoa](https://www.mysafoa.com/), [ZubaRent](https://www.zubarent.com/)
+
+---
+
+# Part 3 — Third pass: 21 websites and apps (2026-09-29)
+
+Scope: 21 products crawled on 2026-09-29, including mobile apps. Pages were read through a fetcher, so the content is what each vendor publishes. As in Parts 1 and 2, these are vendor claims: nothing was tested hands-on. Play Store pages could not be read by the fetcher, so apps are described from their vendors' pages and from review round-ups. Venco's page gave no feature list and is left out.
+
+## 10. Who was crawled
+
+| # | Product | Where | Type | What is new compared with Parts 1–2 |
+|---|---|---|---|---|
+| 1 | Rent Manager Kenya | KE | Web | Tenant **payment link** plus STK push; **commission per transaction, no monthly fee**; instant M-Pesa payout to the landlord |
+| 2 | Silqu | KE | Web + client and agent apps | **Checks M-Pesa messages and bank statements against records to catch edited receipts**; caretaker portal, security portal, visitor management; water billing; penalty management; diaspora programme |
+| 3 | RentLynk | KE | Web + iOS/Android | **"Lipa Mdogo" rent in instalments** into a tenant wallet; offline tenant records in the app; cards and Airtel Money; every tier has every feature, priced only by property count (KSh 2,499 / 4,499 / 6,999); 30% affiliate commission |
+| 4 | EzRent | KE | Web | Nearly our own design: signed Daraja callbacks, idempotent processing, double-entry ledger, never holds rent, English and Swahili tenant portal with 2FA, before/on/after due-date nudges; **founder-led onboarding with pilot pricing locked for 12 months**; KSh 2,500 / 7,500 / 15,000 |
+| 5 | Bomahut | KE | Web | Named bank integrations (Equity, KCB, Co-operative); also sells to **service-charge managers, garbage collectors and water-billing companies** |
+| 6 | Pangoni | KE | Web | Now prices by customer type: landlords KSh 1,500–3,500 (or 45,000 lifetime, free up to 3 units), solo agents, agencies (3–10 seats, 1,000 units), enterprise from KSh 30,000; hostels, estates, diaspora and brokerage pipelines |
+| 7 | Nyumba Zetu | KE | Web + mobile web | Collectability bands A–E, trial balance and balance sheet, QuickBooks, an **AI chatbot on WhatsApp**, committee approvals for estates |
+| 8 | HomeManager (Buniva) | KE | Web + app | **Caretaker app**: meter readings with timestamp, automatic consumption and **flags for negative or extreme readings**; repairs with photos and priority; vacancy and reservation check before a viewing; caretakers see no money. KSh 7,500 / 18,000 / 45,000, caretakers free |
+| 9 | ShifTenant | KE | Web + app | **Smart (IoT) water and power meters**: live readings, remote on/off, leak alerts, tenants buy tokens in the app |
+| 10 | Renters Hub | KE | Web app (TWA) | National listings marketplace with verified posters; "Rental Books" for landlords; **rental consultants earn KSh 500 per listing** they bring |
+| 11 | Boyot | KE (from the Middle East) | Web + app | Payment link on every invoice, offline and online collection, landlord–tenant messaging |
+| 12 | PayProp | ZA/UK/US | Web + app | Match, reconcile and **pay owners out the same day**; **interest charged on arrears automatically**; audit log; used by 2,500+ agencies |
+| 13 | Gate Africa | NG | Web + resident app | Estates: **one-time and event guest codes**, dues, prepaid energy top-up, notice board, forum, emergency contacts, domestic-staff register, estate ID cards, alarms |
+| 14 | OurProperty NG | NG | Web + client, admin and desktop apps | White-label, multi-branch, staff activity monitoring; developer (off-plan sales, payment plans) and short-stay modules |
+| 15 | Porchplus | NG/GH | Web + app | **Deposit escrow**, **move-in inspections with checklist and photos**, **asset register per unit** (furniture, appliances, condition), e-signed leases, rent paid a year in advance with a schedule, rent discounting, interest-earning wallet; free up to 5 units |
+| 16 | RentRedi | US | Mobile-first | Autopay, cash at retail shops, **rent reported to credit bureaus**, unlimited teammates, one price for everything |
+| 17 | Baselane | US | Web + app | **Bank account per property**, automatic categories for bookkeeping, **tax pack per property** |
+| 18 | Landlord Studio | US/UK | Mobile-first | **Receipt photo capture** for expenses, bank feeds, 15+ reports, listing syndication, free tier |
+| 19 | DoorLoop | US | Web + app | AI assistant for tenants, **AI inspection reports**, workflow templates, free data migration, open API and Zapier |
+| 20 | TurboTenant | US | Web + app | **Condition reports at move-in and move-out**, AI listing text, AI lease check, free for landlords (tenants pay fees) |
+| 21 | Buildium | US | Web + resident and owner apps | Resident centre, owner portal, HOA violations, inspections in the field, free property-manager websites |
+
+Supporting (not products): the Buniva water-billing guide, Pangoni's eRITS guide, KRA's rental-income page and a law firm's note on the Finance Act 2026 (see Sources).
+
+## 11. Patterns across all 21
+
+1. **Every Kenyan product is web first; apps are thin.** Only Silqu, RentLynk and HomeManager publish real Kenyan apps, and tenants are never asked to install one (payment links, SMS, web portal). This confirms our choice: a mobile-first web app, installable as a PWA, before any native app.
+2. **Payment links are now standard.** Rent Manager, Boyot and RentLynk let the tenant start the payment from a link in an SMS. We only let staff start an STK push.
+3. **Water is a real business line.** Bomahut sells to water-billing companies, HomeManager builds the caretaker around meter readings, ShifTenant and Gate Africa go as far as prepaid meters. None of the global leaders handle it.
+4. **Fraud with edited M-Pesa SMS is a named problem** (Silqu). A tenant or caretaker shows a fake or reused code and it is typed in as paid.
+5. **Estates are served by separate products** (Gate Africa, Blocks), with access control and community features that rental tools do not have.
+6. **Custody of money is a split.** Rent Manager, RentLynk, Porchplus and PayProp hold or route the money (payouts, wallets, escrow, interest, discounting). EzRent and we do not. Holding money needs licensing in Kenya (D-038, D-045 item 1).
+7. **Global leaders compete on move-in/move-out records, bookkeeping capture and AI.** Condition reports protect deposits, receipt photos make bookkeeping easy, and AI drafts text or sorts repairs.
+8. **Pricing models vary widely**: per transaction (Rent Manager), property count with every feature (RentLynk), unit tiers (EzRent, HomeManager), customer type (Pangoni), free with tenant fees (TurboTenant). Free tiers range from 3 to 5 units.
+
+## 12. Tax change that affects the product [VERIFY with an accountant]
+
+- **Non-resident landlords: a 10% final tax on gross rent** under the new section 6B, from 1 July 2026 (Finance Act 2026), filed monthly by the 20th, unless a registered Kenyan agent withholds it. This hits the diaspora segment directly and gives agents a withholding duty.
+- **eRITS registration may become mandatory**: draft Residential Rental Income Tax Regulations 2026 would require landlords above KSh 288,000 a year to register on eRITS; non-residents register through a local agent.
+- **Rental income tax agents** (since the Finance Act 2023) withhold 7.5% and remit within five working days.
+- **For us**: the MRI estimate report (D-037) needs a resident or non-resident flag on the owner (7.5% or 10%), and agency mode needs a withholding statement per owner. Both stay estimates labelled "confirm with your tax adviser".
+
+## 13. Ideas, and whether they fit Kenya
+
+Viability: **Build** = fits Kenya and our design, build it; **Design-in** = add fields or interfaces now, build later; **Later** = worth doing after launch; **Skip** = wrong for us.
+
+| # | Idea | Seen at | Viability | Why | Proposed placement |
+|---|---|---|---|---|---|
+| 1 | **Guard against paying the same M-Pesa code twice** (typed by hand and also sent by Safaricom) | Silqu | **Build — done 2026-09-29** | A hand-recorded code followed by the C2B callback credited the tenant twice | D-045 item 12 |
+| 2 | Tenant **payment link**: a private link in the rent SMS opens a page where the tenant starts the STK push for any amount | Rent Manager, Boyot, RentLynk | **Build** | Removes typing the Paybill and reference, so fewer unmatched payments; reuses `StkRequest` | Next, before the tenant portal |
+| 3 | **Pay in parts** ("Lipa Mdogo"): the link accepts any amount, and reminders show "KSh X of Y paid" | RentLynk | **Build** (without a wallet) | We already accept part payments and keep credit; the wallet would mean holding money | With item 2 |
+| 4 | **Caretaker meter readings** on a phone: photo, timestamp, flags for negative or extreme usage, landlord approval before billing | HomeManager, Silqu, Bomahut | **Build** | Water disputes are a daily Kenyan pain and a sales point no global tool has | Move metered water from Phase 9 to right after Phase 7 |
+| 5 | Water charge line shows previous and current reading, units used, rate, and a minimum charge; shared meters split equally, by weight or at a flat fee | Buniva guide | **Build** | Transparency ends disputes | With item 4 |
+| 6 | **Move-in and move-out condition reports** with photos and an item register per unit | TurboTenant, Porchplus, DoorLoop | **Build** | Backs deposit deductions with evidence, which strengthens our deposit clearance lead | Tier 2, with the move-out statement |
+| 7 | **Tenant good-standing letter**: a PDF of payment history from the ledger, for the tenant's next landlord or a loan | RentRedi (bureau reporting) | **Build** (letter only) | Tenants ask landlords for references; the ledger already holds the data. Reporting to Kenyan credit bureaus needs licensing and consent | Tier 2; bureau reporting Later |
+| 8 | **Late fees or interest on arrears**, opt-in per organization with a grace period and a cap | Silqu, PayProp, all US apps | **Design-in** | Common ask, but legality and tenant goodwill need care **[VERIFY with counsel]**; default stays off | A rule on the organization; build after a legal check |
+| 9 | **Quarterly and yearly billing** | Porchplus (a year in advance), Kenyan commercial leases | **Build** | `Lease.Frequency` has only MONTHLY today; commercial tenants often pay quarterly | Phase 7 or 8 |
+| 10 | Resident or non-resident owner, MRI 7.5% or 10% in the tax estimate, and an agent withholding statement | Finance Act 2026, eRITS | **Design-in** | The law changed on 1 July 2026 **[VERIFY]** | Field now, report with D-037 |
+| 11 | **Annual rental income pack**: gross rent by month, the tax estimate, receipts and expenses, for filing | Baselane, Landlord Studio | **Build** | A clear reason to pay each year | Phase 7 reports |
+| 12 | **Expense receipt photos** captured on a phone | Landlord Studio, Baselane | **Build** | Cheap with the Expenses module | Phase 9 Expenses |
+| 13 | Statement import for **Equity, KCB and Co-operative Bank** first | Bomahut, Silqu | **Build** | These banks come up again and again; confirms D-043 item 7 | Bank CSV import |
+| 14 | Unverified-code check: a typed M-Pesa code that no Daraja callback or statement confirms within 24 hours is flagged | Silqu | **Later** | Needs the M-Pesa statement import first (D-045 item 10) | With statement import |
+| 15 | Caretaker checks whether a unit is free or **reserved** before a viewing | HomeManager | **Design-in** | Needs a RESERVED unit status or a prospect hold | With Prospect/Viewing |
+| 16 | Installable app (PWA) and an **offline queue for caretakers** | RentLynk (offline), everyone web-first | **Build** | Matches doc 16 §8.6; native apps later | Phase 7–8 |
+| 17 | WhatsApp assistant answering "what is my balance?" | Nyumba Zetu, DoorLoop | **Later** | Webhook and consent are already in place | After the tenant portal |
+| 18 | AI help: listing text, sorting repair requests, inspection summaries | TurboTenant, DoorLoop | **Later** | Useful, needs the permission-aware AI layer (doc 15) | Phase 9 |
+| 19 | Estate features: guest codes, notice board, emergency contacts, domestic-staff register | Gate Africa, Silqu | **Later** | Separate segment; our ESTATE design-in covers the base | Estates module |
+| 20 | Prepaid or smart meters and token sales | ShifTenant, Gate Africa | **Skip building; partner later** | Hardware and a vending licence; bill only postpaid meters and mark prepaid meters as "not billed" | Design-in `Meter.kind` |
+| 21 | Listing syndication (Jiji, BuyRentKenya, Property24) | Pangoni, TurboTenant | **Later** | Our vacancy link and WhatsApp share cover the need first | After Prospect/Viewing |
+| 22 | Referral earnings for agents or consultants (KSh 500 per listing, 30% of renewals) | Renters Hub, RentLynk | **Build** (as referral credit) | Word of mouth drives this market (§7 item 16) | Phase 8 growth |
+| 23 | Pilot price locked for 12 months, founder-led onboarding | EzRent | **Build** (commercial) | Low cost, fits our import concierge | Doc 05 and pilots |
+| 24 | Wallets, escrow, same-day payouts, interest on balances, rent discounting | RentLynk, Porchplus, PayProp, Rent Manager | **Skip** | Holding money breaks D-038 and needs licences | — |
+| 25 | Multi-currency, short-stay, off-plan sales | Porchplus, OurProperty NG | **Skip** | Different business | — |
+
+## 14. How we advance on them
+
+1. **Fewest unmatched payments in the market.** The reference guard (done), a payment link that fills the reference for the tenant, STK push, phone suggestions, the daily reconciliation and, later, the unverified-code check. Measure the auto-match rate per account and show it on the dashboard (target in Phase 6: 90%).
+2. **Water that ends arguments.** Caretaker readings with photo proof, anomaly flags, approval before billing, and a bill line the tenant can check. This beats Bomahut and HomeManager on trust, and no global tool offers it.
+3. **Deposits with evidence.** Condition reports at move-in and move-out plus our deposit sub-ledger and clearance statement give a full, evidenced story. Competitors either escrow the money (a licence problem) or have nothing.
+4. **Honest tax help after the 2026 changes.** Resident and non-resident rates, an annual pack, and agent withholding statements, all clearly labelled as estimates.
+5. **Tenant goodwill as a feature.** Pay-in-parts, good-standing letters and no tenant fees (TurboTenant charges tenants; we don't).
+6. **Price without surprises.** Every feature on every tier (RentLynk shows it sells), a free tier up to 3 units, and pilot prices locked for 12 months.
+
+## Sources (Part 3)
+[Rent Manager Kenya](https://rentmanager.co.ke/), [Silqu](https://silqu.com/), [RentLynk](https://rentlynk.co.ke/), [EzRent](https://www.ezrent.co.ke/), [Bomahut features](https://www.bomahut.com/features), [Pangoni](https://pangoni.io/), [Nyumba Zetu](https://www.nyumbazetu.com/), [HomeManager caretaker software](https://buniva.co.ke/blog/caretaker-software-kenya.html), [Buniva water billing guide](https://buniva.co.ke/blog/water-billing-rental-property-kenya.html), [ShifTenant IoT billing](https://shiftenant.com/blogs/how-shiftenant-uses-iot-to-reinvent-utility-billing-for-landlords-and-tenants), [Renters Hub](https://rentershub.co.ke/), [Boyot Kenya](https://kenya.boyot.app/), [PayProp](https://www.payprop.com/za), [PayProp interest on arrears](https://www.payprop.com/us/blog/payprop-automates-agents-billing-of-interest-on-rent-arrears-to-protect-landlord-cash-flow-za), [Gate Africa](https://gate.africa/), [OurProperty NG](https://ourproperty.ng/), [Porchplus](https://www.porchplus.com/), [RentRedi](https://rentredi.com/), [Baselane](https://www.baselane.com/), [Landlord Studio](https://www.landlordstudio.com/), [DoorLoop](https://www.doorloop.com/), [TurboTenant](https://www.turbotenant.com/), [Buildium features](https://www.buildium.com/features/), [KRA rental income](https://www.kra.go.ke/individual/filing-paying/types-of-taxes/residential-rental-income), [Pangoni: eRITS](https://pangoni.io/blog/compliance/kra-erits-landlords-kenya), [Manwa Advocates: Finance Act 2026 and non-resident rent](https://manwaadvocates.com/non-resident-rental-income-tax-what-the-finance-act-2026-means-for-diaspora-property-owners/), [NTV: mandatory landlord registration](https://ntvkenya.co.ke/news/residential-landlords-face-mandatory-registration-in-kra-rental-tax-drive/)
