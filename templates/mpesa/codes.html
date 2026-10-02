@@ -1,0 +1,60 @@
+{% extends "mpesa/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "M-Pesa codes to check" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <h1 class="h3 mb-0">{% trans "Codes to check" %}</h1>
+  <p class="small text-body-secondary">{% trans "M-Pesa payments typed in by hand whose code never came from Safaricom within 24 hours, or came with a different amount. A made-up or edited SMS looks like this. Check each code, then reverse the payment or mark it checked." %}</p>
+  {% include "mpesa/_nav.html" with section="codes" codes_count=review.flagged|length %}
+
+  {% if review.flagged %}
+  <div class="list-group shadow-sm">
+    {% for f in review.flagged %}{% with p=f.payment %}
+    <div class="list-group-item py-3" data-payment="{{ p.public_id }}">
+      <div class="d-flex flex-wrap justify-content-between gap-2">
+        <div class="min-w-0">
+          <a class="fw-semibold link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'payments:detail' p.public_id %}"><code>{{ p.reference }}</code> · {{ p.lease.unit.property.name }} · {% trans "Unit" %} {{ p.lease.unit.code }}</a>
+          <div class="small text-body-secondary">
+            {% trans "Paid" %} {{ p.paid_at|date:"j M Y" }} · {% blocktrans with who=p.recorded_by.get_full_name|default:p.recorded_by.email|default:_("someone") on=p.created_at|date:"j M Y, H:i" %}typed in by {{ who }} on {{ on }}{% endblocktrans %} · {{ p.get_state_display|lower }}
+          </div>
+          <div class="small mt-1">
+            {% if f.amount_differs %}
+            <span class="badge text-bg-danger">{% trans "Amount does not match" %}</span>
+            {% blocktrans with found=f.found_amount|money:currency %}Safaricom reported {{ found }} for this code.{% endblocktrans %}
+            {% else %}
+            <span class="badge text-bg-warning">{% trans "Not found" %}</span>
+            {% trans "No callback or imported statement has this code." %}
+            {% endif %}
+          </div>
+        </div>
+        <div class="text-end">
+          <div class="h5 num mb-0">{{ p.amount|money:currency }}</div>
+          <a class="small" href="{% url 'payments:detail' p.public_id %}">{% if p.state == "pending" %}{% trans "Review or reject" %}{% else %}{% trans "Open to reverse" %}{% endif %} <i class="bi bi-chevron-right"></i></a>
+        </div>
+      </div>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="payment" value="{{ p.public_id }}">
+        <div class="input-group input-group-sm">
+          <input type="text" name="note" maxlength="300" required class="form-control" placeholder="{% trans 'How was it checked? e.g. seen on the Safaricom portal' %}" aria-label="{% trans 'Note' %}">
+          <button class="btn btn-outline-secondary">{% trans "Mark checked" %}</button>
+        </div>
+      </form>
+    </div>
+    {% endwith %}{% endfor %}
+  </div>
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+    <h2 class="h6">{% trans "Nothing to check" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Every hand-typed M-Pesa code that can be checked was found with the same amount." %}</p>
+  </div></div>
+  {% endif %}
+
+  {% if review.waiting or review.cannot_check %}
+  <ul class="small text-body-secondary mt-3 ps-3">
+    {% if review.waiting %}<li>{% blocktrans count n=review.waiting %}{{ n }} code typed in less than 24 hours ago is not checked yet.{% plural %}{{ n }} codes typed in less than 24 hours ago are not checked yet.{% endblocktrans %}</li>{% endif %}
+    {% if review.cannot_check %}<li>{% blocktrans count n=review.cannot_check %}{{ n }} code cannot be checked: its account has no M-Pesa callbacks set up and no imported M-Pesa statement covering the date paid.{% plural %}{{ n }} codes cannot be checked: their accounts have no M-Pesa callbacks set up and no imported M-Pesa statement covering the date paid.{% endblocktrans %}
+      <a href="{% url 'banking:import' %}">{% trans "Import a statement" %}</a></li>{% endif %}
+  </ul>
+  {% endif %}
+</div>
+{% endblock %}

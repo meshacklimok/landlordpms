@@ -6,45 +6,45 @@ Legend: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [ ] Decisions locked, PostgreSQL working, repo housekeeping, landlord interviews, legal started
 
 ## Phase 1 — Foundation
-- [ ] Split settings, `.env.example`, CI, tests, linting
-- [ ] Custom User (phone/email login)
-- [ ] Organization, Membership, roles
-- [ ] Org-scoping mixin/manager + isolation tests
-- [ ] Audit log basics
-- [ ] Auth UI: register, login, logout, password reset, invite staff
-- [ ] Base template, mobile-first layout, empty dashboard
+- [x] Split settings, `.env.example`, CI, tests, linting
+- [x] Custom User (phone/email login)
+- [x] Organization, Membership, roles
+- [x] Org-scoping mixin/manager + isolation tests
+- [x] Audit log basics
+- [x] Auth UI: register, login, logout, password reset, invite staff
+- [x] Base template, mobile-first layout, empty dashboard
 **Exit:** two organizations exist and provably cannot see each other's data.
 
 ## Phase 2 — Property, Tenants, Leases
-- [ ] Property, Unit (Building optional), CRUD + list/search
-- [ ] Tenant CRUD
-- [ ] Lease create/end/renew, unit occupancy status
-- [ ] CSV import for units and tenants (essential for landlords with many units)
+- [x] Property, Unit (Building optional), CRUD + list/search
+- [x] Tenant CRUD
+- [x] Lease create/end/renew, unit occupancy status
+- [x] CSV import for units and tenants (essential for landlords with many units)
 **Exit:** a landlord can set up 20 units and tenants in under 15 minutes.
 
 ## Phase 3 — Billing
-- [ ] Charge types, invoices, ledger
-- [ ] Monthly invoice generation job (idempotent)
-- [ ] Arrears view, tenant statement
-- [ ] Tests for rounding, proration, duplicates
+- [x] Charge types, invoices, ledger
+- [x] Monthly invoice generation job (idempotent)
+- [x] Arrears view, tenant statement
+- [x] Tests for rounding, proration, duplicates
 **Exit:** invoices generate automatically and balances are always derivable from the ledger.
 
 ## Phase 4 — Payments (manual) & receipts
-- [ ] Record payment, allocate to invoices, partial/over-payment
-- [ ] Reversal flow
-- [ ] PDF/shareable receipts
+- [x] Record payment, allocate to invoices, partial/over-payment
+- [x] Reversal flow
+- [x] PDF/shareable receipts (PDF done; sending to tenants comes with Phase 5 SMS)
 **Exit:** first pilot landlord runs a real rent cycle.
 
 ## Phase 5 — Notifications
-- [ ] SMS (Africa's Talking) reminders and receipts
-- [ ] WhatsApp templates
-- [ ] Message log, delivery status, opt-out
-- [ ] Scheduled reminders
+- [x] SMS (Africa's Talking) reminders and receipts
+- [x] WhatsApp templates
+- [x] Message log, delivery status, opt-out
+- [x] Scheduled reminders
 
 ## Phase 6 — M-Pesa
-- [ ] Daraja sandbox: C2B register URLs, confirmation, STK Push
-- [ ] Idempotent processing, unmatched-payment inbox
-- [ ] Per-organization shortcode config, encrypted secrets
+- [~] Daraja sandbox: C2B register URLs, confirmation, STK Push (built; sandbox checks still open)
+- [x] Idempotent processing, unmatched-payment inbox, one M-Pesa code counted once
+- [x] Per-organization shortcode config, encrypted secrets
 - [ ] Production go-live with Safaricom
 **Exit:** 90%+ of pilot payments reconcile automatically.
 

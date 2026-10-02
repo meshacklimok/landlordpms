@@ -1,0 +1,169 @@
+{% extends "payments/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Payments" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <div>
+      <h1 class="h3 mb-0">{% trans "Payments" %}</h1>
+      <div class="small text-body-secondary">{% trans "Money received from tenants, and where it went." %}</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      {% if pending_count %}
+      <a class="btn btn-outline-warning text-warning-emphasis btn-sm" href="{% url 'payments:review' %}"><i class="bi bi-hourglass-split"></i> {% trans "Review" %} <span class="badge text-bg-warning ms-1">{{ pending_count }}</span></a>
+      {% endif %}
+      {% if can_export %}
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'payments:export' %}{% querystring page=None %}"><i class="bi bi-download"></i> {% trans "Export CSV" %}</a>
+      {% endif %}
+      {% if can_record %}
+      <a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg"></i> {% trans "Record payment" %}</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# Summary for whatever the filters select (status aside) #}
+  <div class="small text-body-secondary mb-2">
+    {% if filters.date_from or filters.date_to %}
+      {% if filters.date_from and filters.date_to %}{{ filters.date_from|date:"j M Y" }} – {{ filters.date_to|date:"j M Y" }}{% elif filters.date_from %}{% blocktrans with d=filters.date_from|date:"j M Y" %}Since {{ d }}{% endblocktrans %}{% else %}{% blocktrans with d=filters.date_to|date:"j M Y" %}Up to {{ d }}{% endblocktrans %}{% endif %}{% if filters.q or filters.method or filters.property %} · {% trans "filtered" %}{% endif %}
+    {% elif filtered %}{% trans "Matching your filters" %}{% else %}{% trans "All time" %}{% endif %}
+  </div>
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-success)"><div class="card-body">
+      <div class="stat-label">{% trans "Collected" %}</div>
+      <div class="stat-value num">{% for cur, amount in totals.confirmed.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.confirmed.count %}{{ n }} confirmed payment{% plural %}{{ n }} confirmed payments{% endblocktrans %}</div>
+    </div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-warning)"><div class="card-body">
+      <div class="stat-label">{% trans "Awaiting review" %}</div>
+      <div class="stat-value num">{% for cur, amount in totals.pending.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.pending.count %}{{ n }} payment, not yet counted{% plural %}{{ n }} payments, not yet counted{% endblocktrans %}</div>
+    </div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-danger)"><div class="card-body">
+      <div class="stat-label">{% trans "Reversed" %}</div>
+      <div class="stat-value num">{% for cur, amount in totals.reversed.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.reversed.count %}{{ n }} reversed{% plural %}{{ n }} reversed{% endblocktrans %} · {% blocktrans count n=totals.rejected.count %}{{ n }} rejected{% plural %}{{ n }} rejected{% endblocktrans %}</div>
+    </div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-primary)"><div class="card-body">
+      <div class="stat-label">{% trans "Recorded" %}</div>
+      <div class="stat-value num">{{ totals.all.count }}</div>
+      <div class="stat-sub">{% trans "payments in all states" %}</div>
+    </div></div></div>
+  </div>
+
+  {# Filters #}
+  <form method="get" class="card shadow-sm mb-3 d-print-none"><div class="card-body pb-2">
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-lg">
+        <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
+        <div class="input-group">
+          <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+          <input type="search" id="f-q" name="q" value="{{ filters.q|default:'' }}" class="form-control" placeholder="{% trans 'Reference, receipt, tenant, unit or lease' %}">
+        </div>
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small text-body-secondary mb-1" for="f-method">{% trans "Method" %}</label>
+        <select id="f-method" name="method" class="form-select">
+          {% for value, label in form.fields.method.choices %}<option value="{{ value }}" {% if value == filters.method %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+      </div>
+      {% if show_property %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+        <select id="f-property" name="property" class="form-select">
+          <option value="">{% trans "All properties" %}</option>
+          {% for p in form.fields.property.queryset %}<option value="{{ p.public_id }}" {% if p == filters.property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small text-body-secondary mb-1" for="f-from">{% trans "Paid from" %}</label>
+        <input type="date" id="f-from" name="date_from" value="{{ filters.date_from|date:'Y-m-d' }}" class="form-control">
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "Paid to" %}</label>
+        <input type="date" id="f-to" name="date_to" value="{{ filters.date_to|date:'Y-m-d' }}" class="form-control">
+      </div>
+      <div class="col-12 col-lg-auto d-flex gap-2">
+        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+        {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'payments:list' %}{% if status %}?status={{ status }}{% endif %}">{% trans "Clear" %}</a>{% endif %}
+      </div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 mt-2 small">
+      <span class="text-body-secondary">{% trans "Quick range:" %}</span>
+      {% for key, start, end, active in presets %}
+      <a class="link-underline link-underline-opacity-0 {% if active %}fw-semibold link-dark{% else %}link-secondary{% endif %}" href="{% querystring date_from=start|date:'Y-m-d' date_to=end|date:'Y-m-d' page=None %}">{% if key == "this_month" %}{% trans "This month" %}{% elif key == "last_month" %}{% trans "Last month" %}{% else %}{% trans "This year" %}{% endif %}</a>
+      {% endfor %}
+    </div>
+  </div></form>
+
+  {# Status tabs #}
+  <ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
+    <li class="nav-item"><a class="nav-link text-nowrap {% if not status %}active{% endif %}" href="{% querystring status=None page=None %}">{% trans "All" %}<span class="count">{{ totals.all.count }}</span></a></li>
+    {% for key, label in states.items %}
+    <li class="nav-item"><a class="nav-link text-nowrap {% if key == status %}active{% endif %}" href="{% querystring status=key page=None %}">{{ label }}<span class="count">{% if key == "pending" %}{{ totals.pending.count }}{% elif key == "confirmed" %}{{ totals.confirmed.count }}{% elif key == "rejected" %}{{ totals.rejected.count }}{% else %}{{ totals.reversed.count }}{% endif %}</span></a></li>
+    {% endfor %}
+  </ul>
+
+  {% if page.object_list %}
+  {# Desktop: a table #}
+  <div class="card shadow-sm d-none d-md-block overflow-hidden">
+    <div class="table-responsive">
+      <table class="table pay-table">
+        <thead><tr>
+          <th scope="col">{% trans "Date paid" %}</th>
+          <th scope="col">{% trans "Tenant" %}</th>
+          <th scope="col">{% trans "Method" %}</th>
+          <th scope="col">{% trans "Receipt" %}</th>
+          <th scope="col">{% trans "Status" %}</th>
+          <th scope="col" class="text-end">{% trans "Amount" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for payment in page %}
+          <tr data-href="{% url 'payments:detail' payment.public_id %}" class="{% if payment.state == 'rejected' or payment.state == 'reversed' %}is-muted{% endif %}">
+            <td class="num">{{ payment.paid_at|date:"j M Y" }}</td>
+            <td>
+              <a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'payments:detail' payment.public_id %}">{{ payment.tenant.name|default:"—" }}</a>
+              <div class="small text-body-secondary">{{ payment.lease.unit.property.name }} · {{ payment.lease.unit.code }}</div>
+            </td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                {% include "payments/_method.html" with method=payment.method %}
+                <div><div class="small">{{ payment.get_method_display }}</div>{% if payment.reference %}<code class="small">{{ payment.reference }}</code>{% endif %}</div>
+              </div>
+            </td>
+            <td class="small">{% if payment.receipt %}{{ payment.receipt.number }}{% else %}<span class="text-body-tertiary">—</span>{% endif %}</td>
+            <td>{% include "payments/_status.html" %}</td>
+            <td class="text-end num fw-semibold amount">{{ payment.amount|money:payment.lease.currency }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# Phone: a list #}
+  <div class="list-group shadow-sm d-md-none">
+    {% for payment in page %}{% include "payments/_row.html" %}{% endfor %}
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center small text-body-secondary mt-2">
+    <span>{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span>
+  </div>
+  {% include "partials/pager.html" %}
+
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-wallet2"></i></div>
+    {% if filtered or status %}
+      <h2 class="h6">{% trans "No payments match" %}</h2>
+      <p class="small text-body-secondary mb-3">{% trans "Try a wider date range or a different search." %}</p>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'payments:list' %}">{% trans "Clear filters" %}</a>
+    {% else %}
+      <h2 class="h6">{% trans "No payments yet" %}</h2>
+      <p class="small text-body-secondary mb-3">{% trans "Record rent as it comes in. Each confirmed payment gets a numbered receipt." %}</p>
+      {% if can_record %}<a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg"></i> {% trans "Record the first payment" %}</a>{% endif %}
+    {% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

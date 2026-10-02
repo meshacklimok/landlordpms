@@ -20,7 +20,8 @@ landlordpms is a property-management platform for rental owners in Kenya, design
 | 13 | [13_ROLES_AND_CAPABILITIES.md](13_ROLES_AND_CAPABILITIES.md) | Fully editable roles, capability catalog, per-person overrides |
 | 14 | [14_REMAINING_BRAINSTORM.md](14_REMAINING_BRAINSTORM.md) | Deposits, opening balances, tax, fraud, offline, ops, and recommended decisions |
 | 15 | [15_ANALYTICS_AND_CHARTS.md](15_ANALYTICS_AND_CHARTS.md) | Charts, analysis, snapshots, chart libraries, report rules |
-| 16 | [16_COMPETITOR_BENCHMARK.md](16_COMPETITOR_BENCHMARK.md) | Competitor benchmark, lessons, where we can win |
+| 16 | [16_COMPETITOR_BENCHMARK.md](16_COMPETITOR_BENCHMARK.md) | Competitor benchmark, lessons, where we can win (Part 3: 21 websites and apps, 2026-09-29) |
+| 17 | [17_MPESA_GO_LIVE.md](17_MPESA_GO_LIVE.md) | M-Pesa go-live checklist: settings, Safaricom approval, first live day |
 | – | [erd.md](erd.md) | Draft entity relationship diagrams (Mermaid) |
 | – | [../../TODO.md](../../TODO.md) | Working checklist |
 

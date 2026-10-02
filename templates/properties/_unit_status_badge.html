@@ -1,0 +1,1 @@
+<span class="badge {% if u.is_occupied %}text-bg-primary{% elif u.manual_status == 'NORMAL' %}text-bg-success{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>

@@ -1,0 +1,17 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Invitation" %}{% endblock %}
+{% block heading %}{% trans "Your rent account online" %}{% endblock %}
+{% block card %}
+{% if invalid %}
+<p>{% trans "This invitation is invalid or has expired. Ask your landlord for a new one." %}</p>
+{% else %}
+<p>{% blocktrans with org=invitation.organization.name %}<strong>{{ org }}</strong> invited you to see your balance, statements and receipts online.{% endblocktrans %}</p>
+{% if user.is_authenticated %}
+<form method="post">{% csrf_token %}<button class="btn btn-primary w-100">{% trans "Accept invitation" %}</button></form>
+{% else %}
+<p class="small text-muted">{% trans "Create an account or log in with the phone number the invitation was sent to." %}</p>
+<a class="btn btn-primary w-100 mb-2" href="{% url 'accounts:register' %}">{% trans "Create account" %}</a>
+<a class="btn btn-outline-secondary w-100" href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}">{% trans "Log in" %}</a>
+{% endif %}
+{% endif %}
+{% endblock %}

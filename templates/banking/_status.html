@@ -1,0 +1,3 @@
+{% if line.status == "MATCHED" %}<span class="badge bg-success-subtle text-success-emphasis border border-success-subtle">{{ line.get_status_display }}</span>
+{% elif line.status == "UNMATCHED" %}<span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle">{{ line.get_status_display }}</span>
+{% else %}<span class="badge bg-secondary-subtle text-secondary-emphasis border border-secondary-subtle">{{ line.get_status_display }}</span>{% endif %}

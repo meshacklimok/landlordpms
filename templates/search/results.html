@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if q %}{% blocktrans %}Search: {{ q }}{% endblocktrans %}{% else %}{% trans "Search" %}{% endif %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% trans "Search" %}</h1>
+<form method="get" action="{% url 'search:results' %}" class="d-flex gap-2 mb-3" role="search">
+  <input type="search" name="q" value="{{ q }}" class="form-control" maxlength="60" autofocus
+         placeholder="{% trans 'Name, phone, unit, lease, invoice, receipt or M-Pesa code' %}" aria-label="{% trans 'Search' %}">
+  <button class="btn btn-primary">{% trans "Search" %}</button>
+</form>
+
+{% if not q %}
+<p class="text-muted small">{% trans "Search tenants by name, phone or ID number, units by code or payment reference, and leases, invoices, receipts, payments and M-Pesa transactions by number or code." %}</p>
+{% elif results.too_short %}
+<p class="text-muted">{% blocktrans count n=min_length %}Type at least {{ n }} character.{% plural %}Type at least {{ n }} characters.{% endblocktrans %}</p>
+{% elif not results.groups %}
+<p class="text-muted">{% blocktrans %}Nothing matches “{{ q }}”.{% endblocktrans %}</p>
+{% else %}
+{% for group in results.groups %}
+<section class="mb-4" aria-labelledby="group-{{ group.key }}">
+  <div class="d-flex justify-content-between align-items-baseline">
+    <h2 class="h6 mb-2" id="group-{{ group.key }}">{{ group.title }}</h2>
+    {% if group.more %}<a class="small" href="{{ group.list_url }}">{% blocktrans with t=group.title|lower %}See all {{ t }}{% endblocktrans %}</a>{% endif %}
+  </div>
+  <div class="list-group shadow-sm">
+    {% for hit in group.hits %}
+    <a class="list-group-item list-group-item-action" href="{{ hit.url }}">
+      <div class="fw-semibold">{{ hit.label }}</div>
+      {% if hit.detail %}<div class="small text-muted">{{ hit.detail }}</div>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endfor %}
+{% endif %}
+{% if scoped and q %}<p class="small text-muted">{% trans "Only the properties you can see are searched." %}</p>{% endif %}
+{% endblock %}

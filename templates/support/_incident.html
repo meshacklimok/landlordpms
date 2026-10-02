@@ -1,0 +1,9 @@
+{% load i18n %}<div class="card shadow-sm mb-2"><div class="card-body">
+  <p class="mb-1"><strong>{{ incident.title }}</strong>
+    <span class="badge text-bg-light border">{{ incident.get_impact_display }}</span>
+    <span class="badge text-bg-secondary">{{ incident.get_status_display }}</span></p>
+  <p class="small text-muted mb-2">{% blocktrans with s=incident.started_at|date:"j M Y H:i" %}Started {{ s }}{% endblocktrans %}{% if incident.resolved_at %} · {% blocktrans with r=incident.resolved_at|date:"j M Y H:i" %}resolved {{ r }}{% endblocktrans %}{% endif %}</p>
+  {% for update in incident.updates.all %}
+  <p class="small mb-1"><strong>{{ update.get_status_display }}</strong> {{ update.posted_at|date:"j M H:i" }}: {{ update.text|linebreaksbr }}</p>
+  {% endfor %}
+</div></div>

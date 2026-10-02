@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Tenancy letter" %} · {{ lease }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small">← {% trans "Lease" %} {{ lease }} · {{ property.name }} · {{ unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Tenancy and payment record letter" %}</h1>
+  <p class="small text-muted">{% trans "A PDF for the tenant's next landlord, an employer or a lender. It states facts from the rent records as they are on the day it is issued, and carries a code anyone can use to check it." %}</p>
+
+  {% if problem %}
+  <div class="alert alert-secondary small">{{ problem }}</div>
+  {% else %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "What a letter issued today says" %}</h2>
+      {% if can_settings %}<a class="small" href="{% url 'letters:settings' %}?next={{ request.path|urlencode }}">{% trans "Choose what letters show" %} →</a>{% endif %}
+    </div>
+    <dl class="row small mb-0 mt-2">
+      {% for label, lines in rows %}
+      <dt class="col-sm-4">{{ label }}</dt>
+      <dd class="col-sm-8">{% for line in lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</dd>
+      {% endfor %}
+    </dl>
+    {% if concerns %}
+    <div class="alert alert-warning small mt-2 mb-2">
+      {% for c in concerns %}{{ c }} {% endfor %}{% trans "The letter will say so." %}
+    </div>
+    {% endif %}
+    <form method="post" class="mt-2">{% csrf_token %}
+      <input type="hidden" name="action" value="issue">
+      <button class="btn btn-sm btn-primary">{% trans "Issue letter" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Letters issued for this tenancy" %}</h2>
+    <div class="list-group list-group-flush">
+      {% for letter in letters %}
+      <div class="list-group-item px-0 small">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <span>
+            <a href="{% url 'letters:pdf' letter.public_id %}">{{ letter.number }}</a>
+            · {{ letter.issued_at|date:"j M Y" }} · {{ letter.issued_by.get_full_name|default:letter.issued_by.get_username }}
+            {% if letter.is_withdrawn %}<span class="badge text-bg-secondary">{% trans "Withdrawn" %}</span>{% endif %}
+          </span>
+          <a class="text-nowrap" href="{% url 'letters:pdf' letter.public_id %}?download=1">{% trans "Download" %}</a>
+        </div>
+        {% if letter.is_withdrawn %}
+        <div class="text-muted">{% blocktrans with day=letter.withdrawn_at|date:"j M Y" reason=letter.withdraw_reason %}Withdrawn {{ day }}: {{ reason }}{% endblocktrans %}</div>
+        {% else %}
+        <details {% if withdraw_id == letter.public_id|stringformat:"s" %}open{% endif %}><summary class="text-muted">{% trans "Withdraw" %}</summary>
+          <form method="post" class="mt-2" novalidate>{% csrf_token %}
+            <input type="hidden" name="action" value="withdraw"><input type="hidden" name="letter" value="{{ letter.public_id }}">
+            <label class="form-label" for="reason-{{ letter.pk }}">{% trans "Why is it being withdrawn?" %}</label>
+            <input id="reason-{{ letter.pk }}" name="reason" maxlength="300" required class="form-control form-control-sm">
+            {% if withdraw_id == letter.public_id|stringformat:"s" %}{% for e in withdraw_form.errors.values %}<div class="text-danger">{{ e|join:" " }}</div>{% endfor %}{% endif %}
+            <p class="text-muted mt-1 mb-2">{% trans "Anyone who checks the letter will see it was withdrawn." %}</p>
+            <button class="btn btn-sm btn-outline-danger">{% trans "Withdraw letter" %}</button>
+          </form>
+        </details>
+        {% endif %}
+      </div>
+      {% empty %}
+      <div class="text-muted small">{% trans "None yet." %}</div>
+      {% endfor %}
+    </div>
+  </div></div>
+</div>
+{% endblock %}

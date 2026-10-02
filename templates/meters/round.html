@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Read meters" %} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'meters:list' %}" class="small">← {% trans "Water meters" %}</a>
+  <h1 class="h4 mt-2">{% trans "Read meters" %} · {{ property.name }}</h1>
+  <p class="small text-muted">{% trans "Fill in the meters you read and leave the rest empty. A photo is optional." %}</p>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}
+    {% include "partials/form.html" %}
+    {% for row in rows %}
+    <div class="card shadow-sm mb-2{% if row.errors %} border-danger{% endif %}"><div class="card-body py-2">
+      <div class="d-flex justify-content-between gap-2">
+        <label class="fw-semibold" for="value-{{ row.meter.pk }}">{{ row.meter.label }}</label>
+        <span class="small text-muted">{% for mu in row.meter.served.all %}{{ mu.unit.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+      </div>
+      <div class="small text-muted mb-1">{% if row.last %}{% blocktrans with v=row.last.value d=row.last.read_on|date:"j M" %}Last: {{ v }} m³ on {{ d }}{% endblocktrans %}{% else %}{% trans "First reading: starts the count" %}{% endif %}</div>
+      <input class="form-control{% if row.errors %} is-invalid{% endif %}" id="value-{{ row.meter.pk }}" name="value-{{ row.meter.pk }}" value="{{ row.value|default:'' }}" inputmode="decimal" autocomplete="off" placeholder="m³">
+      {% for e in row.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      <details class="mt-1"{% if row.note or row.replaced %} open{% endif %}>
+        <summary class="small">{% trans "Photo (optional), note, new meter" %}</summary>
+        <input class="form-control form-control-sm mt-1" type="file" name="photo-{{ row.meter.pk }}" accept="image/*" capture="environment" aria-label="{% trans 'Photo (optional)' %}">
+        <input class="form-control form-control-sm mt-1" name="note-{{ row.meter.pk }}" value="{{ row.note|default:'' }}" maxlength="300" placeholder="{% trans 'Note' %}">
+        <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="replaced-{{ row.meter.pk }}" name="replaced-{{ row.meter.pk }}"{% if row.replaced %} checked{% endif %}>
+          <label class="form-check-label small" for="replaced-{{ row.meter.pk }}">{% trans "A new meter was fitted (needs a note)" %}</label></div>
+      </details>
+    </div></div>
+    {% empty %}
+    <p class="text-muted">{% trans "No meters on this property." %}</p>
+    {% endfor %}
+    {% if rows %}<button class="btn btn-primary w-100 mt-2">{% trans "Save readings" %}</button>{% endif %}
+  </form>
+</div>
+{% endblock %}

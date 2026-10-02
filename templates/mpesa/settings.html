@@ -1,0 +1,49 @@
+{% extends "mpesa/_base.html" %}{% load i18n %}
+{% block title %}{% trans "M-Pesa settings" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <h1 class="h3 mb-0">{% trans "M-Pesa" %}</h1>
+  <p class="small text-body-secondary">{% trans "Connect your own Paybill or Till so tenants' payments arrive here and are matched to their leases. Money goes straight to your account; we never hold it." %}</p>
+  {% include "mpesa/_nav.html" with section="settings" %}
+
+  <div class="list-group shadow-sm mb-4">
+    {% for row in rows %}
+      <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" href="{% url 'mpesa:account' row.account.public_id %}">
+        <div>
+          <div class="fw-semibold">{{ row.account.display_name }}</div>
+          <div class="small text-body-secondary">{{ row.account.get_type_display }} {{ row.account.number }}{% if row.creds %} · {{ row.creds.get_environment_display }}{% endif %}</div>
+        </div>
+        {% if row.creds.urls_registered_at %}<span class="badge text-bg-success">{% trans "Connected" %}</span>
+        {% elif row.creds %}<span class="badge text-bg-warning">{% trans "Not registered" %}</span>
+        {% else %}<span class="badge text-bg-secondary">{% trans "Not set up" %}</span>{% endif %}
+      </a>
+    {% empty %}
+      <div class="list-group-item text-body-secondary small">{% trans "No Paybill or Till yet." %}{% if not can_add %} {% trans "Ask the owner to add one." %}{% endif %}</div>
+    {% endfor %}
+  </div>
+
+  {% if can_add %}
+  <form method="post" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
+    <h2 class="h6">{% trans "Add a Paybill or Till" %}</h2>
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <div class="row g-2">
+      {% for field in form %}
+      <div class="col-12 col-sm-4">
+        <label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {% if field.name == "type" %}
+          <select name="type" id="{{ field.id_for_label }}" class="form-select{% if field.errors %} is-invalid{% endif %}">
+            {% for value, label in field.field.choices %}<option value="{{ value }}"{% if field.value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+        {% else %}
+          <input type="text" name="{{ field.name }}" id="{{ field.id_for_label }}" value="{{ field.value|default:'' }}" class="form-control{% if field.errors %} is-invalid{% endif %}"{% if field.name == "number" %} inputmode="numeric"{% endif %}>
+        {% endif %}
+        {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <button class="btn btn-primary mt-3">{% trans "Add" %}</button>
+  </div></form>
+  {% endif %}
+</div>
+{% endblock %}

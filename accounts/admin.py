@@ -2,9 +2,10 @@
 
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.db.models import Count, Q
+from django.db.models import Count, Min, OuterRef, Q, Subquery
 
 from .models import (
+    Branch,
     Capability,
     Invitation,
     Membership,
@@ -21,7 +22,8 @@ from .models import (
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     ordering = ["-date_joined"]
-    list_display = ["phone", "full_name", "email", "phone_verified_at", "is_active", "is_staff", "date_joined"]
+    list_display = ["phone", "full_name", "email", "phone_verified_at", "two_step", "is_active", "is_staff",
+                    "date_joined"]
     list_filter = ["is_active", "is_staff", "is_superuser"]
     search_fields = ["phone", "email", "full_name"]
     readonly_fields = ["public_id", "date_joined", "last_login", "password_reset_at"]
@@ -32,6 +34,23 @@ class UserAdmin(BaseUserAdmin):
         ("Dates", {"fields": ("date_joined", "last_login", "password_reset_at")}),
     )
     add_fieldsets = ((None, {"classes": ("wide",), "fields": ("phone", "full_name", "password1", "password2")}),)
+    actions = ["reset_mfa"]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("totp")
+
+    @admin.display(boolean=True, description="Two-step login")
+    def two_step(self, obj):
+        device = getattr(obj, "totp", None)
+        return bool(device and device.is_confirmed)
+
+    @admin.action(description="Reset two-step login (lost phone): check who they are first")
+    def reset_mfa(self, request, queryset):
+        from . import mfa
+
+        for user in queryset:
+            mfa.admin_reset(request.user, user, request=request)
+        self.message_user(request, f"Two-step login reset for {queryset.count()} user(s). Their sessions have ended.")
 
 
 class MembershipInline(admin.TabularInline):
@@ -49,19 +68,54 @@ class MembershipInline(admin.TabularInline):
         return False
 
 
+class BranchInline(admin.TabularInline):
+    """Design-in (D-040): branches have no screens yet."""
+
+    model = Branch
+    extra = 0
+    fields = ["name", "phone", "email", "archived_at"]
+    readonly_fields = ["archived_at"]
+    can_delete = False
+
+    def get_queryset(self, request):
+        return Branch.all_objects.all()
+
+
+class InvoicedFilter(admin.SimpleListFilter):
+    title = "has invoiced"
+    parameter_name = "invoiced"
+
+    def lookups(self, request, model_admin):
+        return [("yes", "Yes"), ("no", "No")]
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.filter(_first_invoice__isnull=False)
+        if self.value() == "no":
+            return queryset.filter(_first_invoice__isnull=True)
+        return queryset
+
+
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
-    list_display = ["name", "org_type", "status", "member_count", "property_count", "created_at", "archived_at"]
-    list_filter = ["status", "org_type"]
+    list_display = ["name", "org_type", "status", "member_count", "property_count", "time_to_first_invoice",
+                    "created_at", "archived_at"]
+    list_filter = ["status", "org_type", InvoicedFilter]
     search_fields = ["name", "kra_pin", "billing_phone", "billing_email"]
     readonly_fields = ["public_id", "created_at", "updated_at", "created_by", "archived_at", "archived_by"]
-    inlines = [MembershipInline]
+    inlines = [MembershipInline, BranchInline]
     actions = ["freeze", "unfreeze"]
 
     def get_queryset(self, request):
+        from billing.models import Invoice
+
+        # First invoice that left draft (D-063 item 5): how long a new organization takes to get going.
+        first_invoice = (Invoice.objects.filter(organization=OuterRef("pk")).exclude(status=Invoice.Status.DRAFT)
+                         .values("organization").annotate(first=Min("created_at")).values("first"))
         return Organization.all_objects.annotate(
             _members=Count("memberships", filter=Q(memberships__is_active=True), distinct=True),
             _properties=Count("properties", distinct=True),
+            _first_invoice=Subquery(first_invoice),
         )
 
     @admin.display(ordering="_members", description="Active members")
@@ -71,6 +125,13 @@ class OrganizationAdmin(admin.ModelAdmin):
     @admin.display(ordering="_properties", description="Properties")
     def property_count(self, obj):
         return obj._properties
+
+    @admin.display(ordering="_first_invoice", description="Time to first invoice")
+    def time_to_first_invoice(self, obj):
+        if obj._first_invoice is None:
+            return "—"
+        days = (obj._first_invoice - obj.created_at).days
+        return "same day" if days < 1 else f"{days} day{'s' if days != 1 else ''}"
 
     @admin.action(description="Freeze selected organizations")
     def freeze(self, request, queryset):

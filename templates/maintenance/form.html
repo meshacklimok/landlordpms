@@ -1,0 +1,13 @@
+{% extends "maintenance/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Report a problem" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'maintenance:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Maintenance" %}</a>
+  <h1 class="h4 mt-2">{% trans "Report a problem" %}</h1>
+  <p class="small text-body-secondary">{% trans "A photo helps whoever fixes it bring the right tools." %}</p>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Report" %}</button>
+  </div></form>
+</div>
+{% endblock %}

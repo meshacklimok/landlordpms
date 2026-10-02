@@ -1,0 +1,163 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Account" %} · {{ lease.number }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small">← {{ lease.number }} · {{ lease.unit.property.name }} · {{ lease.unit.code }}</a>
+  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+    <div>
+      <h1 class="h4 mb-0">{% trans "Account" %}</h1>
+      <div class="small text-muted">{{ lease.primary_tenant.name|default:"—" }} · {{ lease.get_status_display }}{% if lease.archived_at %} · {% trans "archived" %}{% endif %}</div>
+    </div>
+    <div class="d-flex gap-2 d-print-none">
+      {% if can_record_payment %}<a class="btn btn-primary btn-sm" href="{% url 'payments:record' lease.public_id %}">{% trans "Record payment" %}</a>{% endif %}
+      <button type="button" class="btn btn-outline-secondary btn-sm" onclick="window.print()">{% trans "Print" %}</button>
+    </div>
+  </div>
+
+  <div class="row g-2 mb-3">
+    <div class="col-6"><div class="card shadow-sm h-100"><div class="card-body">
+      <div class="small text-muted">{% if balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</div>
+      <div class="h5 mb-0 {% if balance > 0 %}text-danger{% endif %}">{{ balance|money:lease.currency }}</div>
+    </div></div></div>
+    <div class="col-6"><div class="card shadow-sm h-100"><div class="card-body">
+      <div class="small text-muted">{% trans "Deposit held" %}</div>
+      <div class="h5 mb-0">{{ clearance.held|money:lease.currency }}</div>
+    </div></div></div>
+  </div>
+
+  {# Statement #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+      <h2 class="h6 mb-0">{% trans "Statement" %}</h2>
+      <form method="get" class="d-flex gap-2 d-print-none">
+        <input type="date" name="start" value="{{ statement.start|date:'Y-m-d' }}" class="form-control form-control-sm" aria-label="{% trans 'From' %}">
+        <input type="date" name="end" value="{{ statement.end|date:'Y-m-d' }}" class="form-control form-control-sm" aria-label="{% trans 'To' %}">
+        <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+      </form>
+    </div>
+    <div class="table-responsive">
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Detail" %}</th><th class="text-end">{% trans "Charged" %}</th><th class="text-end">{% trans "Credited" %}</th><th class="text-end">{% trans "Balance" %}</th></tr></thead>
+      <tbody>
+        {% if statement.start %}<tr class="text-muted"><td>{{ statement.start|date:"j M Y" }}</td><td>{% trans "Brought forward" %}</td><td></td><td></td><td class="text-end text-nowrap">{{ statement.brought_forward|money:lease.currency }}</td></tr>{% endif %}
+        {% for row in statement.rows %}
+        <tr>
+          <td class="text-nowrap">{{ row.entry.entry_date|date:"j M Y" }}</td>
+          <td>{{ row.entry.get_kind_display }}{% if row.entry.invoice %} · <a href="{% url 'billing:invoice' row.entry.invoice.public_id %}">{{ row.entry.invoice.number }}</a>{% endif %}{% if row.entry.payment %} · <a href="{% url 'payments:detail' row.entry.payment.public_id %}">{% trans "payment" %}</a>{% endif %}{% if row.entry.reason %}<div class="text-muted">{{ row.entry.reason }}</div>{% endif %}</td>
+          <td class="text-end text-nowrap">{% if row.debit %}{{ row.debit|money:lease.currency }}{% endif %}</td>
+          <td class="text-end text-nowrap">{% if row.credit %}{{ row.credit|money:lease.currency }}{% endif %}</td>
+          <td class="text-end text-nowrap">{{ row.balance|money:lease.currency }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="text-muted">{% trans "Nothing in this period." %}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Closing balance" %}</td><td class="text-end text-nowrap">{{ statement.closing|money:lease.currency }}</td></tr></tfoot>
+    </table>
+    </div>
+  </div></div>
+
+  {# Invoices #}
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Recent invoices" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for invoice in invoices %}
+      <li class="d-flex justify-content-between gap-2"><span><a href="{% url 'billing:invoice' invoice.public_id %}">{{ invoice.number|default:_("Draft") }}</a> · {{ invoice.period_label }}</span><span class="text-nowrap">{{ invoice.total|money:invoice.currency }} {% include "billing/_invoice_status.html" %}</span></li>
+      {% empty %}<li class="text-muted">{% trans "No invoices yet." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+
+  {# Payments #}
+  {% if payments is not None %}
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Payments" %}</h2>
+    {% if credit > 0 %}
+    <div class="alert alert-info small d-flex justify-content-between align-items-center gap-2">
+      <span>{% blocktrans with amount=credit|money:lease.currency %}{{ amount }} paid ahead is not yet applied to an invoice.{% endblocktrans %}</span>
+      {% if can_apply_credit %}<form method="post" action="{% url 'payments:apply_credit' lease.public_id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Apply credit" %}</button></form>{% endif %}
+    </div>
+    {% endif %}
+    <ul class="list-unstyled small mb-0">
+      {% for payment in payments %}
+      <li class="d-flex justify-content-between gap-2"><span><a href="{% url 'payments:detail' payment.public_id %}">{{ payment.paid_at|date:"j M Y" }}</a> · {{ payment.get_method_display }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</span><span class="text-nowrap">{{ payment.amount|money:lease.currency }} {% include "payments/_status.html" %}</span></li>
+      {% empty %}<li class="text-muted">{% trans "No payments yet." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
+  {# Balance brought forward #}
+  {% if can_opening or opening %}
+  <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+    <h2 class="h6">{% trans "Balance brought forward" %}</h2>
+    <p class="small text-muted">{% trans "What the tenant owed when you started using landlordpms. Earlier months are not billed again." %}</p>
+    {% if opening %}<p class="small">{% blocktrans with amount=opening.amount|money:lease.currency day=opening.entry_date|date:"j M Y" %}{{ amount }} as of {{ day }}.{% endblocktrans %}</p>{% endif %}
+    {% if can_opening %}
+    <details {% if opening_form.errors %}open{% endif %}><summary class="small">{% if opening %}{% trans "Change" %}{% else %}{% trans "Enter it" %}{% endif %}</summary>
+      <form method="post" novalidate class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="opening_balance">
+        {% with form=opening_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-primary btn-sm">{% trans "Save" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  {# Deposits #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Deposit clearance" %}</h2>
+    {% for t in clearance.types %}
+    <div class="mb-3">
+      <div class="d-flex justify-content-between fw-semibold small"><span>{{ t.label }}</span><span>{% blocktrans with held=t.held|money:lease.currency %}{{ held }} held{% endblocktrans %}</span></div>
+      <table class="table table-sm small mb-0">
+        {% for e in t.entries %}
+        <tr>
+          <td class="text-nowrap">{{ e.entry_date|date:"j M Y" }}</td>
+          <td>{{ e.get_kind_display }}{% if e.reference %} · <code>{{ e.reference }}</code>{% endif %}{% if e.reason %}<div class="text-muted">{{ e.reason }}</div>{% endif %}{% if e.condition_report %}<div><a href="{% url 'inspections:report' e.condition_report.public_id %}"><i class="bi bi-clipboard-check"></i> {% trans "Move-out report" %} {{ e.condition_report.inspected_on|date:"j M Y" }}</a></div>{% endif %}</td>
+          <td class="text-end text-nowrap">{{ e.amount|money:e.currency }}</td>
+          <td class="text-end d-print-none">
+            {% if e.kind != "TRANSFERRED" and e.kind != "REVERSAL" and e.pk not in reversed_ids %}{% if e.kind == "DEDUCTION" and can_deduct or e.kind != "DEDUCTION" and can_record %}
+            <details><summary class="small text-muted">{% trans "Correct" %}</summary>
+              <form method="post" class="d-flex gap-1 mt-1">{% csrf_token %}<input type="hidden" name="action" value="deposit_reverse"><input type="hidden" name="entry" value="{{ e.pk }}">
+                <input name="reason" maxlength="300" required class="form-control form-control-sm" placeholder="{% trans 'Why?' %}" aria-label="{% trans 'Reason' %}">
+                <button class="btn btn-sm btn-outline-danger">{% trans "Reverse" %}</button>
+              </form>
+            </details>
+            {% endif %}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% empty %}
+    <p class="small text-muted">{% trans "No deposit recorded." %}{% if lease.deposit_amount %} {% blocktrans with amount=lease.deposit_amount|money:lease.currency %}The lease asks for {{ amount }}.{% endblocktrans %}{% endif %}</p>
+    {% endfor %}
+
+    <div class="d-print-none">
+    {% if can_record %}
+    <details {% if received_form.errors %}open{% endif %}><summary class="small">{% trans "Record a deposit received" %}</summary>
+      <form method="post" novalidate class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="deposit_received">
+        {% with form=received_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-primary btn-sm">{% trans "Record" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if can_deduct and clearance.held > 0 %}
+    <details {% if deduct_form.errors %}open{% endif %}><summary class="small">{% trans "Deduct from the deposit" %}</summary>
+      <form method="post" novalidate class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="deposit_deduct">
+        {% with form=deduct_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-outline-danger btn-sm">{% trans "Deduct" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if can_record and clearance.held > 0 %}
+    <details {% if refund_form.errors %}open{% endif %}><summary class="small">{% trans "Refund the deposit" %}</summary>
+      <form method="post" novalidate class="mt-2">{% csrf_token %}<input type="hidden" name="action" value="deposit_refund">
+        {% with form=refund_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-primary btn-sm">{% trans "Record refund" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    </div>
+  </div></div>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% if status == "vacant" %}{% trans "Vacant units" %}{% else %}{% trans "Units" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h4 mb-0">{% if status == "vacant" %}{% trans "Vacant units" %}{% else %}{% trans "Units" %}{% endif %}</h1>
+  {% if status != "vacant" %}<a class="btn btn-outline-success btn-sm" href="?status=vacant">{% trans "Show vacant" %}</a>{% endif %}
+</div>
+<form method="get" class="d-flex flex-wrap gap-2 mb-2">
+  <input type="search" name="q" value="{{ q }}" class="form-control flex-grow-1 w-auto" placeholder="{% trans 'Unit code or payment reference' %}" aria-label="{% trans 'Search' %}">
+  <select name="property" class="form-select w-auto" aria-label="{% trans 'Property' %}">
+    <option value="">{% trans "All properties" %}</option>
+    {% for p in properties %}<option value="{{ p.public_id }}" {% if p == selected_property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+  </select>
+  <select name="status" class="form-select w-auto" aria-label="{% trans 'Status' %}">
+    <option value="">{% trans "All statuses" %}</option>
+    {% for value, label in status_choices %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="unit_type" class="form-select w-auto" aria-label="{% trans 'Type' %}">
+    <option value="">{% trans "All types" %}</option>
+    {% for value, label in type_choices %}<option value="{{ value }}" {% if value == unit_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-outline-secondary">{% trans "Filter" %}</button>
+</form>
+{% if status_counts %}
+<div class="small text-muted mb-3">
+  {% for key, label, n in status_counts %}{% if not forloop.first %} · {% endif %}<a href="{% querystring status=key page=None %}" class="link-secondary">{{ label }}: {{ n }}</a>{% endfor %}
+</div>
+{% endif %}
+<div class="list-group">
+  {% for u in page %}
+  <a href="{% url 'properties:unit' u.public_id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+    <div>
+      <div><span class="fw-semibold">{{ u.code }}</span> <span class="small text-muted">{{ u.property.name }}{% if u.building %} · {{ u.building.name }}{% endif %}</span></div>
+      <div class="small text-muted">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.list_rent is not None %} · KES {{ u.list_rent|floatformat:"0g" }}{% endif %} · <code>{{ u.payment_reference }}</code></div>
+    </div>
+    {% include "properties/_unit_status_badge.html" %}
+  </a>
+  {% empty %}
+  <div class="list-group-item text-muted">{% if q or status or unit_type or selected_property %}{% trans "No units match these filters." %}{% else %}{% trans "No units yet. Add units from a property page." %}{% endif %}</div>
+  {% endfor %}
+</div>
+{% include "partials/pager.html" %}
+{% endblock %}

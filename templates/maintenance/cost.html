@@ -1,0 +1,13 @@
+{% extends "maintenance/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Record a cost" %} · {{ req.number }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'maintenance:detail' req.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {{ req.number }}</a>
+  <h1 class="h4 mt-2">{% trans "Record a cost" %}</h1>
+  <p class="small text-body-secondary">{% blocktrans with p=req.property.name %}Money already paid for this repair at {{ p }}. It is recorded as an expense and counts in reports once it is approved.{% endblocktrans %}</p>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Record cost" %}</button>
+  </div></form>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ owner.name }}{% endblock %}
+{% block content %}{% with cur=currency %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{{ owner.name }}</h1>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:owner_statement' %}?owner={{ owner.public_id }}">{% trans "Owner statement" %}</a>
+</div>
+<p class="small text-muted mb-3">
+  {% if owner.phone %}{{ owner.phone }}{% endif %}{% if owner.phone and owner.email %} · {% endif %}{% if owner.email %}{{ owner.email }}{% endif %}
+  {% if can_owners %}· <a href="{% url 'properties:owners' %}">{% trans "Owners and fees" %}</a>{% endif %}
+</p>
+
+<div class="card shadow-sm mb-3"><div class="card-body p-2">
+  <h2 class="h6">{% trans "The last 12 months" %}</h2>
+  <div class="table-responsive">
+  <table class="table table-sm small align-middle mb-0">
+    <thead><tr>
+      <th>{% trans "Month" %}</th><th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Fee" %}</th>
+      <th class="text-end">{% trans "Due" %}</th><th class="text-end">{% trans "Paid" %}</th><th class="text-end">{% trans "Still to pay" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in account.rows %}
+    <tr>
+      <td><a href="{% url 'reports:owner_statement' %}?owner={{ owner.public_id }}&month={{ row.month|date:'Y-m' }}">{{ row.month|date:"F Y" }}</a></td>
+      <td class="text-end text-nowrap">{{ row.collected|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ row.fee|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ row.due|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ row.remitted|money:cur }}</td>
+      <td class="text-end text-nowrap {% if row.remaining > 0 %}text-danger{% endif %}">{{ row.remaining|money:cur }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr class="fw-semibold">
+      <td>{% trans "Total" %}</td><td></td><td></td>
+      <td class="text-end text-nowrap">{{ account.due|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ account.remitted|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ account.remaining|money:cur }}</td>
+    </tr></tfoot>
+  </table>
+  </div>
+  <p class="small text-muted mb-0 mt-2">{% trans "Figures are live: a late payment or a correction changes past months. Amounts older than 12 months are not carried over." %}</p>
+</div></div>
+
+<div class="card"><div class="card-body p-2">
+  <h2 class="h6">{% trans "Payments to the owner" %}</h2>
+  {% include "reports/_remittances.html" with remittances=account.remittances back="account" show_month=True %}
+  {% if can_remit %}<p class="small text-muted mb-0 mt-2">{% trans "Record a payment from the statement of the month it pays." %}</p>{% endif %}
+</div></div>
+{% endwith %}{% endblock %}

@@ -1,0 +1,27 @@
+{% load i18n %}
+<form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <div class="row g-2 align-items-end">
+    {% if report %}
+    <div class="col-6 col-md-3">
+      <label class="form-label small text-body-secondary mb-1" for="f-from">{% trans "From" %}</label>
+      <input type="month" id="f-from" name="from" value="{{ report.start|date:'Y-m' }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-6 col-md-3">
+      <label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "To" %}</label>
+      <input type="month" id="f-to" name="to" value="{{ report.end|date:'Y-m' }}" class="form-control form-control-sm">
+    </div>
+    {% endif %}
+    <div class="col-12 col-md">
+      <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+      <select id="f-property" name="property" class="form-select form-select-sm">
+        <option value="">{% trans "All your properties" %}</option>
+        {% for p in properties %}<option value="{{ p.public_id }}" {% if selected and p.pk == selected.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-auto d-flex gap-2">
+      <button class="btn btn-sm btn-dark flex-grow-1">{% trans "Show" %}</button>
+      {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query }}">{% trans "Download CSV" %}</a>{% endif %}
+    </div>
+  </div>
+  {% if report %}<div class="form-text small">{% trans "Up to 12 months." %}</div>{% endif %}
+</div></form>

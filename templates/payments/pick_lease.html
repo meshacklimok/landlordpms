@@ -1,0 +1,38 @@
+{% extends "payments/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Record payment" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 680px">
+  <a href="{% url 'payments:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Payments" %}</a>
+  <h1 class="h3 mt-2 mb-1">{% trans "Record payment" %}</h1>
+  <p class="small text-body-secondary">{% trans "Who paid? Find the lease by tenant, unit, account reference or lease number." %}</p>
+
+  <form method="get" class="mb-3" role="search">
+    <div class="input-group input-group-lg shadow-sm">
+      <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+      <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'e.g. Wanjiku, A102 or GV-A102' %}" aria-label="{% trans 'Search leases' %}" autofocus>
+      <button class="btn btn-dark">{% trans "Find" %}</button>
+    </div>
+  </form>
+
+  {% if not q and leases %}<div class="small text-body-secondary mb-2">{% trans "Largest balances first" %}</div>{% endif %}
+  <div class="list-group shadow-sm">
+    {% for lease in leases %}
+    <a href="{% url 'payments:record' lease.public_id %}" class="list-group-item list-group-item-action d-flex align-items-center gap-3 py-3">
+      <div class="flex-grow-1 min-w-0">
+        <div class="fw-semibold text-truncate">{{ lease.primary_tenant.name|default:"—" }}</div>
+        <div class="small text-body-secondary text-truncate">{{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} · <code>{{ lease.unit.payment_reference }}</code> · {{ lease.number }}</div>
+      </div>
+      <div class="text-end">
+        {% if lease.balance > 0 %}<div class="num fw-semibold text-danger">{{ lease.balance|money:lease.currency }}</div><div class="small text-body-secondary">{% trans "owed" %}</div>
+        {% elif lease.balance < 0 %}<div class="num fw-semibold text-success">{{ lease.balance|absolute|money:lease.currency }}</div><div class="small text-body-secondary">{% trans "in credit" %}</div>
+        {% else %}<div class="small text-body-secondary">{% trans "Settled" %}</div>{% endif %}
+      </div>
+      <i class="bi bi-chevron-right text-body-tertiary"></i>
+    </a>
+    {% empty %}
+    <div class="list-group-item text-center text-body-secondary py-4">{% if q %}{% blocktrans %}No lease matches “{{ q }}”.{% endblocktrans %}{% else %}{% trans "There are no active leases to record payments on yet." %}{% endif %}</div>
+    {% endfor %}
+  </div>
+  {% if more %}<p class="small text-body-secondary mt-2">{% trans "Showing the first 20. Search to narrow it down." %}</p>{% endif %}
+</div>
+{% endblock %}

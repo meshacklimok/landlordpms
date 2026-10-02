@@ -20,8 +20,45 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from letters.views import CheckView as LetterCheckView
+from mpesa.hook_views import DarajaHookView
+from mpesa.views import PayLinkStatusView, PayLinkView
+from notifications.hook_views import AfricasTalkingHookView, WhatsAppHookView
+from payments.views import PublicReceiptView
+from properties.views import VacancyView
+from support.views import HealthzView
+
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("healthz", HealthzView.as_view(), name="healthz"),
+    path("properties/", include("properties.urls")),
+    path("tenants/", include("tenants.urls")),
+    path("leases/", include("leases.urls")),
+    path("imports/", include("imports.urls")),
+    path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
+    path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
+    path("p/<str:token>/", PayLinkView.as_view(), name="pay_link"),
+    path("l/<str:code>/", LetterCheckView.as_view(), name="letter_check"),
+    path("p/<str:token>/<uuid:request_id>/", PayLinkStatusView.as_view(), name="pay_link_status"),
+    path("hooks/sms/africastalking/<str:token>/<slug:kind>/", AfricasTalkingHookView.as_view(),
+         name="hook_africastalking"),
+    path("hooks/whatsapp/", WhatsAppHookView.as_view(), name="hook_whatsapp"),
+    path("hooks/c2b/<str:token>/<slug:kind>/", DarajaHookView.as_view(), name="hook_daraja"),
+    path("billing/", include("billing.urls")),
+    path("payments/", include("payments.urls")),
+    path("messages/", include("notifications.urls")),
+    path("mpesa/", include("mpesa.urls")),
+    path("bank/", include("banking.urls")),
+    path("inspections/", include("inspections.urls")),
+    path("meters/", include("meters.urls")),
+    path("expenses/", include("expenses.urls")),
+    path("maintenance/", include("maintenance.urls")),
+    path("letters/", include("letters.urls")),
+    path("reports/", include("reports.urls")),
+    path("search/", include("search.urls")),
+    path("my/", include("portal.urls")),
+    path("subscription/", include("subscriptions.urls")),
+    path("", include("support.urls")),
     path("", include("accounts.urls")),
 ]
 if settings.DEBUG:

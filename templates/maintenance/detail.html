@@ -1,0 +1,126 @@
+{% extends "maintenance/_base.html" %}{% load i18n money %}
+{% block title %}{{ req.number }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <a href="{% url 'maintenance:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Maintenance" %}</a>
+  <div class="mt-2 mb-3">
+    <h1 class="h4 mb-1">{{ req.title }} {% include "maintenance/_status.html" %}</h1>
+    <div class="small text-body-secondary">{{ req.number }} · {{ req.property.name }} · {% if req.unit %}<a href="{% url 'properties:unit' req.unit.public_id %}">{{ req.where }}</a>{% else %}{{ req.where }}{% endif %} · {{ req.get_kind_display }} {% include "maintenance/_priority.html" %}</div>
+  </div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    {% if req.description %}<p class="mb-3" style="white-space: pre-line">{{ req.description }}</p>{% endif %}
+    <dl class="row small mb-0">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Reported" %}</dt>
+      <dd class="col-sm-8">{{ req.created_at|date:"j M Y, H:i" }} · {% if req.tenant %}{% if can_see_tenant %}<a href="{% url 'tenants:detail' req.tenant.public_id %}">{{ req.tenant }}</a>{% else %}{{ req.tenant }}{% endif %} ({% trans "tenant" %}){% if req.source == "PORTAL" %} · {% trans "from the portal" %}{% else %} · {% blocktrans with by=req.reported_by %}recorded by {{ by }}{% endblocktrans %}{% endif %}{% else %}{{ req.reported_by }}{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Due by" %}</dt>
+      <dd class="col-sm-8{% if req.is_open and req.due_at < now %} text-danger fw-semibold{% endif %}">{{ req.due_at|date:"j M Y, H:i" }}{% if req.is_open and req.due_at < now %} · {% trans "overdue" %}{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Assigned to" %}</dt>
+      <dd class="col-sm-8">{% if req.assigned_to %}{{ req.assigned_to }}{% endif %}{% if req.assigned_to and req.supplier %} · {% endif %}{% if req.supplier %}{{ req.supplier.name }}{% if req.supplier.phone %} · <a href="tel:{{ req.supplier.phone }}">{{ req.supplier.phone }}</a>{% endif %}{% endif %}{% if not req.assigned_to and not req.supplier %}<span class="text-body-secondary">{% trans "Nobody yet" %}</span>{% endif %}</dd>
+      {% if req.done_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Done" %}</dt><dd class="col-sm-8">{{ req.done_at|date:"j M Y, H:i" }}</dd>{% endif %}
+      {% if req.closed_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Closed" %}</dt><dd class="col-sm-8">{{ req.closed_at|date:"j M Y, H:i" }}{% if req.closed_by %} · {{ req.closed_by }}{% endif %}</dd>{% endif %}
+      {% if req.cancelled_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Cancelled" %}</dt><dd class="col-sm-8">{{ req.cancelled_at|date:"j M Y, H:i" }}<div>{{ req.cancel_reason }}</div></dd>{% endif %}
+    </dl>
+  </div></div>
+
+  {% if photos %}
+  <div class="d-flex flex-wrap gap-2 mb-3">
+    {% for p in photos %}<a href="{% url 'maintenance:photo' p.public_id %}" target="_blank" rel="noopener"><img src="{% url 'maintenance:photo' p.public_id %}" alt="{% trans 'Photo' %} {{ forloop.counter }}" width="96" height="96" loading="lazy" class="rounded border object-fit-cover"></a>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if actions %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Move it on" %}</h2>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      {% for a in actions %}{% if a == "start" or a == "done" or a == "close" %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="{{ a }}">
+        {% if a == "start" %}<button class="btn btn-outline-primary"><i class="bi bi-play"></i> {% trans "Start work" %}</button>
+        {% elif a == "done" %}<button class="btn btn-outline-success"><i class="bi bi-check2"></i> {% trans "Mark done" %}</button>
+        {% else %}<button class="btn btn-success"><i class="bi bi-check2-all"></i> {% trans "Checked, close" %}</button>{% endif %}
+      </form>
+      {% endif %}{% endfor %}
+    </div>
+    {% for a in actions %}{% if a == "hold" or a == "reopen" or a == "cancel" %}
+    <form method="post" class="mt-2" novalidate{% if a == "cancel" %} data-confirm="{% trans 'Cancel this request?' %}"{% endif %}>{% csrf_token %}<input type="hidden" name="action" value="{{ a }}">
+      <div class="input-group">
+        <input type="text" name="note" maxlength="1000" required class="form-control" aria-label="{% trans 'Reason' %}"
+               placeholder="{% if a == 'hold' %}{% trans 'Waiting for? e.g. parts' %}{% elif a == 'reopen' %}{% trans 'Why reopen it?' %}{% else %}{% trans 'Why cancel it?' %}{% endif %}">
+        {% if a == "hold" %}<button class="btn btn-outline-secondary">{% trans "Put on hold" %}</button>
+        {% elif a == "reopen" %}<button class="btn btn-outline-warning">{% trans "Reopen" %}</button>
+        {% else %}<button class="btn btn-outline-danger">{% trans "Cancel request" %}</button>{% endif %}
+      </div>
+    </form>
+    {% endif %}{% endfor %}
+  </div></div>
+  {% endif %}
+
+  {% if can_assign %}
+  <div class="row g-3 mb-3">
+    <div class="col-md-7"><form method="post" class="card shadow-sm h-100" novalidate>{% csrf_token %}<div class="card-body">
+      <input type="hidden" name="action" value="assign">
+      <h2 class="h6">{% trans "Assign" %}</h2>
+      {% include "partials/form.html" with form=assign_form %}
+      <button class="btn btn-outline-primary">{% trans "Save" %}</button>
+    </div></form></div>
+    <div class="col-md-5"><form method="post" class="card shadow-sm h-100" novalidate>{% csrf_token %}<div class="card-body">
+      <input type="hidden" name="action" value="priority">
+      <h2 class="h6">{% trans "Priority" %}</h2>
+      {% include "partials/form.html" with form=priority_form %}
+      <button class="btn btn-outline-primary">{% trans "Save" %}</button>
+    </div></form></div>
+  </div>
+  {% endif %}
+
+  {% if can_see_costs %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h2 class="h6 mb-0">{% trans "Costs" %}</h2>
+      {% if can_record_cost %}<a class="btn btn-sm btn-outline-primary" href="{% url 'maintenance:cost' req.public_id %}"><i class="bi bi-plus-lg"></i> {% trans "Record a cost" %}</a>{% endif %}
+    </div>
+    {% if costs.expenses %}
+    <table class="table table-sm small align-middle mb-2">
+      <tbody>
+        {% for e in costs.expenses %}
+        <tr>
+          <td>{% if can_see_expenses %}<a href="{% url 'expenses:detail' e.public_id %}">{{ e.number }}</a>{% else %}{{ e.number }}{% endif %}<div class="text-body-secondary">{{ e.paid_on|date:"j M Y" }}{% if e.supplier %} · {{ e.supplier.name }}{% endif %}</div></td>
+          <td>{% if e.status == "SUBMITTED" %}<span class="badge text-bg-warning">{{ e.get_status_display }}</span>{% endif %}</td>
+          <td class="text-end num">{{ e.amount|money:currency }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="d-flex justify-content-between small"><span>{% trans "Approved" %}</span><span class="num fw-semibold">{{ costs.approved|money:currency }}</span></div>
+    {% if costs.waiting %}<div class="d-flex justify-content-between small text-body-secondary"><span>{% trans "Waiting for approval" %}</span><span class="num">{{ costs.waiting|money:currency }}</span></div>{% endif %}
+    {% else %}<p class="small text-body-secondary mb-0">{% trans "No costs recorded." %}</p>{% endif %}
+  </div></div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "History" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for u in updates %}
+      <li class="py-2{% if not forloop.last %} border-bottom{% endif %}">
+        <div class="d-flex justify-content-between gap-2">
+          <span class="fw-medium">{% if u.kind == "STATUS" %}{{ u.get_to_status_display }}{% elif u.kind == "COMMENT" %}<i class="bi bi-chat-left-text"></i> {% trans "Tenant comment" %}{% else %}{{ u.get_kind_display }}{% endif %}
+            {% if u.shared_with_tenant and u.kind == "NOTE" %}<span class="badge text-bg-light border">{% trans "told the tenant" %}</span>{% endif %}</span>
+          <span class="text-body-secondary text-nowrap">{{ u.at|date:"j M, H:i" }}</span>
+        </div>
+        {% if u.text %}<div style="white-space: pre-line">{{ u.text }}</div>{% endif %}
+        <div class="text-body-secondary">{{ u.by }}</div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+
+  {% if can_update %}
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm mb-3" novalidate>{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="note">
+    <h2 class="h6">{% trans "Add a note or photos" %}</h2>
+    {% include "partials/form.html" with form=note_form %}
+    {% if not req.tenant %}<p class="small text-body-secondary">{% trans "No tenant follows this request, so nobody is told." %}</p>{% endif %}
+    <button class="btn btn-outline-primary">{% trans "Add" %}</button>
+  </div></form>
+  {% endif %}
+</div>
+{% endblock %}

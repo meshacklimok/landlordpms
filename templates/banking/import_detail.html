@@ -1,0 +1,71 @@
+{% extends "banking/_base.html" %}{% load i18n money %}
+{% block title %}{{ batch.file_name|default:batch.get_kind_display }}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'banking:import' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Import a statement" %}</a>
+  <h1 class="h3 mt-2 mb-0">{{ batch.file_name|default:batch.get_kind_display }}</h1>
+  <p class="small text-body-secondary">{{ batch.get_kind_display }} · {{ batch.payment_account.display_name }} · {{ batch.created_at|date:"j M Y, H:i" }} · {{ batch.get_status_display }}</p>
+
+  <div class="row g-2 mb-3 small">
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body py-2"><div class="h5 mb-0">{{ batch.new_count }}</div>{% if batch.status == "APPLIED" %}{% trans "lines imported" %}{% else %}{% trans "new money-in lines" %}{% endif %}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body py-2"><div class="h5 mb-0">{{ batch.duplicate_count }}</div>{% trans "already imported (skipped)" %}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body py-2"><div class="h5 mb-0">{{ batch.skipped_count }}</div>{% trans "money out or not completed (skipped)" %}</div></div></div>
+    <div class="col-6 col-md-3"><div class="card"><div class="card-body py-2"><div class="h5 mb-0">{{ batch.errors|length }}</div>{% trans "could not be read" %}</div></div></div>
+  </div>
+
+  {% if batch.status == "APPLIED" %}
+  <div class="alert alert-success small">
+    {% blocktrans with m=batch.matched_count u=batch.unmatched_count %}{{ m }} matched, confirmed and receipted; {{ u }} waiting to be matched.{% endblocktrans %}
+    {% if batch.unmatched_count %}<a href="{% url inbox_url %}">{% trans "Open the inbox" %}</a>{% endif %}
+  </div>
+  {% elif batch.status == "PREVIEW" %}
+    {% if expired %}
+    <div class="alert alert-warning small">{% trans "This preview has expired. Upload the file again." %}</div>
+    {% else %}
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      {% if batch.new_count %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><button class="btn btn-dark"><i class="bi bi-check2"></i> {% blocktrans count n=batch.new_count %}Import {{ n }} line{% plural %}Import {{ n }} lines{% endblocktrans %}</button></form>
+      {% endif %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="btn btn-outline-secondary">{% trans "Discard" %}</button></form>
+    </div>
+    {% if not batch.new_count %}<p class="small text-body-secondary">{% trans "There is nothing new to import in this file." %}</p>{% endif %}
+    {% endif %}
+  {% endif %}
+
+  {% if batch.errors %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Lines that could not be read" %}</h2>
+    <ul class="small mb-0">{% for number, message in batch.errors %}<li>{% blocktrans %}Line {{ number }}{% endblocktrans %}: {{ message }}</li>{% endfor %}</ul>
+  </div></div>
+  {% endif %}
+
+  {% if rows %}
+  <div class="card shadow-sm overflow-hidden">
+    <div class="table-responsive">
+      <table class="table pay-table align-middle mb-0 small">
+        <thead><tr>
+          <th>{% trans "Line" %}</th><th>{% trans "Date" %}</th>
+          {% if batch.kind == "BANK" %}<th>{% trans "Description" %}</th><th>{% trans "Reference" %}</th>
+          {% else %}<th>{% trans "M-Pesa code" %}</th><th>{% trans "Account no." %}</th><th>{% trans "Payer" %}</th>{% endif %}
+          <th class="text-end">{% trans "Amount" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for row in rows %}
+          <tr>
+            <td class="text-body-secondary">{{ row.line }}</td>
+            {% if batch.kind == "BANK" %}
+            <td class="num text-nowrap">{{ row.posted_on }}</td><td>{{ row.description|default:"—" }}</td><td><code>{{ row.reference|default:"—" }}</code></td>
+            {% else %}
+            <td class="num text-nowrap">{{ row.paid_at|slice:":16" }}</td><td><code>{{ row.receipt }}</code></td><td><code>{{ row.bill_ref|default:"—" }}</code></td><td>{{ row.payer_name|default:"—" }}</td>
+            {% endif %}
+            <td class="text-end num">{{ row.amount|money:currency }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% if batch.new_count > 500 %}<p class="small text-body-secondary mt-2">{% trans "Showing the first 500." %}</p>{% endif %}
+  {% endif %}
+</div>
+{% endblock %}

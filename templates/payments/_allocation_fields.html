@@ -1,0 +1,34 @@
+{% load i18n money %}{% with rows=form.allocation_rows %}{% if rows %}
+{# Needs: form, lease, and either total_from (a selector for the amount input) or total (a number). #}
+<details class="border rounded-3 mb-3" data-alloc data-currency="{{ lease.currency }}"{% if total_from %} data-total-from="{{ total_from }}"{% else %} data-total="{{ total|stringformat:'.2f' }}"{% endif %} {% for invoice, f in rows %}{% if f.value or f.errors %}open{% endif %}{% endfor %}>
+  <summary class="px-3 py-2 d-flex justify-content-between align-items-center gap-2">
+    <span class="fw-medium">{% trans "Split across invoices" %} <span class="text-body-secondary fw-normal small">· {% trans "optional" %}</span></span>
+    <span class="small text-body-secondary" data-alloc-summary
+          data-empty="{% trans 'Oldest invoice first' %}" data-allocated-word="{% trans 'allocated' %}"
+          data-credit-word="{% trans 'kept as credit' %}" data-over-word="{% trans 'more than the payment' %}">{% trans "Oldest invoice first" %}</span>
+  </summary>
+  <div class="px-3 pb-3">
+    <p class="small text-body-secondary mb-2">{% trans "Leave every box blank to pay the oldest invoice first. Anything not allocated is kept as credit." %}</p>
+    <div class="d-flex gap-2 mb-2">
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-auto>{% trans "Fill oldest first" %}</button>
+      <button type="button" class="btn btn-sm btn-link text-body-secondary" data-alloc-clear>{% trans "Clear" %}</button>
+    </div>
+    <table class="table table-sm align-middle small mb-0">
+      <thead><tr><th>{% trans "Invoice" %}</th><th class="d-none d-sm-table-cell">{% trans "Due" %}</th><th class="text-end">{% trans "Left to pay" %}</th><th class="text-end" style="width: 9rem">{% trans "Apply" %}</th></tr></thead>
+      <tbody>
+        {% for invoice, f in rows %}
+        <tr>
+          <td><label for="{{ f.id_for_label }}" class="mb-0">{{ invoice.number }}</label><div class="text-body-secondary">{{ invoice.period_label }}</div></td>
+          <td class="d-none d-sm-table-cell text-nowrap">{{ invoice.due_date|date:"j M Y" }}</td>
+          <td class="text-end num">{{ invoice.outstanding|money:invoice.currency }}</td>
+          <td>
+            <input type="text" inputmode="decimal" autocomplete="off" name="{{ f.html_name }}" id="{{ f.id_for_label }}" value="{{ f.value|default_if_none:'' }}" placeholder="0.00" data-alloc-input data-max="{{ invoice.outstanding|stringformat:'.2f' }}" class="form-control form-control-sm text-end num{% if f.errors %} is-invalid{% endif %}">
+            {% for e in f.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}{% endwith %}

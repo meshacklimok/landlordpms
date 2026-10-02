@@ -1,0 +1,60 @@
+{% load i18n money %}{% if rows %}
+<div class="list-group mb-2">
+  {% for row in rows %}{% with lease=row.lease tenant=row.lease.primary_tenant cur=row.lease.currency %}
+  <div class="list-group-item py-2">
+    <div class="d-flex flex-wrap justify-content-between gap-2">
+      <div>
+        <a class="fw-semibold" href="{% url 'billing:lease_account' lease.public_id %}">{{ tenant.name|default:lease.number }}</a>
+        <span class="badge {% if row.grade.grade == 'A' or row.grade.grade == 'B' %}text-bg-success{% elif row.grade.grade == 'C' %}text-bg-warning{% elif row.grade.grade %}text-bg-danger{% else %}text-bg-light border{% endif %}" title="{% trans 'Collectability grade' %}">{{ row.grade.label }}</span>
+        <div class="small text-muted">{{ lease.unit.property.name }} · {{ lease.unit.code }} · {{ lease.number }}{% if lease.status != "ACTIVE" %} · {{ lease.get_status_display }}{% endif %}</div>
+        {% if can_tenants and tenant.phone %}<div class="small"><a href="tel:{{ tenant.phone }}">{{ tenant.phone }}</a>{% if tenant.alt_phone %} · <a href="tel:{{ tenant.alt_phone }}">{{ tenant.alt_phone }}</a>{% endif %}</div>{% endif %}
+      </div>
+      <div class="text-end small">
+        <div class="fw-semibold text-danger text-nowrap">{% blocktrans with a=row.overdue|money:cur %}{{ a }} overdue{% endblocktrans %}</div>
+        <div class="text-muted text-nowrap">{% blocktrans count n=row.days %}{{ n }} day since the oldest was due{% plural %}{{ n }} days since the oldest was due{% endblocktrans %}</div>
+        {% if row.grade.invoices %}<div class="text-muted text-nowrap">{% blocktrans with k=row.grade.on_time n=row.grade.invoices avg=row.grade.average_late %}{{ k }} of {{ n }} paid in time · {{ avg }} days late on average{% endblocktrans %}</div>{% endif %}
+      </div>
+    </div>
+    {% if row.follow_up %}{% with f=row.follow_up %}
+    <div class="small mt-1">
+      {% if row.promise == "broken" %}<span class="badge text-bg-danger">{% trans "Promise broken" %}</span>
+      {% elif row.promise == "kept" %}<span class="badge text-bg-success">{% trans "Promise kept" %}</span>{% endif %}
+      {{ f.get_outcome_display }}{% if f.promised_on %}: {% if f.promised_amount %}{{ f.promised_amount|money:cur }} {% endif %}{% blocktrans with d=f.promised_on|date:"j M" %}by {{ d }}{% endblocktrans %}{% endif %}
+      <span class="text-muted">· {{ f.created_at|date:"j M, H:i" }}{% if f.created_by %} · {{ f.created_by.get_full_name|default:f.created_by.email }}{% endif %}</span>
+      {% if f.note %}<div class="text-muted">{{ f.note }}</div>{% endif %}
+    </div>
+    {% endwith %}{% endif %}
+    {% if can_follow_up %}
+    <details class="mt-1 small"{% if follow_up_lease and follow_up_lease.pk == lease.pk %} open{% endif %}>
+      <summary>{% trans "Record a call" %}</summary>
+      <form method="post" action="{% url 'billing:follow_up' lease.public_id %}" class="row g-2 mt-1 align-items-end">
+        {% csrf_token %}
+        <input type="hidden" name="next_query" value="{{ query }}">
+        <div class="col-sm-3">
+          <label class="form-label mb-0" for="outcome-{{ lease.public_id }}">{% trans "What happened" %}</label>
+          <select class="form-select form-select-sm" name="outcome" id="outcome-{{ lease.public_id }}">
+            {% for value, label in form.fields.outcome.choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-2">
+          <label class="form-label mb-0" for="on-{{ lease.public_id }}">{% trans "Will pay by" %}</label>
+          <input class="form-control form-control-sm" type="date" name="promised_on" id="on-{{ lease.public_id }}" min="{{ today|date:'Y-m-d' }}">
+        </div>
+        <div class="col-sm-2">
+          <label class="form-label mb-0" for="amount-{{ lease.public_id }}">{% trans "Amount (optional)" %}</label>
+          <input class="form-control form-control-sm" type="number" step="0.01" min="0.01" name="promised_amount" id="amount-{{ lease.public_id }}">
+        </div>
+        <div class="col-sm-3">
+          <label class="form-label mb-0" for="note-{{ lease.public_id }}">{% trans "Note" %}</label>
+          <input class="form-control form-control-sm" name="note" maxlength="300" id="note-{{ lease.public_id }}">
+        </div>
+        <div class="col-sm-2"><button class="btn btn-sm btn-primary w-100">{% trans "Save" %}</button></div>
+      </form>
+    </details>
+    {% endif %}
+  </div>
+  {% endwith %}{% endfor %}
+</div>
+{% else %}
+<p class="small text-muted">{{ empty }}</p>
+{% endif %}

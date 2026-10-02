@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Charge types" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4">{% trans "Charge types" %}</h1>
+  <p class="small text-muted">{% trans "The kinds of monthly charge you add to leases, e.g. water or service charge. Rent and deposit are built in." %}</p>
+  <ul class="list-group mb-3">
+    {% for ct in charge_types %}
+    <li class="list-group-item">
+      <div class="d-flex justify-content-between align-items-center gap-2">
+        <form method="post" class="d-flex gap-2 flex-grow-1">{% csrf_token %}
+          <input type="hidden" name="action" value="rename"><input type="hidden" name="charge_type" value="{{ ct.public_id }}">
+          <input name="name" value="{{ ct.name }}" maxlength="60" class="form-control form-control-sm" aria-label="{% trans 'Name' %}">
+          <button class="btn btn-sm btn-outline-secondary">{% trans "Rename" %}</button>
+        </form>
+        <span class="small text-muted text-nowrap">{{ ct.get_category_display }}{% if ct.is_system %} · {% trans "default" %}{% endif %}</span>
+        {% if not ct.is_system %}
+        <form method="post">{% csrf_token %}<input type="hidden" name="action" value="archive"><input type="hidden" name="charge_type" value="{{ ct.public_id }}"><button class="btn btn-link btn-sm p-0 text-danger">{% trans "Archive" %}</button></form>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  <h2 class="h6">{% trans "Add a charge type" %}</h2>
+  <form method="post" novalidate>{% csrf_token %}
+    <input type="hidden" name="action" value="create">
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Add" %}</button>
+  </form>
+  {% if archived %}
+  <h2 class="h6 mt-4">{% trans "Archived" %}</h2>
+  <ul class="list-group">
+    {% for ct in archived %}
+    <li class="list-group-item d-flex justify-content-between align-items-center small">{{ ct.name }}
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="restore"><input type="hidden" name="charge_type" value="{{ ct.public_id }}"><button class="btn btn-link btn-sm p-0">{% trans "Restore" %}</button></form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+{% endblock %}

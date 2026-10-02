@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% load i18n money billing %}
+{% block title %}{% trans "Aged receivables" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<h1 class="h4 mb-0">{% trans "Aged receivables" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with day=today|date:"j M Y" %}Everything tenants owe on {{ day }}, by property and by how late it is. Credit balances are not included.{% endblocktrans %}</p>
+{% include "reports/_finance_links.html" with section="ar" %}
+{% include "reports/_finance_filter.html" %}
+
+{% if rows %}
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Property" %}</th>
+    {% for key, label in buckets %}<th class="text-end">{{ label }}</th>{% endfor %}
+    <th class="text-end">{% trans "Total" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td><details><summary class="fw-semibold">{{ row.property.name }} <span class="text-body-secondary fw-normal">({{ row.leases|length }})</span></summary>
+        <ul class="list-unstyled mb-0 mt-1">
+          {% for lease_row in row.leases %}
+          <li class="d-flex justify-content-between gap-3">
+            <span>{% if can_arrears %}<a href="{% url 'leases:detail' lease_row.lease.public_id %}">{{ lease_row.lease.number }}</a>{% else %}{{ lease_row.lease.number }}{% endif %}
+              · {{ lease_row.lease.unit.code }} · {{ lease_row.lease.primary_tenant.name|default:"—" }}</span>
+            <span class="num text-nowrap">{{ lease_row.balance|money:cur }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </details></td>
+      {% for key, label in buckets %}<td class="text-end num text-nowrap">{{ row.buckets|bucket:key|money:cur }}</td>{% endfor %}
+      <td class="text-end num text-nowrap fw-semibold">{{ row.total|money:cur }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr class="fw-semibold">
+    <td>{% trans "Total" %}</td>
+    {% for key, label in buckets %}<td class="text-end num text-nowrap">{{ total.buckets|bucket:key|money:cur }}</td>{% endfor %}
+    <td class="text-end num text-nowrap">{{ total.total|money:cur }}</td>
+  </tr></tfoot>
+</table>
+</div>
+{% else %}
+<div class="card shadow-sm mb-3"><div class="card-body text-center py-5">
+  <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+  <h2 class="h6 mb-0">{% trans "Nothing is owed" %}</h2>
+</div></div>
+{% endif %}
+<p class="small text-body-secondary">{% trans "Payments pay the oldest amounts first. Days late count from the due date plus any grace days." %}</p>
+{% endwith %}
+{% endblock %}

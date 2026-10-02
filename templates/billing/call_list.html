@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Who to call" %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% trans "Who to call" %}</h1>
+  <form method="get" class="d-flex flex-wrap gap-2">
+    {{ filters.property }}
+    {{ filters.grade }}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  </form>
+</div>
+<p class="small text-muted mb-3">
+  {% blocktrans with d=today|date:"j M Y" %}Everyone with rent overdue on {{ d }}. Broken promises come first, then the largest amounts.{% endblocktrans %}
+  <a href="{% url 'billing:arrears' %}">{% trans "Arrears by age" %}</a>
+</p>
+
+{% if form.non_field_errors or form.errors %}
+<div class="alert alert-danger small">
+  {% if follow_up_lease %}{% blocktrans with l=follow_up_lease.number %}Not saved for {{ l }}:{% endblocktrans %}{% endif %}
+  {% for field, errors in form.errors.items %}{% for e in errors %} {{ e }}{% endfor %}{% endfor %}
+</div>
+{% endif %}
+
+<h2 class="h6">{% trans "To call" %} <span class="badge text-bg-secondary">{{ board.to_call|length }}</span></h2>
+{% include "billing/_call_rows.html" with rows=board.to_call empty=_("Nobody left to call.") %}
+
+<h2 class="h6 mt-4">{% trans "Promised to pay" %} <span class="badge text-bg-secondary">{{ board.promised|length }}</span></h2>
+{% include "billing/_call_rows.html" with rows=board.promised empty=_("No promises waiting.") %}
+
+<h2 class="h6 mt-4">{% trans "Done today" %} <span class="badge text-bg-secondary">{{ board.done_today|length }}</span></h2>
+{% include "billing/_call_rows.html" with rows=board.done_today empty=_("No calls recorded today.") %}
+
+<details class="small text-muted mt-4">
+  <summary>{% trans "How the grade works" %}</summary>
+  <p class="mb-1 mt-2">{% trans "The grade looks at the tenancy's last six invoices past their due date plus grace, over the last 12 months, including earlier leases on a renewal or move." %}</p>
+  <p class="mb-1">{% trans "A: all paid in time. B: 5 days late or fewer on average. C: 15 or fewer. D: 30 or fewer. E: more than 30. An invoice unpaid more than 30 days past due caps the grade at D, more than 60 at E." %}</p>
+  <p class="mb-0">{% trans "New: fewer than two invoices to judge by." %}</p>
+</details>
+{% endblock %}

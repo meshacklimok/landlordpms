@@ -1,0 +1,37 @@
+{% extends "expenses/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Suppliers" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <h1 class="h3 mb-0">{% trans "Suppliers" %}</h1>
+    {% if can_manage %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:supplier_create' %}"><i class="bi bi-plus-lg"></i> {% trans "Add a supplier" %}</a>{% endif %}
+  </div>
+  <p class="small text-body-secondary">{% trans "People and businesses you pay. Totals are approved expenses on the properties you can see." %}</p>
+  {% include "expenses/_nav.html" with section="suppliers" %}
+  {% if suppliers %}
+  <div class="card shadow-sm overflow-hidden"><div class="table-responsive">
+    <table class="table pay-table align-middle mb-0">
+      <thead><tr><th>{% trans "Name" %}</th><th class="d-none d-md-table-cell">{% trans "Phone" %}</th><th class="d-none d-lg-table-cell">{% trans "KRA PIN" %}</th><th class="text-end">{% trans "Paid" %}</th></tr></thead>
+      <tbody>
+      {% for s in suppliers %}
+        <tr>
+          <td>{% if can_manage %}<a class="fw-medium" href="{% url 'expenses:supplier_edit' s.public_id %}">{{ s.name }}</a>{% else %}<span class="fw-medium">{{ s.name }}</span>{% endif %}{% if s.is_archived %} <span class="badge text-bg-secondary">{% trans "Archived" %}</span>{% endif %}
+            {% if s.payment_details %}<div class="small text-body-secondary">{{ s.payment_details }}</div>{% endif %}</td>
+          <td class="d-none d-md-table-cell small">{{ s.phone|default:"—" }}</td>
+          <td class="d-none d-lg-table-cell small">{% if s.kra_pin %}<code>{{ s.kra_pin }}</code>{% else %}—{% endif %}</td>
+          <td class="text-end">{% if s.paid_count %}<a class="num" href="{% url 'expenses:list' %}?supplier={{ s.public_id }}&amp;status=APPROVED">{{ s.paid_total|money:currency }}</a><div class="small text-body-secondary">{% blocktrans count n=s.paid_count %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</div>{% else %}<span class="text-body-secondary">—</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div></div>
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-shop"></i></div>
+    <h2 class="h6">{% trans "No suppliers yet" %}</h2>
+    <p class="small text-body-secondary mb-0">{% trans "Add the plumbers, guards and other suppliers you pay, to see what each has been paid." %}</p>
+  </div></div>
+  {% endif %}
+  <p class="small mt-2">{% if show_archived %}<a href="{% url 'expenses:suppliers' %}">{% trans "Hide archived suppliers" %}</a>{% else %}<a href="?archived=1">{% trans "Show archived suppliers" %}</a>{% endif %}</p>
+</div>
+{% endblock %}

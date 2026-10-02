@@ -54,6 +54,7 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("tenants.manage", "Add and edit tenants"),
     _view("tenants.view_sensitive", "See national ID and tenant documents", sensitive=True),
     Cap("tenants.invite_portal", "Invite tenants to the tenant portal"),
+    Cap("tenants.issue_letter", "Issue tenancy and payment record letters"),
     # prospects
     _view("prospects.view", "See prospects and viewings"),
     Cap("prospects.manage", "Manage prospects and viewings, convert to tenant"),
@@ -63,6 +64,14 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("leases.activate", "Activate and renew leases"),
     Cap("leases.terminate", "End and terminate leases"),
     Cap("leases.change_rent", "Record rent changes"),
+    # condition reports (D-047)
+    _view("inspections.view", "See condition reports, unit item registers and their photos"),
+    Cap("inspections.record", "Record move-in and move-out condition reports and edit item registers"),
+    # metered water (D-057)
+    _view("meters.view", "See water meters, readings and their photos"),
+    Cap("meters.record", "Record meter readings"),
+    Cap("meters.approve", "Approve or reject meter readings for billing"),
+    Cap("meters.manage", "Add and edit meters, their units and rates"),
     # billing
     _view("invoices.view", "See invoices and balances"),
     Cap("invoices.generate", "Generate and issue invoices"),
@@ -70,6 +79,9 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("invoices.approve_adjustment", "Approve invoice adjustments"),
     Cap("invoices.void", "Void invoices", sensitive=True),
     Cap("charges.manage", "Manage charge types and recurring charges"),
+    Cap("deposits.record", "Record deposits received and refunded"),
+    Cap("deposits.deduct", "Deduct from a deposit", sensitive=True),
+    Cap("arrears.follow_up", "Record calls and promises to pay"),
     # payments
     _view("payments.view", "See payments"),
     Cap("payments.record", "Record payments (cash, bank, cheque)"),
@@ -113,6 +125,9 @@ CAPABILITIES: tuple[Cap, ...] = (
     _view("reports.export", "Export reports", sensitive=True),
     _view("dashboard.view_summary", "See the summary dashboard"),
     _view("dashboard.view_financial", "See financial dashboard figures"),
+    # property owners (D-058)
+    Cap("owners.remit", "Record and void payments made to property owners"),
+    Cap("owners.send_statement", "Send monthly statements to property owners"),
     # audit
     _view("audit.view_own", "See my own activity"),
     _view("audit.view_all", "See the organization's full audit log", org_wide=True),
@@ -147,11 +162,13 @@ _MANAGER = _caps(
     "staff.view",
     "properties.view", "properties.manage",
     "units.view", "units.manage", "units.set_status", "units.list_vacant",
-    "tenants.view", "tenants.manage", "tenants.view_sensitive", "tenants.invite_portal",
+    "tenants.view", "tenants.manage", "tenants.view_sensitive", "tenants.invite_portal", "tenants.issue_letter",
     "prospects.view", "prospects.manage",
     "leases.view", "leases.draft", "leases.activate", "leases.terminate", "leases.change_rent",
+    "inspections.view", "inspections.record",
+    "meters.view", "meters.record", "meters.approve", "meters.manage",
     "invoices.view", "invoices.generate", "invoices.adjust", "invoices.approve_adjustment",
-    "invoices.void", "charges.manage",
+    "invoices.void", "charges.manage", "deposits.record", "deposits.deduct", "arrears.follow_up",
     "payments.view", "payments.record", "payments.confirm", "payments.allocate", "receipts.issue",
     "payment_accounts.view",
     "mpesa.view_transactions", "mpesa.match",
@@ -161,7 +178,7 @@ _MANAGER = _caps(
     "expenses.view", "expenses.submit",
     "documents.view", "documents.upload", "documents.manage", "documents.share_with_tenant",
     "reports.view_basic", "reports.view_financial", "reports.export",
-    "dashboard.view_summary", "dashboard.view_financial",
+    "dashboard.view_summary", "dashboard.view_financial", "owners.send_statement",
     "audit.view_own",
 )
 
@@ -176,11 +193,14 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         "Invoices, payments, reconciliation and financial reports.",
         _caps(
             "properties.view", "units.view", "units.list_vacant", "tenants.view", "leases.view",
-            "invoices.view", "payments.view", "payments.record", "payments.allocate", "receipts.issue",
+            "meters.view", "meters.approve",
+            "invoices.view", "deposits.record", "arrears.follow_up",
+            "payments.view", "payments.record", "payments.allocate", "receipts.issue",
             "payment_accounts.view", "mpesa.view_transactions", "mpesa.match",
             "expenses.view", "expenses.submit", "expenses.approve",
             "reports.view_basic", "reports.view_financial", "reports.export",
-            "dashboard.view_summary", "dashboard.view_financial", "audit.view_own",
+            "dashboard.view_summary", "dashboard.view_financial", "owners.remit", "owners.send_statement",
+            "audit.view_own",
         ),
     ),
     TemplateDef(
@@ -189,6 +209,7 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         "On-site: sees assigned properties, tenants and reports repairs.",
         _caps(
             "properties.view", "units.view", "units.list_vacant", "tenants.view",
+            "inspections.view", "inspections.record", "meters.view", "meters.record",
             "maintenance.view", "maintenance.create", "dashboard.view_summary", "audit.view_own",
         ),
     ),
@@ -199,7 +220,8 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         _caps(
             "properties.view", "units.view", "units.list_vacant",
             "tenants.view", "tenants.manage", "prospects.view", "prospects.manage",
-            "leases.view", "leases.draft", "documents.view", "documents.upload",
+            "leases.view", "leases.draft", "inspections.view", "inspections.record",
+            "documents.view", "documents.upload",
             "dashboard.view_summary", "audit.view_own",
         ),
     ),
@@ -208,7 +230,7 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         "Maintenance Manager",
         "Runs repairs: creates and assigns jobs, contractors and costs.",
         _caps(
-            "properties.view", "units.view", "units.list_vacant",
+            "properties.view", "units.view", "units.list_vacant", "inspections.view",
             "maintenance.view", "maintenance.view_assigned", "maintenance.create", "maintenance.assign",
             "maintenance.update", "maintenance.close", "maintenance.costs", "contractors.manage",
             "expenses.view", "expenses.submit", "dashboard.view_summary", "audit.view_own",
@@ -228,8 +250,8 @@ ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
         "Viewer",
         "Read-only access to properties, balances and reports.",
         _caps(
-            "properties.view", "units.view", "units.list_vacant", "leases.view",
-            "invoices.view", "payments.view",
+            "properties.view", "units.view", "units.list_vacant", "leases.view", "inspections.view",
+            "meters.view", "invoices.view", "payments.view",
             "reports.view_basic", "reports.view_financial", "reports.export",
             "dashboard.view_summary", "dashboard.view_financial", "audit.view_own",
         ),

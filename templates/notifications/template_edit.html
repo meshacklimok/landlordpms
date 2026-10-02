@@ -1,0 +1,51 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{{ type.label }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 640px">
+  <a href="{% url 'notifications:templates' %}" class="small">← {% trans "Templates" %}</a>
+  <h1 class="h4 mt-2 mb-0">{{ type.label }}</h1>
+  <div class="small text-body-secondary mb-3">{{ channel_label }} · {{ language_label }}{% if custom %} · {% trans "your wording" %}{% endif %}</div>
+
+  <form method="post" class="card shadow-sm mb-3">{% csrf_token %}<div class="card-body">
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <label class="form-label" for="tpl-body">{% trans "Text" %}</label>
+    <textarea name="body" id="tpl-body" rows="5" maxlength="1000" class="form-control font-monospace{% if form.body.errors %} is-invalid{% endif %}" data-sms="{{ is_sms|yesno:'1,' }}">{{ form.body.value|default:'' }}</textarea>
+    {% for e in form.body.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+    {% if is_sms %}<div class="form-text" id="tpl-count"></div>{% endif %}
+
+    <div class="small mt-3 mb-1 text-body-secondary">{% trans "Fields you can use (click to insert):" %}</div>
+    <div class="d-flex flex-wrap gap-1">
+      {% for name in type.placeholders %}<button type="button" class="btn btn-sm btn-outline-secondary py-0" data-insert="{{ name }}"><code>{{ "{" }}{{ name }}{{ "}" }}</code></button>{% endfor %}
+    </div>
+
+    <div class="d-flex gap-2 mt-3">
+      <button class="btn btn-primary" name="action" value="save">{% trans "Save" %}</button>
+      {% if custom %}<button class="btn btn-outline-secondary" name="action" value="reset" formnovalidate onclick="return confirm('{% trans "Go back to the default text?" %}')">{% trans "Back to default" %}</button>{% endif %}
+    </div>
+  </div></form>
+
+  <div class="card shadow-sm"><div class="card-body small">
+    <div class="text-body-secondary mb-1">{% trans "Default text" %}</div>
+    <p class="mb-0 font-monospace">{{ default }}</p>
+  </div></div>
+</div>
+<script>
+(function () {
+  var box = document.getElementById("tpl-body"), count = document.getElementById("tpl-count");
+  document.querySelectorAll("[data-insert]").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var token = "{" + btn.dataset.insert + "}", s = box.selectionStart, e = box.selectionEnd;
+      box.value = box.value.slice(0, s) + token + box.value.slice(e);
+      box.focus(); box.selectionStart = box.selectionEnd = s + token.length;
+      box.dispatchEvent(new Event("input"));
+    });
+  });
+  if (!count) return;
+  var update = function () {
+    var n = box.value.length, parts = n <= 160 ? 1 : Math.ceil(n / 153);
+    count.textContent = n + " {% trans 'characters before fields are filled' %} · ~" + parts + " SMS";
+  };
+  box.addEventListener("input", update); update();
+})();
+</script>
+{% endblock %}

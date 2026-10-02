@@ -1,0 +1,258 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% if lease.number %}{{ lease.number }}{% else %}{% trans "Draft lease" %}{% endif %} · {{ unit.code }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:unit' unit.public_id %}" class="small">← {{ property.name }} · {{ unit.code }}</a>
+  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+    <div>
+      <h1 class="h4 mb-0">{% if lease.number %}{{ lease.number }}{% else %}{% trans "Draft lease" %}{% endif %}</h1>
+      <div class="small text-muted">{{ property.name }} · {% trans "Unit" %} {{ unit.code }} · <code>{{ unit.payment_reference }}</code></div>
+    </div>
+    <div class="d-flex gap-2 align-items-center">
+      {% include "leases/_status.html" %}
+      {% if can_edit_draft %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'leases:edit' lease.public_id %}">{% trans "Edit" %}</a>{% endif %}
+    </div>
+  </div>
+
+  {% if overlap %}
+  <div class="alert alert-warning small">{% blocktrans with start=overlap.start_date|date:"j M Y" %}This unit has a lease from {{ start }} that overlaps these dates. It must end before this one can start.{% endblocktrans %}</div>
+  {% endif %}
+  {% if predecessor %}
+  <div class="alert alert-info small">{% url 'leases:detail' predecessor.public_id as prev_url %}{% blocktrans with number=predecessor.number ends=predecessor_ends|date:"j M Y" %}Activating this lease closes <a href="{{ prev_url }}">{{ number }}</a> on {{ ends }}.{% endblocktrans %}</div>
+  {% endif %}
+  {% if successor %}
+  <div class="alert alert-info small">{% url 'leases:detail' successor.public_id as next_url %}{% blocktrans with unit=successor.unit.code start=successor.start_date|date:"j M Y" %}A <a href="{{ next_url }}">draft follow-on lease</a> for unit {{ unit }} from {{ start }} is waiting to be activated.{% endblocktrans %}</div>
+  {% endif %}
+  {% if lease.notice_given_on and lease.status == "ACTIVE" %}
+  <div class="alert alert-warning small d-flex justify-content-between align-items-center gap-2">
+    <span>{% blocktrans with given=lease.notice_given_on|date:"j M Y" by=lease.move_out_by|date:"j M Y" %}Notice to vacate given on {{ given }}. Move out by {{ by }}.{% endblocktrans %}</span>
+    {% if can_terminate %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="withdraw_notice"><button class="btn btn-link btn-sm p-0">{% trans "Withdraw" %}</button></form>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-5">{% trans "Dates" %}</dt><dd class="col-7">{{ lease.start_date|date:"j M Y" }} – {% if lease.end_date %}{{ lease.end_date|date:"j M Y" }}{% else %}{% trans "periodic" %}{% endif %}</dd>
+      <dt class="col-5">{% trans "Monthly rent" %}</dt><dd class="col-7">{{ lease.currency }} {{ lease.current_rent|floatformat:"2g" }}</dd>
+      <dt class="col-5">{% trans "Deposit" %}</dt><dd class="col-7">{{ lease.currency }} {{ lease.deposit_amount|floatformat:"2g" }}</dd>
+      <dt class="col-5">{% trans "Billing" %}</dt><dd class="col-7">{{ lease.get_billing_frequency_display }}{% if lease.months_per_period > 1 %} · {% blocktrans with c=lease.currency r=lease.rent_per_period|floatformat:"2g" n=lease.months_per_period %}{{ c }} {{ r }} rent per invoice ({{ n }} months){% endblocktrans %}{% endif %}</dd>
+      <dt class="col-5">{% trans "Rent due" %}</dt><dd class="col-7">{% if lease.months_per_period > 1 %}{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of each period's first month, {{ g }} grace days{% endblocktrans %}{% else %}{% blocktrans with d=lease.due_day g=lease.grace_days %}Day {{ d }} of the month, {{ g }} grace days{% endblocktrans %}{% endif %}</dd>
+      <dt class="col-5">{% trans "Notice period" %}</dt><dd class="col-7">{% blocktrans with n=lease.notice_days %}{{ n }} days{% endblocktrans %}</dd>
+      {% if lease.activated_at %}<dt class="col-5">{% trans "Activated" %}</dt><dd class="col-7">{{ lease.activated_at|date:"j M Y" }}</dd>{% endif %}
+      {% if lease.ended_on %}<dt class="col-5">{% trans "Ended on" %}</dt><dd class="col-7">{{ lease.ended_on|date:"j M Y" }}{% if lease.end_reason %} · {{ lease.end_reason }}{% endif %}</dd>{% endif %}
+      {% if lease.previous_lease %}<dt class="col-5">{% trans "Follows" %}</dt><dd class="col-7"><a href="{% url 'leases:detail' lease.previous_lease.public_id %}">{{ lease.previous_lease }}</a></dd>{% endif %}
+      {% for nl in next_leases %}<dt class="col-5">{% trans "Followed by" %}</dt><dd class="col-7"><a href="{% url 'leases:detail' nl.public_id %}">{{ nl }}</a> · {{ nl.unit.code }}</dd>{% endfor %}
+    </dl>
+    {% if lease.terms %}<hr><p class="small mb-0" style="white-space:pre-line">{{ lease.terms }}</p>{% endif %}
+  </div></div>
+
+  {# Tenants #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Tenants" %}</h2>
+    <ul class="list-unstyled small mb-2">
+      {% for lt in lease.lease_tenants.all %}
+      <li class="d-flex justify-content-between align-items-center py-1 gap-2">
+        <span>{% if can_see_tenants %}<a href="{% url 'tenants:detail' lt.tenant.public_id %}">{{ lt.tenant.name }}</a>{% else %}{{ lt.tenant.name }}{% endif %} · {{ lt.tenant.phone }}{% if lt.is_primary %} <span class="badge text-bg-light border">{% trans "Primary" %}</span>{% endif %}</span>
+        {% if can_payers and not lt.is_primary %}
+        <span class="d-flex gap-2">
+          <form method="post">{% csrf_token %}<input type="hidden" name="action" value="make_primary"><input type="hidden" name="tenant" value="{{ lt.tenant.public_id }}"><button class="btn btn-link btn-sm p-0">{% trans "Make primary" %}</button></form>
+          {% if can_edit_draft %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove_tenant"><input type="hidden" name="tenant" value="{{ lt.tenant.public_id }}"><button class="btn btn-link btn-sm p-0 text-danger">{% trans "Remove" %}</button></form>{% endif %}
+        </span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% if tenant_form %}
+    <form method="post" class="d-flex gap-2 align-items-start">{% csrf_token %}
+      <input type="hidden" name="action" value="add_tenant">
+      <div class="flex-grow-1">
+        <select name="tenant" class="form-select form-select-sm{% if tenant_form.tenant.errors %} is-invalid{% endif %}" aria-label="{% trans 'Co-tenant' %}">
+          <option value="">{% trans "Add a co-tenant…" %}</option>
+          {% for value, label in tenant_form.fields.tenant.choices %}{% if value %}<option value="{{ value }}">{{ label }}</option>{% endif %}{% endfor %}
+        </select>
+        {% for e in tenant_form.tenant.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        {% for e in tenant_form.non_field_errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      </div>
+      <button class="btn btn-sm btn-outline-primary">{% trans "Add" %}</button>
+    </form>
+    {% endif %}
+  </div></div>
+
+  {# Rent history #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Rent" %}</h2>
+    <table class="table table-sm small mb-2">
+      <thead><tr><th>{% trans "From" %}</th><th class="text-end">{% trans "Monthly rent" %}</th><th>{% trans "Reason" %}</th></tr></thead>
+      <tbody>
+        {% for rc in rent_changes %}<tr><td>{{ rc.effective_from|date:"j M Y" }}</td><td class="text-end">{{ rc.amount|floatformat:"2g" }}</td><td>{{ rc.reason }}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    {% if rent_form %}
+    <details {% if rent_form.errors %}open{% endif %}><summary class="small">{% trans "Record a rent change" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="rent_change">
+        {% with form=rent_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Save rent change" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {# Recurring charges #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Monthly charges" %}</h2>
+    {% if charges %}
+    <table class="table table-sm small mb-2">
+      <thead><tr><th>{% trans "Charge" %}</th><th class="text-end">{% trans "Amount" %}</th><th>{% trans "Dates" %}</th><th></th></tr></thead>
+      <tbody>
+        {% for c in charges %}
+        <tr>
+          <td>{{ c.charge_type.name }}</td>
+          <td class="text-end">{{ c.amount|floatformat:"2g" }}</td>
+          <td>{{ c.active_from|date:"j M Y" }} – {% if c.active_to %}{{ c.active_to|date:"j M Y" }}{% else %}{% trans "ongoing" %}{% endif %}</td>
+          <td class="text-end">{% if can_charges and not c.active_to %}
+            <form method="post" class="d-inline-flex gap-1">{% csrf_token %}<input type="hidden" name="action" value="end_charge"><input type="hidden" name="charge" value="{{ c.pk }}">
+              {% if lease.is_draft %}<button class="btn btn-link btn-sm p-0 text-danger">{% trans "Remove" %}</button>
+              {% else %}<input type="date" name="active_to" class="form-control form-control-sm" value="{{ today|date:'Y-m-d' }}" aria-label="{% trans 'Last day' %}"><button class="btn btn-link btn-sm p-0">{% trans "End" %}</button>{% endif %}
+            </form>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="small text-muted">{% trans "No monthly charges. Rent is billed on its own." %}</p>{% endif %}
+    {% if charge_form %}
+    <details {% if charge_form.errors %}open{% endif %}><summary class="small">{% trans "Add a charge" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="add_charge">
+        {% with form=charge_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Add charge" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {# Payers #}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Other phones that pay" %}</h2>
+    <p class="small text-muted">{% trans "Payments from these numbers will be matched to this lease, e.g. an employer or spouse." %}</p>
+    {% if payers %}
+    <ul class="list-unstyled small">
+      {% for p in payers %}
+      <li class="d-flex justify-content-between align-items-center py-1">
+        <span>{{ p.phone }}{% if p.name %} · {{ p.name }}{% endif %}</span>
+        {% if can_payers %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="remove_payer"><input type="hidden" name="payer" value="{{ p.pk }}"><button class="btn btn-link btn-sm p-0 text-danger">{% trans "Remove" %}</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if payer_form %}
+    <details {% if payer_form.errors %}open{% endif %}><summary class="small">{% trans "Add a phone" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="add_payer">
+        {% with form=payer_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Add phone" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {% if account %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "Account" %}</h2>
+      <a class="small" href="{% url 'billing:lease_account' lease.public_id %}">{% trans "Statement and deposits" %} →</a>
+    </div>
+    <dl class="row small mb-0 mt-2">
+      <dt class="col-5">{% if account.balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</dt><dd class="col-7">{{ account.balance|money:lease.currency }}</dd>
+      <dt class="col-5">{% trans "Deposit held" %}</dt><dd class="col-7">{{ account.deposit_held|money:lease.currency }}</dd>
+    </dl>
+    {% if can_request_mpesa %}<a class="btn btn-sm btn-outline-success mt-2" href="{% url 'mpesa:request' lease.public_id %}"><i class="bi bi-phone-vibrate"></i> {% trans "Request M-Pesa payment" %}</a>{% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if condition_reports %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "Condition reports" %}</h2>
+      <a class="small" href="{% url 'inspections:register' unit.public_id %}">{% trans "Unit items" %} →</a>
+    </div>
+    <ul class="list-unstyled small mb-0 mt-2">
+      {% for c in condition_reports %}
+      <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+        <span>{{ c.label }}</span>
+        {% if c.report %}<a href="{% url 'inspections:report' c.report.public_id %}">{{ c.report.get_status_display }} · {{ c.report.inspected_on|date:"j M Y" }}</a>
+        {% elif c.can_start %}<form method="post" action="{% url 'inspections:start' lease.public_id c.slug %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% trans "Start" %}</button></form>
+        {% else %}<span class="text-muted">{% trans "None" %}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
+  {% if can_issue_letter %}
+  <div class="card shadow-sm mb-3"><div class="card-body d-flex justify-content-between align-items-center gap-2">
+    <div>
+      <h2 class="h6 mb-0">{% trans "Tenancy letter" %}</h2>
+      <div class="small text-muted">{% trans "A PDF of the tenancy and payment record, for a new landlord or a lender." %}</div>
+    </div>
+    <a class="btn btn-sm btn-outline-primary text-nowrap" href="{% url 'letters:lease' lease.public_id %}">{% trans "Letters" %}</a>
+  </div></div>
+  {% endif %}
+
+  {% if can_terminate or can_renew or can_transfer %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Lease actions" %}</h2>
+    {% if renew_form %}
+    <details {% if renew_form.errors %}open{% endif %}><summary class="small">{% trans "Renew" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="renew">
+        {% with form=renew_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Draft renewal" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if transfer_form %}
+    <details {% if transfer_form.errors %}open{% endif %}><summary class="small">{% trans "Move to another unit" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="transfer">
+        {% with form=transfer_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Draft transfer" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if notice_form %}
+    <details {% if notice_form.errors %}open{% endif %}><summary class="small">{% if lease.notice_given_on %}{% trans "Change notice to vacate" %}{% else %}{% trans "Record notice to vacate" %}{% endif %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="notice">
+        {% with form=notice_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-primary">{% trans "Save notice" %}</button>
+      </form>
+    </details>
+    {% endif %}
+    {% if end_form %}
+    <details {% if end_form.errors %}open{% endif %}><summary class="small text-danger">{% trans "End or terminate" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="end">
+        {% with form=end_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-sm btn-outline-danger" onclick="return confirm('{% trans "End this lease? This cannot be undone." %}')">{% trans "End lease" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if can_activate %}
+  <form method="post" class="mb-2">{% csrf_token %}
+    <input type="hidden" name="action" value="activate">
+    <button class="btn btn-primary" onclick="return confirm('{% trans "Activate this lease? It gets a lease number and billing starts from its start date." %}')">{% trans "Activate lease" %}</button>
+  </form>
+  {% endif %}
+  {% if can_edit_draft %}
+  <p class="small text-muted">{% trans "This draft bills nothing until it is activated." %}</p>
+  <form method="post" class="mt-3">{% csrf_token %}
+    <input type="hidden" name="action" value="delete">
+    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Delete this draft lease?" %}')">{% trans "Delete draft" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

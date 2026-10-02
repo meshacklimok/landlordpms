@@ -1,0 +1,104 @@
+{% extends "mpesa/_base.html" %}{% load i18n money access %}
+{% block title %}{{ tx.trans_id }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 760px">
+  <a href="{% if tx.status == 'UNMATCHED' or tx.status == 'FLAGGED' %}{% if can_match %}{% url 'mpesa:inbox' %}{% else %}{% url 'mpesa:transactions' %}{% endif %}{% else %}{% url 'mpesa:transactions' %}{% endif %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "M-Pesa" %}</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
+    <div>
+      <h1 class="h3 mb-0"><code class="text-body">{{ tx.trans_id }}</code> {% include "mpesa/_status.html" %}</h1>
+      <div class="small text-body-secondary">{{ tx.paid_at|date:"j M Y, H:i" }} · {{ tx.payment_account.display_name }}</div>
+    </div>
+    <div class="h3 num mb-0">{{ tx.amount|money:currency }}</div>
+  </div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Payer" %}</dt><dd class="col-sm-8">{{ tx.payer_name|default:"—" }}{% if tx.payer_phone %} · {{ tx.payer_phone }}{% elif tx.msisdn_hash %} · <span class="text-body-secondary">{% trans "number hidden by Safaricom" %}</span>{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Account no. typed" %}</dt><dd class="col-sm-8">{% if tx.bill_ref %}<code>{{ tx.bill_ref }}</code>{% else %}—{% endif %}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Type" %}</dt><dd class="col-sm-8">{{ tx.trans_type|default:"—" }} ({{ tx.get_source_display }}){% if tx.shortcode %} · {% trans "shortcode" %} {{ tx.shortcode }}{% endif %}</dd>
+      {% if tx.note %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Note" %}</dt><dd class="col-sm-8">{{ tx.note }}</dd>{% endif %}
+      {% if tx.payment %}
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Payment" %}</dt>
+      <dd class="col-sm-8">
+        {% if membership|can:"payments.view" %}<a href="{% url 'payments:detail' tx.payment.public_id %}">{{ tx.payment.lease.unit.property.name }} · {{ tx.payment.lease.unit.code }} · {{ tx.payment.lease.number }}</a>
+        {% else %}{{ tx.payment.lease.unit.property.name }} · {{ tx.payment.lease.unit.code }}{% endif %}
+        <div class="text-body-secondary">{% if tx.matched_by == "REFERENCE" %}{% trans "Matched automatically by account number" %}{% else %}{% blocktrans with who=tx.matched_by_user|default:"—" %}Matched by {{ who }}{% endblocktrans %}{% endif %}{% if tx.matched_at %} · {{ tx.matched_at|date:"j M Y, H:i" }}{% endif %}</div>
+      </dd>
+      {% endif %}
+    </dl>
+  </div></div>
+
+  {% if can_match and tx.status == "UNMATCHED" %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Match to a lease" %}</h2>
+    <p class="small text-body-secondary">{% trans "The payment is confirmed at once, pays the oldest invoices first and gets a receipt. Anything over the balance stays as credit." %}</p>
+    {% if tx.suggested_lease %}
+    <form method="post" class="alert alert-success d-flex flex-wrap align-items-center gap-2 py-2" data-confirm="{% blocktrans with lease=tx.suggested_lease.number %}Match this payment to {{ lease }}?{% endblocktrans %}">{% csrf_token %}
+      <input type="hidden" name="action" value="accept">
+      <div class="flex-grow-1 small"><strong>{% trans "Suggested:" %}</strong> {{ tx.suggested_lease.primary_tenant.name|default:"—" }} · {{ tx.suggested_lease.unit.property.name }} · {{ tx.suggested_lease.unit.code }} <span class="text-body-secondary">({% trans "the payer's number is on this lease" %})</span></div>
+      <button class="btn btn-sm btn-success"><i class="bi bi-check2"></i> {% trans "Accept" %}</button>
+    </form>
+    {% endif %}
+    <form method="get" class="mb-2" role="search">
+      <div class="input-group">
+        <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+        <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Tenant, unit, account reference or lease' %}" aria-label="{% trans 'Search leases' %}">
+        <button class="btn btn-dark">{% trans "Find" %}</button>
+      </div>
+    </form>
+    <div class="list-group">
+      {% for lease in leases %}
+      <form method="post" class="list-group-item d-flex align-items-center gap-3" data-confirm="{% blocktrans with lease=lease.number %}Match this payment to {{ lease }}?{% endblocktrans %}">{% csrf_token %}
+        <input type="hidden" name="action" value="match"><input type="hidden" name="lease" value="{{ lease.public_id }}">
+        <div class="flex-grow-1 min-w-0">
+          <div class="fw-semibold text-truncate">{{ lease.primary_tenant.name|default:"—" }}</div>
+          <div class="small text-body-secondary text-truncate">{{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} · <code>{{ lease.unit.payment_reference }}</code> · {{ lease.number }}</div>
+        </div>
+        <div class="text-end small">
+          {% if lease.balance > 0 %}<span class="num text-danger">{{ lease.balance|money:lease.currency }}</span> {% trans "owed" %}
+          {% elif lease.balance < 0 %}<span class="num text-success">{{ lease.balance|absolute|money:lease.currency }}</span> {% trans "in credit" %}
+          {% else %}<span class="text-body-secondary">{% trans "Settled" %}</span>{% endif %}
+        </div>
+        <button class="btn btn-sm btn-outline-success">{% trans "Match" %}</button>
+      </form>
+      {% empty %}
+      <div class="list-group-item text-center text-body-secondary small py-3">{% if q %}{% blocktrans %}No lease matches “{{ q }}”.{% endblocktrans %}{% else %}{% trans "No leases to match to." %}{% endif %}</div>
+      {% endfor %}
+    </div>
+    {% if more %}<p class="small text-body-secondary mt-2 mb-0">{% trans "Showing the first 10. Search to narrow it down." %}</p>{% endif %}
+  </div></div>
+  {% endif %}
+
+  {% if can_match and tx.status == "UNMATCHED" or can_match and tx.status == "FLAGGED" %}
+  <form method="post" class="card shadow-sm mb-3" novalidate>{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="ignore">
+    <h2 class="h6">{% trans "Ignore" %}</h2>
+    <p class="small text-body-secondary">{% trans "For money that is not rent, was refunded, or was sent by mistake. It leaves the inbox but stays on record." %}</p>
+    <div class="input-group">
+      <input type="text" name="reason" maxlength="200" required class="form-control" placeholder="{% trans 'Why? e.g. refunded to the sender' %}" aria-label="{% trans 'Reason' %}">
+      <button class="btn btn-outline-secondary">{% trans "Ignore" %}</button>
+    </div>
+  </div></form>
+  {% elif can_match and tx.status == "IGNORED" %}
+  <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="restore">
+    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-counterclockwise"></i> {% trans "Put back in the inbox" %}</button>
+  </form>
+  {% endif %}
+
+  {% if earlier %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Other payments with this M-Pesa code" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for p in earlier %}
+      <li>{% if membership|can:"payments.view" %}<a href="{% url 'payments:detail' p.public_id %}">{{ p.lease.unit.property.name }} · {{ p.lease.unit.code }}</a>{% else %}{{ p.lease.unit.property.name }} · {{ p.lease.unit.code }}{% endif %} · {{ p.amount|money:p.lease.currency }} · {{ p.get_status_display }}{% if p.reversal_reason %} ({{ p.reversal_reason }}){% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
+  <details class="small">
+    <summary class="text-body-secondary">{% trans "What Safaricom sent" %}</summary>
+    <pre class="bg-body-tertiary p-2 rounded mt-2 mb-0"><code>{{ tx.raw_payload|pprint }}</code></pre>
+  </details>
+</div>
+{% endblock %}

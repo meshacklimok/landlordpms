@@ -1,0 +1,22 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "My home" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4 mb-3">{% trans "My home" %}</h1>
+  {% for summary in summaries %}
+  <div class="mb-4">
+    <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
+      <div>
+        <div class="fw-semibold">{{ summary.lease.unit.property.name }} · {{ summary.lease.unit.code }}</div>
+        <div class="small text-muted">{{ summary.lease.organization.name }} · {{ summary.lease.get_status_display }}</div>
+      </div>
+      <a class="small text-nowrap" href="{% url 'portal:lease' summary.lease.public_id %}">{% trans "Statement and receipts" %} →</a>
+    </div>
+    {% include "portal/_summary.html" %}
+    {% if summary.lease.status == "ACTIVE" %}<a class="small" href="{% url 'portal:repair_create' summary.lease.public_id %}">{% trans "Something broken? Report a problem" %} →</a>{% endif %}
+  </div>
+  {% empty %}
+  <p class="text-muted">{% trans "You have no leases to show yet." %}</p>
+  {% endfor %}
+</div>
+{% endblock %}
