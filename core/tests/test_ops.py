@@ -42,7 +42,8 @@ def test_a_failed_job_is_recorded_and_raised(monkeypatch):
 
 
 @pytest.mark.parametrize("command", ["send_due_messages", "billing_daily", "mpesa_daily", "subscriptions_daily",
-                                     "purge_otp_codes", "purge_import_previews"])
+                                     "purge_otp_codes", "purge_import_previews", "maintenance_alerts",
+                                     "reports_daily", "send_webhooks"])
 def test_every_scheduled_command_is_a_known_job(command):
     call_command(command, stdout=StringIO())
     assert JobRun.objects.filter(name=command, ok=True).exists()
@@ -57,9 +58,10 @@ def test_late_failed_and_missing_jobs_are_problems():
     JobRun.objects.create(name="billing_daily", started_at=now, finished_at=now, ok=False, error="x")
     later = now + datetime.timedelta(hours=1)
     lines = jobs.problems(later)
-    assert len(lines) == 2  # billing_daily failed; send_due_messages is 60 minutes old
+    assert len(lines) == 3  # billing_daily failed; send_due_messages and send_webhooks are 60 minutes old
     assert any(line.startswith("billing_daily: last run failed") for line in lines)
     assert any(line.startswith("send_due_messages: no successful run") for line in lines)
+    assert any(line.startswith("send_webhooks: no successful run") for line in lines)
     assert jobs.job_states(later)["billing_daily"] == "failed"
 
 

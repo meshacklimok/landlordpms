@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Deposits" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Deposits" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Money held for tenants. "Held" is as of today; the movements are {{ p }}. Deposits are not income.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if not report.enabled %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "This organization does not hold deposits." %}</div></div>
+{% else %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Held now" %}</div><div class="stat-value num">{{ report.held|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=report.holding %}on {{ n }} lease{% plural %}on {{ n }} leases{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Taken in the period" %}</div><div class="stat-value num">{{ report.received|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with a=report.refunded|money:cur %}{{ a }} refunded{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Deducted in the period" %}</div><div class="stat-value num">{{ report.deducted|money:cur }}</div>
+    <div class="stat-sub">{% if report.deduction_share is None %}{% trans "nothing returned or deducted" %}{% else %}{% blocktrans with p=report.deduction_share|percent %}{{ p }} of what left deposits{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "To settle" %}</div><div class="stat-value num">{{ report.to_settle_total|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=report.to_settle_count %}{{ n }} ended lease still holding money{% plural %}{{ n }} ended leases still holding money{% endblocktrans %}</div></div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  {% if specs.held %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "What is held" %}</h2><p class="chart-sub">{% trans "By kind of deposit." %}</p>
+    <div class="chart-box donut"><canvas data-chart="chart-held" role="img" aria-label="{% trans 'Deposits held by kind. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+  {% if specs.moves %}<div class="col-12 col-lg-7"><div class="chart-card">
+    <h2>{% trans "Taken and paid out" %}</h2><p class="chart-sub">{% trans "Deposits received each month, and refunded or deducted." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-moves" role="img" aria-label="{% trans 'Deposits taken and paid out by month. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+</section>
+{% if specs.held %}{{ specs.held|json_script:"chart-held" }}{% endif %}
+{% if specs.moves %}{{ specs.moves|json_script:"chart-moves" }}{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-md-5">
+    <h2 class="h6">{% trans "Held by kind" %}</h2>
+    {% if report.by_type %}<div class="table-responsive"><table class="table table-sm small"><tbody>{% for label, amount in report.by_type %}<tr><td>{{ label }}</td><td class="text-end num">{{ amount|money:cur }}</td></tr>{% endfor %}</tbody></table></div>
+    {% else %}<p class="small text-body-secondary">{% trans "No deposits held." %}</p>{% endif %}
+  </div>
+  <div class="col-md-7">
+    <h2 class="h6">{% trans "By month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Taken" %}</th><th class="text-end">{% trans "Returned or deducted" %}</th></tr></thead>
+      <tbody>{% for label, a, b in report.months %}<tr><td>{{ label }}</td><td class="text-end num">{{ a|money:cur }}</td><td class="text-end num">{{ b|money:cur }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if report.corrections %}<p class="small text-body-secondary">{% blocktrans with a=report.corrections|money:cur %}Corrections in the period: {{ a }}.{% endblocktrans %}</p>{% endif %}
+  </div>
+</div>
+
+{% for title, note, lines in lists %}
+<h2 class="h6">{{ title }}</h2>
+<p class="small text-body-secondary">{{ note }}</p>
+{% if lines %}
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Unit" %}</th>{% if report.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}<th class="text-end">{% trans "Held" %}</th><th class="text-end">{% trans "Days" %}</th><th>{% trans "Due by" %}</th></tr></thead>
+  <tbody>{% for x in lines %}<tr>
+    <td><a href="{% url 'leases:detail' x.lease.public_id %}">{{ x.lease.number }}</a></td>
+    <td>{{ x.lease.unit.property.name }} · {{ x.lease.unit.code }}</td>
+    {% if report.show_tenants %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+    <td class="text-end num text-nowrap">{{ x.held|money:cur }}</td><td class="text-end">{{ x.days }}</td>
+    <td class="text-nowrap">{% if x.due_on %}{{ x.due_on|date:"j M Y" }}{% if x.overdue %} <span class="badge text-bg-danger">{% trans "Overdue" %}</span>{% endif %}{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="small text-body-secondary mb-3">{% trans "None." %}</p>{% endif %}
+{% endfor %}
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. Held is the sum of every deposit entry to date. Days are counted since the lease ended, or until it ends.{% endblocktrans %}</p>
+{% endif %}
+{% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

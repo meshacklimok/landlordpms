@@ -35,7 +35,7 @@ Legend: **BUILD** = code now · **DESIGN-IN** = put the column/relationship in t
 |---|---|
 | Joint ownership / agency clients | Nullable `owner` on Property later; keep Property→Organization single FK |
 | Metered utilities | `ChargeType` and invoice lines already generic |
-| Late fees | Charge type LATE_FEE, lease `grace_days` |
+| Late fees | Charge type LATE_FEE, lease `grace_days`; built in D-129 (`LateFee`, staff approve each) |
 | Multi-currency | `currency` column with default KES |
 | Documents | Files linked via generic FK later; `visibility` concept agreed |
 | Subscriptions | Separate app; `entitlements` service hook points in create-flows |
@@ -86,5 +86,5 @@ A pilot landlord can: sign up → create an organization → add a property with
 | Tier 3 (design-in) | `Property.category = ESTATE`, `COMMITTEE` role template, shared-cost split | Estates and HOAs |
 | Tier 3 (design-in) | Branch and branding fields on Organization | Agencies, white-label |
 | Tier 3 (design-in) | Double-entry chart of accounts | Doc 14 D1 |
-| Tier 4 | E-signature, WhatsApp AI assistant, bank APIs, QuickBooks/Zoho adapters | |
+| Tier 4 | WhatsApp AI assistant, bank APIs, a direct accounting sync (e-signature built in D-118) | Sync only for the package pilot agencies name; the CSV export covers launch (D-075 item 7) |
 | Skip | Short-stay/Airbnb, credit screening, public marketplace | |

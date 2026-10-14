@@ -1,0 +1,69 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Maintenance report" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Maintenance" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Requests reported {{ p }}. "Open" and "overdue" are as of now, so a request reported in this period and still open is counted even if the period has ended. Average time to resolve counts only requests that were finished.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.total %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Reported" %}</div><div class="stat-value">{{ report.total }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.resolved %}{{ n }} resolved{% endblocktrans %}{% if report.cancelled %} · {% blocktrans with n=report.cancelled %}{{ n }} cancelled, not counted{% endblocktrans %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Open now" %}</div><div class="stat-value">{{ report.open_now }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.overdue_now %}{{ n }} overdue{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Average time to resolve" %}</div>
+    <div class="stat-value">{% if report.avg_hours is None %}—{% else %}{{ report.avg_hours }} {% trans "h" %}{% endif %}</div>
+    <div class="stat-sub">{% if report.resolved %}{% blocktrans with n=report.fixed_in_time_share|percent %}{{ n }} fixed by the fix-by time{% endblocktrans %}{% else %}{% trans "nothing finished yet" %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Repair costs" %}</div><div class="stat-value num">{{ report.cost|money:cur }}</div>
+    <div class="stat-sub">{% trans "expenses linked to these requests" %}</div>
+  </div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  {% if specs.months %}<div class="col-12 col-lg-7"><div class="chart-card">
+    <h2>{% trans "Workload by month" %}</h2><p class="chart-sub">{% trans "Requests reported, and how many of them have been resolved." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Requests reported and resolved each month. The same figures are in the tables below.' %}"></canvas></div>
+  </div></div>{% endif %}
+  {% if specs.kinds %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "What goes wrong" %}</h2><p class="chart-sub">{% trans "Requests by kind." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-kinds" role="img" aria-label="{% trans 'Requests by kind. The same figures are in the tables below.' %}"></canvas></div>
+  </div></div>{% endif %}
+  {% if specs.costs %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "Repair costs by property" %}</h2><p class="chart-sub">{% trans "Approved and waiting expenses linked to requests." %}</p>
+    <div class="chart-box donut"><canvas data-chart="chart-costs" role="img" aria-label="{% trans 'Repair costs by property. The same figures are in the tables below.' %}"></canvas></div>
+  </div></div>{% endif %}
+</section>
+{% if specs.months %}{{ specs.months|json_script:"chart-months" }}{% endif %}
+{% if specs.kinds %}{{ specs.kinds|json_script:"chart-kinds" }}{% endif %}
+{% if specs.costs %}{{ specs.costs|json_script:"chart-costs" }}{% endif %}
+
+{% include "reports/_maintenance_table.html" with title=_("By priority") rows=report.by_priority %}
+{% include "reports/_maintenance_table.html" with title=_("By kind") rows=report.by_kind %}
+{% include "reports/_maintenance_table.html" with title=_("By property") rows=report.by_property %}
+{% if report.by_supplier %}{% include "reports/_maintenance_table.html" with title=_("By supplier or contractor") rows=report.by_supplier %}{% endif %}
+
+<h2 class="h6 mt-4">{% trans "Repeated problems" %}</h2>
+{% if report.repeats %}
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Property" %}</th><th>{% trans "Unit" %}</th><th>{% trans "Kind" %}</th><th class="text-end">{% trans "Requests" %}</th></tr></thead>
+  <tbody>{% for r in report.repeats %}<tr><td>{{ r.property }}</td><td>{{ r.unit }}</td><td>{{ r.kind }}</td><td class="text-end">{{ r.count }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="small text-body-secondary">{% trans "No unit had three or more requests of the same kind in this period." %}</p>{% endif %}
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. Costs are expenses by cash paid, not accounting results.{% endblocktrans %}</p>
+
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">
+  {% trans "No maintenance requests were reported in this period. Choose another period, or record requests under Maintenance to see this report." %}
+</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}

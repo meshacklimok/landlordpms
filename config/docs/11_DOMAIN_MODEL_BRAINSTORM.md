@@ -201,7 +201,7 @@ Rules: private object storage, signed URLs, size and type limits, permission che
 - `Expense(org, property, category, amount, date, receipt, recorded_by)` → property net income = collected rent − expenses.
 
 ## 15. Subscriptions (SaaS billing — separate app)
-`Plan`, `Subscription(org, plan, status, period)`, `UsageCounter`. **Landlord pays LandlordPMS**, which is a totally different money flow from tenant rent. Core models never contain plan logic. Limits are enforced by one `entitlements` service (units, staff, payment accounts, SMS, AI usage) called from the places that create things.
+`Plan`, `Subscription(org, plan, status, period)`, `UsageCounter`. **Landlord pays NyumbaPMS**, which is a totally different money flow from tenant rent. Core models never contain plan logic. Limits are enforced by one `entitlements` service (units, staff, payment accounts, SMS, AI usage) called from the places that create things.
 
 ## 16. Onboarding flow
 ```
@@ -253,13 +253,13 @@ Sees only their own: profile, unit, lease, current bills, payment history, recei
 
 | | **A. Platform billing** | **B. Property financial records** | **C. Property expenses** |
 |---|---|---|---|
-| Story | Landlord pays LandlordPMS | Tenant pays landlord (rent, deposits, utilities) | Landlord pays a supplier/contractor |
-| Issuer / payee | LandlordPMS (our company) | The organization | Supplier or contractor |
+| Story | Landlord pays NyumbaPMS | Tenant pays landlord (rent, deposits, utilities) | Landlord pays a supplier/contractor |
+| Issuer / payee | NyumbaPMS (our company) | The organization | Supplier or contractor |
 | Customer / payer | The organization (billing contact, KRA PIN) | The tenant | The organization |
 | App | `subscriptions` | `billing`, `payments`, `mpesa` | `expenses` (+ `maintenance` link) |
 | Core records | Plan, Subscription, SubscriptionInvoice, SubscriptionPayment, PlatformReceipt, SmsWalletTopUp, UsageCounter | Invoice, InvoiceLine, LedgerEntry, Payment, PaymentAllocation, Receipt, MpesaTransaction | Expense, ExpenseCategory, Supplier, optional link to MaintenanceRequest, attachments |
-| Money goes to | LandlordPMS's own Paybill/bank | The organization's payment accounts | Supplier (M-Pesa, bank, cash) |
-| Tax treatment | LandlordPMS's own VAT/eTIMS obligations on its invoices **[VERIFY]** | Landlord's MRI or VAT obligations **[VERIFY]** | Expense deductions and supplier withholding **[VERIFY]** |
+| Money goes to | NyumbaPMS's own Paybill/bank | The organization's payment accounts | Supplier (M-Pesa, bank, cash) |
+| Tax treatment | NyumbaPMS's own VAT/eTIMS obligations on its invoices **[VERIFY]** | Landlord's MRI or VAT obligations **[VERIFY]** | Expense deductions and supplier withholding **[VERIFY]** |
 | Numbering | Platform sequences (`LPM-INV-…`, `LPM-RCT-…`) owned by us | Per-organization sequences (`INV-…`, `RCT-…`) | Per-organization (`EXP-…`) |
 | Appears in | Subscription page, platform revenue reports | Tenant statements, rent reports, dashboards | Expense reports, property net income |
 

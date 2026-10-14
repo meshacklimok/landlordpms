@@ -15,6 +15,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from core.money import format_money
+from properties.models import format_percent
 
 from .income import Pack
 from .statements import Statement
@@ -130,8 +131,11 @@ def render_statement(st: Statement) -> bytes:
         summary.append([_("Less management fee"), format_money(-st.fee, c)])
     summary += [
         [_("Less expenses"), format_money(-st.expenses, c)],
-        [_("Due to the owner"), format_money(st.due, c)],
     ]
+    if st.joint:
+        summary += [[_("Due on the properties"), format_money(st.whole_due, c)],
+                    [_("Less other owners' shares"), format_money(-st.others_share, c)]]
+    summary.append([_("Due to the owner"), format_money(st.due, c)])
     summary_table = _table(summary, first_width=80 * mm)
     paid = []
     if st.shows_remittances:
@@ -160,17 +164,24 @@ def render_statement(st: Statement) -> bytes:
         title = block.property.name
         if block.rentable:
             title += " · " + _("%(o)s of %(r)s units occupied") % {"o": block.occupied, "r": block.rentable}
-        if block.fee_percent:
-            title += " · " + _("fee %(pct)s%% of rent") % {"pct": f"{block.fee_percent:g}"}
+        if block.fee_label:
+            title += " · " + _("fee %(fee)s") % {"fee": block.fee_label}
+        if block.joint:
+            title += " · " + _("owned jointly: %(pct)s%% share") % {"pct": format_percent(block.share)}
         rows = [head] + [[line.lease.unit.code, line.tenant, _n(line.billed), _n(line.collected), _n(line.deposit),
                           _n(line.balance)] for line in block.lines]
         rows.append([_("Total"), "", _n(block.billed), _n(block.collected), _n(block.deposit), _n(block.balance)])
         table = _table(rows, first_width=22 * mm)
         table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "LEFT")]))
         story += [Spacer(1, 6 * mm), _p(title, TITLE), table]
-        if block.fee_percent:
-            story.append(_p(_("Management fee: %(fee)s on rent collected of %(rent)s.") % {
-                "fee": format_money(block.fee, c), "rent": format_money(block.rent, c)}, SMALL))
+        if block.fee_label:
+            story.append(_p(_("Management fee: %(fee)s (%(how)s) on rent collected of %(rent)s.") % {
+                "fee": format_money(block.fee, c), "how": block.fee_label, "rent": format_money(block.rent, c)},
+                SMALL))
+        if block.joint:
+            story.append(_p(_("Due on the property: %(whole)s. The owner's %(pct)s%% share: %(due)s.") % {
+                "whole": format_money(block.whole_due, c), "pct": format_percent(block.share),
+                "due": format_money(block.due, c)}, SMALL))
         if block.expenses:
             rows = [[_("Expense"), _("Date paid"), _("Category"), _("Paid to"), _("Amount")]]
             rows += [[e.description[:60], f"{e.paid_on:%d %b}", e.category.name[:30],

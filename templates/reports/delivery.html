@@ -1,0 +1,44 @@
+{% extends "base.html" %}{% load i18n money reports billing %}
+{% block title %}{% trans "Message delivery" %}{% endblock %}
+{% block content %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Message delivery" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Messages made {{ p }}, by channel and outcome. Messages skipped on purpose (opted out, no consent, no number) are not counted as failures.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" with properties=None %}
+
+{% if report.total %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Messages" %}</div><div class="stat-value">{{ report.total }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.attempted %}{{ n }} tried{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Failed" %}</div><div class="stat-value">{{ report.failed }}</div>
+    <div class="stat-sub">{{ report.failure_rate|percent }} {% trans "of those tried" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Provider cost" %}</div><div class="stat-value num">{{ report.cost }}</div>
+    <div class="stat-sub">{% trans "as reported by the provider, where given" %}</div></div></div></div>
+</div>
+{% if specs.channels %}<div class="chart-card mb-3">
+  <h2>{% trans "Outcome by channel" %}</h2>
+  <div class="chart-box"><canvas data-chart="chart-channels" role="img" aria-label="{% trans 'Messages by channel and outcome. The same figures are in the table below.' %}"></canvas></div>
+</div>{{ specs.channels|json_script:"chart-channels" }}{% endif %}
+
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Channel" %}</th><th class="text-end">{% trans "Total" %}</th>
+    {% for s, label in status.choices %}<th class="text-end">{{ label }}</th>{% endfor %}
+    <th class="text-end">{% trans "Failure rate" %}</th></tr></thead>
+  <tbody>{% for c in report.channels %}<tr><td>{{ c.label }}</td><td class="text-end">{{ c.total }}</td>
+    {% for s, label in status.choices %}<td class="text-end">{{ c.counts|bucket:s }}</td>{% endfor %}
+    <td class="text-end">{{ c.failure_rate|percent }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<div class="row g-3">
+  {% if report.skipped %}<div class="col-12 col-md-6"><h2 class="h6">{% trans "Why messages were skipped" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for reason, n in report.skipped %}<tr><td>{{ reason }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+  {% if report.errors %}<div class="col-12 col-md-6"><h2 class="h6">{% trans "Errors on failed messages" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for reason, n in report.errors %}<tr><td>{{ reason }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>{% endif %}
+</div>
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No messages were made in this period." %}</div></div>
+{% endif %}
+{% endblock %}

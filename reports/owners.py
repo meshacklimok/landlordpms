@@ -12,6 +12,7 @@ from decimal import Decimal
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
+from core.mail import MESSAGES, mailer_for
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -20,10 +21,12 @@ from django.utils.translation import ngettext
 from accounts.models import Membership
 from accounts.permissions import accessible_property_ids, can, require
 from audit.services import record
+from core import charts
+from core.ids import uuid_or_none
 from core.money import ZERO, format_money, round_money
 from core.numbering import next_number
 from notifications.delivery import notify
-from properties.models import Property, PropertyOwner
+from properties.models import Property, PropertyOwner, owner_ids_of
 
 from . import statements
 from .metrics import add_months, month_end, month_start
@@ -39,7 +42,8 @@ def visible_owner(membership: Membership, public_id) -> PropertyOwner | None:
     """The owner, if the member sees all of their properties and may see financial reports."""
     if not can(membership, "reports.view_financial"):
         return None
-    owner = PropertyOwner.objects.filter(organization=membership.organization, public_id=public_id).first()
+    owner = PropertyOwner.objects.filter(organization=membership.organization,
+                                         public_id=uuid_or_none(public_id)).first()
     if owner is None or not statements.fully_sees(membership, owner):
         return None
     return owner
@@ -140,11 +144,43 @@ class Account:
 
 def account(membership: Membership, owner: PropertyOwner, today: datetime.date | None = None) -> Account:
     """The last 12 finished months, newest first, and every payment to the owner."""
+    return _account(owner, lambda month: statements.statement(membership, str(owner.public_id), month), today)
+
+
+def owner_account(owner: PropertyOwner, today: datetime.date | None = None) -> Account:
+    """The same account as the owner sees it in the owner portal (D-128). Voided payments are left out."""
+    acc = _account(owner, lambda month: statements.for_owner(owner, month), today)
+    acc.remittances = [r for r in acc.remittances if r.voided_at is None]
+    return acc
+
+
+def account_specs(acc: Account, currency: str) -> dict | None:
+    """Charts for an owner account page (oldest month first): collected against paid to the owner, and where
+    the collected rent went. None when nothing was collected in the 12 months."""
+    rows = list(reversed(acc.rows))
+    if not any(r.collected for r in rows):
+        return None
+    labels = [f"{r.month:%b %Y}" for r in rows]
+    total = sum((r.collected for r in rows), ZERO)
+    fees = sum((r.fee for r in rows), ZERO)
+    return {
+        "months": charts.chart("bar", labels, [
+            charts.series(_("Collected"), [r.collected for r in rows], "1-soft"),
+            charts.series(_("Paid to owner"), [r.remitted for r in rows], "1"),
+        ], currency=currency),
+        "split": charts.doughnut(_("Collected rent"), [
+            (_("Paid to owner"), acc.remitted), (_("Still to pay"), max(acc.remaining, ZERO)),
+            (_("Management fee"), fees),
+        ], ["1", "4", "neutral"], currency=currency) if total else None,
+    }
+
+
+def _account(owner: PropertyOwner, statement_for, today) -> Account:
     last = statements.default_month(today)
     rows = []
     for i in range(ACCOUNT_MONTHS):
         month = add_months(last, -i)
-        st = statements.statement(membership, str(owner.public_id), month)
+        st = statement_for(month)
         row = AccountRow(month=month)
         if st is not None:
             row.collected, row.fee, row.due, row.remitted = st.collected, st.fee, st.due, st.remitted
@@ -237,7 +273,7 @@ def _email(send: OwnerStatementSend, st: statements.Statement, pdf: bytes) -> No
                            [send.email_to])
     message.attach(statement_filename(st), pdf, "application/pdf")
     try:
-        message.send()
+        message.send(using=mailer_for(MESSAGES))
     except Exception as exc:  # the provider's error, whatever it is, is shown on the page
         logger.warning("Owner statement %s: email failed: %s", send.number, exc)
         send.email_status, send.email_error = OwnerStatementSend.EmailStatus.FAILED, str(exc)[:300]
@@ -262,12 +298,11 @@ def to_send(membership: Membership, today: datetime.date | None = None) -> tuple
     if not (can(membership, "owners.send_statement") and can(membership, "reports.view_financial")):
         return 0, month
     org = membership.organization
-    owners = (PropertyOwner.objects.filter(organization=org, properties__in=Property.objects.for_org(org))
-              .exclude(email="", phone="").exclude(statement_sends__month=month).distinct())
+    owners = (PropertyOwner.objects.filter(organization=org, pk__in=owner_ids_of(Property.objects.for_org(org)))
+              .exclude(email="", phone="").exclude(statement_sends__month=month))
     ids = accessible_property_ids(membership)
     if ids is not None:
-        owners = owners.exclude(pk__in=Property.all_objects.filter(owner__isnull=False).exclude(pk__in=ids)
-                                .values("owner_id"))
+        owners = owners.exclude(pk__in=owner_ids_of(Property.all_objects.for_org(org).exclude(pk__in=ids)))
     n = owners.count()
     return n, month
 

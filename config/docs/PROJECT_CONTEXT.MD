@@ -1,6 +1,6 @@
-# landlordpms — Project Context & Development Roadmap
+# NyumbaPMS — Project Context & Development Roadmap
 
-> **Purpose:** This document is the master context for the landlordpms project.
+> **Purpose:** This document is the master context for the NyumbaPMS project.
 > It records what the project is, what has been completed, important architectural decisions, the current development state, and what remains to be built.
 >
 > **Important:** Update this document whenever a major feature, architectural decision, database change, deployment change, or development milestone is completed.
@@ -11,9 +11,9 @@
 
 ## Project Name
 
-**landlordpms**
+**NyumbaPMS**
 
-Official project name: landlordpms.
+Official project name: NyumbaPMS.
 
 ## Project Type
 
@@ -46,7 +46,7 @@ The long-term goal is to build a **Property Operating System for Kenya** that ha
 
 # 2. CORE PRODUCT VISION
 
-landlordpms should allow a landlord or property manager to manage their rental business from one platform.
+NyumbaPMS should allow a landlord or property manager to manage their rental business from one platform.
 
 The platform should eventually cover:
 
@@ -481,7 +481,7 @@ The final organization/ownership architecture must be designed carefully before 
 
 # 11. MULTI-TENANCY / SAAS ARCHITECTURE
 
-landlordpms is intended to become a SaaS.
+NyumbaPMS is intended to become a SaaS.
 
 Therefore, the architecture must consider:
 
@@ -662,7 +662,7 @@ Safaricom
    ↓
 Callback
    ↓
-landlordpms
+NyumbaPMS
    ↓
 Identify Tenant
    ↓
@@ -1044,7 +1044,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # LandlordPMS — Core
+    # NyumbaPMS — Core
     "accounts",
     "properties",
     "tenants",
@@ -1054,7 +1054,7 @@ INSTALLED_APPS = [
     "mpesa",
     "notifications",
 
-    # LandlordPMS — Business Operations
+    # NyumbaPMS — Business Operations
     "maintenance",
     "expenses",
     "accounting",
@@ -1063,7 +1063,7 @@ INSTALLED_APPS = [
     "reports",
     "analytics",
 
-    # LandlordPMS — Advanced
+    # NyumbaPMS — Advanced
     "ai_assistant",
     "subscriptions",
     "audit",
@@ -1385,7 +1385,7 @@ Do not design desktop-only interfaces and attempt to shrink them later.
 
 # 42. MONETIZATION
 
-landlordpms is intended to become a paid SaaS.
+NyumbaPMS is intended to become a paid SaaS.
 
 Potential pricing structure discussed:
 
@@ -1451,7 +1451,7 @@ Analytics
 AI
 ```
 
-The objective is to make landlordpms a complete operating platform for rental businesses.
+The objective is to make NyumbaPMS a complete operating platform for rental businesses.
 
 ---
 
@@ -1694,7 +1694,7 @@ Only after this foundation is stable should the main property, tenant, lease, bi
 
 # 52. PROJECT STATUS SUMMARY
 
-At the moment, landlordpms is at the:
+At the moment, NyumbaPMS is at the:
 
 **FOUNDATION / ARCHITECTURE STAGE**
 
@@ -1734,7 +1734,7 @@ The project should now proceed from the account architecture into the core prope
 
 If this project is resumed in another conversation, the essential context is:
 
-> **landlordpms is a Kenyan property-management SaaS being built with Django/Python. It is intended to become a complete Property Operating System rather than a simple rent tracker. The core MVP consists of accounts, properties, tenants, leases, billing, payments, M-Pesa and notifications. The project is designed to be multi-tenant, mobile-first, scalable and monetizable. The Django project and app structure have already been created. SQLite is temporarily being used while PostgreSQL setup is postponed. The next major task is designing the custom User + Organization + Membership + Roles/Permissions architecture before building the main business models.**
+> **NyumbaPMS is a Kenyan property-management SaaS being built with Django/Python. It is intended to become a complete Property Operating System rather than a simple rent tracker. The core MVP consists of accounts, properties, tenants, leases, billing, payments, M-Pesa and notifications. The project is designed to be multi-tenant, mobile-first, scalable and monetizable. The Django project and app structure have already been created. SQLite is temporarily being used while PostgreSQL setup is postponed. The next major task is designing the custom User + Organization + Membership + Roles/Permissions architecture before building the main business models.**
 
 ---
 

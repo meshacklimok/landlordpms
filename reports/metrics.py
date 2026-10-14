@@ -14,6 +14,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
+from django.core.exceptions import PermissionDenied
 from django.db.models import Count, DateField, Q, Sum
 from django.db.models.functions import Cast, Coalesce, TruncMonth
 from django.utils import timezone
@@ -136,6 +137,21 @@ def occupancy(sc: Scope, day: datetime.date) -> Occupancy:
     return total_occupancy(occupancy_by_property(sc, day))
 
 
+def occupancy_trend(sc: Scope, last: datetime.date, today: datetime.date,
+                    count: int = TREND_MONTHS) -> list[Occupancy]:
+    """Occupancy on the last day of each of the `count` months to `last` (today for this month), labelled by month.
+
+    Units are counted as they are set up now: a unit added later counts as empty in the months before it.
+    """
+    out = []
+    for n in range(count - 1, -1, -1):
+        m = add_months(month_start(last), -n)
+        row = occupancy(sc, min(today, month_end(m)))
+        row.label, row.key = f"{m:%b %Y}", m
+        out.append(row)
+    return out
+
+
 def total_occupancy(rows: list[Occupancy]) -> Occupancy:
     total = Occupancy()
     for row in rows:
@@ -175,25 +191,20 @@ def _billed_month():
     return Coalesce("billing_month", Cast(TruncMonth("invoice__period_start"), DateField()))
 
 
-def months(sc: Scope, first: datetime.date, last: datetime.date) -> list[MonthFigures]:
-    """Expected rent, rent collected for the month and cash received, for each month first..last."""
-    first, last = month_start(first), month_start(last)
-    rows: dict[datetime.date, MonthFigures] = {}
-    m = first
-    while m <= last:
-        rows[m] = MonthFigures(m)
-        m = add_months(m, 1)
-    props = sc.properties()
-
+def _rent(sc: Scope, first: datetime.date, last: datetime.date) -> dict[tuple[int, datetime.date], list[Decimal]]:
+    """[expected, collected] rent by (property id, billed month), for the months first..last."""
+    out: dict[tuple[int, datetime.date], list[Decimal]] = defaultdict(lambda: [ZERO, ZERO])
     rent_lines = (InvoiceLine.objects
                   .filter(organization=sc.organization, is_void=False, invoice__status__in=LIVE_INVOICE,
-                          lease__unit__property__in=props, charge_type__category=ChargeType.Category.RENT)
+                          lease__unit__property__in=sc.properties(), charge_type__category=ChargeType.Category.RENT)
                   .annotate(month=_billed_month()).filter(month__gte=first, month__lte=last)
-                  .values("invoice_id", "month").annotate(total=Sum("amount")))
+                  .values("invoice_id", "month", "lease__unit__property_id").annotate(total=Sum("amount")))
     rent_by_invoice: dict[int, dict[datetime.date, Decimal]] = defaultdict(dict)
+    place: dict[int, int] = {}
     for r in rent_lines:
-        rows[r["month"]].expected += r["total"]
+        out[r["lease__unit__property_id"], r["month"]][0] += r["total"]
         rent_by_invoice[r["invoice_id"]][r["month"]] = r["total"]
+        place[r["invoice_id"]] = r["lease__unit__property_id"]
 
     if rent_by_invoice:
         whole = dict(InvoiceLine.objects.filter(invoice_id__in=rent_by_invoice, is_void=False)
@@ -206,11 +217,29 @@ def months(sc: Scope, first: datetime.date, last: datetime.date) -> list[MonthFi
             if not amount or not total:
                 continue
             for month, rent in by_month.items():
-                rows[month].collected += round_money(amount * rent / total)
+                out[place[invoice_id], month][1] += round_money(amount * rent / total)
+    return out
 
-    cash = (Payment.objects.filter(organization=sc.organization, status=Payment.Status.CONFIRMED,
-                                   paid_at__gte=first, paid_at__lte=month_end(last),
-                                   lease__unit__property__in=props)
+
+def _confirmed_payments(sc: Scope, first: datetime.date, last: datetime.date):
+    """Confirmed payments on the properties in scope, dated first..last."""
+    return Payment.objects.filter(organization=sc.organization, status=Payment.Status.CONFIRMED,
+                                  paid_at__gte=first, paid_at__lte=last, lease__unit__property__in=sc.properties())
+
+
+def months(sc: Scope, first: datetime.date, last: datetime.date) -> list[MonthFigures]:
+    """Expected rent, rent collected for the month and cash received, for each month first..last."""
+    first, last = month_start(first), month_start(last)
+    rows: dict[datetime.date, MonthFigures] = {}
+    m = first
+    while m <= last:
+        rows[m] = MonthFigures(m)
+        m = add_months(m, 1)
+    for (_place, month), (expected, collected) in _rent(sc, first, last).items():
+        rows[month].expected += expected
+        rows[month].collected += collected
+
+    cash = (_confirmed_payments(sc, first, month_end(last))
             .annotate(month=Cast(TruncMonth("paid_at"), DateField())).values("month")
             .annotate(total=Sum("amount")))
     for r in cash:
@@ -237,9 +266,12 @@ class Arrears:
         return sum((amount for _key, _label, amount in self.buckets), ZERO)
 
 
-def arrears(sc: Scope, today: datetime.date) -> Arrears:
-    """What is overdue today, by aging bucket (FIFO, billing.selectors). "Not yet due" is left out."""
-    rows = billing_selectors.arrears(sc.membership, today)
+def arrears(sc: Scope, today: datetime.date, rows: list | None = None) -> Arrears:
+    """What is overdue today, by aging bucket (FIFO, billing.selectors). "Not yet due" is left out.
+
+    `rows` is `billing_selectors.arrears(sc.membership, today)` when the caller already has it.
+    """
+    rows = billing_selectors.arrears(sc.membership, today) if rows is None else rows
     if sc.selected_property is not None:
         rows = [r for r in rows if r.lease.unit.property_id == sc.selected_property.pk]
     totals = billing_selectors.aging_totals(rows)
@@ -368,6 +400,126 @@ def grades(leases, today: datetime.date) -> dict[int, Grade]:
 
 
 # ---------------------------------------------------------------------------
+# Comparisons and breakdowns (D-110)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Change:
+    """A figure against the same figure earlier. No change is shown when either side is missing."""
+
+    now: Decimal | int | None
+    before: Decimal | int | None
+    label: str = ""  # what `before` is, e.g. "Aug 2026"
+
+    @property
+    def delta(self):
+        if self.now is None or self.before is None:
+            return None
+        return self.now - self.before
+
+    @property
+    def ratio(self) -> Decimal | None:
+        """The change as a fraction of `before`; None when `before` is 0 (no percentage from nothing)."""
+        delta = self.delta
+        return None if delta is None or not self.before else Decimal(delta) / abs(Decimal(self.before))
+
+
+@dataclass
+class PropertyCollection:
+    label: str
+    key: object
+    expected: Decimal = ZERO
+    collected: Decimal = ZERO
+
+    @property
+    def outstanding(self) -> Decimal:
+        return self.expected - self.collected
+
+    @property
+    def rate(self) -> Decimal | None:
+        return rate(self.collected, self.expected)
+
+
+def collection_by_property(sc: Scope, month: datetime.date) -> list[PropertyCollection]:
+    """Rent expected and collected for the month by property, the lowest collection rate first.
+
+    The same figures as the month's totals (`months`), split by the property each invoice's lease is on.
+    Properties with nothing billed in the month are left out.
+    """
+    month = month_start(month)
+    names = {p.pk: p for p in sc.properties()}
+    rows = [PropertyCollection(label=names[pk].name, key=names[pk].public_id, expected=expected, collected=collected)
+            for (pk, _m), (expected, collected) in _rent(sc, month, month).items() if expected]
+    return sorted(rows, key=lambda r: (r.rate, -r.outstanding, r.label.lower()))
+
+
+@dataclass
+class MethodTotal:
+    method: str
+    label: str
+    count: int
+    amount: Decimal
+
+
+def cash_by_method(sc: Scope, month: datetime.date) -> list[MethodTotal]:
+    """Cash received in the month by payment method, the largest first."""
+    month = month_start(month)
+    labels = dict(Payment.Method.choices)
+    rows = (_confirmed_payments(sc, month, month_end(month)).values("method").order_by()
+            .annotate(n=Count("pk"), total=Sum("amount")))
+    return sorted((MethodTotal(r["method"], str(labels.get(r["method"], r["method"])), r["n"], r["total"])
+                   for r in rows), key=lambda r: (-r.amount, r.label))
+
+
+@dataclass
+class VacancyLoss:
+    """Asking rent of the rentable units standing empty on the day: rent a full building would bill."""
+
+    units: int = 0
+    amount: Decimal = ZERO
+    unpriced: int = 0  # vacant units with no asking rent, so not in `amount`
+
+
+def vacancy_loss(sc: Scope, day: datetime.date) -> VacancyLoss:
+    vacant = (Unit.objects.filter(organization=sc.organization, property__in=sc.properties(include_archived=False))
+              .exclude(manual_status=Unit.ManualStatus.INACTIVE)
+              .exclude(pk__in=occupying_leases(day).values("unit_id")))
+    agg = vacant.aggregate(n=Count("pk"), s=Sum("list_rent"), unpriced=Count("pk", filter=Q(list_rent__isnull=True)))
+    return VacancyLoss(units=agg["n"] or 0, amount=agg["s"] or ZERO, unpriced=agg["unpriced"] or 0)
+
+
+def grade_mix(sc: Scope, day: datetime.date, today: datetime.date) -> list[tuple[str, int]]:
+    """How many occupying leases have each collectability grade (D-052), A to E, then "New"."""
+    leases = list(occupying_leases(day).filter(organization=sc.organization,
+                                               unit__property__in=sc.properties(include_archived=False))
+                  .only("pk", "organization_id"))
+    counts = dict.fromkeys(GRADES, 0)
+    new = 0
+    for g in grades(leases, today).values():
+        if g.grade is None:
+            new += 1
+        else:
+            counts[g.grade] += 1
+    return [*counts.items(), (str(_("New")), new)] if leases else []
+
+
+@dataclass
+class Debtor:
+    lease: Lease
+    overdue: Decimal
+    days: int
+
+
+def largest_debts(sc: Scope, today: datetime.date, rows: list, count: int = 5) -> list[Debtor]:
+    """The leases with the most overdue today, from the arrears rows the dashboard already has."""
+    if sc.selected_property is not None:
+        rows = [r for r in rows if r.lease.unit.property_id == sc.selected_property.pk]
+    debtors = [Debtor(r.lease, r.balance - r.buckets["current"], r.days_overdue(today)) for r in rows]
+    return sorted(debtors, key=lambda d: (-d.overdue, -d.days))[:count]
+
+
+# ---------------------------------------------------------------------------
 # The dashboard
 # ---------------------------------------------------------------------------
 
@@ -383,6 +535,16 @@ class Dashboard:
     trend: list[MonthFigures]
     arrears: Arrears
     unmatched: Unmatched | None
+    # D-110: the month against last month and the same month last year, and where the money came from.
+    previous: MonthFigures | None = None
+    last_year: MonthFigures | None = None
+    occupancy_before: Occupancy | None = None
+    collection: list[PropertyCollection] = field(default_factory=list)
+    methods: list[MethodTotal] = field(default_factory=list)
+    vacancy: VacancyLoss = field(default_factory=VacancyLoss)
+    grade_mix: list[tuple[str, int]] = field(default_factory=list)
+    debtors: list[Debtor] = field(default_factory=list)
+    occupancy_trend: list[Occupancy] = field(default_factory=list)
 
     @property
     def currency(self) -> str:
@@ -392,9 +554,40 @@ class Dashboard:
     def is_current_month(self) -> bool:
         return self.month == month_start(timezone.localdate())
 
+    def _change(self, other: MonthFigures | None, name: str) -> Change:
+        if other is None:
+            return Change(None, None)
+        return Change(getattr(self.current, name), getattr(other, name), other.label)
+
+    @property
+    def changes(self) -> dict:
+        """{figure: (against last month, against the same month last year)} for the headline money figures."""
+        return {name: (self._change(self.previous, name), self._change(self.last_year, name))
+                for name in ("expected", "collected", "rate", "cash")}
+
+    @property
+    def occupancy_change(self) -> Change:
+        before = self.occupancy_before
+        return Change(self.occupancy.occupied, None if before is None else before.occupied,
+                      f"{add_months(self.month, -1):%b %Y}")
+
+    @property
+    def debtors_share(self) -> Decimal | None:
+        """The share of all arrears owed by the leases in `debtors`."""
+        return rate(sum((d.overdue for d in self.debtors), ZERO), self.arrears.total)
+
+    @property
+    def collected_share(self) -> Decimal | None:
+        """Rent collected for the month as a share of the cash received in it; the rest paid other months,
+        other charges or deposits."""
+        return rate(self.current.collected, self.current.cash)
+
 
 def dashboard(membership: Membership, *, month: datetime.date | None = None,
-              property: Property | None = None, today: datetime.date | None = None) -> Dashboard:
+              property: Property | None = None, today: datetime.date | None = None,
+              arrears_rows: list | None = None, analysis: bool = False) -> Dashboard:
+    """The dashboard's figures. `analysis` adds the comparisons and breakdowns (D-110) the dashboard page shows;
+    the home page and the assistant leave them out, as they do not show them."""
     today = today or timezone.localdate()
     sc = scope(membership, property)
     month = month_start(month or today)
@@ -402,5 +595,49 @@ def dashboard(membership: Membership, *, month: datetime.date | None = None,
     day = min(today, month_end(month))
     by_property = occupancy_by_property(sc, day)
     rows = trend(sc, month)
-    return Dashboard(scope=sc, month=month, day=day, occupancy=total_occupancy(by_property), by_property=by_property,
-                     current=rows[-1], trend=rows, arrears=arrears(sc, today), unmatched=unmatched_mpesa(sc))
+    if arrears_rows is None:
+        arrears_rows = billing_selectors.arrears(membership, today)
+    board = Dashboard(scope=sc, month=month, day=day, occupancy=total_occupancy(by_property), by_property=by_property,
+                      current=rows[-1], trend=rows, arrears=arrears(sc, today, arrears_rows),
+                      unmatched=unmatched_mpesa(sc), previous=rows[-2])
+    if analysis:
+        last_year = add_months(month, -12)
+        board.last_year = months(sc, last_year, last_year)[0]
+        board.occupancy_before = occupancy(sc, month - datetime.timedelta(days=1))
+        board.collection = collection_by_property(sc, month)
+        board.methods = cash_by_method(sc, month)
+        board.vacancy = vacancy_loss(sc, day)
+        board.grade_mix = grade_mix(sc, day, today)
+        board.debtors = largest_debts(sc, today, arrears_rows)
+        board.occupancy_trend = occupancy_trend(sc, month, today)
+    return board
+
+
+# ---------------------------------------------------------------------------
+# One property at a glance (D-110)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PropertyGlance:
+    """This month for one property against last month, what is overdue and what the empty units would bring."""
+
+    occupancy: Occupancy
+    current: MonthFigures
+    previous: MonthFigures
+    arrears: Arrears
+    vacancy: VacancyLoss
+
+    def change(self, name: str) -> Change:
+        return Change(getattr(self.current, name), getattr(self.previous, name), self.previous.label)
+
+
+def property_glance(membership: Membership, prop: Property, today: datetime.date | None = None) -> PropertyGlance:
+    today = today or timezone.localdate()
+    sc = scope(membership, prop)
+    if sc.selected_property is None or sc.selected_property.pk != prop.pk:
+        raise PermissionDenied("dashboard.view_financial")
+    month = month_start(today)
+    previous, current = months(sc, add_months(month, -1), month)
+    return PropertyGlance(occupancy=occupancy(sc, today), current=current, previous=previous,
+                          arrears=arrears(sc, today), vacancy=vacancy_loss(sc, today))

@@ -97,8 +97,8 @@ def test_a_scoped_member_sees_only_their_properties(owner, portfolio):
 
 def test_promises_and_broken_promises(owner, portfolio):
     lease = portfolio["overdue"]
-    followups.record_follow_up(owner, lease, outcome=FollowUp.Outcome.PROMISED, promised_on=D(2099, 1, 1))
-    FollowUp.objects.filter(lease=lease).update(promised_on=MAR)
+    # Follow-ups are append-only, down to the database (D-105): record the promise as made on MAR.
+    followups.record_follow_up(owner, lease, outcome=FollowUp.Outcome.PROMISED, promised_on=MAR, today=MAR)
     h = home.home(owner, today=MAR)
     assert keys(h)["promised"] == 1 and "call" not in keys(h)
     broken = home.home(owner, today=D(2025, 3, 2))

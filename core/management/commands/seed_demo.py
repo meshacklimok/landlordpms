@@ -175,7 +175,7 @@ class Command(BaseCommand):
                       .select_related("user", "organization").first())
         if self.actor is None:
             raise CommandError(f"{self.org.name} has no active owner to create data as.")
-        self.rng = random.Random(options["seed"])
+        self.rng = random.Random(options["seed"])  # noqa: S311 - repeatable demo data, not secrets
         self.today = timezone.localdate()
 
         self._tenants()

@@ -1,0 +1,21 @@
+{% load i18n money %}{# The statement's money summary; shared with the owner portal (D-128). #}
+<div class="table-responsive"><table class="table table-sm small mb-0">
+  <tbody>
+    <tr><td>{% trans "Rent collected" %}</td><td class="text-end text-nowrap">{{ st.rent|money:cur }}</td></tr>
+    <tr><td>{% trans "Other charges collected" %}</td><td class="text-end text-nowrap">{{ st.other|money:cur }}</td></tr>
+    <tr class="fw-semibold"><td>{% trans "Total collected" %}</td><td class="text-end text-nowrap">{{ st.collected|money:cur }}</td></tr>
+    {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}
+    <tr><td>{% trans "Less expenses" %}</td><td class="text-end text-nowrap">{% if st.expenses %}−{{ st.expenses|money:cur }}{% else %}{{ st.expenses|money:cur }}{% endif %}</td></tr>
+    {% if st.joint %}
+    <tr class="fw-semibold"><td>{% trans "Due on the properties" %}</td><td class="text-end text-nowrap">{{ st.whole_due|money:cur }}</td></tr>
+    <tr><td>{% trans "Less other owners' shares" %}</td><td class="text-end text-nowrap">−{{ st.others_share|money:cur }}</td></tr>
+    {% endif %}
+  </tbody>
+  <tfoot>
+    <tr class="fw-semibold fs-6"><td>{% trans "Due to the owner" %}</td><td class="text-end text-nowrap {% if st.due < 0 %}text-danger{% endif %}">{{ st.due|money:cur }}</td></tr>
+    {% if st.shows_remittances %}
+    <tr><td>{% trans "Paid to the owner" %}</td><td class="text-end text-nowrap">−{{ st.remitted|money:cur }}</td></tr>
+    <tr class="fw-semibold"><td>{% trans "Still to pay" %}</td><td class="text-end text-nowrap {% if st.remaining > 0 %}text-danger{% endif %}">{{ st.remaining|money:cur }}</td></tr>
+    {% endif %}
+  </tfoot>
+</table></div>

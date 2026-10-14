@@ -4,7 +4,7 @@
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
   <h1 class="h4 mb-0">{% blocktrans with y=pack.year %}Rental income {{ y }}{% endblocktrans %}</h1>
   <form method="get" class="d-flex gap-2">
-    <select name="year" class="form-select form-select-sm" aria-label="{% trans 'Year' %}" onchange="this.form.submit()">
+    <select name="year" class="form-select form-select-sm" aria-label="{% trans 'Year' %}" data-autosubmit>
       {% for y in years %}<option value="{{ y }}" {% if y == pack.year %}selected{% endif %}>{{ y }}</option>{% endfor %}
     </select>
     <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
@@ -46,9 +46,35 @@
 <div class="d-flex flex-wrap gap-2 mb-3 small">
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'pdf' %}">{% trans "Download PDF" %}</a>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'months' %}">{% trans "Months (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'months' %}?format=xlsx">{% trans "Months (Excel)" %}</a>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'properties' %}">{% trans "Properties (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'properties' %}?format=xlsx">{% trans "Properties (Excel)" %}</a>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'receipts' %}">{% trans "Payments (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income_export' pack.year 'receipts' %}?format=xlsx">{% trans "Payments (Excel)" %}</a>
 </div>
+{% endif %}
+
+{% if specs %}
+<section class="row g-3 mb-3">
+  <div class="col-12{% if specs.places %} col-lg-7{% endif %}">
+    <div class="chart-card">
+      <h2>{% trans "Money received each month" %}</h2>
+      <p class="chart-sub">{% trans "Rent and other money received (charges, deposits, money not yet applied), with the rent billed as a line. The figures are in the table below." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-income" role="img" aria-label="{% trans 'Money received each month against the rent billed. The same figures are in the By month table.' %}"></canvas></div>
+    </div>
+  </div>
+  {% if specs.places %}
+  <div class="col-12 col-lg-5">
+    <div class="chart-card">
+      <h2>{% trans "Rent by property" %}</h2>
+      <p class="chart-sub">{% trans "Rent billed and received in the year, largest first." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-income-places" role="img" aria-label="{% trans 'Rent billed and received by property. The same figures are in the By property table.' %}"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{{ specs.months|json_script:"chart-income" }}
+{% if specs.places %}{{ specs.places|json_script:"chart-income-places" }}{% endif %}
 {% endif %}
 
 <h2 class="h6">{% trans "By month" %}</h2>
@@ -114,4 +140,10 @@
 <ul class="small text-muted">
   {% for note in pack.notes %}<li>{{ note }}</li>{% endfor %}
 </ul>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
 {% endblock %}

@@ -1,109 +1,217 @@
-# Entity Relationship Diagram (draft for review)
+# Entity Relationship Diagram
 
-Derived from doc 11 §2 and §22–27, doc 13 and doc 14. Not code. Every business table also carries `organization_id`, `created_at`, `updated_at`, and archivable tables carry `archived_at/by` (doc 11 §23). Money is `Decimal(14,2)` (doc 11 §25). View with any Mermaid renderer (VS Code Markdown Preview Mermaid extension, GitHub).
+Generated from the models by `python manage.py erd`; do not edit by hand (D-103). A test fails when the models
+change and this file is not regenerated. View with any Mermaid renderer (VS Code Markdown Preview Mermaid, GitHub).
 
-## 1. Identity, organizations, roles
+Left out to keep the diagrams readable: every table's link to `ORGANIZATION` (almost all have one), and links to
+`USER` saying who created, approved or was given something; sections 1 and 5 show who belongs and who signs in.
+A link `A }o--|| B : "field"` means many A rows point at one B through `A.field`; `o|` on the B side means it may
+be empty.
+
+## 1. Identity, organizations, roles, audit
+
+Tables: AUDIT_EVENT, BRANCH, CAPABILITY, EMAIL_ROUTING, INVITATION, JOB_RUN, MEMBERSHIP, MEMBERSHIP_CAPABILITY, NUMBER_SEQUENCE, ORGANIZATION, OTP_CODE, PROPERTY_ACCESS, RECOVERY_CODE, ROLE, ROLE_CAPABILITY, ROLE_TEMPLATE, TOTP_DEVICE, USER.
 
 ```mermaid
 erDiagram
-    USER ||--o{ MEMBERSHIP : has
-    ORGANIZATION ||--o{ MEMBERSHIP : has
-    MEMBERSHIP }o--|| ROLE : "assigned"
-    MEMBERSHIP ||--o{ MEMBERSHIP_CAPABILITY : "overrides"
-    MEMBERSHIP ||--o{ PROPERTY_ACCESS : "scoped to"
-    PROPERTY ||--o{ PROPERTY_ACCESS : ""
-    ORGANIZATION ||--o{ ROLE : owns
-    ROLE_TEMPLATE ||--o{ ROLE : "copied into"
-    ROLE ||--o{ ROLE_CAPABILITY : grants
-    CAPABILITY ||--o{ ROLE_CAPABILITY : ""
-    CAPABILITY ||--o{ MEMBERSHIP_CAPABILITY : ""
-    ORGANIZATION ||--o{ INVITATION : sends
-    USER ||--o{ AUDIT_EVENT : "acts"
-    ORGANIZATION ||--o{ AUDIT_EVENT : ""
+    INVITATION }o--|| ROLE : "role"
+    MEMBERSHIP }o--|| USER : "user"
+    MEMBERSHIP }o--|| ROLE : "role"
+    MEMBERSHIP_CAPABILITY }o--|| MEMBERSHIP : "membership"
+    MEMBERSHIP_CAPABILITY }o--|| CAPABILITY : "capability"
+    PROPERTY_ACCESS }o--|| MEMBERSHIP : "membership"
+    PROPERTY_ACCESS }o--|| PROPERTY : "property"
+    RECOVERY_CODE }o--|| USER : "user"
+    ROLE }o--o| ROLE_TEMPLATE : "based_on_template"
+    ROLE_CAPABILITY }o--|| ROLE : "role"
+    ROLE_CAPABILITY }o--|| CAPABILITY : "capability"
+    TOTP_DEVICE |o--|| USER : "user"
 ```
 
 ## 2. Properties, tenants, leases
 
-```mermaid
-erDiagram
-    ORGANIZATION ||--o{ PROPERTY : owns
-    PROPERTY ||--o{ BUILDING : "optional"
-    PROPERTY ||--o{ UNIT : contains
-    BUILDING ||--o{ UNIT : contains
-    ORGANIZATION ||--o{ TENANT : has
-    UNIT ||--o{ LEASE : "leased by"
-    LEASE ||--o{ LEASE_TENANT : ""
-    TENANT ||--o{ LEASE_TENANT : ""
-    LEASE ||--o{ LEASE_RENT_CHANGE : "rent history"
-    LEASE ||--o{ LEASE_CHARGE : "recurring"
-    LEASE ||--o{ LEASE_PAYER : "extra payer phones"
-    CHARGE_TYPE ||--o{ LEASE_CHARGE : ""
-    PROPERTY }o--o| OWNER_PARTY : "nullable, agency later"
-```
-
-## 3. Billing, payments, M-Pesa, deposits (flow B)
+Tables: BUILDING, CONDITION_PHOTO, CONDITION_REPORT, CONDITION_REPORT_LINE, DOCUMENT, IMPORT_BATCH, LEASE, LEASE_CHARGE, LEASE_NOTICE, LEASE_PAYER, LEASE_RENT_CHANGE, LEASE_TENANT, NOTICE_LETTER, PROPERTY, PROPERTY_OWNER, PROPERTY_SHARE, PROSPECT, PROSPECT_NOTE, SIGNER, SIGNING_REQUEST, TENANCY_LETTER, TENANT, UNIT, UNIT_ITEM, VIEWING.
 
 ```mermaid
 erDiagram
-    LEASE ||--o{ INVOICE : billed
-    INVOICE ||--|{ INVOICE_LINE : has
-    CHARGE_TYPE ||--o{ INVOICE_LINE : ""
-    LEASE ||--o{ LEDGER_ENTRY : "append-only"
-    INVOICE ||--o{ LEDGER_ENTRY : ""
-    LEASE ||--o{ DEPOSIT_ENTRY : "isolated sub-ledger"
-    TENANT ||--o{ PAYMENT : pays
-    LEASE ||--o{ PAYMENT : ""
-    PAYMENT ||--o{ PAYMENT_ALLOCATION : splits
-    INVOICE ||--o{ PAYMENT_ALLOCATION : receives
-    PAYMENT ||--o| RECEIPT : "issues"
-    PAYMENT_ACCOUNT ||--o{ PAYMENT : "received on"
-    PAYMENT_ACCOUNT }o--o{ PROPERTY : "PropertyPaymentAccount"
-    PAYMENT_ACCOUNT ||--o{ MPESA_TRANSACTION : "callbacks"
-    MPESA_TRANSACTION ||--o| PAYMENT : "matched to"
-    ORGANIZATION ||--o{ NUMBER_SEQUENCE : "locked counters"
+    BUILDING }o--|| PROPERTY : "property"
+    CONDITION_PHOTO }o--|| CONDITION_REPORT : "report"
+    CONDITION_PHOTO }o--o| CONDITION_REPORT_LINE : "line"
+    CONDITION_REPORT }o--|| LEASE : "lease"
+    CONDITION_REPORT }o--|| UNIT : "unit"
+    CONDITION_REPORT_LINE }o--|| CONDITION_REPORT : "report"
+    CONDITION_REPORT_LINE }o--|| UNIT_ITEM : "item"
+    DOCUMENT }o--o| PROPERTY : "property"
+    DOCUMENT }o--o| UNIT : "unit"
+    DOCUMENT }o--o| LEASE : "lease"
+    DOCUMENT }o--o| TENANT : "tenant"
+    LEASE }o--|| UNIT : "unit"
+    LEASE }o--o| LEASE : "previous_lease"
+    LEASE_CHARGE }o--|| LEASE : "lease"
+    LEASE_CHARGE }o--|| CHARGE_TYPE : "charge_type"
+    LEASE_NOTICE }o--|| LEASE : "lease"
+    LEASE_NOTICE }o--o| TENANT : "tenant"
+    LEASE_PAYER }o--|| LEASE : "lease"
+    LEASE_RENT_CHANGE }o--|| LEASE : "lease"
+    LEASE_TENANT }o--|| LEASE : "lease"
+    LEASE_TENANT }o--|| TENANT : "tenant"
+    NOTICE_LETTER }o--|| LEASE : "lease"
+    NOTICE_LETTER }o--o| LEASE_NOTICE : "notice"
+    NOTICE_LETTER }o--o| DOCUMENT : "proof"
+    PROPERTY }o--o| BRANCH : "branch"
+    PROPERTY }o--o| PROPERTY_OWNER : "owner"
+    PROPERTY_SHARE }o--|| PROPERTY : "property"
+    PROPERTY_SHARE }o--|| PROPERTY_OWNER : "owner"
+    PROSPECT }o--|| PROPERTY : "property"
+    PROSPECT }o--o| UNIT : "unit"
+    PROSPECT }o--o| UNIT : "held_unit"
+    PROSPECT }o--o| TENANT : "tenant"
+    PROSPECT_NOTE }o--|| PROSPECT : "prospect"
+    SIGNER }o--|| SIGNING_REQUEST : "request"
+    SIGNER }o--o| TENANT : "tenant"
+    SIGNING_REQUEST }o--|| LEASE : "lease"
+    SIGNING_REQUEST }o--o| DOCUMENT : "document"
+    TENANCY_LETTER }o--|| LEASE : "lease"
+    UNIT }o--|| PROPERTY : "property"
+    UNIT }o--o| BUILDING : "building"
+    UNIT_ITEM }o--|| UNIT : "unit"
+    VIEWING }o--|| PROSPECT : "prospect"
+    VIEWING }o--|| UNIT : "unit"
 ```
 
-## 4. Expenses (flow C), platform billing (flow A)
+## 3. Billing, payments, M-Pesa, bank, meters
+
+Tables: BANK_TRANSACTION, CHARGE_TYPE, CODE_CHECK, DARAJA_CREDENTIALS, DEPOSIT_ENTRY, FOLLOW_UP, INVOICE, INVOICE_LINE, LATE_FEE, LEDGER_ENTRY, METER, METER_CHARGE, METER_READING, METER_UNIT, MPESA_TRANSACTION, OFFLINE_ROUND, PAYMENT, PAYMENT_ACCOUNT, PAYMENT_ALLOCATION, PAY_LINK, PROPERTY_PAYMENT_ACCOUNT, RECEIPT, SCAN, STATEMENT_IMPORT, STK_REQUEST.
 
 ```mermaid
 erDiagram
-    PROPERTY ||--o{ EXPENSE : "incurred at"
-    EXPENSE_CATEGORY ||--o{ EXPENSE : ""
-    SUPPLIER ||--o{ EXPENSE : "paid to"
-    MAINTENANCE_REQUEST ||--o{ EXPENSE : "optional link"
-    PROPERTY ||--o{ MAINTENANCE_REQUEST : ""
-    UNIT ||--o{ MAINTENANCE_REQUEST : ""
-    PLAN ||--o{ SUBSCRIPTION : ""
-    ORGANIZATION ||--o| SUBSCRIPTION : has
-    SUBSCRIPTION ||--o{ SUBSCRIPTION_INVOICE : bills
-    SUBSCRIPTION_INVOICE ||--o{ SUBSCRIPTION_PAYMENT : ""
-    SUBSCRIPTION_PAYMENT ||--o| PLATFORM_RECEIPT : ""
-    ORGANIZATION ||--o{ SMS_WALLET_TOPUP : ""
-    ORGANIZATION ||--o{ USAGE_COUNTER : ""
+    BANK_TRANSACTION }o--|| PAYMENT_ACCOUNT : "payment_account"
+    BANK_TRANSACTION }o--|| STATEMENT_IMPORT : "statement"
+    BANK_TRANSACTION }o--o| LEASE : "suggested_lease"
+    BANK_TRANSACTION |o--o| PAYMENT : "payment"
+    CODE_CHECK |o--|| PAYMENT : "payment"
+    DARAJA_CREDENTIALS |o--|| PAYMENT_ACCOUNT : "payment_account"
+    DEPOSIT_ENTRY }o--|| LEASE : "lease"
+    DEPOSIT_ENTRY |o--o| DEPOSIT_ENTRY : "counterpart"
+    DEPOSIT_ENTRY |o--o| LEDGER_ENTRY : "ledger_entry"
+    DEPOSIT_ENTRY |o--o| DEPOSIT_ENTRY : "reversal_of"
+    DEPOSIT_ENTRY }o--o| CONDITION_REPORT : "condition_report"
+    FOLLOW_UP }o--|| LEASE : "lease"
+    INVOICE }o--|| LEASE : "lease"
+    INVOICE_LINE }o--|| INVOICE : "invoice"
+    INVOICE_LINE }o--|| LEASE : "lease"
+    INVOICE_LINE }o--|| CHARGE_TYPE : "charge_type"
+    INVOICE_LINE }o--o| METER_CHARGE : "meter_charge"
+    LATE_FEE }o--|| LEASE : "lease"
+    LATE_FEE |o--|| INVOICE : "invoice"
+    LATE_FEE |o--o| INVOICE : "fee_invoice"
+    LEDGER_ENTRY }o--|| LEASE : "lease"
+    LEDGER_ENTRY }o--o| INVOICE : "invoice"
+    LEDGER_ENTRY }o--o| PAYMENT : "payment"
+    LEDGER_ENTRY |o--o| LEDGER_ENTRY : "reversal_of"
+    METER }o--|| PROPERTY : "property"
+    METER_CHARGE }o--|| METER_READING : "reading"
+    METER_CHARGE }o--|| LEASE : "lease"
+    METER_CHARGE }o--|| UNIT : "unit"
+    METER_READING }o--|| METER : "meter"
+    METER_READING }o--o| METER_READING : "previous"
+    METER_UNIT }o--|| METER : "meter"
+    METER_UNIT }o--|| UNIT : "unit"
+    MPESA_TRANSACTION }o--|| PAYMENT_ACCOUNT : "payment_account"
+    MPESA_TRANSACTION }o--o| LEASE : "suggested_lease"
+    MPESA_TRANSACTION |o--o| PAYMENT : "payment"
+    OFFLINE_ROUND }o--|| PROPERTY : "property"
+    PAYMENT }o--|| LEASE : "lease"
+    PAYMENT }o--o| TENANT : "tenant"
+    PAYMENT }o--o| PAYMENT_ACCOUNT : "payment_account"
+    PAYMENT_ALLOCATION }o--|| PAYMENT : "payment"
+    PAYMENT_ALLOCATION }o--|| INVOICE : "invoice"
+    PAY_LINK |o--|| LEASE : "lease"
+    PROPERTY_PAYMENT_ACCOUNT }o--|| PROPERTY : "property"
+    PROPERTY_PAYMENT_ACCOUNT }o--|| PAYMENT_ACCOUNT : "payment_account"
+    RECEIPT |o--|| PAYMENT : "payment"
+    SCAN }o--o| PROPERTY : "property"
+    STATEMENT_IMPORT }o--|| PAYMENT_ACCOUNT : "payment_account"
+    STK_REQUEST }o--|| PAYMENT_ACCOUNT : "payment_account"
+    STK_REQUEST }o--|| LEASE : "lease"
+    STK_REQUEST }o--o| PAY_LINK : "pay_link"
+    STK_REQUEST |o--o| MPESA_TRANSACTION : "transaction"
 ```
 
-Flows A, B and C share no tables (doc 11 §22).
+## 4. Expenses, repairs, owner reports
 
-## 5. Communications and notification preferences
+Tables: DAILY_SNAPSHOT, EXPENSE, EXPENSE_CATEGORY, MAINTENANCE_PHOTO, MAINTENANCE_REQUEST, MAINTENANCE_TARGET, MAINTENANCE_UPDATE, OFFLINE_REPORT, OWNER_REMITTANCE, OWNER_STATEMENT_SEND, SUPPLIER.
 
 ```mermaid
 erDiagram
-    ORGANIZATION ||--o{ ORG_NOTIFICATION_RULE : configures
-    NOTIFICATION_TYPE ||--o{ ORG_NOTIFICATION_RULE : ""
-    NOTIFICATION_TYPE ||--o{ NOTIFICATION_PREFERENCE : ""
-    USER ||--o{ NOTIFICATION_PREFERENCE : "staff"
-    TENANT ||--o{ NOTIFICATION_PREFERENCE : "tenant"
-    USER ||--o{ CONSENT_RECORD : ""
-    TENANT ||--o{ CONSENT_RECORD : ""
-    MESSAGE_TEMPLATE ||--o{ MESSAGE : ""
-    TENANT ||--o{ MESSAGE : receives
-    ORGANIZATION ||--o{ MESSAGE : sends
-    TENANT ||--o| TENANT_ACCOUNT : "portal login, later"
-    USER ||--o| TENANT_ACCOUNT : ""
+    DAILY_SNAPSHOT }o--|| PROPERTY : "property"
+    EXPENSE }o--|| PROPERTY : "property"
+    EXPENSE }o--|| EXPENSE_CATEGORY : "category"
+    EXPENSE }o--o| SUPPLIER : "supplier"
+    EXPENSE }o--o| MAINTENANCE_REQUEST : "maintenance_request"
+    MAINTENANCE_PHOTO }o--|| MAINTENANCE_REQUEST : "request"
+    MAINTENANCE_REQUEST }o--|| PROPERTY : "property"
+    MAINTENANCE_REQUEST }o--o| UNIT : "unit"
+    MAINTENANCE_REQUEST }o--o| LEASE : "lease"
+    MAINTENANCE_REQUEST }o--o| TENANT : "tenant"
+    MAINTENANCE_REQUEST }o--o| SUPPLIER : "supplier"
+    MAINTENANCE_UPDATE }o--|| MAINTENANCE_REQUEST : "request"
+    OFFLINE_REPORT |o--|| MAINTENANCE_REQUEST : "request"
+    OWNER_REMITTANCE }o--|| PROPERTY_OWNER : "owner"
+    OWNER_STATEMENT_SEND }o--|| PROPERTY_OWNER : "owner"
+    OWNER_STATEMENT_SEND }o--o| MESSAGE : "sms"
 ```
 
-## Points to check in review
-1. Is `TENANT_ACCOUNT` the right way to give tenants a portal login without making them staff?
-2. `LEDGER_ENTRY` (rent) and `DEPOSIT_ENTRY` (deposits) are separate tables on purpose. Confirm.
-3. `MPESA_TRANSACTION` to `PAYMENT` is one-to-one, so an unmatched transaction has no payment yet.
-4. One payment may be split across several invoices (`PAYMENT_ALLOCATION`), and one invoice may be paid by several payments.
+## 5. Messages, tenant and owner portals, assistant, support
+
+Tables: ANNOUNCEMENT, APP_OPEN, CONSENT_RECORD, EMAIL_ACCOUNT, INCIDENT, INCIDENT_UPDATE, KNOWLEDGE_ENTRY, MESSAGE, MESSAGE_TEMPLATE, NOTIFICATION_PREFERENCE, ORGANIZATION_NOTIFICATION_RULE, OWNER_ACCOUNT, OWNER_INVITATION, PLATFORM_WHATS_APP, PORTAL_INVITATION, PORTAL_MESSAGE, PUSH_SUBSCRIPTION, QUESTION, RENEWAL_OFFER, SMS_ACCOUNT, SUPPORT_REQUEST, TENANT_ACCOUNT, USSD_PIN, WHATS_APP_ACCOUNT.
+
+```mermaid
+erDiagram
+    CONSENT_RECORD }o--o| TENANT : "tenant"
+    INCIDENT_UPDATE }o--|| INCIDENT : "incident"
+    KNOWLEDGE_ENTRY }o--o| PROPERTY : "property"
+    MESSAGE }o--o| TENANT : "tenant"
+    MESSAGE }o--o| LEASE : "lease"
+    MESSAGE }o--o| INVOICE : "invoice"
+    MESSAGE }o--o| PAYMENT : "payment"
+    MESSAGE }o--o| ANNOUNCEMENT : "announcement"
+    NOTIFICATION_PREFERENCE }o--o| TENANT : "tenant"
+    OWNER_ACCOUNT }o--|| PROPERTY_OWNER : "owner"
+    OWNER_ACCOUNT }o--|| USER : "user"
+    OWNER_INVITATION }o--|| PROPERTY_OWNER : "owner"
+    PORTAL_INVITATION }o--|| TENANT : "tenant"
+    PORTAL_MESSAGE }o--|| LEASE : "lease"
+    PORTAL_MESSAGE }o--|| TENANT : "tenant"
+    PORTAL_MESSAGE }o--|| USER : "author"
+    QUESTION }o--o| TENANT : "tenant"
+    RENEWAL_OFFER }o--|| LEASE : "lease"
+    RENEWAL_OFFER }o--o| LEASE : "successor"
+    TENANT_ACCOUNT }o--|| TENANT : "tenant"
+    TENANT_ACCOUNT }o--|| USER : "user"
+```
+
+## 6. Platform: plans, the API, growth and the console
+
+Tables: ANNOUNCEMENT, API_KEY, DEMO_REQUEST, IDEMPOTENT_REQUEST, PLAN, PLATFORM_CHECKOUT, PLATFORM_EXPENSE, PLATFORM_PAY_SWITCH, PLATFORM_RECEIPT, PLATFORM_SEQUENCE, PLATFORM_STAFF, PLATFORM_TRANSACTION, REFERRAL, REFERRAL_CODE, SIGNUP_SOURCE, SMS_WALLET, SMS_WALLET_ENTRY, SUBSCRIPTION, SUBSCRIPTION_INVOICE, SUBSCRIPTION_PAYMENT, WEBHOOK_DELIVERY, WEBHOOK_ENDPOINT.
+
+```mermaid
+erDiagram
+    API_KEY }o--|| MEMBERSHIP : "membership"
+    IDEMPOTENT_REQUEST }o--|| API_KEY : "api_key"
+    PLATFORM_CHECKOUT }o--o| SUBSCRIPTION_INVOICE : "invoice"
+    PLATFORM_RECEIPT |o--|| SUBSCRIPTION_PAYMENT : "payment"
+    PLATFORM_TRANSACTION }o--o| SUBSCRIPTION_INVOICE : "invoice"
+    PLATFORM_TRANSACTION |o--o| SUBSCRIPTION_PAYMENT : "payment"
+    REFERRAL }o--|| ORGANIZATION : "referrer"
+    REFERRAL |o--|| ORGANIZATION : "referred"
+    SMS_WALLET_ENTRY |o--o| SUBSCRIPTION_PAYMENT : "payment"
+    SMS_WALLET_ENTRY |o--o| MESSAGE : "message"
+    SUBSCRIPTION }o--|| PLAN : "plan"
+    SUBSCRIPTION_INVOICE }o--|| SUBSCRIPTION : "subscription"
+    SUBSCRIPTION_INVOICE }o--|| PLAN : "plan"
+    SUBSCRIPTION_PAYMENT }o--o| SUBSCRIPTION_INVOICE : "invoice"
+    WEBHOOK_DELIVERY }o--|| WEBHOOK_ENDPOINT : "endpoint"
+    WEBHOOK_DELIVERY }o--o| AUDIT_EVENT : "audit_event"
+    WEBHOOK_ENDPOINT }o--|| MEMBERSHIP : "membership"
+```

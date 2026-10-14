@@ -1,0 +1,16 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ entry.title }}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <a href="{% url 'ai_assistant:knowledge' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "What the assistant knows" %}</a>
+  <h1 class="h4 mt-2">{{ entry.title }}</h1>
+  <form method="post" class="card shadow-sm mb-3" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary" name="action" value="save">{% trans "Save" %}</button>
+  </div></form>
+  <form method="post">{% csrf_token %}
+    <button class="btn btn-sm btn-outline-danger" name="action" value="delete"><i class="bi bi-trash" aria-hidden="true"></i> {% trans "Remove" %}</button>
+    <span class="small text-body-secondary ms-2">{% blocktrans with by=entry.updated_by.get_full_name|default:entry.updated_by date=entry.updated_at|date:"j M Y" %}Last changed by {{ by }} on {{ date }}.{% endblocktrans %}</span>
+  </form>
+</div>
+{% endblock %}

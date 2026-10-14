@@ -145,3 +145,34 @@ class JobRun(models.Model):
 
     def __str__(self):
         return f"{self.name} {self.started_at:%Y-%m-%d %H:%M}"
+
+
+class EmailRouting(models.Model):
+    """Which mail account sends which mail. One row, changed in Django admin.
+
+    The logins stay in the environment (EMAIL_* and EMAIL_MESSAGES_*); this only says which of the two
+    accounts handles sign-in codes and alerts, and which handles mail to tenants and owners."""
+
+    class Account(models.TextChoices):
+        RESEND = "default", "Resend"
+        BREVO = "messages", "Brevo"
+
+    system_account = models.CharField("Sign-in codes, alerts and support", max_length=20,
+                                      choices=Account.choices, default=Account.RESEND)
+    messages_account = models.CharField("Mail to tenants and owners", max_length=20,
+                                        choices=Account.choices, default=Account.BREVO)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "email routing"
+        verbose_name_plural = "email routing"
+
+    def __str__(self):
+        return "Email routing"
+
+    @classmethod
+    def get(cls) -> "EmailRouting":
+        return cls.objects.get_or_create(pk=1)[0]
+
+    def alias_for(self, purpose: str) -> str:
+        return self.messages_account if purpose == "messages" else self.system_account

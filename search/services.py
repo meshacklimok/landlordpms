@@ -1,5 +1,5 @@
-"""Global search (D-054): one box that finds tenants, properties, units, leases, invoices, payments
-and M-Pesa transactions by name, phone, code, number or reference.
+"""Global search (D-054): one box that finds tenants, properties, units, leases, invoices, payments,
+M-Pesa transactions and messages by name, phone, code, number or reference.
 
 Every group follows the same rules as its own list page: the member needs that list's view
 capability, and sees only rows on the properties they can see. Exact and leading matches come
@@ -228,7 +228,24 @@ def _mpesa(m: Membership, q: str, limit: int) -> Group | None:
         for t in rows])
 
 
-GROUPS = (_tenants, _properties, _units, _leases, _invoices, _payments, _mpesa)
+def _messages(m: Membership, q: str, limit: int) -> Group | None:
+    if not can(m, "messages.view"):
+        return None
+    from notifications.selectors import visible_messages
+
+    match = (Q(body__icontains=q) | Q(subject__icontains=q) | Q(tenant__name__icontains=q)
+             | Q(provider_id__iexact=q.replace(" ", "")) | _phone_match(q, "to"))
+    qs = visible_messages(m).filter(match).select_related("tenant")
+    rows, more = _take(qs.order_by("-created_at", "-pk"), limit)
+    return Group("messages", _("Messages"), more=more, list_url=_list_url("notifications:log", q), hits=[
+        Hit((msg.tenant.name if msg.tenant else msg.to) or str(msg.get_type_display()),
+            _join(msg.get_type_display(), msg.get_channel_display(), f"{msg.created_at:%d %b %Y}",
+                  msg.get_status_display()),
+            reverse("notifications:detail", args=[msg.public_id]))
+        for msg in rows])
+
+
+GROUPS = (_tenants, _properties, _units, _leases, _invoices, _payments, _mpesa, _messages)
 
 
 def search(membership: Membership, raw, *, limit: int = SUGGEST_LIMIT) -> Results:

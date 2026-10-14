@@ -1,0 +1,100 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Management fees" %}{% endblock %}
+{% block content %}
+{% with cur=currency t=report.total %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+  <h1 class="h4 mb-0">{% trans "Management fees" %}</h1>
+  {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="?format=csv">{% trans "Download CSV" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="?format=xlsx">{% trans "Download Excel" %}</a>{% endif %}
+</div>
+<p class="small text-body-secondary">{% blocktrans with a=report.months.0|date:"F Y" b=report.months|last|date:"F Y" %}Your agency's income from fees, {{ a }} to {{ b }}{% endblocktrans %} · {% if report.scoped %}{% trans "Only the properties you can see" %}{% else %}{% trans "All properties" %}{% endif %}</p>
+{% include "reports/_finance_links.html" with section="fees" %}
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Fees earned" %}</div>
+    <div class="stat-value num">{{ t.fee_total|money:cur }}</div>
+    <div class="stat-sub">{% trans "the last 12 months" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Last month" %}</div>
+    <div class="stat-value num">{{ t.fees|last|money:cur }}</div>
+    <div class="stat-sub">{{ report.months|last|date:"F Y" }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Rent collected" %}</div>
+    <div class="stat-value num">{{ t.rent_total|money:cur }}</div>
+    <div class="stat-sub">{% trans "on the properties below" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Fees as a share of rent" %}</div>
+    <div class="stat-value num">{% if t.fee_rate is not None %}{{ t.fee_rate }}%{% else %}—{% endif %}</div>
+    <div class="stat-sub">{% trans "fixed fees included" %}</div>
+  </div></div></div>
+</div>
+
+{% if specs %}
+<section class="row g-3 mb-3">
+  <div class="col-12 col-lg-8">
+    <div class="chart-card">
+      <h2>{% trans "Fees by month" %}</h2>
+      <p class="chart-sub">{% trans "The figures are in the table below." %}</p>
+      <div class="chart-box h-lg"><canvas data-chart="chart-fee-months" role="img" aria-label="{% trans 'Management fees by month. The same figures are in the table below.' %}"></canvas></div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="chart-card">
+      <h2>{% if report.by_branch %}{% trans "Fees by branch" %}{% else %}{% trans "Fees by owner" %}{% endif %}</h2>
+      <p class="chart-sub">{% blocktrans with a=t.fee_total|money:cur %}{{ a }} in all.{% endblocktrans %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-fee-split" role="img" aria-label="{% trans 'Fees split by branch or owner. The same figures are in the tables below.' %}"></canvas></div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-lg-5">
+    <div class="card shadow-sm h-100"><div class="card-body p-2">
+      <h2 class="h6">{% trans "By month" %}</h2>
+      <div class="table-responsive"><table class="table table-sm small align-middle mb-0">
+        <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent collected" %}</th><th class="text-end">{% trans "Fees" %}</th></tr></thead>
+        <tbody>{% for month, rent, fee in report.month_rows %}
+        <tr><td>{{ month|date:"F Y" }}</td><td class="text-end num text-nowrap">{{ rent|money:cur }}</td><td class="text-end num text-nowrap">{{ fee|money:cur }}</td></tr>
+        {% endfor %}</tbody>
+        <tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end num text-nowrap">{{ t.rent_total|money:cur }}</td><td class="text-end num text-nowrap">{{ t.fee_total|money:cur }}</td></tr></tfoot>
+      </table></div>
+    </div></div>
+  </div>
+  <div class="col-12 col-lg-7">
+    {% if report.by_branch %}
+    {% include "reports/_fee_table.html" with title=_("By branch") rows=report.by_branch name=_("Branch") %}
+    {% endif %}
+    {% include "reports/_fee_table.html" with title=_("By owner") rows=report.by_owner name=_("Owner") %}
+    {% include "reports/_fee_table.html" with title=_("By property") rows=report.by_property name=_("Property") %}
+  </div>
+</div>
+
+{% if report.no_fee %}
+<div class="alert alert-warning small mt-3 mb-0">
+  {% blocktrans count n=report.no_fee|length %}{{ n }} property has no fee set, so it earns nothing here:{% plural %}{{ n }} properties have no fee set, so they earn nothing here:{% endblocktrans %}
+  {% for p in report.no_fee %}{% if can_manage_properties %}<a href="{% url 'properties:edit' p.public_id %}">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}.
+</div>
+{% endif %}
+
+<h2 class="h6 mt-3">{% trans "Notes" %}</h2>
+<ul class="small text-body-secondary">
+  <li>{% trans "The fee is worked out as on the owner statement: the percentage of rent collected in the month, plus any fixed monthly fee for each month a property is managed (from the month it was added until the month it was archived)." %}</li>
+  <li>{% trans "Rent collected is money received in the month, whatever month it was for. Money not yet applied to an invoice is counted as rent." %}</li>
+  <li>{% trans "Jointly owned properties are listed under their main owner." %}</li>
+  <li>{% trans "Figures are live: a late payment, a correction or a changed fee changes past months. This is what the fees come to, not what has been taken from owners' money." %}</li>
+</ul>
+{% endwith %}
+{% if specs %}{{ specs.months|json_script:"chart-fee-months" }}{{ specs.split|json_script:"chart-fee-split" }}{% endif %}
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

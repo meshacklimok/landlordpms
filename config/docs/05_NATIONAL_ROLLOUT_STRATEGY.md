@@ -1,6 +1,6 @@
 # 05 — National Rollout Strategy
 
-Goal: make landlordpms the default tool for every rental owner and manager in Kenya. This is done by winning small first and building trust, not by launching everywhere at once.
+Goal: make NyumbaPMS the default tool for every rental owner and manager in Kenya. This is done by winning small first and building trust, not by launching everywhere at once.
 
 ## 1. Product principles for reaching everyone
 | Principle | Why it matters nationally |
@@ -29,7 +29,7 @@ Goal: make landlordpms the default tool for every rental owner and manager in Ke
 
 ### Phase C — Expand (months 9–24): major towns
 - Nairobi, then Mombasa, Kisumu, Nakuru, Eldoret, Thika, Kiambu, Machakos, Kajiado (fast-growing rental markets).
-- Regional field agents ("landlordpms ambassadors") in each town.
+- Regional field agents ("NyumbaPMS ambassadors") in each town.
 - Partnerships: banks/SACCOs (landlords often have loans), Safaricom business channels, hardware/water/utility vendors, estate agents' bodies **[VERIFY relevant bodies]**.
 - Localise: county-specific rent/tax help, local-language support pages.
 
@@ -42,12 +42,13 @@ Goal: make landlordpms the default tool for every rental owner and manager in Ke
 ## 3. Pricing (validate first)
 Preliminary ideas from the original notes, to be tested with pilots:
 
-| Plan | Units | Idea |
+| Plan | Units | Idea (D-132; monthly, yearly, one-off for 5 years) |
 |------|-------|------|
-| Free | up to 5 | Removes the adoption barrier |
-| Starter | ~25 | ~KSh 799/mo |
-| Business | ~100 | ~KSh 1,999/mo |
-| Professional | ~300 | ~KSh 4,999/mo |
+| Lite | up to 10 | KSh 499, 4,990, 12,490 |
+| Starter | up to 20 | KSh 799, 7,990, 19,990 |
+| Growth | up to 50 | KSh 1,299, 12,990 |
+| Business | up to 100 | KSh 1,999, 19,990 |
+| Professional | up to 300 | KSh 4,999, 49,990 |
 | Enterprise | custom | Agencies and developers |
 
 Other revenue: SMS/WhatsApp bundles, per-transaction fees on M-Pesa collection **[VERIFY legality/fees]**, premium reports, tenant screening/reference services, partnerships.
@@ -63,7 +64,7 @@ Landlords entrust us with money records and tenants' personal data. To be nation
 
 ## 5. Channels for tenants (network effect)
 Tenants are a distribution channel:
-- Every receipt/reminder carries a light "Powered by landlordpms" line.
+- Every receipt/reminder carries a light "Powered by NyumbaPMS" line.
 - Tenants who manage rent for other properties or who are landlords themselves are prompts to sign up.
 - Optional tenant portal: statements, payment history, maintenance requests. Payment history could later serve as a **rental reference** (with consent).
 

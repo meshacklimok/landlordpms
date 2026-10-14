@@ -1,0 +1,8 @@
+{% load i18n %}{# Where the user is in moving a tenant in: pass step=1, 2 or 3. #}
+<ol class="list-inline small mb-3" aria-label="{% trans 'Steps to move a tenant in' %}">
+  <li class="list-inline-item {% if step == 1 %}fw-semibold{% else %}text-body-secondary{% endif %}"{% if step == 1 %} aria-current="step"{% endif %}>{% if step > 1 %}<i class="bi bi-check-lg" aria-hidden="true"></i> {% endif %}1. {% trans "Tenant" %}</li>
+  <li class="list-inline-item text-body-secondary" aria-hidden="true">›</li>
+  <li class="list-inline-item {% if step == 2 %}fw-semibold{% else %}text-body-secondary{% endif %}"{% if step == 2 %} aria-current="step"{% endif %}>{% if step > 2 %}<i class="bi bi-check-lg" aria-hidden="true"></i> {% endif %}2. {% trans "Lease terms" %}</li>
+  <li class="list-inline-item text-body-secondary" aria-hidden="true">›</li>
+  <li class="list-inline-item {% if step == 3 %}fw-semibold{% else %}text-body-secondary{% endif %}"{% if step == 3 %} aria-current="step"{% endif %}>3. {% trans "Check and activate" %}</li>
+</ol>
