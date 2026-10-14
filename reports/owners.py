@@ -12,7 +12,6 @@ from decimal import Decimal
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
 from django.core.mail import EmailMessage
-from core.mail import MESSAGES, mailer_for
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -23,6 +22,7 @@ from accounts.permissions import accessible_property_ids, can, require
 from audit.services import record
 from core import charts
 from core.ids import uuid_or_none
+from core.mail import MESSAGES, mailer_for
 from core.money import ZERO, format_money, round_money
 from core.numbering import next_number
 from notifications.delivery import notify

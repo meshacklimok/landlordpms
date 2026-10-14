@@ -29,8 +29,8 @@ from accounts.permissions import can, require, visible_properties
 from core.money import ZERO
 from expenses.models import Expense
 from leases.models import Lease, LeaseRentChange
-from meters.models import Meter
 from maintenance.models import MaintenanceRequest as Request
+from meters.models import Meter
 from notifications.models import Message
 from payments.models import Payment
 from properties.models import Property
@@ -731,7 +731,7 @@ def utilities(membership: Membership, start: datetime.date, end: datetime.date, 
     - Money figures need the financial reports right; without it only usage is shown.
     """
     from billing.models import InvoiceLine
-    from meters.models import Meter, MeterCharge, MeterReading
+    from meters.models import MeterCharge, MeterReading
     from payments.models import PaymentAllocation
 
     from . import metrics

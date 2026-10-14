@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone

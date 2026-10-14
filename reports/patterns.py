@@ -189,4 +189,3 @@ def lease_chart(lm: LeaseMonths, currency: str) -> dict:
         charts.series(_("Rent paid"), [c.collected for c in lm.cells], "1",
                       colors=[COLORS.get(c.state, "1") for c in lm.cells]),
     ], currency=currency, legend=False)
-

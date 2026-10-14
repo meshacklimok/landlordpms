@@ -55,7 +55,8 @@ def test_only_a_report_in_the_pane_may_be_framed_and_only_by_us(client, owner):
 
 @override_settings(SECURE_CSP=POLICY, X_FRAME_OPTIONS="DENY")
 def test_every_report_in_the_centre_may_be_framed(client, owner):
-    import json, re
+    import json
+    import re
     page = client.get(reverse("reports:centre")).content.decode()
     data = json.loads(re.search(r'id="reader-reports"[^>]*>(.*?)</script>', page, re.S).group(1))
     for r in data:
