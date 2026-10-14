@@ -1,33 +1,174 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n static %}
 {% block title %}{% trans "Read meters" %} · {{ property.name }}{% endblock %}
 {% block content %}
-<div class="narrow mx-auto">
-  <a href="{% url 'meters:list' %}" class="small">← {% trans "Water meters" %}</a>
-  <h1 class="h4 mt-2">{% trans "Read meters" %} · {{ property.name }}</h1>
-  <p class="small text-muted">{% trans "Fill in the meters you read and leave the rest empty. A photo is optional." %}</p>
-  <form method="post" enctype="multipart/form-data">{% csrf_token %}
-    {% include "partials/form.html" %}
-    {% for row in rows %}
-    <div class="card shadow-sm mb-2{% if row.errors %} border-danger{% endif %}"><div class="card-body py-2">
-      <div class="d-flex justify-content-between gap-2">
-        <label class="fw-semibold" for="value-{{ row.meter.pk }}">{{ row.meter.label }}</label>
-        <span class="small text-muted">{% for mu in row.meter.served.all %}{{ mu.unit.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+<div class="sheet-page mx-auto">
+  <a href="{% url 'meters:list' %}" class="small">← {% trans "Meters" %}</a>
+  <h1 class="h4 mt-2 mb-1">{% trans "Read meters" %} · {{ property.name }}</h1>
+  <p class="small text-muted mb-3">{% trans "Type the number on each meter, or the units used if that is what you wrote down. The use and amount are worked out as you type. Leave a row empty if you did not read it." %}
+    {% trans "With no connection, the readings are kept on this phone and sent when you are back online." %}</p>
+  <div class="alert alert-warning small" data-offline-status hidden role="status"></div>
+  <div class="card shadow-sm mb-3" data-offline-list hidden
+       data-saved="{% trans 'No connection. The readings are kept on this phone and will be sent when you are back online.' %}"
+       data-photos="{% trans 'Photos are not kept on the phone; add them later from the meter page if needed.' %}"
+       data-empty="{% trans 'No connection, and no readings to keep. Fill in at least one meter.' %}"
+       data-full="{% trans 'No connection, and this phone has no room to keep the readings.' %}"
+       data-typed="{% trans 'Typed {when}, {n} readings' %}"
+       data-waiting="{% trans 'waiting to send' %}"
+       data-fix="{% trans 'needs fixing' %}"
+       data-put-back="{% trans 'Put back in the form' %}"
+       data-discard="{% trans 'Discard' %}"
+       data-discard-confirm="{% trans 'Discard these readings? They have not been sent.' %}">
+    <div class="card-body py-2"><div class="fw-semibold small">{% trans "Kept on this phone" %}</div></div>
+    <ul class="list-group list-group-flush"></ul>
+  </div>
+
+  {% if rows %}
+  <details class="card shadow-sm mb-3 sheet-import" data-sheet-import data-url="{% url 'meters:round_import' property.public_id %}"
+           data-filled="{% trans '{n} rows filled in. Check them, then save.' %}"
+           data-none="{% trans 'Nothing matched a meter on this property.' %}"
+           data-offline="{% trans 'Filling in from pasted lines needs a connection. You can still type the readings.' %}"
+           data-failed="{% trans 'The lines could not be read. Try again.' %}"
+           data-no-units="{% trans 'this meter has no earlier reading, so type the number on the meter' %}"
+           data-reading="{% trans 'Reading the photo… this takes a few seconds.' %}"
+           data-left="{% trans 'A photo is read by OpenAI to fill the rows in, and is not kept. Photo scans left this month: {n}.' %}">
+    <summary class="card-body py-2 fw-semibold small">{% if scans %}{% trans "Paste, upload or photograph readings" %}{% else %}{% trans "Paste or upload readings" %}{% endif %}</summary>
+    <div class="card-body pt-0">
+      <p class="small text-muted mb-2">{% trans "One room per line, with the number after it: A1, 134 or A1 134. A CSV from Excel works too: the room in the first column and the number in the last. Nothing is saved until you check the rows and press Save." %}</p>
+      <label class="visually-hidden" for="sheet-paste">{% trans "Lines to fill in" %}</label>
+      <textarea class="form-control font-monospace small" id="sheet-paste" rows="4" placeholder="A1, 134&#10;A2, 98&#10;B1, 210" data-import-text></textarea>
+      <div class="d-flex flex-wrap align-items-center gap-3 mt-2">
+        <fieldset class="d-flex gap-3 small">
+          <legend class="visually-hidden">{% trans "The numbers are" %}</legend>
+          <div class="form-check"><input class="form-check-input" type="radio" name="import-mode" id="import-reading" value="reading" checked data-import-mode>
+            <label class="form-check-label" for="import-reading">{% trans "Meter readings" %}</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="import-mode" id="import-units" value="units" data-import-mode>
+            <label class="form-check-label" for="import-units">{% trans "Units used" %}</label></div>
+        </fieldset>
+        <label class="small mb-0">{% trans "or a CSV file" %} <input class="form-control form-control-sm d-inline-block w-auto mw-100" type="file" accept=".csv,.txt,text/csv,text/plain" data-import-file></label>
+        {% if scans %}
+        <label class="small mb-0">{% trans "or a photo of the notebook" %} <input class="form-control form-control-sm d-inline-block w-auto mw-100" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-import-photo aria-describedby="scan-help"></label>
+        {% endif %}
+        <button type="button" class="btn btn-sm btn-outline-primary ms-auto" data-import-go>{% trans "Fill in the sheet" %}</button>
       </div>
-      <div class="small text-muted mb-1">{% if row.last %}{% blocktrans with v=row.last.value d=row.last.read_on|date:"j M" %}Last: {{ v }} m³ on {{ d }}{% endblocktrans %}{% else %}{% trans "First reading: starts the count" %}{% endif %}</div>
-      <input class="form-control{% if row.errors %} is-invalid{% endif %}" id="value-{{ row.meter.pk }}" name="value-{{ row.meter.pk }}" value="{{ row.value|default:'' }}" inputmode="decimal" autocomplete="off" placeholder="m³">
-      {% for e in row.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
-      <details class="mt-1"{% if row.note or row.replaced %} open{% endif %}>
-        <summary class="small">{% trans "Photo (optional), note, new meter" %}</summary>
-        <input class="form-control form-control-sm mt-1" type="file" name="photo-{{ row.meter.pk }}" accept="image/*" capture="environment" aria-label="{% trans 'Photo (optional)' %}">
-        <input class="form-control form-control-sm mt-1" name="note-{{ row.meter.pk }}" value="{{ row.note|default:'' }}" maxlength="300" placeholder="{% trans 'Note' %}">
-        <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="replaced-{{ row.meter.pk }}" name="replaced-{{ row.meter.pk }}"{% if row.replaced %} checked{% endif %}>
-          <label class="form-check-label small" for="replaced-{{ row.meter.pk }}">{% trans "A new meter was fitted (needs a note)" %}</label></div>
-      </details>
-    </div></div>
-    {% empty %}
+      {% if scans %}
+      <p class="small text-muted mt-2 mb-0" id="scan-help" data-scan-left>{% blocktrans count n=scans.left %}A photo is read by OpenAI to fill the rows in, and is not kept. {{ n }} photo scan left this month.{% plural %}A photo is read by OpenAI to fill the rows in, and is not kept. {{ n }} photo scans left this month.{% endblocktrans %}</p>
+      {% endif %}
+      <div class="small mt-2" data-import-result role="status" aria-live="polite"></div>
+    </div>
+  </details>
+  {% endif %}
+
+  <form method="post" enctype="multipart/form-data" data-offline-round data-reading-sheet data-property="{{ property.public_id }}"
+        data-sync-url="{% url 'meters:offline_round' property.public_id %}" data-ping-url="{% url 'support:offline' %}"
+        data-lower="{% trans 'Lower than last time. Tick “a new meter was fitted” if it was changed.' %}"
+        data-no-previous="{% trans 'First reading: it starts the count and bills nothing.' %}"
+        data-minimum="{% trans 'minimum charge' %}"
+        data-landlord="{% trans 'The landlord pays this meter: nothing is billed.' %}"
+        data-vacant-room="{% trans 'Vacant: nothing is billed.' %}"
+        data-own-meters="{% trans 'Divided by each room’s own meter when approved.' %}">{% csrf_token %}
+    {% include "partials/form.html" %}
+    {% if rows %}
+    {% if done_count %}<p class="small text-muted mb-2" role="status">{% blocktrans count n=done_count with all=rows|length %}{{ n }} of {{ all }} meter was already read this month. It is marked “Read” below; switch on “Only rows not read yet” to hide it.{% plural %}{{ n }} of {{ all }} meters were already read this month. They are marked “Read” below; switch on “Only rows not read yet” to hide them.{% endblocktrans %}</p>{% endif %}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+      {% if utilities %}
+      <div class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Show meters for' %}">
+        <input type="radio" class="btn-check" name="sheet-utility" id="sheet-all" value="" checked data-sheet-utility>
+        <label class="btn btn-outline-secondary" for="sheet-all">{% trans "All" %}</label>
+        {% for value, label in utilities %}
+        <input type="radio" class="btn-check" name="sheet-utility" id="sheet-{{ value|lower }}" value="{{ value }}" data-sheet-utility>
+        <label class="btn btn-outline-secondary" for="sheet-{{ value|lower }}">{{ label }}</label>
+        {% endfor %}
+      </div>
+      {% endif %}
+      <div class="form-check form-switch small mb-0 ms-auto">
+        <input class="form-check-input" type="checkbox" role="switch" id="sheet-unread" data-sheet-unread>
+        <label class="form-check-label" for="sheet-unread">{% trans "Only rows not read yet" %}</label>
+      </div>
+    </div>
+    <div class="table-responsive sheet-table">
+      <table class="table table-sm align-middle mb-0">
+        <caption class="visually-hidden">{% trans "Meters on this property, one row each" %}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{% trans "Room" %}</th>
+            <th scope="col" class="text-end d-none d-sm-table-cell">{% trans "Last" %}</th>
+            <th scope="col" class="sheet-col-input">{% trans "Reading now" %}</th>
+            <th scope="col" class="sheet-col-units">{% trans "Units used" %}</th>
+            <th scope="col" class="text-end d-none d-sm-table-cell">{% trans "Amount" %}</th>
+            <th scope="col"><span class="visually-hidden">{% trans "More" %}</span></th>
+          </tr>
+        </thead>
+        {% for row in rows %}{% with m=row.meter %}
+        <tbody data-meter="{{ m.public_id }}" data-label="{{ m.label }}" data-utility="{{ m.utility }}"
+               data-prev="{% if row.last %}{{ row.last.value|stringformat:'s' }}{% endif %}" data-rate="{{ m.rate|stringformat:'s' }}"
+               data-minimum="{{ m.minimum_charge|stringformat:'s' }}" data-split="{{ m.split }}" data-vacant="{{ m.vacant_share }}"
+               data-rooms="{% for s in row.served %}{{ s.weight|stringformat:'s' }}:{{ s.tenant|yesno:'1,0' }}{% if not forloop.last %},{% endif %}{% endfor %}"
+               {% if row.done %}data-done="1" {% endif %}data-landlord="{{ m.landlord_pays|yesno:'1,' }}" data-prepaid="{{ m.is_prepaid|yesno:'1,' }}" data-unit="{{ m.unit_label }}"{% if row.errors %} class="sheet-error"{% endif %}>
+          <tr>
+            <th scope="row" class="fw-normal">
+              <label for="value-{{ m.pk }}" class="d-block mb-0">
+                <span class="fw-semibold">{% for s in row.served %}{{ s.code }}{% if not forloop.last %}, {% endif %}{% empty %}{{ m.label }}{% endfor %}</span>
+                {% if utilities %}<span class="badge text-bg-light border fw-normal">{{ m.get_utility_display }}</span>{% endif %}
+                <span class="d-block small text-muted text-truncate sheet-who">
+                  {% if row.shared %}{% blocktrans with label=m.label n=row.served|length %}{{ label }} · shared by {{ n }}{% endblocktrans %}
+                  {% elif row.vacant %}<span class="badge text-bg-secondary fw-normal">{% trans "Vacant" %}</span>
+                  {% else %}{{ row.served.0.tenant }}{% endif %}
+                  {% if row.done %}<span class="badge text-bg-success fw-normal">{% blocktrans with d=row.done.read_on|date:"j M" %}Read {{ d }}{% endblocktrans %}</span>{% endif %}
+                </span>
+                <span class="d-block d-sm-none small text-muted num">{% if row.last %}{% blocktrans with v=row.last.value|floatformat:"-3" %}Last {{ v }}{% endblocktrans %}{% else %}{% trans "First reading" %}{% endif %}</span>
+              </label>
+            </th>
+            <td class="text-end num small text-muted d-none d-sm-table-cell">{% if row.last %}{{ row.last.value|floatformat:"-3" }}<span class="d-block">{{ row.last.read_on|date:"j M" }}</span>{% else %}—{% endif %}</td>
+            <td class="sheet-col-input">
+              <input class="form-control form-control-sm num{% if row.errors %} is-invalid{% endif %}" id="value-{{ m.pk }}" name="value-{{ m.pk }}"
+                     value="{{ row.value|default:'' }}" inputmode="decimal" autocomplete="off" placeholder="{{ m.unit_label }}" data-sheet-value
+                     {% if row.errors %}aria-describedby="err-{{ m.pk }}"{% endif %}>
+            </td>
+            <td class="sheet-col-units">
+              <input class="form-control form-control-sm num" name="units-{{ m.pk }}" value="{{ row.units|default:'' }}" inputmode="decimal"
+                     autocomplete="off" aria-label="{% blocktrans with room=m.label %}Units used, {{ room }}{% endblocktrans %}" data-sheet-units
+                     {% if not row.last %}disabled{% endif %}>
+              <input type="hidden" name="byunits-{{ m.pk }}" value="{% if row.by_units %}1{% endif %}" data-sheet-byunits>
+            </td>
+            <td class="text-end num d-none d-sm-table-cell" data-sheet-amount>{% if m.is_prepaid %}<span class="small text-muted">{% trans "Prepaid" %}</span>{% endif %}</td>
+            <td class="text-end">
+              <button type="button" class="btn btn-sm btn-link px-1" data-sheet-more aria-expanded="{% if row.note or row.replaced %}true{% else %}false{% endif %}"
+                      aria-controls="more-{{ m.pk }}" aria-label="{% blocktrans with room=m.label %}Photo, note or new meter for {{ room }}{% endblocktrans %}">⋯</button>
+            </td>
+          </tr>
+          <tr class="sheet-detail">
+            <td colspan="6" class="pt-0 border-0">
+              <div class="small d-flex flex-wrap gap-2"><span class="d-sm-none num fw-semibold" data-sheet-amount-sm></span><span data-sheet-hint aria-live="polite"></span></div>
+              {% for e in row.errors %}<div class="invalid-feedback d-block" id="err-{{ m.pk }}">{{ e }}</div>{% endfor %}
+              <div class="small text-danger" data-offline-error></div>
+              {% if row.shared %}
+              <ul class="list-inline small text-muted mb-1 sheet-shares">
+                {% for s in row.served %}<li class="list-inline-item">{{ s.code }}: {% if s.tenant %}{{ s.tenant }}{% else %}<span class="badge text-bg-secondary fw-normal">{% trans "Vacant" %}</span>{% endif %} <span class="num text-body" data-share-amount></span></li>{% endfor %}
+              </ul>
+              {% endif %}
+              <div id="more-{{ m.pk }}" class="sheet-more"{% if not row.note and not row.replaced %} hidden{% endif %}>
+                <div class="row g-2">
+                  <div class="col-sm-5"><input class="form-control form-control-sm" type="file" name="photo-{{ m.pk }}" accept="image/*" capture="environment" aria-label="{% trans 'Photo (optional)' %}"></div>
+                  <div class="col-sm-7"><input class="form-control form-control-sm" name="note-{{ m.pk }}" value="{{ row.note|default:'' }}" maxlength="300" placeholder="{% trans 'Note' %}" aria-label="{% trans 'Note' %}"></div>
+                </div>
+                <div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="replaced-{{ m.pk }}" name="replaced-{{ m.pk }}"{% if row.replaced %} checked{% endif %} data-sheet-replaced>
+                  <label class="form-check-label small" for="replaced-{{ m.pk }}">{% trans "A new meter was fitted (needs a note)" %}</label></div>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+        {% endwith %}{% endfor %}
+      </table>
+    </div>
+    <div class="sheet-footer d-flex flex-wrap align-items-center gap-2 gap-sm-3 mt-2">
+      <span class="small" data-sheet-total aria-live="polite"
+            data-text="{% trans '{read} of {all} read · {amount}' %}">{% blocktrans with all=rows|length %}0 of {{ all }} read{% endblocktrans %}</span>
+      <button class="btn btn-primary ms-auto">{% trans "Save readings" %}</button>
+    </div>
+    {% else %}
     <p class="text-muted">{% trans "No meters on this property." %}</p>
-    {% endfor %}
-    {% if rows %}<button class="btn btn-primary w-100 mt-2">{% trans "Save readings" %}</button>{% endif %}
+    {% endif %}
   </form>
 </div>
 {% endblock %}
+{% block scripts %}<script src="{% static 'js/meter_sheet.js' %}" defer></script>{% endblock %}

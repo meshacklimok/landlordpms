@@ -32,7 +32,7 @@
           <div class="col-sm-4"><input name="name" value="{{ item.name }}" maxlength="100" required class="form-control form-control-sm" aria-label="{% trans 'Item' %}"></div>
           <div class="col-sm-2"><input name="quantity" type="number" min="1" max="999" value="{{ item.quantity }}" class="form-control form-control-sm" aria-label="{% trans 'Quantity' %}"></div>
           <div class="col-sm-3"><input name="notes" value="{{ item.notes }}" maxlength="200" class="form-control form-control-sm" placeholder="{% trans 'Note' %}" aria-label="{% trans 'Note' %}"></div>
-          <div class="col-12 d-flex gap-2"><button class="btn btn-sm btn-primary">{% trans "Save" %}</button><a class="btn btn-sm btn-link" href="{% url 'inspections:register' unit.public_id %}">{% trans "Cancel" %}</a></div>
+          <div class="col-12 d-flex flex-wrap gap-2"><button class="btn btn-sm btn-primary">{% trans "Save" %}</button><a class="btn btn-sm btn-link" href="{% url 'inspections:register' unit.public_id %}">{% trans "Cancel" %}</a></div>
         </form>
         {% else %}
         <div class="d-flex justify-content-between align-items-center gap-2">

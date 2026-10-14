@@ -169,7 +169,7 @@ def start(actor: Membership, lease: Lease, kind: str, *, inspected_on=None, requ
         raise ValidationError(_("Choose move-in or move-out."))
     if lease.organization_id != actor.organization_id:
         raise PermissionDenied(_("That record belongs to another organization."))
-    lease = Lease.all_objects.select_for_update().select_related("unit__property").get(pk=lease.pk)
+    lease = Lease.all_objects.select_for_update(of=("self",)).select_related("unit__property").get(pk=lease.pk)
     _check(actor, lease.unit)
     problem = start_problem(lease, kind)
     if problem:
@@ -360,14 +360,15 @@ def deduction_reason(report: ConditionReport, table: list[dict] | None = None) -
 
 def can_deduct(membership: Membership, report: ConditionReport) -> bool:
     return (report.kind == Kind.MOVE_OUT and report.status == Status.COMPLETED
-            and report.lease.archived_at is None and can(membership, "deposits.deduct", report.unit.property))
+            and report.lease.archived_at is None and report.lease.organization.takes_deposits
+            and can(membership, "deposits.deduct", report.unit.property))
 
 
 def deduct(actor: Membership, report: ConditionReport, *, amount, deposit_type, apply_to_balance=False,
-           reason="", entry_date=None, request=None):
+           reason="", entry_date=None, heading="", request=None):
     """A deposit deduction that cites this report (D-047 item 7). The deposit rules still apply."""
     from billing import deposits
 
     return deposits.deduct(actor, report.lease, amount=amount, deposit_type=deposit_type, reason=reason,
                            entry_date=entry_date, apply_to_balance=apply_to_balance, condition_report=report,
-                           request=request)
+                           heading=heading, request=request)

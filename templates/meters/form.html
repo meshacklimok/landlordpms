@@ -2,7 +2,7 @@
 {% block title %}{% if meter %}{% trans "Edit meter" %}{% else %}{% trans "Add meter" %}{% endif %}{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
-  <a href="{% if meter %}{% url 'meters:detail' meter.public_id %}{% else %}{% url 'meters:list' %}{% endif %}" class="small">← {% if meter %}{{ meter.label }}{% else %}{% trans "Water meters" %}{% endif %}</a>
+  <a href="{% if meter %}{% url 'meters:detail' meter.public_id %}{% else %}{% url 'meters:list' %}{% endif %}" class="small">← {% if meter %}{{ meter.label }}{% else %}{% trans "Meters" %}{% endif %}</a>
   <h1 class="h4 mt-2">{% if meter %}{% trans "Edit meter" %}{% else %}{% trans "Add a meter" %}{% endif %} · {{ property.name }}</h1>
   <form method="post" class="card shadow-sm"><div class="card-body">{% csrf_token %}
     {% include "partials/form.html" %}

@@ -101,3 +101,17 @@ def test_property_page_paginates_units(client, owner, prop):
 def test_property_page_status_filter(client, owner, prop, mixed):
     url = reverse("properties:detail", args=[prop.public_id])
     assert codes(client.get(url, {"status": "reserved"}), "units") == ["A3"]
+
+
+def test_property_page_charts_the_rent_only_once_there_is_some(client, owner, prop):
+    """D-140: the 12-month rent chart appears when a lease has billed rent, with the same figures in a table."""
+    url = reverse("properties:detail", args=[prop.public_id])
+    assert "chart-trend" not in client.get(url).text
+    from django.utils import timezone
+
+    from reports.metrics import month_start
+    from reports.tests.test_income import bill, make_lease
+    month = month_start(timezone.localdate())
+    bill(make_lease(owner, prop, start=month), month)
+    r = client.get(url)
+    assert 'data-chart="chart-trend"' in r.text and r.context["specs"]["trend"]["series"][0]["data"][-1] == 20000

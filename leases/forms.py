@@ -4,8 +4,9 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from accounts.forms import PhoneField
+from tenants.forms import unit_label
 
-from .models import Lease
+from .models import Lease, LeaseNotice
 
 
 class DateInput(forms.DateInput):
@@ -120,7 +121,31 @@ class PayerForm(forms.Form):
 
 
 class NoticeForm(forms.Form):
+    """A notice to vacate from either side (D-106). Notices given in the portal are recorded there."""
+
+    given_by = forms.ChoiceField(label=_("Given by"), choices=LeaseNotice.GivenBy.choices,
+                                 initial=LeaseNotice.GivenBy.TENANT)
     given_on = forms.DateField(label=_("Notice given on"), widget=DateInput)
+    via = forms.ChoiceField(label=_("How"), initial=LeaseNotice.Via.IN_PERSON,
+                            choices=[c for c in LeaseNotice.Via.choices if c[0] != LeaseNotice.Via.PORTAL])
+    move_out_on = forms.DateField(label=_("Move out on"), widget=DateInput, required=False,
+                                  help_text=_("Leave blank for the end of the notice period."))
+    shorter_agreed = forms.BooleanField(label=_("Both sides agreed in writing to a shorter notice"), required=False)
+    reason = forms.CharField(label=_("Reason"), required=False, max_length=500,
+                             widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class WithdrawNoticeForm(forms.Form):
+    reason = forms.CharField(label=_("Why is it withdrawn?"), required=False, max_length=300)
+
+
+class PortalNoticeForm(forms.Form):
+    """The tenant's own notice in the portal: the move-out day and, if they wish, why."""
+
+    move_out_on = forms.DateField(label=_("I will move out on"), widget=DateInput)
+    reason = forms.CharField(label=_("Reason (optional)"), required=False, max_length=500,
+                             widget=forms.Textarea(attrs={"rows": 2}))
+    confirm = forms.BooleanField(label=_("I understand that this is my notice to vacate and the office will be told."))
 
 
 class EndLeaseForm(forms.Form):
@@ -148,11 +173,14 @@ class TransferForm(forms.Form):
                                help_text=_("Defaults to this lease's end date."))
     rent = forms.DecimalField(label=_("Monthly rent (KES)"), max_digits=14, decimal_places=2, min_value=0,
                               required=False, help_text=_("Defaults to the new unit's listed rent."))
+    activate_now = forms.BooleanField(
+        label=_("Finish the move now"), required=False,
+        help_text=_("Activate the new lease straight away. Leave unticked to review the draft first."))
 
     def __init__(self, *args, units, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["unit"].queryset = units
-        self.fields["unit"].label_from_instance = lambda u: f"{u.property.name} · {u.code}"
+        self.fields["unit"].label_from_instance = unit_label
 
 
 class LeaseSearchForm(forms.Form):

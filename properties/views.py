@@ -5,6 +5,8 @@ the member may see. Anything outside that is a 404, never a 403, so other
 organizations' records cannot be probed.
 """
 
+from collections import defaultdict
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
@@ -17,20 +19,27 @@ from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
+from accounts.models import Branch
 from accounts.permissions import can, visible_properties
 from billing.invoicing import month_start, next_month
 from billing.models import ChargeType
 from billing.services import recurring_charge_types
-from core import ratelimit
+from core import charts, ratelimit
 from core.net import client_ip
+from documents import services as documents
 from leases import services as lease_services
 from leases.forms import PropertyChargeForm
 from leases.models import Lease
 from leases.services import with_occupancy
 from maintenance import services as maintenance
+from owner_portal.views import owner_card as owner_portal_card
+from prospects import services as prospects
+from prospects.forms import EnquiryForm
+from reports import finance, metrics
+from reports.statements import fully_sees
 
 from . import forms, selectors, services
-from .models import Building, Property, PropertyOwner, Unit
+from .models import Building, Property, PropertyOwner, PropertyShare, Unit, owned_by
 
 PAGE_SIZE = 25
 
@@ -79,11 +88,17 @@ class PropertyListView(CapabilityRequiredMixin, View):
         qs = visible_properties(request.membership, base).annotate(
             unit_count=Count("units", filter=Q(units__archived_at__isnull=True))
         )
+        # Branches the viewer has properties in (D-127); with fewer than two there is nothing to filter.
+        branches = list(Branch.objects.filter(properties__in=qs).distinct().order_by("name"))
+        branch = next((b for b in branches if b.public_id == search.cleaned_data.get("branch")), None)
+        if branch:
+            qs = qs.filter(branch=branch)
         if q:
             qs = qs.filter(Q(name__icontains=q) | Q(code__iexact=q) | Q(area__icontains=q))
-        page = Paginator(qs.order_by("name"), PAGE_SIZE).get_page(request.GET.get("page"))
+        page = Paginator(qs.select_related("branch").order_by("name"), PAGE_SIZE).get_page(request.GET.get("page"))
         return render(request, self.template_name, {
             "page": page, "q": q, "show_archived": show_archived,
+            "branches": branches if len(branches) > 1 or branch else [], "branch": branch,
             "can_manage": can(request.membership, "properties.manage"),
         })
 
@@ -96,8 +111,14 @@ class OwnerListView(CapabilityRequiredMixin, View):
 
     def context(self, request, form=None):
         props = visible_properties(request.membership, Property.all_objects.all())
-        owners = PropertyOwner.objects.filter(organization=request.organization).annotate(
-            property_count=Count("properties", filter=Q(properties__in=props)))
+        held = defaultdict(set)
+        for owner_id, pk in props.filter(owner__isnull=False).values_list("owner_id", "pk"):
+            held[owner_id].add(pk)
+        for owner_id, pk in PropertyShare.objects.filter(property__in=props).values_list("owner_id", "property_id"):
+            held[owner_id].add(pk)
+        owners = list(PropertyOwner.objects.filter(organization=request.organization))
+        for owner in owners:
+            owner.property_count = len(held[owner.pk])
         return {"owners": owners, "form": form or forms.PropertyOwnerForm(),
                 "unowned": props.filter(owner__isnull=True, archived_at__isnull=True).count(),
                 "can_invite": can(request.membership, "staff.manage")}
@@ -125,9 +146,20 @@ class OwnerEditView(CapabilityRequiredMixin, View):
     def _owner(self, request, public_id):
         return get_object_or_404(PropertyOwner, organization=request.organization, public_id=public_id)
 
+    def _context(self, request, owner, form) -> dict:
+        """Only the owner's properties this member can see (D-097)."""
+        shares = dict(PropertyShare.objects.filter(owner=owner).values_list("property_id", "percent"))
+        owned = visible_properties(request.membership, Property.all_objects.filter(owned_by(owner)))
+        props = [(p, shares.get(p.pk)) for p in owned.order_by("name")]
+        m = request.membership
+        return {"form": form, "owner": owner, "props": props,
+                "owner_portal": owner_portal_card(owner) if can(m, "owners.invite_portal") else None,
+                "fully_sees": fully_sees(m, owner)}
+
     def get(self, request, public_id):
         owner = self._owner(request, public_id)
-        return render(request, self.template_name, {"form": forms.PropertyOwnerForm(instance=owner), "owner": owner})
+        form = forms.PropertyOwnerForm(instance=owner)
+        return render(request, self.template_name, self._context(request, owner, form))
 
     def post(self, request, public_id):
         owner = self._owner(request, public_id)
@@ -141,7 +173,7 @@ class OwnerEditView(CapabilityRequiredMixin, View):
             else:
                 messages.success(request, _("Owner saved."))
                 return redirect("properties:owners")
-        return render(request, self.template_name, {"form": form, "owner": owner})
+        return render(request, self.template_name, self._context(request, owner, form))
 
 
 class PropertyCreateView(CapabilityRequiredMixin, View):
@@ -150,10 +182,10 @@ class PropertyCreateView(CapabilityRequiredMixin, View):
 
     def get(self, request):
         return render(request, self.template_name,
-                      {"form": forms.PropertyForm(organization=request.organization)})
+                      {"form": forms.PropertyForm(organization=request.organization, membership=request.membership)})
 
     def post(self, request):
-        form = forms.PropertyForm(request.POST, organization=request.organization)
+        form = forms.PropertyForm(request.POST, organization=request.organization, membership=request.membership)
         if form.is_valid():
             try:
                 prop = services.create_property(request.membership, request=request, **form.cleaned_data)
@@ -174,6 +206,7 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
         m = request.membership
         ctx = {
             "property": prop,
+            "owners": services.shares_of(prop),
             "can_manage": can(m, "properties.manage", prop),
             "can_manage_units": can(m, "units.manage", prop),
             "show_units": can(m, "units.view", prop),
@@ -181,6 +214,7 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
                                 and Lease.objects.filter(
                                     unit__property=prop, status__in=lease_services.OPEN_STATUSES).exists()),
             "building_form": forms.BuildingForm(),
+            "doc_panel": documents.panel(m, prop),
         }
         if ctx["show_units"]:
             search = forms.UnitSearchForm(request.GET)
@@ -196,7 +230,28 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
         ctx["buildings"] = Building.objects.filter(property=prop).annotate(
             unit_count=Count("units", filter=Q(units__archived_at__isnull=True))
         )
+        ctx.update(self.glance(m, prop))
         return render(request, self.template_name, ctx)
+
+    @staticmethod
+    def glance(m, prop) -> dict:
+        """D-110: how the property is doing this month and over the last 12, for members who see the money."""
+        if prop.is_archived or not can(m, "dashboard.view_financial"):
+            return {}
+        today = timezone.localdate()
+        out = {"glance": metrics.property_glance(m, prop, today), "currency": m.organization.currency}
+        # D-140: the last 12 months of rent for this property, drawn by static/js/charts.js; the table is on the page.
+        months = metrics.trend(metrics.scope(m, prop), today)
+        if any(r.expected or r.collected for r in months):
+            out["trend"] = months
+            out["specs"] = {"trend": charts.chart("bar", [r.label for r in months], [
+                charts.series(_("Rent expected"), [r.expected for r in months], "1-soft"),
+                charts.series(_("Rent collected"), [r.collected for r in months], "1"),
+            ], currency=out["currency"])}
+        if can(m, "reports.view_financial"):
+            month = month_start(today)
+            out["year"] = finance.money_report(m, metrics.add_months(month, -11), month, prop)
+        return out
 
 
 class PropertyChargeView(CapabilityRequiredMixin, View):
@@ -251,11 +306,13 @@ class PropertyEditView(CapabilityRequiredMixin, View):
         prop = _get_property(request, public_id)
         _require(request, "properties.manage", prop)
         return render(request, self.template_name, {
-            "form": forms.PropertyForm(instance=prop, organization=request.organization), "property": prop})
+            "form": forms.PropertyForm(instance=prop, organization=request.organization,
+                                         membership=request.membership), "property": prop})
 
     def post(self, request, public_id):
         prop = _get_property(request, public_id)
-        form = forms.PropertyForm(request.POST, instance=prop, organization=request.organization)
+        form = forms.PropertyForm(request.POST, instance=prop, organization=request.organization,
+                                  membership=request.membership)
         if form.is_valid():
             try:
                 services.update_property(request.membership, prop, request=request, **form.cleaned_data)
@@ -266,6 +323,42 @@ class PropertyEditView(CapabilityRequiredMixin, View):
                 messages.success(request, _("Property saved."))
                 return redirect("properties:detail", public_id=prop.public_id)
         return render(request, self.template_name, {"form": form, "property": prop})
+
+
+class PropertySharesView(CapabilityRequiredMixin, View):
+    """Who owns the property and their shares (D-078)."""
+
+    template_name = "properties/property_shares.html"
+    required_capability = "properties.manage"
+
+    def _prop(self, request, public_id):
+        prop = _get_property(request, public_id)
+        _require(request, "properties.manage", prop)
+        return prop
+
+    def get(self, request, public_id):
+        prop = self._prop(request, public_id)
+        initial = [{"owner": o, "percent": p} for o, p in services.shares_of(prop)]
+        return render(request, self.template_name, {
+            "property": prop, "formset": forms.share_formset(request.organization, initial=initial)})
+
+    def post(self, request, public_id):
+        prop = self._prop(request, public_id)
+        formset = forms.share_formset(request.organization, data=request.POST)
+        errors = []
+        if formset.is_valid():
+            rows = [(f.cleaned_data["owner"], f.cleaned_data["percent"]) for f in formset.forms
+                    if f.cleaned_data.get("owner")]
+            try:
+                services.set_shares(request.membership, prop, rows, request=request)
+            except ValidationError as exc:
+                prop.refresh_from_db()
+                errors = exc.messages
+            else:
+                messages.success(request, _("Owners saved."))
+                return redirect("properties:detail", public_id=prop.public_id)
+        return render(request, self.template_name, {"property": prop, "formset": formset, "errors": errors},
+                      status=400)
 
 
 class PropertyArchiveView(CapabilityRequiredMixin, View):
@@ -426,7 +519,8 @@ class UnitDetailView(CapabilityRequiredMixin, View):
         can_edit = can(m, "units.manage", unit.property) and not unit.is_archived
         show_leases = can(m, "leases.view", unit.property)
         return {
-            "leases": unit.leases.prefetch_related("lease_tenants__tenant") if show_leases else None,
+            "leases": (Lease.all_objects.filter(unit=unit).prefetch_related("lease_tenants__tenant")
+                       if show_leases else None),
             "can_draft_lease": (can(m, "leases.draft", unit.property) and not unit.is_archived
                                 and unit.manual_status != Unit.ManualStatus.INACTIVE),
             "today": timezone.localdate(),
@@ -445,6 +539,10 @@ class UnitDetailView(CapabilityRequiredMixin, View):
             "repairs": (list(maintenance.open_on_unit(m, unit).order_by("due_at", "pk")[:10])
                         if can(m, "maintenance.view", unit.property) else None),
             "can_report_repair": can(m, "maintenance.create", unit.property) and not unit.is_archived,
+            "doc_panel": documents.panel(m, unit),
+            "held_for": prospects.held_for(unit) if can(m, "prospects.view", unit.property) else None,
+            "can_see_prospects": can(m, "prospects.view", unit.property),
+            "can_add_prospect": can(m, "prospects.manage", unit.property) and not unit.is_archived,
         }
 
     def get(self, request, public_id):
@@ -497,10 +595,28 @@ class UnitDetailView(CapabilityRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 VACANCY_RATE_LIMIT = 60  # views per IP per minute
+ENQUIRY_RATE_LIMIT = 5  # enquiries per IP per hour (D-072)
 
 
 class VacancyView(View):
+    """The public page, and its enquiry form: a new prospect for whoever works on the property (D-072)."""
+
     template_name = "properties/vacancy.html"
+
+    def page(self, request, unit, form=None, status=200):
+        contact_name, contact_phone = selectors.vacancy_contact(unit)
+        available = selectors.is_available_to_let(unit)
+        response = render(request, self.template_name, {
+            "unit": unit,
+            "property": unit.property,
+            "available": available,
+            "contact_name": contact_name,
+            "contact_phone": contact_phone,
+            "enquiry_form": (form or EnquiryForm()) if available else None,
+            "sent": request.GET.get("sent") == "1",
+        }, status=status)
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response
 
     def get(self, request, token):
         if not ratelimit.hit(f"vacancy:ip:{client_ip(request)}", VACANCY_RATE_LIMIT, 60):
@@ -508,13 +624,26 @@ class VacancyView(View):
         unit = selectors.shared_unit(token)
         if unit is None:
             raise Http404
-        contact_name, contact_phone = selectors.vacancy_contact(unit)
-        response = render(request, self.template_name, {
-            "unit": unit,
-            "property": unit.property,
-            "available": selectors.is_available_to_let(unit),
-            "contact_name": contact_name,
-            "contact_phone": contact_phone,
-        })
-        response["X-Robots-Tag"] = "noindex, nofollow"
-        return response
+        return self.page(request, unit)
+
+    def post(self, request, token):
+        unit = selectors.shared_unit(token)
+        if unit is None:
+            raise Http404
+        sent = redirect(reverse("vacancy", args=[token]) + "?sent=1")
+        form = EnquiryForm(request.POST)
+        if request.POST.get("website"):  # a bot filled the hidden field: look successful, keep nothing
+            return sent
+        if not ratelimit.hit(f"vacancy:enquiry:ip:{client_ip(request)}", ENQUIRY_RATE_LIMIT, 3600):
+            return HttpResponse(_("Too many requests. Try again later, or call instead."), status=429)
+        if not selectors.is_available_to_let(unit):
+            return redirect("vacancy", token=token)
+        if form.is_valid():
+            try:
+                prospects.public_enquiry(unit, name=form.cleaned_data["name"], phone=form.cleaned_data["phone"],
+                                         message=form.cleaned_data["message"], request=request)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            else:
+                return sent
+        return self.page(request, unit, form=form, status=400)

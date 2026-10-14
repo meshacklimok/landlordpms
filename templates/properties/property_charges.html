@@ -25,7 +25,7 @@
       {% for lease, reason in skipped %}<li><span class="fw-medium">{{ lease.unit.code }}</span>{% if lease.primary_tenant %} · {{ lease.primary_tenant }}{% endif %} — {{ reason }}</li>{% endfor %}
     </ul>
     {% endif %}
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
       {% if to_add %}<button class="btn btn-primary flex-fill" name="action" value="apply">{% blocktrans count n=to_add|length %}Add to {{ n }} lease{% plural %}Add to {{ n }} leases{% endblocktrans %}</button>{% endif %}
       <button class="btn btn-outline-secondary flex-fill" name="action" value="preview">{% trans "Check again" %}</button>
     </div>

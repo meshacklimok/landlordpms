@@ -9,6 +9,7 @@ Occupancy is never stored: it comes from leases. A unit stores only its manual s
 """
 
 import re
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -75,7 +76,7 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     street = models.CharField(_("street / landmark"), max_length=200, blank=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    # Agency office that runs this property (D-040): design-in only, same organization.
+    # Agency office that runs this property (D-040); its staff see it (D-127). Same organization.
     branch = models.ForeignKey("accounts.Branch", on_delete=models.PROTECT, null=True, blank=True,
                                related_name="properties")
 
@@ -86,6 +87,11 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         _("management fee (%)"), max_digits=5, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text=_("Taken from rent collected on the owner statement. Leave empty for no fee."))
+    # A flat fee for each month the property is managed, on top of the percentage (D-127).
+    management_fee_fixed = models.DecimalField(
+        _("fixed monthly fee"), max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=_("Taken every month the property is managed, whatever is collected. Leave empty for none."))
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -118,6 +124,50 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     def address_line(self) -> str:
         parts = [self.street, self.area, self.sub_county, self.get_county_display() if self.county else ""]
         return ", ".join(p for p in parts if p)
+
+
+class PropertyShare(TimeStampedModel):
+    """A co-owner's share of a jointly owned property (D-078).
+
+    A property with no shares is owned wholly by `Property.owner`. With shares, the rows are all of
+    its owners, their percentages add up to 100 and `Property.owner` is one of them: the main owner.
+    """
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="shares")
+    owner = models.ForeignKey(PropertyOwner, on_delete=models.PROTECT, related_name="shares")
+    percent = models.DecimalField(_("share (%)"), max_digits=5, decimal_places=2,
+                                  validators=[MinValueValidator(Decimal("0.01")), MaxValueValidator(100)])
+
+    class Meta:
+        ordering = ["-percent", "pk"]
+        constraints = [
+            models.UniqueConstraint("property", "owner", name="properties_share_property_owner_unique"),
+            models.CheckConstraint(condition=models.Q(percent__gt=0, percent__lte=100),
+                                   name="properties_share_percent_range"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner} {format_percent(self.percent)}%"
+
+
+def format_percent(value: Decimal) -> str:
+    """50.00 as "50", 33.50 as "33.5"."""
+    text = f"{value:f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def owned_by(owner: PropertyOwner) -> models.Q:
+    """Properties this owner holds, alone or with others (D-078)."""
+    return models.Q(owner=owner) | models.Q(pk__in=PropertyShare.objects.filter(owner=owner).values("property_id"))
+
+
+def owner_ids_of(properties) -> models.QuerySet:
+    """Ids of every owner of these properties, co-owners included, for `pk__in` filters."""
+    return PropertyOwner.objects.filter(
+        models.Q(pk__in=properties.filter(owner__isnull=False).values("owner_id"))
+        | models.Q(pk__in=PropertyShare.objects.filter(property__in=properties).values("owner_id"))
+    ).values("pk")
 
 
 class Building(PublicIdModel, TimeStampedModel, ArchivableModel):

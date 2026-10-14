@@ -82,7 +82,7 @@ def test_the_home_page_counts_readings_to_approve(client, owner, meter):
     read(owner, meter, D(2026, 1, 31), 110)
     login(client, owner)
     page = client.get(reverse("accounts:home")).content.decode()
-    assert "water reading to approve" in page
+    assert "meter reading to approve" in page
 
 
 def test_another_organizations_meter_is_404(client, meter):
@@ -104,7 +104,7 @@ def test_the_round_records_several_meters_with_optional_photos(client, owner, pr
     second = make_meter(owner, prop, [u2], label="W2")
     login(client, owner)
     url = reverse("meters:round", args=[prop.public_id])
-    assert "A photo is optional" in client.get(url).content.decode()
+    assert "Units used" in client.get(url).content.decode()
     response = client.post(url, {"read_on": "2026-01-31", f"value-{meter.pk}": "111",
                                  f"value-{second.pk}": "5", f"photo-{second.pk}": jpeg()})
     assert response.status_code == 302
@@ -116,12 +116,30 @@ def test_managing_a_meter_through_the_form(client, owner, prop):
     _lease, unit = let(owner, prop)
     login(client, owner)
     response = client.post(reverse("meters:create", args=[prop.public_id]), {
-        "label": "Block A", "serial": "", "kind": "POSTPAID", "rate": "120", "minimum_charge": "",
+        "utility": "WATER", "label": "Block A", "serial": "", "kind": "POSTPAID", "rate": "120", "minimum_charge": "",
         "split": "EQUAL", f"unit-{unit.pk}": "on", f"weight-{unit.pk}": "1"})
     assert response.status_code == 302
     meter = prop.meters.get()
     assert meter.label == "Block A" and list(meter.units.all()) == [unit]
     # No unit ticked: the form comes back with the reason.
     response = client.post(reverse("meters:edit", args=[meter.public_id]), {
-        "label": "Block A", "kind": "POSTPAID", "rate": "120", "split": "EQUAL"})
+        "utility": "WATER", "label": "Block A", "kind": "POSTPAID", "rate": "120", "split": "EQUAL"})
     assert response.status_code == 200
+
+
+def test_the_list_shows_what_is_left_to_read_and_the_last_use(client, owner, prop):
+    _l, a1 = let(owner, prop, code="A1")
+    _l, a2 = let(owner, prop, code="A2")
+    m1, m2 = make_meter(owner, prop, [a1], label="W-A1"), make_meter(owner, prop, [a2], label="W-A2")
+    today = datetime.date.today()
+    read(owner, m1, today - datetime.timedelta(days=40), 100)
+    read(owner, m1, today, 130)
+    read(owner, m2, today - datetime.timedelta(days=40), 50)
+    login(client, owner)
+    response = client.get(reverse("meters:list"))
+    page = response.content.decode()
+    assert "1 to read this month" in page and "not read this month" in page
+    used = {i["meter"].label: i["used"] for i in response.context["rows"][0]["meters"]}
+    assert used == {"W-A1": 30, "W-A2": None}
+    detail = client.get(reverse("meters:detail", args=[m1.public_id])).content.decode()
+    assert "Used last period" in detail

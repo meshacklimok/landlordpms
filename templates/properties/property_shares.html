@@ -1,0 +1,37 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Owners and shares" %} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Owners and shares" %}</h1>
+  <p class="small text-muted">{% trans "One owner holds 100%. For a jointly owned property, list every owner and their share; the shares must add up to 100%. Each owner's statement shows the whole property and their share of what is due. The largest share is the main owner." %}
+    <a href="{% url 'properties:owners' %}">{% trans "Add an owner" %}</a></p>
+  <form method="post" novalidate>{% csrf_token %}
+    {{ formset.management_form }}
+    {% for e in errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+    {% for e in formset.non_form_errors %}<div class="alert alert-danger">{{ e }}</div>{% endfor %}
+    {% for form in formset %}
+    <div class="row g-2 mb-2 align-items-start">
+      <div class="col-8">
+        <label class="visually-hidden" for="{{ form.owner.id_for_label }}">{{ form.owner.label }}</label>
+        <select name="{{ form.owner.html_name }}" id="{{ form.owner.id_for_label }}" class="form-select form-select-sm{% if form.owner.errors %} is-invalid{% endif %}">
+          {% for value, label in form.owner.field.choices %}<option value="{{ value }}" {% if value|stringformat:"s" == form.owner.value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        {% for e in form.owner.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      </div>
+      <div class="col-4">
+        <div class="input-group input-group-sm">
+          <label class="visually-hidden" for="{{ form.percent.id_for_label }}">{{ form.percent.label }}</label>
+          <input type="number" step="0.01" min="0.01" max="100" inputmode="decimal" name="{{ form.percent.html_name }}" id="{{ form.percent.id_for_label }}"
+                 class="form-control{% if form.percent.errors %} is-invalid{% endif %}" value="{{ form.percent.value|default_if_none:'' }}">
+          <span class="input-group-text">%</span>
+        </div>
+        {% for e in form.percent.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    <p class="small text-muted">{% trans "Leave a row empty to remove that owner. Leave every row empty for no owner." %}</p>
+    <button class="btn btn-primary w-100">{% trans "Save owners" %}</button>
+  </form>
+</div>
+{% endblock %}

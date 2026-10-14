@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Water and electricity used" %} · {{ month|date:"F Y" }}{% endblock %}
+{% block content %}
+<a href="{% url 'meters:list' %}" class="small">← {% trans "Meters" %}</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 mb-3">
+  <h1 class="h4 mb-0">{% trans "Water and electricity used" %}</h1>
+  <nav class="d-flex align-items-center gap-2" aria-label="{% trans 'Month' %}">
+    <a class="btn btn-sm btn-outline-secondary" href="{% querystring month=previous|date:'Y-m' %}" aria-label="{% trans 'Previous month' %}">←</a>
+    <span class="fw-semibold">{{ month|date:"F Y" }}</span>
+    {% if next %}<a class="btn btn-sm btn-outline-secondary" href="{% querystring month=next|date:'Y-m' %}" aria-label="{% trans 'Next month' %}">→</a>{% endif %}
+  </nav>
+</div>
+
+<form method="get" class="d-flex flex-wrap gap-2 align-items-end mb-3">
+  <input type="hidden" name="month" value="{{ month|date:'Y-m' }}">
+  {% if many_properties %}<div>
+    <label class="form-label small mb-1" for="usage-property">{% trans "Property" %}</label>
+    <select class="form-select form-select-sm" id="usage-property" name="property">
+      <option value="">{% trans "All properties" %}</option>
+      {% for p in properties %}<option value="{{ p.public_id }}"{% if p == property %} selected{% endif %}>{{ p.name }}</option>{% endfor %}
+    </select>
+  </div>{% endif %}
+  <button class="btn btn-sm btn-outline-primary">{% trans "Show" %}</button>
+  {% if sections %}<a class="btn btn-sm btn-outline-secondary ms-auto" href="{% querystring format='csv' %}">{% trans "Download CSV" %}</a>{% endif %}
+</form>
+
+<p class="small text-muted">{% trans "From the readings taken this month and approved. A tenant's units are their part of the meter's use as it was divided; the amount is what they were charged. Empty rooms and meters the landlord pays fall on the landlord." %}</p>
+
+{% if not sections %}
+<div class="card shadow-sm"><div class="card-body text-muted">{% trans "No approved readings were taken this month." %}</div></div>
+{% else %}
+
+<div class="row g-3 mb-3">
+  {% trans "Water" as water_name %}{% trans "Electricity" as power_name %}
+  {% include "meters/_usage_card.html" with name=water_name unit="m³" bill=totals.bill.water tenants=totals.tenants.water landlord=totals.landlord.water %}
+  {% include "meters/_usage_card.html" with name=power_name unit="kWh" bill=totals.bill.power tenants=totals.tenants.power landlord=totals.landlord.power %}
+</div>
+
+{% for s in sections %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6">{{ s.property.name }}</h2>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0 small usage-table">
+    <thead><tr>
+      <th scope="col">{% trans "Room" %}</th><th scope="col">{% trans "Tenant" %}</th>
+      <th scope="col" class="text-end">{% trans "Water" %} m³</th><th scope="col" class="text-end">{% trans "Water" %} KES</th>
+      <th scope="col" class="text-end">{% trans "Electricity" %} kWh</th><th scope="col" class="text-end">{% trans "Electricity" %} KES</th>
+      <th scope="col" class="text-end">{% trans "Total" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in s.rows %}
+      {% with w=row.use.water p=row.use.power %}
+      <tr><th scope="row">{{ row.unit.code }}</th><td>{{ row.tenant|default:"—" }}</td>
+        <td class="text-end font-monospace">{{ w.units|floatformat:"-3" }}</td><td class="text-end font-monospace">{{ w.amount|money }}</td>
+        <td class="text-end font-monospace">{{ p.units|floatformat:"-3" }}</td><td class="text-end font-monospace">{{ p.amount|money }}</td>
+        <td class="text-end font-monospace fw-semibold">{{ row.amount|money }}</td></tr>
+      {% endwith %}
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      {% for label, figures in s.footer %}
+      {% with w=figures.water p=figures.power %}
+      <tr><th scope="row" colspan="2">{{ label }}</th>
+        <td class="text-end font-monospace">{{ w.units|floatformat:"-3" }}</td><td class="text-end font-monospace">{{ w.amount|money }}</td>
+        <td class="text-end font-monospace">{{ p.units|floatformat:"-3" }}</td><td class="text-end font-monospace">{{ p.amount|money }}</td>
+        <td></td></tr>
+      {% endwith %}
+      {% endfor %}
+    </tfoot>
+  </table></div>
+</div></div>
+{% endfor %}
+{% endif %}
+{% endblock %}

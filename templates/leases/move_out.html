@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Move-out statement" %} · {{ lease }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small">← {% trans "Lease" %} {{ lease }} · {{ s.property }} · {{ s.unit }}</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2">
+    <h1 class="h4 mb-0">{% trans "Move-out statement" %}</h1>
+    <span class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'leases:move_out_pdf' lease.public_id %}">{% trans "PDF" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'leases:move_out_pdf' lease.public_id %}?download=1">{% trans "Download" %}</a>
+    </span>
+  </div>
+  <p class="small text-muted">{% blocktrans with day=s.today|date:"j M Y" %}What the tenant owes and what comes back from the deposit, from the records as at {{ day }}. It moves no money: record deductions and refunds on the statement and deposits page.{% endblocktrans %}</p>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-5">{% trans "Tenant" %}</dt><dd class="col-7">{% for t in s.tenants %}{{ t.name }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</dd>
+      <dt class="col-5">{% trans "Lease" %}</dt><dd class="col-7">{{ lease }} · {% trans "from" %} {{ lease.start_date|date:"j M Y" }}</dd>
+      {% if lease.notice_given_on %}<dt class="col-5">{% trans "Notice given" %}</dt><dd class="col-7">{{ lease.notice_given_on|date:"j M Y" }}</dd>{% endif %}
+      <dt class="col-5">{% if s.expected %}{% trans "Move-out expected by" %}{% else %}{% trans "Moved out" %}{% endif %}</dt><dd class="col-7">{{ s.moved_out|date:"j M Y" }}</dd>
+    </dl>
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Rent account" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      {% for r in s.account %}<tr><td>{{ r.label }}</td><td class="text-end text-nowrap">{{ r.amount|money:s.currency }}</td></tr>{% endfor %}
+      <tr class="fw-semibold"><td>{% if s.balance < 0 %}{% trans "In credit" %}{% else %}{% trans "Balance owed" %}{% endif %}</td><td class="text-end text-nowrap">{{ s.balance|absolute|money:s.currency }}</td></tr>
+    </table></div>
+    {% if s.unpaid %}
+    <div class="small fw-semibold mt-3">{% trans "Still unpaid" %}</div>
+    <ul class="list-unstyled small mb-0">
+      {% for d in s.unpaid %}<li class="d-flex justify-content-between gap-2 py-1 border-bottom"><span>{% if d.invoice %}{{ d.invoice.number }} · {% endif %}{% blocktrans with day=d.due|date:"j M Y" %}due {{ day }}{% endblocktrans %}</span><span class="text-nowrap">{{ d.amount|money:s.currency }}</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2">
+      <h2 class="h6 mb-0">{% trans "Deposits" %}</h2>
+      <a class="small" href="{% url 'billing:lease_account' lease.public_id %}">{% if can_deposits %}{% trans "Deduct or refund" %}{% else %}{% trans "Statement and deposits" %}{% endif %} →</a>
+    </div>
+    {% for t in s.deposits %}
+    <div class="small fw-semibold mt-2">{{ t.label }}</div>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      <tr><td>{% trans "Received" %}</td><td class="text-end text-nowrap">{{ t.received|money:s.currency }}</td></tr>
+      {% for e in t.entries %}{% if e.kind == "DEPOSIT_DEDUCTION" %}
+      <tr><td>{% blocktrans with day=e.entry_date|date:"j M Y" %}Deducted {{ day }}{% endblocktrans %}<div class="text-muted">{{ e.reason }}</div>{% if e.condition_report %}<a href="{% url 'inspections:report' e.condition_report.public_id %}"><i class="bi bi-clipboard-check" aria-hidden="true"></i> {% trans "Move-out report" %}</a>{% endif %}</td><td class="text-end text-nowrap">{{ e.amount|money:s.currency }}</td></tr>
+      {% endif %}{% endfor %}
+      {% if t.refunded %}<tr><td>{% trans "Refunded" %}</td><td class="text-end text-nowrap">-{{ t.refunded|money:s.currency }}</td></tr>{% endif %}
+      {% if t.transferred %}<tr><td>{% trans "Transferred" %}</td><td class="text-end text-nowrap">{{ t.transferred|money:s.currency }}</td></tr>{% endif %}
+      <tr class="fw-semibold"><td>{% trans "Still held" %}</td><td class="text-end text-nowrap">{{ t.held|money:s.currency }}</td></tr>
+    </table></div>
+    {% empty %}
+    <p class="small text-muted mb-0 mt-2">{% trans "No deposit was recorded for this lease." %}</p>
+    {% endfor %}
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Condition" %}</h2>
+    {% with c=s.condition %}
+    {% if not c %}<p class="small text-muted mb-0">{% trans "No move-out inspection was recorded." %}</p>
+    {% else %}<p class="small mb-0"><a href="{% url 'inspections:report' c.report.public_id %}">{% blocktrans with day=c.report.inspected_on|date:"j M Y" %}Inspected on {{ day }}{% endblocktrans %}</a>:
+      {% if c.compared %}{% blocktrans with worse=c.worse items=c.items %}{{ worse }} of {{ items }} items worse than at move-in.{% endblocktrans %}
+      {% else %}{% blocktrans with items=c.items %}{{ items }} items; there was no move-in report to compare.{% endblocktrans %}{% endif %}</p>
+    {% endif %}
+    {% endwith %}
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Settlement" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      <tr><td>{% trans "Deposit still held" %}</td><td class="text-end text-nowrap">{{ s.held|money:s.currency }}</td></tr>
+      <tr><td>{% if s.balance < 0 %}{% trans "Plus credit on the account" %}{% else %}{% trans "Less balance owed" %}{% endif %}</td><td class="text-end text-nowrap">{{ s.balance|absolute|money:s.currency }}</td></tr>
+      <tr class="fw-semibold {% if s.due > 0 %}text-success{% elif s.due < 0 %}text-danger{% endif %}"><td>{% if s.due > 0 %}{% trans "Due to the tenant" %}{% elif s.due < 0 %}{% trans "Owed by the tenant" %}{% else %}{% trans "Nothing due either way" %}{% endif %}</td><td class="text-end text-nowrap">{{ s.due|absolute|money:s.currency }}</td></tr>
+    </table></div>
+  </div></div>
+
+  {% if can_save %}
+  <form method="post" class="card shadow-sm mb-3"><div class="card-body d-flex flex-wrap align-items-center gap-3">{% csrf_token %}
+    <button class="btn btn-sm btn-primary">{% trans "Save a copy to documents" %}</button>
+    {% if can_share %}<div class="form-check small mb-0"><input class="form-check-input" type="checkbox" name="share" id="share" value="on"><label class="form-check-label" for="share">{% trans "Share it with the tenant in the portal" %}</label></div>{% endif %}
+  </div></form>
+  {% endif %}
+</div>
+{% endblock %}

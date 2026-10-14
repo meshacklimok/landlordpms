@@ -5,13 +5,14 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone, translation
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy
 
-from accounts.models import Membership
+from accounts.models import Membership, User
 from accounts.permissions import can, require, visible_properties
 from audit import services as audit
 from core.money import ZERO
@@ -24,7 +25,7 @@ from leases.models import Lease
 from notifications.delivery import notify, staff_with
 from properties.models import Property, Unit
 
-from .models import MaintenancePhoto, MaintenanceRequest, MaintenanceUpdate
+from .models import MaintenancePhoto, MaintenanceRequest, MaintenanceTarget, MaintenanceUpdate, OfflineReport
 
 Status = MaintenanceRequest.Status
 Priority = MaintenanceRequest.Priority
@@ -33,7 +34,9 @@ Kind = MaintenanceUpdate.Kind
 MAX_PHOTOS = 10
 MAX_PORTAL_PHOTOS = 3
 MAX_PORTAL_PER_DAY = 5
+USSD_REPEAT_WINDOW = datetime.timedelta(minutes=10)
 STATS_DAYS = 90
+MAX_TARGET_HOURS = 365 * 24
 # Where each action may start, the status it leads to, and who may do it (D-068 item 3).
 ACTIONS = {
     "start": ("maintenance.update", (Status.NEW, Status.ASSIGNED, Status.ON_HOLD), Status.IN_PROGRESS),
@@ -46,6 +49,67 @@ ACTIONS = {
 NEEDS_REASON = {"hold": gettext_lazy("Say what the job is waiting for."),
                 "reopen": gettext_lazy("Say why it is reopened."),
                 "cancel": gettext_lazy("Say why it is cancelled.")}
+
+
+# ---------------------------------------------------------------------------
+# Targets (D-074)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Target:
+    respond: datetime.timedelta
+    fix: datetime.timedelta
+    custom: bool = False
+
+
+def targets(org) -> dict[str, Target]:
+    """Priority → respond-by and fix-by times: the organization's own, else the defaults (D-074 item 2)."""
+    result = {p: Target(MaintenanceRequest.RESPOND_AFTER[p], MaintenanceRequest.DUE_AFTER[p])
+              for p in Priority.values}
+    for t in MaintenanceTarget.objects.filter(organization=org):
+        result[t.priority] = Target(datetime.timedelta(hours=t.respond_hours),
+                                    datetime.timedelta(hours=t.fix_hours), custom=True)
+    return result
+
+
+def _hours(delta: datetime.timedelta) -> int:
+    return int(delta.total_seconds() // 3600)
+
+
+@transaction.atomic
+def save_targets(actor: Membership, rows: dict[str, tuple[int, int]], *, request=None) -> dict[str, Target]:
+    """`rows`: priority → (respond hours, fix hours). A row equal to the default removes the custom one."""
+    require(actor, "organization.manage")
+    org = actor.organization
+    errors = {}
+    for priority, (respond, fix) in rows.items():
+        if priority not in Priority.values:
+            raise ValidationError(_("Unknown priority."))
+        if not (1 <= respond <= MAX_TARGET_HOURS and 1 <= fix <= MAX_TARGET_HOURS):
+            errors[priority] = _("Use between 1 hour and 365 days.")
+        elif respond > fix:
+            errors[priority] = _("Starting the work cannot be due after the fix.")
+    if errors:
+        raise ValidationError(errors)
+    before = targets(org)
+    changes = {}
+    for priority, (respond, fix) in rows.items():
+        old = before[priority]
+        if (_hours(old.respond), _hours(old.fix)) == (respond, fix):
+            continue
+        changes[priority] = [f"{_hours(old.respond)}h/{_hours(old.fix)}h", f"{respond}h/{fix}h"]
+        default = (_hours(MaintenanceRequest.RESPOND_AFTER[priority]), _hours(MaintenanceRequest.DUE_AFTER[priority]))
+        if (respond, fix) == default:
+            MaintenanceTarget.objects.filter(organization=org, priority=priority).delete()
+        else:
+            MaintenanceTarget.objects.update_or_create(
+                organization=org, priority=priority,
+                defaults={"respond_hours": respond, "fix_hours": fix, "updated_by": actor.user})
+    if changes:
+        audit.record("maintenance.targets", actor=actor.user, organization=org, obj=org, request=request,
+                     changes=changes)
+    return targets(org)
 
 
 # ---------------------------------------------------------------------------
@@ -207,6 +271,38 @@ def report(actor: Membership, prop: Property, *, title: str, description: str = 
                    source=MaintenanceRequest.Source.STAFF, now=now, request=request)
 
 
+OFFLINE_BACKDATE = datetime.timedelta(days=7)
+
+
+def report_offline(actor: Membership, prop: Property, *, key: str, typed_at: datetime.datetime | None = None,
+                   now: datetime.datetime | None = None, request=None,
+                   **fields) -> tuple[MaintenanceRequest, bool]:
+    """A report kept on a phone and sent later (D-090). Returns (the request, whether it was made now);
+    a report sent again with the same id returns the request made the first time (item 3).
+
+    The request dates from when it was typed, unless that is in the future or over 7 days back (item 4).
+    """
+    now = now or timezone.now()
+    done = OfflineReport.objects.filter(user=actor.user, key=key).select_related("request").first()
+    if done is not None:
+        return done.request, False
+    when = typed_at if typed_at is not None and now - OFFLINE_BACKDATE <= typed_at <= now else now
+    try:
+        with transaction.atomic():
+            req = report(actor, prop, now=when, request=request, **fields)
+            OfflineReport.objects.create(organization=actor.organization, user=actor.user, key=key, request=req,
+                                         typed_at=typed_at)
+            _audit("maintenance.offline_report", actor.user, actor.organization, req, request, {
+                "report": [None, key], "typed_at": [None, typed_at.isoformat() if typed_at else None],
+                "received_at": [None, now.isoformat()]})
+    except IntegrityError:
+        done = OfflineReport.objects.filter(user=actor.user, key=key).select_related("request").first()
+        if done is None:
+            raise
+        return done.request, False
+    return req, True
+
+
 @transaction.atomic
 def portal_report(user, lease: Lease, *, title: str, description: str = "", emergency: bool = False, photos=None,
                   now: datetime.datetime | None = None, request=None) -> MaintenanceRequest:
@@ -235,11 +331,47 @@ def portal_report(user, lease: Lease, *, title: str, description: str = "", emer
                    photos=photos, source=MaintenanceRequest.Source.PORTAL, now=now, request=request)
 
 
+@transaction.atomic
+def ussd_report(lease: Lease, tenant, *, kind: str, description: str = "", emergency: bool = False,
+                now: datetime.datetime | None = None, source: str = MaintenanceRequest.Source.USSD
+                ) -> MaintenanceRequest:
+    """A request from the USSD menu (D-085): the caller's main phone vouches for `tenant`, so no user is behind it.
+
+    The same report again within 10 minutes gives back the first one (a gateway may send the last step twice).
+    The tenant assistant reports the same way with its own source (D-094 item 6).
+    """
+    now = now or timezone.now()
+    lease = (Lease.objects.select_for_update(of=("self",)).select_related("organization", "unit__property")
+             .get(pk=lease.pk))
+    if lease.status != Lease.Status.ACTIVE or not lease.lease_tenants.filter(tenant=tenant).exists():
+        raise PermissionDenied("ussd")
+    description = " ".join((description or "").split())[:100]
+    if kind not in MaintenanceRequest.Kind.values:
+        raise ValidationError({"kind": _("Choose the kind of problem.")})
+    title = description or str(MaintenanceRequest.Kind(kind).label)
+    priority = Priority.EMERGENCY if emergency else Priority.NORMAL
+    mine = MaintenanceRequest.objects.filter(lease=lease, source=source)
+    repeat = mine.filter(kind=kind, title=title, created_at__gte=now - USSD_REPEAT_WINDOW).first()
+    if repeat is not None:
+        return repeat
+    day_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+    if mine.filter(created_at__gte=day_start).count() >= MAX_PORTAL_PER_DAY:
+        raise ValidationError(_("You have reported %(n)s problems today. Call the office if there are more.")
+                              % {"n": MAX_PORTAL_PER_DAY})
+    fields, errors = _clean_report(title, description, kind, priority)
+    if errors:
+        raise ValidationError(errors)
+    unit = lease.unit
+    return _create(lease.organization, unit.property, unit, None, fields, lease=lease, tenant=tenant, photos=None,
+                   source=source, now=now, request=None)
+
+
 def _create(org, prop, unit, user, fields, *, lease, tenant, photos, source, now, request) -> MaintenanceRequest:
     now = now or timezone.now()
+    target = targets(org)[fields["priority"]]
     req = MaintenanceRequest.objects.create(
         organization=org, property=prop, unit=unit, lease=lease, tenant=tenant, reported_by=user, source=source,
-        due_at=now + MaintenanceRequest.DUE_AFTER[fields["priority"]],
+        respond_by=now + target.respond, due_at=now + target.fix,
         number=next_number(org, "maintenance", prefix="MNT", period=str(timezone.localdate(now).year)), **fields)
     req.created_at = now
     MaintenanceRequest.objects.filter(pk=req.pk).update(created_at=now)
@@ -262,10 +394,43 @@ def _create(org, prop, unit, user, fields, *, lease, tenant, photos, source, now
 # ---------------------------------------------------------------------------
 
 
+def can_edit_details(membership: Membership, req: MaintenanceRequest) -> bool:
+    return req.status in MaintenanceRequest.OPEN and can_update(membership, req)
+
+
+@transaction.atomic
+def edit_details(actor: Membership, req: MaintenanceRequest, *, title: str, description: str = "", kind: str,
+                 now: datetime.datetime | None = None, request=None) -> MaintenanceRequest:
+    """Corrects what is wrong, the details and the kind of an open request (D-123). The history says what changed."""
+    req = _lock(req)
+    _require(actor, req, "maintenance.update")
+    if req.status not in MaintenanceRequest.OPEN:
+        raise ValidationError(_("Only an open request can be changed."))
+    fields, errors = _clean_report(title, description, kind, req.priority)
+    if errors:
+        raise ValidationError(errors)
+    del fields["priority"]
+    changes = {f: [getattr(req, f), v] for f, v in fields.items() if getattr(req, f) != v}
+    if not changes:
+        return req
+    for field, (_before, after) in changes.items():
+        setattr(req, field, after)
+    req.save(update_fields=[*changes, "updated_at"])
+    labels = {"title": _("what is wrong"), "description": _("details"), "kind": _("kind")}
+    MaintenanceUpdate.objects.create(
+        request=req, kind=Kind.NOTE, by=actor.user, at=now or timezone.now(),
+        text=_("Changed %(what)s.") % {"what": ", ".join(str(labels[f]) for f in changes)})
+    _audit("maintenance.edit", actor.user, actor.organization, req, request, changes)
+    return req
+
+
 @transaction.atomic
 def set_priority(actor: Membership, req: MaintenanceRequest, *, priority: str, due_at=None,
                  now: datetime.datetime | None = None, request=None) -> MaintenanceRequest:
-    """A new priority resets the due time from now, unless a due time is given (D-068 item 2)."""
+    """A new priority resets both times from now, unless a due time is given (D-068 item 2, D-074 item 3).
+
+    Respond by is left alone once the work has started. A due time given by hand counts as moved.
+    """
     req = _lock(req)
     _require(actor, req, "maintenance.assign")
     if req.status not in MaintenanceRequest.OPEN:
@@ -273,17 +438,28 @@ def set_priority(actor: Membership, req: MaintenanceRequest, *, priority: str, d
     if priority not in Priority.values:
         raise ValidationError({"priority": _("Choose how urgent it is.")})
     now = now or timezone.now()
+    target = targets(req.organization)[priority]
+    moved = due_at is not None and due_at != req.due_at
     if due_at is None:
-        due_at = now + MaintenanceRequest.DUE_AFTER[priority] if priority != req.priority else req.due_at
+        due_at = now + target.fix if priority != req.priority else req.due_at
+    respond_by = req.respond_by
+    if priority != req.priority and req.responded_at is None:
+        respond_by = now + target.respond
     changes = {}
     if priority != req.priority:
         changes["priority"] = [req.priority, priority]
     if due_at != req.due_at:
         changes["due_at"] = [req.due_at.isoformat(), due_at.isoformat()]
+    if respond_by != req.respond_by:
+        changes["respond_by"] = [req.respond_by.isoformat(), respond_by.isoformat()]
     if not changes:
         return req
-    req.priority, req.due_at = priority, due_at
-    req.save(update_fields=["priority", "due_at", "updated_at"])
+    req.priority, req.due_at, req.respond_by = priority, due_at, respond_by
+    fields = ["priority", "due_at", "respond_by", "updated_at"]
+    if moved:
+        req.due_moved += 1
+        fields.append("due_moved")
+    req.save(update_fields=fields)
     MaintenanceUpdate.objects.create(
         request=req, kind=Kind.PRIORITY, by=actor.user, at=now,
         text=_("%(priority)s, due by %(due)s") % {"priority": req.get_priority_display(),
@@ -492,12 +668,19 @@ def overdue(membership: Membership, now: datetime.datetime | None = None):
     return visible_requests(membership).filter(status__in=MaintenanceRequest.OPEN, due_at__lt=now or timezone.now())
 
 
+def late_to_start(queryset, now: datetime.datetime | None = None):
+    """Open, not started, and past the respond-by time (D-074 item 6)."""
+    return queryset.filter(status__in=MaintenanceRequest.OPEN, started_at__isnull=True,
+                           respond_by__lt=now or timezone.now())
+
+
 @dataclass
 class Summary:
     open: int
     overdue: int
     closed_recently: int
     avg_days_to_close: float | None
+    fixed_on_time: int | None = None  # per cent of jobs done in the last 90 days that were done by the fix-by time
 
 
 def summary(queryset, now: datetime.datetime | None = None) -> Summary:
@@ -509,7 +692,147 @@ def summary(queryset, now: datetime.datetime | None = None) -> Summary:
     stats = closed.aggregate(n=Count("pk"), avg=Avg(ExpressionWrapper(F("closed_at") - F("created_at"),
                                                                       output_field=DurationField())))
     avg = round(stats["avg"].total_seconds() / 86400, 1) if stats["avg"] is not None else None
-    return Summary(open=agg["open"], overdue=agg["overdue"], closed_recently=stats["n"], avg_days_to_close=avg)
+    done = queryset.exclude(status=Status.CANCELLED).filter(
+        done_at__gte=now - datetime.timedelta(days=STATS_DAYS)).aggregate(
+        n=Count("pk"), met=Count("pk", filter=Q(done_at__lte=F("due_at"))))
+    on_time = round(100 * done["met"] / done["n"]) if done["n"] else None
+    return Summary(open=agg["open"], overdue=agg["overdue"], closed_recently=stats["n"], avg_days_to_close=avg,
+                   fixed_on_time=on_time)
+
+
+# ---------------------------------------------------------------------------
+# Performance (D-074 item 5)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Performance:
+    key: int | None
+    name: str
+    public_id: object = None
+    jobs: int = 0
+    finished: int = 0
+    respond_met: int = 0
+    respond_missed: int = 0
+    fix_met: int = 0
+    fix_missed: int = 0
+    avg_hours_to_respond: float | None = None
+    avg_days_to_fix: float | None = None
+    open: int = 0
+    overdue: int = 0
+    reopened: int = 0
+    due_moved: int = 0
+    cost: Decimal | None = None
+
+    @staticmethod
+    def _pct(met, missed):
+        return round(100 * met / (met + missed)) if met + missed else None
+
+    @property
+    def respond_on_time(self) -> int | None:
+        return self._pct(self.respond_met, self.respond_missed)
+
+    @property
+    def fix_on_time(self) -> int | None:
+        return self._pct(self.fix_met, self.fix_missed)
+
+    @property
+    def cost_per_job(self) -> Decimal | None:
+        """Approved cost spread over the jobs (D-110)."""
+        return None if self.cost is None or not self.jobs else (self.cost / self.jobs).quantize(Decimal("0.01"))
+
+
+def _measures(now: datetime.datetime) -> dict:
+    """Aggregates over requests annotated with `responded` (started, else done)."""
+    return {
+        "jobs": Count("pk"),
+        "finished": Count("pk", filter=Q(done_at__isnull=False)),
+        "respond_met": Count("pk", filter=Q(responded__lte=F("respond_by"))),
+        "respond_missed": Count("pk", filter=Q(responded__gt=F("respond_by"))
+                                | Q(responded__isnull=True, respond_by__lt=now)),
+        "fix_met": Count("pk", filter=Q(done_at__lte=F("due_at"))),
+        "fix_missed": Count("pk", filter=Q(done_at__gt=F("due_at")) | Q(done_at__isnull=True, due_at__lt=now)),
+        "respond_avg": Avg(ExpressionWrapper(F("responded") - F("created_at"), output_field=DurationField())),
+        "fix_avg": Avg(ExpressionWrapper(F("done_at") - F("created_at"), output_field=DurationField())),
+        "open": Count("pk", filter=Q(status__in=MaintenanceRequest.OPEN)),
+        "overdue": Count("pk", filter=Q(status__in=MaintenanceRequest.OPEN, due_at__lt=now)),
+        "due_moved": Sum("due_moved"),
+    }
+
+
+def _reopened(qs):
+    return MaintenanceUpdate.objects.filter(
+        request__in=qs.values("pk"), kind=Kind.STATUS, from_status__in=(Status.DONE, Status.CLOSED),
+        to_status__in=(Status.NEW, Status.ASSIGNED))
+
+
+def _approved_costs(qs):
+    return Expense.objects.filter(maintenance_request__in=qs.values("pk"), status=Expense.Status.APPROVED)
+
+
+def _performance(key, name, public_id, r, reopened: int, cost: Decimal | None) -> Performance:
+    return Performance(
+        key=key, name=name, public_id=public_id,
+        jobs=r["jobs"], finished=r["finished"], respond_met=r["respond_met"],
+        respond_missed=r["respond_missed"], fix_met=r["fix_met"], fix_missed=r["fix_missed"],
+        avg_hours_to_respond=round(r["respond_avg"].total_seconds() / 3600, 1) if r["respond_avg"] else None,
+        avg_days_to_fix=round(r["fix_avg"].total_seconds() / 86400, 1) if r["fix_avg"] else None,
+        open=r["open"], overdue=r["overdue"], reopened=reopened, due_moved=r["due_moved"] or 0, cost=cost)
+
+
+# Who is on a job, and what kind of job it is (D-110): the field to group by and how each row is named.
+PEOPLE = ("supplier", "assigned_to")
+GROUPS = ("kind", "priority", "property")
+
+
+def performance(queryset, by: str, *, now: datetime.datetime | None = None,
+                with_costs: bool = False) -> list[Performance]:
+    """One row per supplier (`by="supplier"`) or staff member (`by="assigned_to"`), best first; or per kind of job,
+    priority or property (D-110), the kinds with most jobs first and priorities from most urgent.
+
+    Cancelled requests do not count. Credit goes to whoever is on the request now.
+    """
+    now = now or timezone.now()
+    if by not in PEOPLE + GROUPS:
+        raise ValueError(f"Cannot rank by {by!r}.")
+    qs = queryset.exclude(status=Status.CANCELLED).filter(**{f"{by}__isnull": False})
+    rows = (qs.annotate(responded=Coalesce("started_at", "done_at")).values(by)
+            .annotate(**_measures(now)).order_by())
+    reopened = dict(_reopened(qs).values(f"request__{by}").annotate(n=Count("pk"))
+                    .values_list(f"request__{by}", "n"))
+    costs = {}
+    if with_costs:
+        costs = dict(_approved_costs(qs).values(f"maintenance_request__{by}").annotate(total=Sum("amount"))
+                     .values_list(f"maintenance_request__{by}", "total"))
+    keys = [r[by] for r in rows]
+    if by == "supplier":
+        names = {s.pk: (s.name, s.public_id) for s in Supplier.all_objects.filter(pk__in=keys)}
+    elif by == "assigned_to":
+        names = {u.pk: (str(u), u.public_id) for u in User.objects.filter(pk__in=keys)}
+    elif by == "property":
+        names = {p.pk: (p.name, p.public_id) for p in Property.all_objects.filter(pk__in=keys)}
+    else:
+        choices = MaintenanceRequest.Kind if by == "kind" else Priority
+        names = {value: (str(label), value) for value, label in choices.choices}
+    result = [_performance(r[by], *names.get(r[by], (str(r[by]), r[by])), r, reopened.get(r[by], 0),
+                           costs.get(r[by], ZERO) if with_costs else None) for r in rows]
+    if by == "priority":
+        order = list(Priority.values)
+        result.sort(key=lambda p: order.index(p.key) if p.key in order else len(order))
+    elif by in GROUPS:
+        result.sort(key=lambda p: (-p.jobs, p.name.lower()))
+    else:
+        result.sort(key=lambda p: (-(p.fix_on_time if p.fix_on_time is not None else -1), -p.jobs, p.name.lower()))
+    return result
+
+
+def overall(queryset, *, now: datetime.datetime | None = None, with_costs: bool = False) -> Performance:
+    """Every request in the queryset added up into one row (D-110), cancelled ones left out."""
+    now = now or timezone.now()
+    qs = queryset.exclude(status=Status.CANCELLED)
+    r = qs.annotate(responded=Coalesce("started_at", "done_at")).order_by().aggregate(**_measures(now))
+    cost = (_approved_costs(qs).aggregate(s=Sum("amount"))["s"] or ZERO) if with_costs else None
+    return _performance(None, _("All jobs"), None, r, _reopened(qs).count(), cost)
 
 
 def open_on_unit(membership: Membership, unit: Unit):
@@ -533,13 +856,51 @@ def _when(moment: datetime.datetime) -> str:
 
 
 def _notify_reported(req: MaintenanceRequest, reporter) -> None:
+    who = str(reporter) if reporter is not None else _("%(tenant)s, from USSD") % {"tenant": req.tenant}
     context = {"number": req.number, "property": req.property.name, "unit": req.where, "title": req.title,
-               "priority": req.get_priority_display(), "reported_by": str(reporter)}
+               "priority": req.get_priority_display(), "reported_by": who}
     for user in staff_with(req.organization, "maintenance.assign", req.property):
-        if user.pk == reporter.pk:
+        if reporter is not None and user.pk == reporter.pk:
             continue
         notify(req.organization, "maintenance_reported", user=user, context=context, created_by=reporter,
                dedupe_key=f"maintenance_reported:{req.pk}:{user.pk}", urgent=req.priority == Priority.EMERGENCY)
+
+
+LATE_WHAT = {
+    "respond": gettext_lazy("not started"),
+    "fix": gettext_lazy("not done"),
+}
+
+
+def _late_recipients(req: MaintenanceRequest) -> list:
+    users = {u.pk: u for u in staff_with(req.organization, "maintenance.assign", req.property)}
+    if req.assigned_to_id and req.assigned_to.is_active and req.assigned_to.pk not in users:
+        m = Membership.objects.filter(organization_id=req.organization_id, user_id=req.assigned_to_id,
+                                      is_active=True, archived_at__isnull=True).select_related(
+            "user", "organization", "role").first()
+        if m is not None and sees(m, req):
+            users[m.user.pk] = m.user
+    return list(users.values())
+
+
+def send_late_alerts(now: datetime.datetime | None = None) -> dict[str, int]:
+    """Once per request, target and time: to the assignee and `maintenance.assign` holders (D-074 item 7)."""
+    now = now or timezone.now()
+    counts = {"late_to_start": 0, "late_to_fix": 0, "late_alerts_sent": 0}
+    base = MaintenanceRequest.objects.select_related("organization", "property", "unit", "assigned_to")
+    for what, qs in (("respond", late_to_start(base, now)),
+                     ("fix", base.filter(status__in=MaintenanceRequest.OPEN, due_at__lt=now))):
+        for req in qs.order_by("pk"):
+            counts["late_to_start" if what == "respond" else "late_to_fix"] += 1
+            at = req.respond_by if what == "respond" else req.due_at
+            context = {"number": req.number, "property": req.property.name, "unit": req.where, "title": req.title,
+                       "priority": req.get_priority_display(), "what": str(LATE_WHAT[what]), "due": _when(at)}
+            for user in _late_recipients(req):
+                if notify(req.organization, "maintenance_late", user=user, context=context,
+                          urgent=req.priority == Priority.EMERGENCY,
+                          dedupe_key=f"maintenance_late:{req.pk}:{what}:{at.isoformat()}:{user.pk}"):
+                    counts["late_alerts_sent"] += 1
+    return counts
 
 
 def _notify_assigned(req: MaintenanceRequest, user, by, update: MaintenanceUpdate) -> None:
@@ -558,7 +919,7 @@ def _sms_supplier(req: MaintenanceRequest, supplier: Supplier, by, update: Maint
            dedupe_key=f"maintenance_supplier_job:{update.pk}", urgent=req.priority == Priority.EMERGENCY,
            context={"supplier_name": supplier.name, "number": req.number, "property": req.property.name,
                     "unit": req.where, "title": req.title, "priority": req.get_priority_display(),
-                    "assigned_by": str(by)})
+                    "assigned_by": str(by), "respond_by": _when(req.respond_by), "due": _when(req.due_at)})
 
 
 TENANT_STATUS = {
