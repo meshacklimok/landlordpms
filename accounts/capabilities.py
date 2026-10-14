@@ -64,6 +64,8 @@ CAPABILITIES: tuple[Cap, ...] = (
     Cap("leases.activate", "Activate and renew leases"),
     Cap("leases.terminate", "End and terminate leases"),
     Cap("leases.change_rent", "Record rent changes"),
+    Cap("leases.issue_notice", "Issue notices to vacate and demand letters, and record how they were served"),
+    Cap("leases.esign", "Send the agreement and move-out statement for e-signature, and sign for the landlord"),
     # condition reports (D-047)
     _view("inspections.view", "See condition reports, unit item registers and their photos"),
     Cap("inspections.record", "Record move-in and move-out condition reports and edit item registers"),
@@ -128,6 +130,7 @@ CAPABILITIES: tuple[Cap, ...] = (
     # property owners (D-058)
     Cap("owners.remit", "Record and void payments made to property owners"),
     Cap("owners.send_statement", "Send monthly statements to property owners"),
+    Cap("owners.invite_portal", "Invite property owners to the owner portal and stop their access"),
     # audit
     _view("audit.view_own", "See my own activity"),
     _view("audit.view_all", "See the organization's full audit log", org_wide=True),
@@ -165,6 +168,7 @@ _MANAGER = _caps(
     "tenants.view", "tenants.manage", "tenants.view_sensitive", "tenants.invite_portal", "tenants.issue_letter",
     "prospects.view", "prospects.manage",
     "leases.view", "leases.draft", "leases.activate", "leases.terminate", "leases.change_rent",
+    "leases.issue_notice", "leases.esign",
     "inspections.view", "inspections.record",
     "meters.view", "meters.record", "meters.approve", "meters.manage",
     "invoices.view", "invoices.generate", "invoices.adjust", "invoices.approve_adjustment",
@@ -178,11 +182,21 @@ _MANAGER = _caps(
     "expenses.view", "expenses.submit",
     "documents.view", "documents.upload", "documents.manage", "documents.share_with_tenant",
     "reports.view_basic", "reports.view_financial", "reports.export",
-    "dashboard.view_summary", "dashboard.view_financial", "owners.send_statement",
+    "dashboard.view_summary", "dashboard.view_financial", "owners.send_statement", "owners.invite_portal",
     "audit.view_own",
 )
 
 # `●` cells from the doc 13 matrix. `◐` cells are left out: they are toggles an
+# Roles whose holders need no email address (D-151): the people on site, who often have only a phone. Everyone else,
+# the owner, agents, accountants, managers and custom roles, must have one.
+EMAIL_OPTIONAL_TEMPLATE_KEYS = frozenset({"caretaker", "maintenance_staff"})
+
+
+def email_required_for(role) -> bool:
+    template = getattr(role, "based_on_template", None)
+    return not (template is not None and template.key in EMAIL_OPTIONAL_TEMPLATE_KEYS)
+
+
 # Owner can switch on per role or per person.
 ROLE_TEMPLATES: tuple[TemplateDef, ...] = (
     TemplateDef("owner", "Owner", "Full control of the organization.", ALL_CODENAMES, is_owner=True),

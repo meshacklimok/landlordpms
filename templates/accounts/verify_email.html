@@ -1,0 +1,11 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Confirm email" %}{% endblock %}
+{% block heading %}{% trans "Confirm your email" %}{% endblock %}
+{% block card %}
+<p class="text-muted">{% blocktrans with email=user.email %}We emailed a 6-digit code to {{ email }}. Check your spam folder if it does not arrive.{% endblocktrans %}</p>
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <button class="btn btn-primary w-100">{% trans "Confirm" %}</button>
+</form>
+<form method="post" class="mt-2">{% csrf_token %}<button name="resend" value="1" class="btn btn-link px-0">{% trans "Send a new code" %}</button></form>
+<p class="small mt-2"><a href="{% url 'accounts:email' %}">{% trans "Wrong address? Change it" %}</a> · <a href="{% url 'accounts:home' %}">{% trans "Do this later" %}</a></p>
+{% endblock %}

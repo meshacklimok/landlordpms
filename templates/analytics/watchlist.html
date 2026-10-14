@@ -1,0 +1,21 @@
+{% extends "analytics/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console watchlist" %}{% endblock %}
+{% block console_title %}{% trans "Watchlist: organizations that may need a call" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:organizations' %}">&larr; {% trans "All organizations" %}</a></p>
+<p class="small text-muted">{% trans "Each reason adds to a score: silent for weeks, subscription trouble, a trial ending, no rent collected, money waiting to be matched. Highest first." %}</p>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Organization" %}</th><th class="text-end">{% trans "Score" %}</th><th>{% trans "Why" %}</th><th>{% trans "Plan" %}</th><th class="text-end">{% trans "Collected this month" %}</th></tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a></td>
+      <td class="text-end"><span class="badge {% if r.risk >= 5 %}text-bg-danger{% elif r.risk >= 3 %}text-bg-warning{% else %}text-bg-secondary{% endif %}">{{ r.risk }}</span></td>
+      <td><ul class="list-unstyled mb-0">{% for t in r.reasons %}<li>{{ t }}</li>{% endfor %}</ul></td>
+      <td>{{ r.plan }} <span class="text-muted">{{ r.sub_status }}</span></td>
+      <td class="text-end text-nowrap">{{ r.collected|money }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="5" class="text-muted">{% trans "Nothing worrying right now." %}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

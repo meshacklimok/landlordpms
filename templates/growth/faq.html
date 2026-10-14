@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load i18n growth_tags %}
+{% block title %}{% trans "Frequently asked questions" %} · NyumbaPMS{% endblock %}
+{% block meta %}<meta name="description" content="{% trans 'Answers about NyumbaPMS: M-Pesa rent collection, tenants, setting up, data and safety.' %}">
+<script type="application/ld+json">{{ pairs|faq_jsonld }}</script>{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+{% trans "Frequently asked questions" as t_title %}{% trans "Straight answers about collecting rent, tenants, your data and getting started." as t_lead %}{% trans "Support" as t_eyebrow %}
+{% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_title lead=t_lead %}
+<div class="pub-faq">
+  <nav class="pub-faq-nav" aria-label="{% trans 'Topics' %}">
+    <ul>{% for heading, items in groups %}<li><a href="#faq-{{ forloop.counter }}">{{ heading }}</a></li>{% endfor %}</ul>
+  </nav>
+  <div class="pub-faq-body">
+  {% for heading, items in groups %}
+    <section id="faq-{{ forloop.counter }}" class="pub-faq-group" aria-labelledby="faq-h-{{ forloop.counter }}">
+      <h2 id="faq-h-{{ forloop.counter }}" class="pub-faq-h">{{ heading }}</h2>
+      {% for question, answer in items %}
+      <details class="pub-faq-item" data-faq>
+        <summary>{{ question }}<i class="bi bi-plus-lg" aria-hidden="true"></i></summary>
+        <p>{{ answer }}</p>
+      </details>
+      {% endfor %}
+    </section>
+  {% endfor %}
+  </div>
+</div>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Still have a question?" %}</h2><p class="mb-0">{% trans "Ask us in a short call. No obligation." %}</p></div>
+  <a class="btn btn-primary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+</section>
+</div>
+{% endblock %}

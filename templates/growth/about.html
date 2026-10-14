@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "About us" %} · NyumbaPMS{% endblock %}
+{% block meta %}<meta name="description" content="{% trans 'Who NyumbaPMS is for, why we built it and what we promise.' %}">{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+
+<header class="about-hero">
+  <p class="about-eyebrow">{% trans "About NyumbaPMS" %}</p>
+  <h1 class="about-title">{% trans "Rent software built for how Kenya actually pays." %}</h1>
+  <p class="about-lead">{{ about.intro }}</p>
+  <div class="d-flex flex-wrap gap-2 mt-4">
+    <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+  </div>
+</header>
+
+<section class="about-section" aria-labelledby="about-why">
+  <div class="about-section-head">
+    <p class="about-eyebrow">{% trans "The problem" %}</p>
+    <h2 id="about-why" class="about-h2">{% trans "Why we built it" %}</h2>
+  </div>
+  <ol class="about-steps">
+    {% for line in about.why %}
+    <li class="about-step"><span class="about-step-n" aria-hidden="true">{{ forloop.counter }}</span><p>{{ line }}</p></li>
+    {% endfor %}
+  </ol>
+</section>
+
+<section class="about-section" aria-labelledby="about-promise">
+  <div class="about-section-head">
+    <p class="about-eyebrow">{% trans "Our principles" %}</p>
+    <h2 id="about-promise" class="about-h2">{% trans "What we promise" %}</h2>
+  </div>
+  <div class="about-grid">
+    {% for icon, title, body in about.principles %}
+    <article class="about-card">
+      <span class="about-icon" aria-hidden="true"><i class="bi bi-{{ icon }}"></i></span>
+      <h3 class="about-card-title">{{ title }}</h3>
+      <p>{{ body }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="about-section" aria-labelledby="about-for">
+  <div class="about-section-head">
+    <p class="about-eyebrow">{% trans "Our customers" %}</p>
+    <h2 id="about-for" class="about-h2">{% trans "Who it is for" %}</h2>
+  </div>
+  <ul class="about-who">
+    {% for icon, who in about.for %}
+    <li><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ who }}</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="about-cta" aria-labelledby="about-cta-h">
+  <div>
+    <h2 id="about-cta-h" class="about-h2 mb-1">{% trans "See it with your own units." %}</h2>
+    <p class="mb-0">{% trans "Try it free, or ask us to walk you through it. No card needed." %}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:how_it_works' %}">{% trans "How it works" %}</a>
+  </div>
+</section>
+
+</div>
+{% endblock %}

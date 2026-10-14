@@ -1,0 +1,6 @@
+{% comment %}A chart card: spec (a name in `specs`), title, note, label for screen readers. The same figures are in a table on the page.{% endcomment %}
+<div class="chart-card">
+  <h2 class="h6">{{ title }}</h2>
+  {% if note %}<p class="chart-sub">{{ note }}</p>{% endif %}
+  <div class="chart-box"><canvas data-chart="c-{{ spec }}" role="img" aria-label="{{ title }}. {{ label }}"></canvas></div>
+</div>

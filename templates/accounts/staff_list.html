@@ -1,7 +1,7 @@
 {% extends "base.html" %}{% load i18n %}
 {% block title %}{% trans "Staff" %}{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
   <h1 class="h4 mb-0">{% trans "Staff" %}</h1>
   {% if can_manage %}<a class="btn btn-primary btn-sm" href="{% url 'accounts:invite' %}">{% trans "Invite" %}</a>{% endif %}
 </div>
@@ -15,11 +15,31 @@
     </div>
     <div class="text-end">
       <span class="badge text-bg-light border">{{ m.role.name }}</span>
+      {% if m.user_id in mfa_users %}<span class="badge text-bg-success" title="{% trans "Uses two-step login" %}"><i class="bi bi-shield-lock" aria-hidden="true"></i> {% trans "2-step" %}</span>{% elif organization.require_mfa %}<span class="badge text-bg-warning" title="{% trans "Must set up two-step login at their next visit" %}">{% trans "No 2-step yet" %}</span>{% endif %}
       {% if not m.is_active %}<span class="badge text-bg-warning">{% trans "Suspended" %}</span>{% endif %}
     </div>
   {% if can_manage %}</a>{% else %}</div>{% endif %}
   {% endfor %}
 </div>
+
+{% if can_require_mfa %}
+<div class="card shadow-sm mb-4"><div class="card-body">
+  <h2 class="h6">{% trans "Two-step login for all staff" %}
+    {% if organization.require_mfa %}<span class="badge text-bg-success">{% trans "Required" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Each member's choice" %}</span>{% endif %}</h2>
+  <p class="small text-muted">{% trans "When required, every member enters a code from an authenticator app after their password. Members without it are asked to set it up before they can open anything here. Tenants in the portal are not affected." %}</p>
+  <form method="post" action="{% url 'accounts:require_mfa' %}">{% csrf_token %}
+    {% if organization.require_mfa %}
+    <input type="hidden" name="on" value="0">
+    <button class="btn btn-sm btn-outline-secondary" data-confirm="{% trans "Let each member choose whether to use two-step login?" %}">{% trans "Stop requiring it" %}</button>
+    {% elif self_mfa %}
+    <input type="hidden" name="on" value="1">
+    <button class="btn btn-sm btn-primary" data-confirm="{% trans "Require two-step login for every member? Members without it must set it up at their next visit." %}">{% trans "Require it" %}</button>
+    {% else %}
+    <p class="small mb-0">{% url 'accounts:security' as security_url %}{% blocktrans %}Set it up for yourself first, under <a href="{{ security_url }}">Security</a>.{% endblocktrans %}</p>
+    {% endif %}
+  </form>
+</div></div>
+{% endif %}
 
 {% if invitations %}
 <h2 class="h6">{% trans "Pending invitations" %}</h2>
@@ -39,4 +59,6 @@
   {% endfor %}
 </div>
 {% endif %}
+{% if can_api_keys %}<p class="small mt-3"><a href="{% url 'api:keys' %}">{% trans "API keys" %}</a> <span class="text-muted">· {% trans "Let your accounting software or another program read your data." %}</span></p>
+<p class="small"><a href="{% url 'api:webhooks' %}">{% trans "Webhooks" %}</a> <span class="text-muted">· {% trans "Tell another program when a payment, invoice, lease or tenant changes." %}</span></p>{% endif %}
 {% endblock %}

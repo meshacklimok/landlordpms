@@ -1,0 +1,32 @@
+{% extends "analytics/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console organizations" %}{% endblock %}
+{% block console_title %}{% trans "Organizations" %}{% endblock %}
+{% block console %}
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+  <label class="visually-hidden" for="id_q">{% trans "Search" %}</label>
+  <input type="search" name="q" id="id_q" class="form-control form-control-sm w-auto" placeholder="{% trans 'Name or billing email' %}" value="{{ form.q.value|default:'' }}">
+  {{ form.status }}
+  <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:watchlist' %}">{% trans "Watchlist" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:organizations_export' %}{% if query %}?{{ query }}{% endif %}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download (CSV)" %}</a>
+</form>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Organization" %}</th><th>{% trans "Plan" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Leases" %}</th>
+    <th class="text-end">{% trans "Collected this month" %}</th><th class="text-end">{% trans "On time" %}</th><th class="text-end">{% trans "Matched itself" %}</th><th class="text-end">{% trans "Last active" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}</td>
+      <td>{{ r.plan }} <span class="text-muted">{{ r.sub_status }}</span></td>
+      <td class="text-end">{{ r.units }}</td><td class="text-end">{{ r.leases }}</td>
+      <td class="text-end text-nowrap">{{ r.collected|money }}</td>
+      <td class="text-end">{% if r.on_time is not None %}{{ r.on_time }}%{% else %}—{% endif %}</td>
+      <td class="text-end">{% if r.auto_share is not None %}{{ r.auto_share }}%{% else %}—{% endif %}</td>
+      <td class="text-end text-nowrap">{% if r.idle_days is None %}{% trans "Never" %}{% elif r.idle_days == 0 %}{% trans "Today" %}{% else %}{% blocktrans with d=r.idle_days %}{{ d }} days ago{% endblocktrans %}{% endif %}</td>
+    </tr>
+  {% empty %}<tr><td colspan="8" class="text-muted">{% trans "No organizations match." %}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

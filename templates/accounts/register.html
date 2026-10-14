@@ -2,7 +2,9 @@
 {% block title %}{% trans "Create account" %}{% endblock %}
 {% block heading %}{% trans "Create your account" %}{% endblock %}
 {% block card %}
+{% if invited %}<div class="alert alert-success small" data-referral-applied>{% blocktrans %}You were invited by a NyumbaPMS customer. When you pay for your first plan, you both get free days.{% endblocktrans %}</div>{% endif %}
 <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <p class="small text-muted">{% trans "Read them first:" %} <a href="{% url 'support:terms' %}" target="_blank">{% trans "Terms of Service" %}</a> · <a href="{% url 'support:privacy' %}" target="_blank">{% trans "Privacy Policy" %}</a></p>
   <button class="btn btn-primary w-100">{% trans "Continue" %}</button>
 </form>
 {% endblock %}

@@ -1,0 +1,61 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Delete your account" %} · NyumbaPMS{% endblock %}
+{% block meta %}<meta name="description" content="{% trans 'How to delete your NyumbaPMS account, what is deleted, what is kept and for how long.' %}">{% endblock %}
+{% block content %}
+<div class="mx-auto mw-46r">
+<h1 class="h3 mb-2">{% trans "Delete your account" %}</h1>
+<p class="text-muted">{% trans "Short version: ask here, we confirm with you, you get time to export, then we delete." %}</p>
+
+<div class="card shadow-sm mb-3"><div class="card-body small">
+  <h2 class="h6">{% trans "What happens" %}</h2>
+  <ol class="mb-0">
+    <li>{% trans "You ask below, or write to us. You get a request number." %}</li>
+    <li>{% trans "We contact you on your verified phone to confirm it is you." %}</li>
+    <li>{% trans "Landlords have 30 days to export tenants, invoices, payments and statements." %}</li>
+    <li>{% trans "We delete within 90 days and tell you when it is done." %}</li>
+  </ol>
+</div></div>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body small">
+    <h2 class="h6">{% trans "Deleted" %}</h2>
+    <ul class="mb-0 ps-3">
+      <li>{% trans "Your name, phone number, email and password" %}</li>
+      <li>{% trans "Tenants, leases, documents, photos and notes of your workspace" %}</li>
+      <li>{% trans "Message text, assistant questions and sign-in codes" %}</li>
+      <li>{% trans "Saved sign-in sessions and two-step settings" %}</li>
+    </ul>
+  </div></div></div>
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body small">
+    <h2 class="h6">{% trans "Kept, because the law or evidence needs it" %}</h2>
+    <ul class="mb-0 ps-3">
+      <li>{% trans "Our invoices to you, for at least five years (tax law)" %}</li>
+      <li>{% trans "Signing and audit records of documents already signed" %}</li>
+      <li>{% trans "Backups, until they expire within a year" %}</li>
+    </ul>
+  </div></div></div>
+</div>
+
+<div class="alert alert-warning small">{% trans "Deleting cannot be undone. If you are a landlord, tenants and owners linked to your workspace lose access. Export first from Reports and Settings." %}</div>
+<p class="small">{% trans "Tenants and others recorded by a landlord: ask that landlord first. If you cannot reach them, write to us and we will pass it on." %}
+  See the <a href="{% url 'support:privacy' %}">{% trans "Privacy Policy" %}</a>.</p>
+
+{% if user.is_authenticated %}
+<div class="card shadow-sm"><div class="card-body">
+  <h2 class="h6">{% trans "Ask for deletion" %}</h2>
+  <form method="post">{% csrf_token %}
+    <div class="mb-2"><label class="form-label small" for="reason">{% trans "Reason (optional)" %}</label>
+      <textarea class="form-control" id="reason" name="reason" rows="2" maxlength="1000"></textarea></div>
+    <div class="mb-3"><label class="form-label small" for="confirm">{% trans "Type DELETE to confirm" %}</label>
+      <input class="form-control" id="confirm" name="confirm" autocomplete="off" required></div>
+    <button class="btn btn-danger btn-sm" type="submit">{% trans "Request deletion" %}</button>
+  </form>
+</div></div>
+{% else %}
+<a class="btn btn-primary btn-sm" href="{% url 'accounts:login' %}?next={% url 'support:delete_account' %}">{% trans "Log in to ask" %}</a>
+{% endif %}
+<p class="small mt-3 mb-0">{% trans "Cannot log in? Write to" %}
+  {% if dpo_email %}<a href="mailto:{{ dpo_email }}">{{ dpo_email }}</a>{% elif support_email %}<a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}{% trans "us from the Help page" %}{% endif %}
+  {% trans "from the phone number or email on the account." %}</p>
+</div>
+{% endblock %}

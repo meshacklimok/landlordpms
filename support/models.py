@@ -68,6 +68,7 @@ class SupportRequest(PublicIdModel, TimeStampedModel):
         QUESTION = "QUESTION", _("A question")
         PROBLEM = "PROBLEM", _("Something is not working")
         IMPORT_HELP = "IMPORT_HELP", _("Import my data for me")
+        DELETION = "DELETION", _("Delete my account")
 
     class Status(models.TextChoices):
         OPEN = "OPEN", _("Open")
@@ -94,3 +95,32 @@ class SupportRequest(PublicIdModel, TimeStampedModel):
 
     def __str__(self):
         return f"{self.number} {self.subject}"
+
+
+class AppOpen(models.Model):
+    """How often the installed app is opened, per day (D-099 item 3, D-102). Counts only: no user, IP or browser."""
+
+    class Audience(models.TextChoices):
+        STAFF = "STAFF", _("Staff")
+        TENANT = "TENANT", _("Tenant")
+        SIGNED_OUT = "SIGNED_OUT", _("Signed out")
+
+    class Platform(models.TextChoices):
+        ANDROID = "ANDROID", _("Android")
+        IOS = "IOS", _("iPhone")
+        OTHER = "OTHER", _("Other")
+
+    day = models.DateField()
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE, null=True, blank=True,
+                                     related_name="+")  # staff only
+    audience = models.CharField(max_length=10, choices=Audience.choices)
+    platform = models.CharField(max_length=8, choices=Platform.choices)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["day", "organization", "audience", "platform"],
+                                               nulls_distinct=False, name="support_appopen_one_row")]
+        ordering = ["-day"]
+
+    def __str__(self):
+        return f"{self.day} {self.audience} {self.platform}: {self.count}"

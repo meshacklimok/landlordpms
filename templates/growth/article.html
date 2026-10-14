@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ article.title }} · NyumbaPMS{% endblock %}
+{% block meta %}<meta name="description" content="{{ article.summary }}">{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about pub-read">
+<nav aria-label="{% trans 'Breadcrumb' %}" class="pub-crumb"><a href="{% url 'growth:articles' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All articles" %}</a></nav>
+<header class="about-hero pub-read-head">
+  <p class="about-eyebrow">{% blocktrans with m=article.minutes %}Article · {{ m }} min read{% endblocktrans %}</p>
+  <h1 class="about-title">{{ article.title }}</h1>
+  <p class="about-lead">{{ article.summary }}</p>
+</header>
+<div class="pub-prose">
+{% for heading, body in article.body %}
+  <h2>{{ heading }}</h2>
+  <p>{{ body }}</p>
+{% endfor %}
+</div>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Want this handled for you?" %}</h2><p class="mb-0">{% trans "The trial is free and nothing here needs a card." %}</p></div>
+  {% if not user.is_authenticated %}<a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>{% endif %}
+</section>
+<section class="about-section" aria-labelledby="more-h">
+  <h2 id="more-h" class="about-h2 mb-3">{% trans "More articles" %}</h2>
+  <ul class="pub-links">{% for a in others %}<li><a href="{% url 'growth:article' a.slug %}">{{ a.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endfor %}</ul>
+</section>
+</div>
+{% endblock %}

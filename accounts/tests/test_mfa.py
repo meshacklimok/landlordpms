@@ -54,7 +54,7 @@ def test_setting_up():
     with pytest.raises(ValidationError):
         mfa.start_setup(user)
     uri = mfa.provisioning_uri(user, secret)
-    assert uri.startswith("otpauth://totp/landlordpms%3A") and f"secret={secret}" in uri
+    assert uri.startswith("otpauth://totp/NyumbaPMS%3A") and f"secret={secret}" in uri
     assert mfa.qr_svg(uri).startswith("<svg")
 
 
@@ -99,7 +99,7 @@ def test_login_asks_for_the_code_after_the_password(client):
     response = password_step(client, user, next="/reports/")
     assert response.url == reverse("accounts:login_mfa")
     assert "_auth_user_id" not in client.session  # not logged in yet
-    assert client.get(reverse("accounts:home")).status_code == 302
+    assert client.get(reverse("accounts:staff")).status_code == 302
     page = client.post(reverse("accounts:login_mfa"), {"code": "123"})
     assert "That code is wrong" in page.content.decode()
     response = client.post(reverse("accounts:login_mfa"), {"code": code(secret)})
@@ -154,7 +154,7 @@ def test_switching_on_and_off_ends_other_sessions(client, monkeypatch):
     secret = mfa.pending_secret(user)
     page = client.post(reverse("accounts:security"), {"action": "confirm", "code": code(secret, -1)})
     assert "Your recovery codes" in page.content.decode()
-    assert other.get(reverse("accounts:home")).status_code == 302  # logged out
+    assert other.get(reverse("accounts:staff")).status_code == 302  # logged out
     assert client.get(reverse("accounts:home")).status_code == 200  # this one kept
 
     other = Client()
@@ -167,7 +167,7 @@ def test_switching_on_and_off_ends_other_sessions(client, monkeypatch):
     client.post(reverse("accounts:security"), {"action": "disable", "off-password": PASSWORD,
                                                "off-code": code(secret, 1)})
     assert not mfa.is_enabled(user) and not RecoveryCode.objects.filter(user=user).exists()
-    assert other.get(reverse("accounts:home")).status_code == 302
+    assert other.get(reverse("accounts:staff")).status_code == 302
     assert client.get(reverse("accounts:home")).status_code == 200
 
 

@@ -1,0 +1,69 @@
+{% extends "analytics/base.html" %}{% load i18n money %}
+{% block title %}{{ org.name }}{% endblock %}
+{% block console_title %}{{ org.name }}{% endblock %}
+{% block console %}
+{% with s=data.score %}
+<p class="small"><a href="{% url 'console:organizations' %}">&larr; {% trans "All organizations" %}</a> ·
+  {{ org.get_org_type_display }} · {{ org.get_status_display }} · {% blocktrans with d=org.created_at|date:"j M Y" %}signed up {{ d }}{% endblocktrans %}
+  {% if data.subscription %}· {{ data.subscription.plan.name }} ({{ data.subscription.get_status_display }}){% endif %}</p>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Properties · units · active leases" %}</div>
+    <div class="h5 mb-0">{{ data.properties }} · {{ data.units }} · {{ data.leases }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Collected this month" %}</div>
+    <div class="h5 mb-0">{{ s.collected|money }}</div>
+    <div class="small">{% blocktrans with n=s.payments i=s.invoices %}{{ n }} payments · {{ i }} invoices{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Tenants paying on time" %}</div>
+    <div class="h5 mb-0">{% if data.on_time is not None %}{{ data.on_time }}%{% else %}—{% endif %}</div>
+    <div class="small">{% if s.auto_share is not None %}{% blocktrans with a=s.auto_share %}{{ a }}% of money matched itself{% endblocktrans %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Staff active in 30 days" %}</div>
+    <div class="h5 mb-0">{{ s.staff_active }} / {{ s.staff }}</div>
+    <div class="small">{% blocktrans with n=s.app_opens %}{{ n }} app opens this month{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+{% if s.misses %}<div class="alert alert-warning small">{% trans "Not yet meeting the pilot measures:" %} {{ s.misses|join:", " }}.</div>{% endif %}
+<div class="row g-3">
+  <div class="col-lg-7">{% include "analytics/_chart.html" with spec="money" title=_("Billed and received") note=_("Last six months.") label=_("The same figures are in the table.") %}</div>
+  <div class="col-lg-5">
+    <h2 class="h6">{% trans "Month by month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th></th><th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Received" %}</th></tr></thead>
+      <tbody>{% for m in data.months %}<tr><td>{{ m.label }}</td><td class="text-end">{{ m.billed|money }}</td><td class="text-end">{{ m.collected|money }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <h2 class="h6 mt-3">{% trans "What they use, last 30 days" %}</h2>
+    <ul class="small list-unstyled">{% for name, n in data.top_features %}<li>{{ name|capfirst }}: {{ n }}</li>{% empty %}<li class="text-muted">{% trans "Nothing recorded." %}</li>{% endfor %}</ul>
+    <p class="small text-muted">{% if data.last_seen %}{% blocktrans with d=data.last_seen|date:"j M Y H:i" %}Last activity {{ d }}.{% endblocktrans %}{% else %}{% trans "No activity yet." %}{% endif %}
+      {% if data.open_support %}{% blocktrans with n=data.open_support %}{{ n }} open support requests.{% endblocktrans %}{% endif %}</p>
+  </div>
+</div>
+{% endwith %}
+{% if control %}
+<h2 class="h6 mt-4">{% trans "Owner controls" %}</h2>
+<div class="row g-3">
+  <form method="post" action="{% url 'console:organization_control' org.public_id %}" class="col-lg-5">{% csrf_token %}
+    <input type="hidden" name="action" value="status">
+    <label class="form-label small" for="id_status">{% trans "Status" %}</label>
+    <select name="status" id="id_status" class="form-select form-select-sm mb-2">{% for v, t in control.fields.status.choices %}<option value="{{ v }}"{% if v == org.status %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
+    <label class="form-label small" for="id_reason_s">{% trans "Reason" %}</label>
+    <input name="reason" id="id_reason_s" maxlength="200" required class="form-control form-control-sm mb-2">
+    <button class="btn btn-sm btn-outline-danger">{% trans "Change status" %}</button>
+    <div class="form-text">{% trans "Frozen blocks everyone in the organization. Read-only keeps data visible but allows nothing new." %}</div>
+  </form>
+  <form method="post" action="{% url 'console:organization_control' org.public_id %}" class="col-lg-5">{% csrf_token %}
+    <input type="hidden" name="action" value="trial">
+    <label class="form-label small" for="id_days">{% trans "Add trial days" %}</label>
+    <input type="number" name="days" id="id_days" min="1" max="90" required class="form-control form-control-sm mb-2">
+    <label class="form-label small" for="id_reason_t">{% trans "Reason" %}</label>
+    <input name="reason" id="id_reason_t" maxlength="200" required class="form-control form-control-sm mb-2">
+    <button class="btn btn-sm btn-outline-primary">{% trans "Extend trial" %}</button>
+  </form>
+</div>
+{% endif %}
+{% include "analytics/_specs.html" %}
+{% endblock %}

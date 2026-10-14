@@ -1,0 +1,12 @@
+{% extends "analytics/base.html" %}{% load i18n %}
+{% block title %}{% if person %}{{ person.user.full_name }}{% else %}{% trans "Add a person" %}{% endif %}{% endblock %}
+{% block console_title %}{% if person %}{{ person.user.full_name }}{% else %}{% trans "Add a person to the console" %}{% endif %}{% endblock %}
+{% block console %}
+<form method="post" class="col-lg-6 p-0">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+  <a class="btn btn-link" href="{% url 'console:team' %}">{% trans "Cancel" %}</a>
+</form>
+<h2 class="h6 mt-4">{% trans "Usual pages for each role" %}</h2>
+<dl class="row small">{% for role, pages in presets.items %}<dt class="col-sm-2">{{ role|capfirst }}</dt><dd class="col-sm-10">{{ pages|join:", " }}</dd>{% endfor %}</dl>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="page-head mb-2">
+  <div>
+    <p class="small text-muted mb-0">{% trans "Developer console" %} · {{ seat.get_role_display }}</p>
+    <h1 class="h4 mb-0">{% block console_title %}{% endblock %}</h1>
+  </div>
+</div>
+{% with here=request.resolver_match.view_name %}
+<ul class="nav nav-pills small mb-3 flex-wrap gap-1" aria-label="{% trans 'Console pages' %}">
+  {% if "overview" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:overview' %} active{% endif %}" href="{% url 'console:overview' %}">{% trans "Overview" %}</a></li>{% endif %}
+  {% if "revenue" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:revenue' %} active{% endif %}" href="{% url 'console:revenue' %}">{% trans "Revenue" %}</a></li>{% endif %}
+  {% if "behaviour" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:behaviour' %} active{% endif %}" href="{% url 'console:behaviour' %}">{% trans "How tenants pay" %}</a></li>{% endif %}
+  {% if "engagement" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:usage' %} active{% endif %}" href="{% url 'console:usage' %}">{% trans "Usage" %}</a></li>{% endif %}
+  {% if "organizations" in allowed %}<li class="nav-item"><a class="nav-link{% if 'organization' in here %} active{% endif %}" href="{% url 'console:organizations' %}">{% trans "Organizations" %}</a></li>{% endif %}
+  {% if "growth" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:growth' %} active{% endif %}" href="{% url 'console:growth' %}">{% trans "Growth" %}</a></li>{% endif %}
+  {% if "channels" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:channels' %} active{% endif %}" href="{% url 'console:channels' %}">{% trans "Messages and AI" %}</a></li>{% endif %}
+  {% if "finance" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:money' or here == 'console:expense' %} active{% endif %}" href="{% url 'console:money' %}">{% trans "Money" %}</a></li>
+  <li class="nav-item"><a class="nav-link{% if here == 'console:costs' %} active{% endif %}" href="{% url 'console:costs' %}">{% trans "Costs by landlord" %}</a></li>{% endif %}
+  {% if "health" in allowed %}<li class="nav-item"><a class="nav-link{% if here == 'console:health' %} active{% endif %}" href="{% url 'console:health' %}">{% trans "Health" %}</a></li>{% endif %}
+  {% if "staff" in allowed %}<li class="nav-item"><a class="nav-link{% if 'team' in here %} active{% endif %}" href="{% url 'console:team' %}">{% trans "Team" %}</a></li>{% endif %}
+  {% if request.user.is_superuser %}<li class="nav-item"><a class="nav-link{% if here == 'console:audit' %} active{% endif %}" href="{% url 'console:audit' %}">{% trans "Audit log" %}</a></li>
+  <li class="nav-item"><a class="nav-link{% if here == 'console:email' %} active{% endif %}" href="{% url 'console:email' %}">{% trans "Email" %}</a></li>
+  <li class="nav-item"><a class="nav-link{% if here == 'console:announcements' %} active{% endif %}" href="{% url 'console:announcements' %}">{% trans "Announcements" %}</a></li>{% endif %}
+</ul>
+{% endwith %}
+{% block console %}{% endblock %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}
