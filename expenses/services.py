@@ -9,8 +9,8 @@ from decimal import Decimal
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Sum
-from django.db.models.functions import Lower
+from django.db.models import Count, F, Sum
+from django.db.models.functions import Lower, TruncMonth
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_noop
@@ -18,7 +18,7 @@ from django.utils.translation import gettext_noop
 from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, can, require, visible_properties
 from audit import services as audit
-from core.money import ZERO, parse_money
+from core.money import ZERO, parse_money, round_money
 from core.numbering import next_number
 from inspections import photos
 from properties.models import Property
@@ -281,27 +281,30 @@ def reference_key(reference: str) -> str:
     return re.sub(r"\s+", "", reference or "").upper()[:60]
 
 
-def _duplicate(org, key: str) -> Expense | None:
+def _duplicate(org, key: str, exclude: Expense | None = None) -> Expense | None:
     if not key:
         return None
-    return Expense.objects.for_org(org).filter(reference_key=key, status__in=Expense.LIVE).first()
+    qs = Expense.objects.for_org(org).filter(reference_key=key, status__in=Expense.LIVE)
+    if exclude is not None:
+        qs = qs.exclude(pk=exclude.pk)
+    return qs.first()
 
 
-@transaction.atomic
-def record_expense(actor: Membership, prop: Property, *, category: ExpenseCategory, description: str, amount,
-                   paid_on: datetime.date, method: str, reference: str = "", supplier: Supplier | None = None,
-                   receipt=None, maintenance_request=None, today: datetime.date | None = None,
-                   request=None) -> Expense:
-    """Records a paid expense. Approved at once when the recorder may approve on the property (D-067 item 2)."""
-    _check(actor, prop, "expenses.submit")
-    today = today or timezone.localdate()
-    org = actor.organization
+def _clean(org, prop: Property, *, category, description, amount, paid_on, method, reference, supplier,
+           maintenance_request, today, exclude: Expense | None = None) -> dict:
+    """The checks shared by recording and editing; returns the cleaned values or raises field errors."""
     errors = {}
-    if prop.is_archived:
+
+    def archived(obj, current_id):
+        # An edit may keep what the expense already had, even if it was archived since.
+        return obj.is_archived and not (exclude is not None and obj.pk == current_id)
+
+    if archived(prop, exclude and exclude.property_id):
         errors["property"] = _("This property is archived.")
-    if category is None or category.organization_id != org.id or category.is_archived:
+    if category is None or category.organization_id != org.id or archived(category, exclude and exclude.category_id):
         errors["category"] = _("Choose a category.")
-    if supplier is not None and (supplier.organization_id != org.id or supplier.is_archived):
+    if supplier is not None and (supplier.organization_id != org.id
+                                 or archived(supplier, exclude and exclude.supplier_id)):
         errors["supplier"] = _("Choose a supplier from the list.")
     description = " ".join((description or "").split())[:200]
     if not description:
@@ -320,7 +323,7 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
         errors["method"] = _("Choose how it was paid.")
     reference = " ".join((reference or "").split())[:60]
     key = reference_key(reference)
-    existing = _duplicate(org, key)
+    existing = _duplicate(org, key, exclude)
     if existing is not None:
         errors["reference"] = _("That reference is already on expense %(number)s.") % {"number": existing.number}
     if maintenance_request is not None and (maintenance_request.organization_id != org.id
@@ -328,6 +331,24 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
         errors["property"] = _("The repair is on another property.")
     if errors:
         raise ValidationError(errors)
+    return {"category": category, "supplier": supplier, "description": description, "amount": amount,
+            "paid_on": paid_on, "method": method, "reference": reference, "reference_key": key}
+
+
+@transaction.atomic
+def record_expense(actor: Membership, prop: Property, *, category: ExpenseCategory, description: str, amount,
+                   paid_on: datetime.date, method: str, reference: str = "", supplier: Supplier | None = None,
+                   receipt=None, maintenance_request=None, today: datetime.date | None = None,
+                   request=None) -> Expense:
+    """Records a paid expense. Approved at once when the recorder may approve on the property (D-067 item 2)."""
+    _check(actor, prop, "expenses.submit")
+    today = today or timezone.localdate()
+    org = actor.organization
+    clean = _clean(org, prop, category=category, description=description, amount=amount, paid_on=paid_on,
+                   method=method, reference=reference, supplier=supplier, maintenance_request=maintenance_request,
+                   today=today)
+    description, amount, reference, key = (clean["description"], clean["amount"], clean["reference"],
+                                           clean["reference_key"])
     fields = {"maintenance_request": maintenance_request}
     if receipt:
         fields["receipt"] = process_receipt(receipt)
@@ -375,6 +396,60 @@ def can_add_receipt(membership: Membership, expense: Expense) -> bool:
     if can(membership, "expenses.approve", expense.property):
         return True
     return expense.recorded_by_id == membership.user_id and can(membership, "expenses.submit", expense.property)
+
+
+def can_edit(membership: Membership, expense: Expense) -> bool:
+    """Approvers correct any live expense; whoever recorded it corrects it until it is approved (D-123)."""
+    if expense.organization_id != membership.organization_id or not expense.is_live:
+        return False
+    if can(membership, "expenses.approve", expense.property):
+        return True
+    return (expense.status == Status.SUBMITTED and expense.recorded_by_id == membership.user_id
+            and can(membership, "expenses.submit", expense.property))
+
+
+@transaction.atomic
+def update_expense(actor: Membership, expense: Expense, *, prop: Property, category: ExpenseCategory,
+                   description: str, amount, paid_on: datetime.date, method: str, reference: str = "",
+                   supplier: Supplier | None = None, today: datetime.date | None = None, request=None) -> Expense:
+    """Corrects a live expense. Its status stays: an approved one stays approved, so only approvers may change it,
+    and on a new property the editor needs the same power there. Every changed field is audited."""
+    expense = _lock(expense)
+    if not can_edit(actor, expense):
+        raise PermissionDenied("expenses.approve")
+    if prop.pk != expense.property_id:
+        _check(actor, prop, "expenses.approve" if can(actor, "expenses.approve", expense.property)
+               else "expenses.submit")
+    clean = _clean(actor.organization, prop, category=category, description=description, amount=amount,
+                   paid_on=paid_on, method=method, reference=reference, supplier=supplier,
+                   maintenance_request=expense.maintenance_request, today=today or timezone.localdate(),
+                   exclude=expense)
+    clean["property"] = prop
+    changes = {}
+    for field, after in clean.items():
+        before = getattr(expense, field)
+        if before != after:
+            if field != "reference_key":
+                changes[field] = [_shown(before), _shown(after)]
+            setattr(expense, field, after)
+    if not changes:
+        return expense
+    try:
+        with transaction.atomic():
+            expense.save()
+    except IntegrityError:
+        raise ValidationError({"reference": _("That reference is already on another expense.")}) from None
+    _audit("expenses.edit", actor, expense, request, changes)
+    return expense
+
+
+def _shown(value):
+    """How a value reads in the audit log."""
+    if value is None:
+        return None
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    return getattr(value, "name", None) or str(value)
 
 
 def _reason(reason: str, message: str) -> str:
@@ -459,6 +534,20 @@ class Totals:
     waiting: Decimal = ZERO
     waiting_count: int = 0
     by_category: list = field(default_factory=list)
+    # D-110: where approved money went, largest first, and how many months it spans.
+    by_property: list = field(default_factory=list)
+    by_supplier: list = field(default_factory=list)
+    months: int = 0
+
+    @property
+    def average(self) -> Decimal | None:
+        """The average approved expense."""
+        return None if not self.approved_count else round_money(self.approved / self.approved_count)
+
+    @property
+    def monthly(self) -> Decimal | None:
+        """Approved spending a month over the months that have any."""
+        return None if not self.months else round_money(self.approved / self.months)
 
 
 def totals(queryset) -> Totals:
@@ -468,8 +557,14 @@ def totals(queryset) -> Totals:
             out.approved, out.approved_count = r["total"], r["n"]
         else:
             out.waiting, out.waiting_count = r["total"], r["n"]
-    out.by_category = list(queryset.filter(status=Status.APPROVED).values("category__name")
-                           .annotate(total=Sum("amount")).order_by("-total", "category__name"))
+    approved = queryset.filter(status=Status.APPROVED).order_by()
+    out.by_category = list(approved.values(name=F("category__name"))
+                           .annotate(total=Sum("amount"), n=Count("pk")).order_by("-total", "name"))
+    out.by_property = list(approved.values(name=F("property__name"))
+                           .annotate(total=Sum("amount"), n=Count("pk")).order_by("-total", "name"))
+    out.by_supplier = list(approved.exclude(supplier=None).values(name=F("supplier__name"))
+                           .annotate(total=Sum("amount"), n=Count("pk")).order_by("-total", "name")[:5])
+    out.months = approved.annotate(m=TruncMonth("paid_on")).values("m").distinct().count()
     return out
 
 

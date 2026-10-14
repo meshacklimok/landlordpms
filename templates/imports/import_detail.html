@@ -15,9 +15,16 @@
   {% trans "Nothing has been added yet." %}
   {% if expired %}{% trans "This preview is more than a day old. Upload the file again to import it." %}{% endif %}
 </div>
-<div class="d-flex gap-2 mb-3">
+{% if batch.source == "PHOTO" %}
+<div class="alert alert-warning small">{% trans "These lines were read from a photo by a computer. Handwriting is easy to misread: compare every row below with your paper before you import. Rows it could not read are marked." %}</div>
+{% endif %}
+{% if batch.kind == "LEASES" %}
+<p class="small text-muted">{% if batch.activate %}{% trans "The leases will be issued as soon as you import: billing starts from each start date." %}{% else %}{% trans "The leases will be created as drafts. Open each one to check it, then activate it." %}{% endif %}</p>
+{% endif %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-3">
   {% if batch.ok_count and not expired %}
-  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply">
+  <form method="post" class="d-flex flex-wrap align-items-center gap-2">{% csrf_token %}<input type="hidden" name="action" value="apply">
+    {% if batch.source == "PHOTO" %}<div class="form-check small mb-0"><input class="form-check-input" type="checkbox" name="checked" value="1" id="checked" required><label class="form-check-label" for="checked">{% trans "I checked these rows against the paper" %}</label></div>{% endif %}
     <button class="btn btn-primary btn-sm">{% blocktrans count n=batch.ok_count %}Import {{ n }} row{% plural %}Import {{ n }} rows{% endblocktrans %}</button>
   </form>
   {% endif %}
@@ -31,7 +38,7 @@
   {% if batch.can_undo %}{% blocktrans with until=batch.undo_until|date:"j M H:i" %}You can undo this until {{ until }}.{% endblocktrans %}{% endif %}</span>
   {% if batch.can_undo %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="undo">
-    <button class="btn btn-outline-danger btn-sm text-nowrap" onclick="return confirm('{% trans "Remove everything this import added? Records already used on a lease are kept." %}')">{% trans "Undo import" %}</button>
+    <button class="btn btn-outline-danger btn-sm text-nowrap" data-confirm="{% trans "Remove everything this import added? Records already used on a lease are kept." %}">{% trans "Undo import" %}</button>
   </form>
   {% endif %}
 </div>

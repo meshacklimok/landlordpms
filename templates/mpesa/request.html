@@ -2,8 +2,8 @@
 {% block title %}{% trans "Request M-Pesa payment" %}{% endblock %}
 {% block head %}{{ block.super }}{% if watching %}<meta http-equiv="refresh" content="10">{% endif %}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 640px">
-  <a href="{% url 'leases:detail' lease.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {{ lease.number }}</a>
+<div class="mx-auto mw-640">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ lease.number }}</a>
   <h1 class="h3 mt-2 mb-0">{% trans "Request M-Pesa payment" %}</h1>
   <p class="small text-body-secondary">{{ lease.unit.property.name }} · {% trans "Unit" %} {{ lease.unit.code }} ·
     {% if balance > 0 %}<span class="text-danger">{{ balance|money:currency }}</span> {% trans "owed" %}{% elif balance < 0 %}{{ balance|absolute|money:currency }} {% trans "in credit" %}{% else %}{% trans "Settled" %}{% endif %}</p>
@@ -14,7 +14,7 @@
     {% include "partials/form.html" %}
     <datalist id="stk-phones">{% for number, name in form.phones %}<option value="{{ number }}">{{ name }}</option>{% endfor %}</datalist>
     <p class="small text-body-secondary">{% trans "When the tenant enters their PIN, the payment is confirmed on this lease and receipted. Nothing is recorded if they cancel." %}</p>
-    <button class="btn btn-success"><i class="bi bi-phone-vibrate"></i> {% trans "Send request" %}</button>
+    <button class="btn btn-success"><i class="bi bi-phone-vibrate" aria-hidden="true"></i> {% trans "Send request" %}</button>
   </div></form>
   {% else %}
   <div class="alert alert-warning small">{% trans "No Paybill with a passkey collects for this property, so payment requests cannot be sent." %}{% if membership|can:"mpesa.settings" %} <a href="{% url 'mpesa:settings' %}">{% trans "M-Pesa settings" %}</a>{% endif %}</div>
@@ -25,7 +25,7 @@
     <h2 class="h6">{% trans "Tenant payment link" %}</h2>
     {% if pay_link_url %}
     <p class="small text-body-secondary">{% trans "Goes out in rent messages. Whoever opens it can send an M-Pesa prompt for any amount to a Kenyan phone; the money is confirmed on this lease." %}</p>
-    <div class="input-group input-group-sm mb-2"><input class="form-control" value="{{ pay_link_url }}" readonly aria-label="{% trans 'Payment link' %}" onfocus="this.select()"></div>
+    <div class="input-group input-group-sm mb-2"><input class="form-control" value="{{ pay_link_url }}" readonly aria-label="{% trans 'Payment link' %}" data-select-on-focus></div>
     <div class="d-flex flex-wrap gap-2">
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link_reset"><button class="btn btn-sm btn-outline-secondary">{% trans "Make a new link" %}</button></form>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="link_disable"><button class="btn btn-sm btn-outline-danger">{% trans "Turn off" %}</button></form>
@@ -46,7 +46,7 @@
       {% for r in requests %}
       <li class="list-group-item px-0 d-flex flex-wrap align-items-center gap-2">
         <div class="flex-grow-1">
-          <span class="num fw-semibold">{{ r.amount|money:currency }}</span> · {{ r.phone }}
+          <span class="num fw-semibold">{{ r.amount|money:currency }}</span> · {{ r.phone }}{% if r.via_ussd %} · {% trans "from USSD" %}{% elif r.via_assistant %} · {% trans "from the assistant" %}{% elif r.pay_link_id %} · {% trans "from the payment link" %}{% endif %}
           <div class="text-body-secondary">{{ r.created_at|date:"j M Y, H:i" }}{% if r.result_desc %} · {{ r.result_desc }}{% endif %}</div>
         </div>
         {% if r.status == "PAID" %}<span class="badge text-bg-success">{{ r.get_status_display }}</span>

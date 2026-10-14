@@ -48,6 +48,10 @@ def receipt_data(receipt: Receipt) -> dict:
         "unit": unit.code,
         "reference": unit.payment_reference,
         "lease": lease.number,
+        # The organization's words for the property and unit, and for the lease (D-130): "Property / unit" and
+        # "Lease" for landlords.
+        "place_label": f"{payment.organization.vocab['property']} / {payment.organization.vocab['unit'].lower()}",
+        "lease_label": str(payment.organization.vocab["lease"]),
         "amount": format_money(payment.amount, currency),
         "method": payment.get_method_display(),
         "payment_reference": payment.reference,
@@ -91,9 +95,9 @@ def render_pdf(receipt: Receipt) -> bytes:
         y -= 6 * mm
 
     row("Received from", d["tenant"])
-    row("Property / unit", f"{d['property']} · {d['unit']}")
+    row(d["place_label"], f"{d['property']} · {d['unit']}")
     row("Account reference", d["reference"])
-    row("Lease", d["lease"])
+    row(d["lease_label"], d["lease"])
     row("Date paid", d["paid_at"])
     row("Method", d["method"])
     if d["payment_reference"]:

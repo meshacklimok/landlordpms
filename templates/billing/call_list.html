@@ -3,10 +3,10 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
   <h1 class="h4 mb-0">{% trans "Who to call" %}</h1>
-  <form method="get" class="d-flex flex-wrap gap-2">
+  <form method="get" data-autosubmit class="d-flex flex-wrap gap-2">
     {{ filters.property }}
     {{ filters.grade }}
-    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+    <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
   </form>
 </div>
 <p class="small text-muted mb-3">
@@ -21,8 +21,9 @@
 </div>
 {% endif %}
 
-<h2 class="h6">{% trans "To call" %} <span class="badge text-bg-secondary">{{ board.to_call|length }}</span></h2>
-{% include "billing/_call_rows.html" with rows=board.to_call empty=_("Nobody left to call.") %}
+<h2 class="h6">{% trans "To call" %} <span class="badge text-bg-secondary">{{ to_call.paginator.count }}</span></h2>
+{% include "billing/_call_rows.html" with rows=to_call.object_list empty=_("Nobody left to call.") %}
+{% include "partials/pager.html" %}
 
 <h2 class="h6 mt-4">{% trans "Promised to pay" %} <span class="badge text-bg-secondary">{{ board.promised|length }}</span></h2>
 {% include "billing/_call_rows.html" with rows=board.promised empty=_("No promises waiting.") %}

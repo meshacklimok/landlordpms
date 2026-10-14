@@ -201,6 +201,21 @@ def test_the_page(client, owner, prop):
     assert "Record a call" in page and "0 of 2 paid in time" in page
 
 
+def test_to_call_is_paged(client, owner, prop, monkeypatch):
+    """The longest section is paged like the other lists; the count still covers everyone (D-105)."""
+    from billing import views
+
+    monkeypatch.setattr(views, "PAGE_SIZE", 1)
+    owing_lease(owner, prop, code="A1", rent=30000)
+    owing_lease(owner, prop, code="B2")
+    client.force_login(owner.user)
+    first = client.get("/billing/call-list/").content.decode()
+    second = client.get("/billing/call-list/?page=2").content.decode()
+    assert "Tenant A1" in first and "Tenant B2" not in first and "Page 1 of 2" in first
+    assert "Tenant B2" in second and "Tenant A1" not in second
+    assert '<span class="badge text-bg-secondary">2</span>' in first
+
+
 def test_recording_a_promise(client, owner, prop):
     lease = owing_lease(owner, prop)
     client.force_login(owner.user)

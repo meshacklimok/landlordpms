@@ -45,7 +45,10 @@ def _same_org(actor: Membership, obj) -> None:
 
 
 def _lock_lease(lease: Lease) -> Lease:
-    return Lease.all_objects.select_for_update().select_related("unit__property", "organization").get(pk=lease.pk)
+    # Only the lease row: locking the joined organization too made two payments at once deadlock, since every
+    # insert that points at the organization holds a share lock on it (doc 20 §30).
+    return (Lease.all_objects.select_for_update(of=("self",)).select_related("unit__property", "organization")
+            .get(pk=lease.pk))
 
 
 def _lock_payment(payment: Payment) -> Payment:
@@ -351,13 +354,24 @@ def apply_credit(actor: Membership, lease: Lease, *, request=None) -> list[Payme
     """Puts money paid ahead towards invoices that are open now, oldest payment and invoice first."""
     _same_org(actor, lease)
     require(actor, "payments.allocate", lease.unit.property)
+    return _sweep_credit(lease, actor=actor, request=request)
+
+
+@transaction.atomic
+def auto_apply_credit(lease: Lease) -> list[PaymentAllocation]:
+    """Applies money paid ahead to a lease's open invoices with no staff action, as invoices are issued."""
+    return _sweep_credit(lease, actor=None, request=None)
+
+
+def _sweep_credit(lease: Lease, *, actor: Membership | None, request) -> list[PaymentAllocation]:
     lease = _lock_lease(lease)
     made = []
     for payment in credit_payments(lease):
         payment = _lock_payment(payment)
         made += _allocate(payment, _fifo_plan(lease, payment.unallocated))
     if made:
-        audit.record("payment.apply_credit", actor=actor.user, organization=lease.organization, obj=lease,
-                     request=request, changes={"allocated": [None, {
-                         f"{a.payment.pk}→{a.invoice.number}": str(a.amount) for a in made}]})
+        audit.record("payment.apply_credit", actor=actor.user if actor else None,
+                     organization=lease.organization, obj=lease, request=request, changes={
+                         "allocated": [None, {f"{a.payment.pk}→{a.invoice.number}": str(a.amount) for a in made}],
+                         **({} if actor else {"source": [None, "credit applied on invoicing"]})})
     return made

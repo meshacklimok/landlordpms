@@ -4,7 +4,7 @@
 <div class="wide mx-auto">
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
     <h1 class="h3 mb-0">{% trans "Suppliers" %}</h1>
-    {% if can_manage %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:supplier_create' %}"><i class="bi bi-plus-lg"></i> {% trans "Add a supplier" %}</a>{% endif %}
+    {% if can_manage %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:supplier_create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Add a supplier" %}</a>{% endif %}
   </div>
   <p class="small text-body-secondary">{% trans "People and businesses you pay. Totals are approved expenses on the properties you can see." %}</p>
   {% include "expenses/_nav.html" with section="suppliers" %}
@@ -26,11 +26,7 @@
     </table>
   </div></div>
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-shop"></i></div>
-    <h2 class="h6">{% trans "No suppliers yet" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Add the plumbers, guards and other suppliers you pay, to see what each has been paid." %}</p>
-  </div></div>
+  {% include "partials/empty_state.html" with icon="bi-shop" title=_("No suppliers yet") text=_("Add the plumbers, guards and other suppliers you pay, to see what each has been paid.") %}
   {% endif %}
   <p class="small mt-2">{% if show_archived %}<a href="{% url 'expenses:suppliers' %}">{% trans "Hide archived suppliers" %}</a>{% else %}<a href="?archived=1">{% trans "Show archived suppliers" %}</a>{% endif %}</p>
 </div>

@@ -47,7 +47,7 @@ def inbox(membership: Membership):
 def _locked(actor: Membership, line: BankTransaction) -> BankTransaction:
     if not visible_lines(actor, "mpesa.match").filter(pk=line.pk).exists():
         raise PermissionDenied(_("That record belongs to another organization."))
-    return BankTransaction.objects.select_for_update().select_related("payment_account").get(pk=line.pk)
+    return BankTransaction.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=line.pk)
 
 
 def _record(action: str, actor: Membership, line: BankTransaction, request, changes: dict) -> None:

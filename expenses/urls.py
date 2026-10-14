@@ -12,5 +12,6 @@ urlpatterns = [
     path("suppliers/<uuid:public_id>/", views.SupplierFormView.as_view(), name="supplier_edit"),
     path("categories/", views.CategoryView.as_view(), name="categories"),
     path("<uuid:public_id>/", views.ExpenseDetailView.as_view(), name="detail"),
+    path("<uuid:public_id>/edit/", views.ExpenseEditView.as_view(), name="edit"),
     path("<uuid:public_id>/receipt/", views.ReceiptView.as_view(), name="receipt"),
 ]

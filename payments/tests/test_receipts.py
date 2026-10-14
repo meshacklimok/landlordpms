@@ -57,3 +57,19 @@ def test_pending_and_rejected_payments_get_no_receipt():
     services.reject_payment(owner, payment, reason="Duplicate")
     assert not Payment.objects.filter(receipt__isnull=False).exists()
     assert payment.amount == Decimal("500.00")
+
+
+def test_receipt_labels_follow_the_kind_of_organization():
+    landlord = make_org()
+    lease = make_lease(landlord, make_property(landlord.organization))
+    d = receipts.receipt_data(pay(landlord, lease, "100").receipt)
+    assert (d["place_label"], d["lease_label"]) == ("Property / unit", "Lease")
+
+    estate = make_org()
+    estate.organization.org_type = estate.organization.Type.ESTATE
+    estate.organization.save(update_fields=["org_type"])
+    lease = make_lease(estate, make_property(estate.organization))
+    payment = pay(estate, lease, "100")
+    d = receipts.receipt_data(payment.receipt)
+    assert (d["place_label"], d["lease_label"]) == ("Estate / house", "Membership")
+    assert receipts.render_pdf(payment.receipt).startswith(b"%PDF-")

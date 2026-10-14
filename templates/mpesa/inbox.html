@@ -23,7 +23,7 @@
             <code>{{ tx.trans_id }}</code> · {{ tx.paid_at|date:"j M Y, H:i" }} · {{ tx.payment_account.display_name }}
             · {% trans "Account no." %} {% if tx.bill_ref %}“{{ tx.bill_ref }}”{% else %}<em>{% trans "none" %}</em>{% endif %}
           </div>
-          {% if tx.note %}<div class="small mt-1"><i class="bi bi-info-circle text-body-tertiary"></i> {{ tx.note }}</div>{% endif %}
+          {% if tx.note %}<div class="small mt-1"><i class="bi bi-info-circle text-body-tertiary" aria-hidden="true"></i> {{ tx.note }}</div>{% endif %}
         </div>
         <div class="text-end">
           <div class="h5 num mb-0">{{ tx.amount|money:currency }}</div>
@@ -35,25 +35,21 @@
         {% if tx.suggested_lease %}
         <form method="post" class="d-inline" data-confirm="{% blocktrans with lease=tx.suggested_lease.number %}Match this payment to {{ lease }}? It is confirmed and receipted at once.{% endblocktrans %}">{% csrf_token %}
           <input type="hidden" name="trans_id" value="{{ tx.trans_id }}"><input type="hidden" name="action" value="accept">
-          <button class="btn btn-sm btn-success"><i class="bi bi-check2"></i> {% blocktrans with unit=tx.suggested_lease.unit.code property=tx.suggested_lease.unit.property.name %}Match to {{ property }} · {{ unit }}{% endblocktrans %}</button>
+          <button class="btn btn-sm btn-success"><i class="bi bi-check2" aria-hidden="true"></i> {% blocktrans with unit=tx.suggested_lease.unit.code property=tx.suggested_lease.unit.property.name %}Match to {{ property }} · {{ unit }}{% endblocktrans %}</button>
         </form>
         <span class="small text-body-secondary">{% trans "Suggested from the payer's number" %}</span>
         {% endif %}
-        <a class="btn btn-sm btn-outline-secondary ms-auto" href="{% url 'mpesa:transaction' tx.trans_id %}">{% if tx.suggested_lease %}{% trans "Choose another lease" %}{% else %}{% trans "Choose a lease" %}{% endif %} <i class="bi bi-chevron-right"></i></a>
+        <a class="btn btn-sm btn-outline-secondary ms-auto" href="{% url 'mpesa:transaction' tx.trans_id %}">{% if tx.suggested_lease %}{% trans "Choose another lease" %}{% else %}{% trans "Choose a lease" %}{% endif %} <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
       </div>
       {% else %}
-      <div class="mt-2 text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'mpesa:transaction' tx.trans_id %}">{% trans "Open" %} <i class="bi bi-chevron-right"></i></a></div>
+      <div class="mt-2 text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'mpesa:transaction' tx.trans_id %}">{% trans "Open" %} <i class="bi bi-chevron-right" aria-hidden="true"></i></a></div>
       {% endif %}
     </div>
     {% endfor %}
   </div>
   {% if more %}<p class="small text-body-secondary mt-2">{% trans "Showing the oldest 200." %}</p>{% endif %}
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
-    <h2 class="h6">{% trans "All caught up" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Every M-Pesa payment has been placed on a lease." %}</p>
-  </div></div>
+  {% include "partials/empty_state.html" with icon="bi-check2-circle" title=_("All caught up") text=_("Every M-Pesa payment has been placed on a lease.") tone="success" %}
   {% endif %}
 </div>
 {% endblock %}

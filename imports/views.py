@@ -10,17 +10,26 @@ from django.views import View
 
 from accounts.mixins import OrgMemberRequiredMixin
 from accounts.permissions import can
+from meters import ocr
 
-from . import services
+from . import scan, services, sheets
 from .models import ImportBatch
 
 ROW_PAGE_SIZE = 100
 KINDS = {"units": ImportBatch.Kind.UNITS, "tenants": ImportBatch.Kind.TENANTS,
-         "balances": ImportBatch.Kind.BALANCES}
+         "leases": ImportBatch.Kind.LEASES, "balances": ImportBatch.Kind.BALANCES}
 
 
 class UploadForm(forms.Form):
-    file = forms.FileField(label=gettext_lazy("CSV file"), widget=forms.ClearableFileInput(attrs={"accept": ".csv"}))
+    file = forms.FileField(label=gettext_lazy("Excel or CSV file"),
+                           widget=forms.ClearableFileInput(attrs={"accept": ".xlsx,.csv"}))
+    activate = forms.BooleanField(required=False)
+
+
+class PhotoForm(forms.Form):
+    photo = forms.FileField(label=gettext_lazy("Photo of the filled form"),
+                            widget=forms.ClearableFileInput(attrs={"accept": "image/*"}))
+    activate = forms.BooleanField(required=False)
 
 
 def _kinds(membership) -> list[str]:
@@ -46,7 +55,11 @@ class ImportListView(OrgMemberRequiredMixin, View):
         batches = services.visible_batches(request.membership).select_related("created_by").defer("rows")
         page = Paginator(batches, 25).get_page(request.GET.get("page"))
         cards = [(slug, kind) for slug, kind in KINDS.items() if kind in kinds]
-        return render(request, self.template_name, {"page": page, "cards": cards, "form": UploadForm()})
+        m = request.membership
+        return render(request, self.template_name, {
+            "page": page, "cards": cards, "form": UploadForm(), "can_activate": can(m, "leases.activate"),
+            "photos": ocr.available(m.organization),
+        })
 
 
 class ImportUploadView(OrgMemberRequiredMixin, View):
@@ -54,10 +67,11 @@ class ImportUploadView(OrgMemberRequiredMixin, View):
         kind = _kind(request, kind)
         form = UploadForm(request.POST, request.FILES)
         if not form.is_valid():
-            messages.error(request, _("Choose a CSV file to upload."))
+            messages.error(request, _("Choose an Excel or CSV file to upload."))
             return redirect("imports:list")
         try:
-            batch = services.preview_import(request.membership, kind, form.cleaned_data["file"], request=request)
+            batch = services.preview_import(request.membership, kind, form.cleaned_data["file"], request=request,
+                                            activate=form.cleaned_data["activate"])
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
             return redirect("imports:list")
@@ -70,6 +84,44 @@ class ImportTemplateView(OrgMemberRequiredMixin, View):
         response = HttpResponse(services.template_csv(kind), content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="{kind.lower()}-template.csv"'
         return response
+
+
+class ImportExcelTemplateView(OrgMemberRequiredMixin, View):
+    def get(self, request, kind):
+        kind = _kind(request, kind)
+        response = HttpResponse(
+            sheets.template_xlsx(request.membership, kind),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        response["Content-Disposition"] = f'attachment; filename="{kind.lower()}-sheet.xlsx"'
+        return response
+
+
+class ImportPrintView(OrgMemberRequiredMixin, View):
+    def get(self, request, kind):
+        kind = _kind(request, kind)
+        if kind not in sheets.PRINT_COLUMNS:
+            raise Http404
+        response = HttpResponse(sheets.template_pdf(request.membership, kind), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{kind.lower()}-form.pdf"'
+        return response
+
+
+class ImportPhotoView(OrgMemberRequiredMixin, View):
+    def post(self, request, kind):
+        kind = _kind(request, kind)
+        form = PhotoForm(request.POST, request.FILES)
+        if not form.is_valid():
+            messages.error(request, _("Choose a photo of the filled form."))
+            return redirect("imports:list")
+        m = request.membership
+        try:
+            rows = scan.read_form(m, kind, form.cleaned_data["photo"])
+            batch = services.preview_rows(m, kind, rows, file_name=_("Photo of a filled form"),
+                                          activate=form.cleaned_data["activate"], source=ImportBatch.Source.PHOTO)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+            return redirect("imports:list")
+        return redirect("imports:detail", public_id=batch.public_id)
 
 
 class ImportDetailView(OrgMemberRequiredMixin, View):
@@ -98,7 +150,8 @@ class ImportDetailView(OrgMemberRequiredMixin, View):
         action = request.POST.get("action")
         try:
             if action == "apply":
-                batch = services.apply_import(m, batch, request=request)
+                batch = services.apply_import(m, batch, request=request,
+                                              checked_by_eye=request.POST.get("checked") == "1")
                 messages.success(request, _("Imported %(ok)s rows, skipped %(bad)s.")
                                  % {"ok": batch.ok_count, "bad": batch.error_count})
             elif action == "discard":

@@ -187,7 +187,7 @@ def purge_stale_previews() -> int:
 def _locked(actor: Membership, batch: StatementImport) -> StatementImport:
     if not visible_imports(actor).filter(pk=batch.pk).exists():
         raise PermissionDenied(_("That record belongs to another organization."))
-    batch = StatementImport.objects.select_for_update().select_related("payment_account").get(pk=batch.pk)
+    batch = StatementImport.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=batch.pk)
     if batch.status != Status.PREVIEW:
         raise ValidationError(_("This statement has already been imported or discarded."))
     if is_expired(batch):

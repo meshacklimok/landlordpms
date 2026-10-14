@@ -44,10 +44,13 @@ class ChargeType(PublicIdModel, TimeStampedModel, ArchivableModel):
         LATE_FEE = "LATE_FEE", _("Late fee")
         # Billed from approved meter readings (D-057), never as a recurring lease charge.
         METERED_WATER = "METERED_WATER", _("Metered water")
+        # Billed from approved electricity sub-meter readings (D-070).
+        METERED_ELECTRICITY = "METERED_ELECTRICITY", _("Metered electricity")
         OTHER = "OTHER", _("Other")
 
     # Categories that cannot be a recurring lease charge.
-    NOT_RECURRING = (Category.RENT, Category.DEPOSIT, Category.LATE_FEE, Category.METERED_WATER)
+    NOT_RECURRING = (Category.RENT, Category.DEPOSIT, Category.LATE_FEE, Category.METERED_WATER,
+                     Category.METERED_ELECTRICITY)
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     name = models.CharField(_("name"), max_length=60)
@@ -319,6 +322,16 @@ class DepositEntry(AppendOnlyModel):
         ELECTRICITY = "ELECTRICITY", _("Electricity deposit")
         OTHER = "OTHER", _("Other deposit")
 
+    class Heading(models.TextChoices):
+        """What a deduction is for; the owner picks which headings staff may use (D-150)."""
+
+        UNPAID_RENT = "UNPAID_RENT", _("Unpaid rent")
+        UTILITIES = "UTILITIES", _("Unpaid water or electricity")
+        DAMAGE = "DAMAGE", _("Damage beyond normal wear")
+        CLEANING = "CLEANING", _("Cleaning")
+        KEYS = "KEYS", _("Lost keys or locks")
+        OTHER = "OTHER", _("Other")
+
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="deposit_entries")
     deposit_type = models.CharField(_("deposit"), max_length=12, choices=DepositType.choices,
@@ -328,6 +341,9 @@ class DepositEntry(AppendOnlyModel):
     amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
     currency = models.CharField(max_length=3, default="KES")
     reason = models.CharField(_("reason"), max_length=300, blank=True)
+    # A deduction's heading and its receipt, quote or photo (D-150).
+    heading = models.CharField(_("deducted for"), max_length=12, choices=Heading.choices, blank=True)
+    evidence = models.FileField(upload_to="deposit-evidence/%Y/", blank=True, editable=False)
     # How the money came in or went out, e.g. an M-Pesa code.
     reference = models.CharField(_("reference"), max_length=60, blank=True)
     # The other half of a transfer.
@@ -407,3 +423,44 @@ class FollowUp(AppendOnlyModel):
 
     def __str__(self):
         return self.get_outcome_display()
+
+
+class LateFee(PublicIdModel, TimeStampedModel):
+    """A late fee proposed for one overdue invoice, waiting for staff to charge or skip it (D-129).
+
+    The daily job proposes at most one per invoice; charging makes an invoice of its own, so the fee is never
+    charged twice and a skipped one never comes back.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("To approve")
+        CHARGED = "CHARGED", _("Charged")
+        SKIPPED = "SKIPPED", _("Skipped")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="late_fees")
+    invoice = models.OneToOneField(Invoice, on_delete=models.PROTECT, related_name="late_fee")
+    # What was unpaid and the fee worked out from it, when proposed; both are worked out again when charged.
+    unpaid = models.DecimalField(_("unpaid"), max_digits=14, decimal_places=2)
+    amount = models.DecimalField(_("fee"), max_digits=14, decimal_places=2)
+    status = models.CharField(_("status"), max_length=8, choices=Status.choices, default=Status.PENDING)
+    fee_invoice = models.OneToOneField(Invoice, on_delete=models.PROTECT, null=True, blank=True,
+                                       related_name="late_fee_charged")
+    reason = models.CharField(_("reason"), max_length=300, blank=True)
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [
+            models.CheckConstraint(condition=Q(unpaid__gte=0, amount__gte=0), name="billing_latefee_not_negative"),
+            models.CheckConstraint(condition=~Q(status="CHARGED") | Q(fee_invoice__isnull=False),
+                                   name="billing_latefee_charged_has_invoice"),
+        ]
+        indexes = [models.Index(fields=["organization", "status"])]
+
+    def __str__(self):
+        return f"{self.get_status_display()} {self.amount}"

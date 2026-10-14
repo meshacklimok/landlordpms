@@ -7,7 +7,7 @@
   <ul class="list-group mb-3">
     {% for ct in charge_types %}
     <li class="list-group-item">
-      <div class="d-flex justify-content-between align-items-center gap-2">
+      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
         <form method="post" class="d-flex gap-2 flex-grow-1">{% csrf_token %}
           <input type="hidden" name="action" value="rename"><input type="hidden" name="charge_type" value="{{ ct.public_id }}">
           <input name="name" value="{{ ct.name }}" maxlength="60" class="form-control form-control-sm" aria-label="{% trans 'Name' %}">

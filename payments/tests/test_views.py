@@ -143,7 +143,10 @@ def test_apply_credit_from_the_lease_account(client, owner, lease):
     pay(owner, lease, "15000", paid_at=JAN)
     invoice = bill(lease, FEB)
     account_url = reverse("billing:lease_account", args=[lease.public_id])
-    assert client.get(account_url).context["credit"] == Decimal("15000.00")
+    # Rent paid ahead settles the new invoice as it is issued; the button finds nothing left to do.
+    assert client.get(account_url).context["credit"] == 0
+    invoice.refresh_from_db()
+    assert invoice.status == Invoice.Status.PAID
     r = client.post(reverse("payments:apply_credit", args=[lease.public_id]))
     assert r.status_code == 302 and r["Location"] == account_url
     invoice.refresh_from_db()

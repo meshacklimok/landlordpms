@@ -349,3 +349,13 @@ def test_pages_are_closed_to_others(client, org, paybill):
     login(client, other)
     assert client.get(reverse("mpesa:account", args=[paybill.public_id])).status_code == 404
     assert client.post(reverse("mpesa:account", args=[paybill.public_id]), {"action": "register"}).status_code == 404
+
+
+def test_the_pages_recommend_a_paybill_and_say_what_a_till_cannot_do(client, owner):
+    login(client, owner)
+    assert "A Paybill is best" in client.get(reverse("mpesa:settings")).content.decode()
+    till = services.add_account(owner, type="TILL", number="543210", display_name="Shop till")
+    paybill = services.add_account(owner, type="PAYBILL", number="600123", display_name="Rent Paybill")
+    assert "data-till-note" in client.get(reverse("mpesa:account", args=[till.public_id])).content.decode()
+    assert "data-till-note" not in client.get(reverse("mpesa:account", args=[paybill.public_id])).content.decode()
+    assert "Paybill or Till?" in client.get("/help/mpesa/").content.decode()

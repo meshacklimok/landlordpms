@@ -1,4 +1,5 @@
-"""Bulk CSV import of units, tenants and opening balances (doc 11 §20, doc 14 A2/B8).
+"""Bulk import of units, tenants, tenants moving in (tenant + lease) and opening balances (doc 11 §20, doc 14 A2/B8,
+D-156). The rows come from a CSV or Excel file, or from a photo of the printed form filled in by hand.
 
 Flow: upload -> preview -> apply -> (undo within 24 hours).
 - The preview runs every row through the normal create services inside a transaction that is
@@ -6,6 +7,10 @@ Flow: upload -> preview -> apply -> (undo within 24 hours).
 - Applying runs the rows again for real. Rows that fail are skipped and reported; the rest are kept.
 - Undo deletes the units and tenants the batch created, except any already used on a lease. For opening
   balances it reverses each entry that is still the lease's balance brought forward; the ledger keeps both.
+- A photo is read by the model (imports/scan.py) into the same rows, so it gets the same preview; the person must
+  tick that they checked the rows against the paper before it is applied.
+- Move-in rows create the tenant (or reuse the one with that phone) and a lease, left as a draft unless the batch
+  was uploaded with "activate". Undo removes drafts and the tenants made for them; an issued lease is kept.
 - Codes and phones are normalised by the same services the forms use.
 - A batch belongs to whoever uploaded it. Members with every property can also act on anyone's batch;
   members limited to some properties see only their own.
@@ -17,12 +22,15 @@ import csv
 import datetime
 import io
 import re
+import zipfile
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import ProtectedError
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from openpyxl import load_workbook
+from openpyxl.utils.exceptions import InvalidFileException
 
 from accounts.models import Membership
 from accounts.permissions import can, require, visible_properties
@@ -31,6 +39,7 @@ from billing import invoicing
 from billing.models import LedgerEntry
 from core.money import parse_money
 from core.phone import InvalidPhoneNumber, normalize_phone
+from leases import services as lease_services
 from leases.models import Lease
 from properties import services as property_services
 from properties.models import Building, Property, Unit, clean_code
@@ -43,6 +52,7 @@ Kind = ImportBatch.Kind
 Status = ImportBatch.Status
 
 MAX_BYTES = 1_000_000
+MAX_XLSX_BYTES = 3_000_000
 MAX_ROWS = 2000
 PREVIEW_TTL = datetime.timedelta(hours=24)
 
@@ -51,16 +61,23 @@ COLUMNS = {
     Kind.TENANTS: ("name", "phone", "alt_phone", "email", "kind", "contact_person", "id_type", "id_number",
                    "kra_pin", "emergency_contact_name", "emergency_contact_phone", "notes"),
     Kind.BALANCES: ("property_code", "unit_code", "lease_number", "amount", "as_of", "reason"),
+    Kind.LEASES: ("property_code", "unit_code", "name", "phone", "email", "rent", "deposit", "start_date", "due_day"),
 }
 REQUIRED = {
     Kind.UNITS: ("property_code", "unit_code"), Kind.TENANTS: ("name", "phone"),
     Kind.BALANCES: ("property_code", "unit_code", "amount", "as_of"),
+    Kind.LEASES: ("property_code", "unit_code", "name", "phone", "rent", "start_date"),
 }
+# A row where all of these are empty is a unit or lease the person left alone on a sheet we pre-filled.
+SKIP_IF_EMPTY = {Kind.LEASES: ("name", "phone"), Kind.BALANCES: ("amount",)}
+PHONE_COLUMNS = ("phone", "alt_phone", "emergency_contact_phone")
 EXAMPLES = {
     Kind.UNITS: ("GV", "A1", "Block A", "APARTMENT", "2 bedroom", "15000"),
     Kind.TENANTS: ("Wanjiku Kamau", "0712345678", "", "wanjiku@example.com", "INDIVIDUAL", "", "NATIONAL_ID",
                    "12345678", "A123456789B", "", "", ""),
     Kind.BALANCES: ("GV", "A1", "", "12500", "2026-01-31", "Arrears from the old spreadsheet"),
+    Kind.LEASES: ("GV", "A1", "Wanjiku Kamau", "0712345678", "wanjiku@example.com", "15000", "15000", "2026-01-01",
+                  "5"),
 }
 ALIASES = {
     "property": "property_code", "unit": "unit_code", "code": "unit_code", "type": "unit_type",
@@ -68,8 +85,12 @@ ALIASES = {
     "tenant": "name", "tenant_name": "name", "full_name": "name", "phone_number": "phone", "mobile": "phone",
     "kra": "kra_pin", "id": "id_number", "id_no": "id_number",
     "lease": "lease_number", "balance": "amount", "opening_balance": "amount", "date": "as_of",
+    "monthly_rent": "rent", "deposit_amount": "deposit", "move_in": "start_date", "move_in_date": "start_date",
+    "moved_in": "start_date", "start": "start_date", "tenant_phone": "phone", "tenant_email": "email",
+    "rent_due_day": "due_day", "due": "due_day",
 }
-CAPABILITY = {Kind.UNITS: "units.manage", Kind.TENANTS: "tenants.manage", Kind.BALANCES: "invoices.adjust"}
+CAPABILITY = {Kind.UNITS: "units.manage", Kind.TENANTS: "tenants.manage", Kind.BALANCES: "invoices.adjust",
+              Kind.LEASES: "leases.draft"}
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y")
 SENSITIVE = set(Tenant.SENSITIVE_FIELDS)
 
@@ -113,13 +134,30 @@ def template_csv(kind: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _header(name: str) -> str:
-    key = re.sub(r"[\s\-/]+", "_", name.strip().lower())
-    return ALIASES.get(key, key)
+def _header(name, kind: str) -> str:
+    key = re.sub(r"[\s\-/]+", "_", str(name or "").strip().lower())
+    return key if key in COLUMNS[kind] else ALIASES.get(key, key)
 
 
-def parse_csv(kind: str, upload) -> list[dict]:
-    """Rows as [{"line", "data", "errors"}]. Problems with the file as a whole raise ValidationError."""
+def _cell_text(value) -> str:
+    """An Excel cell as the text a CSV would hold: dates as 2026-01-31, whole numbers without ".0"."""
+    if value is None:
+        return ""
+    if isinstance(value, datetime.datetime):
+        return value.date().isoformat()
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value).strip()
+
+
+def _fix_phone(value: str) -> str:
+    """Excel drops the leading 0 of a number typed into a General cell: 712345678 becomes 0712345678."""
+    return "0" + value if value.isdigit() and len(value) == 9 and value[0] in "71" else value
+
+
+def _read_csv(upload):
     raw = upload.read(MAX_BYTES + 1)
     if len(raw) > MAX_BYTES:
         raise ValidationError(_("The file is too big. Split it into files under 1 MB."))
@@ -129,34 +167,75 @@ def parse_csv(kind: str, upload) -> list[dict]:
         text = raw.decode("cp1252", errors="replace")  # Excel's "CSV" on Windows
     reader = csv.reader(io.StringIO(text))
     try:
-        header = next(reader)
-    except StopIteration:
-        raise ValidationError(_("The file is empty.")) from None
-    except csv.Error:
-        raise ValidationError(_("This does not look like a CSV file.")) from None
-    names = [_header(h) for h in header]
-    unknown = [h for h, n in zip(header, names, strict=True) if n and n not in COLUMNS[kind]]
-    if unknown:
-        raise ValidationError(_("Unknown columns: %(cols)s. Use the template's column names.")
-                              % {"cols": ", ".join(unknown)})
-    missing = [c for c in REQUIRED[kind] if c not in names]
-    if missing:
-        raise ValidationError(_("Missing columns: %(cols)s.") % {"cols": ", ".join(missing)})
-    rows = []
-    try:
         for record in reader:
-            if not any(v.strip() for v in record):
-                continue
-            if len(rows) == MAX_ROWS:
-                raise ValidationError(_("Import at most %(n)s rows at a time.") % {"n": MAX_ROWS})
-            data = {n: v.strip() for n, v in zip(names, record, strict=False) if n}
-            errors = [_("%(col)s is required.") % {"col": c} for c in REQUIRED[kind] if not data.get(c)]
-            rows.append({"line": reader.line_num, "data": data, "errors": errors})
+            yield reader.line_num, record
     except csv.Error:
         raise ValidationError(_("This does not look like a CSV file.")) from None
+
+
+def _read_xlsx(upload):
+    raw = upload.read(MAX_XLSX_BYTES + 1)
+    if len(raw) > MAX_XLSX_BYTES:
+        raise ValidationError(_("The file is too big. Split it into files under 3 MB."))
+    try:
+        book = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        sheet = book.worksheets[0]
+        for number, record in enumerate(sheet.iter_rows(values_only=True, max_col=30), start=1):
+            if number > MAX_ROWS + 50:
+                raise ValidationError(_("Import at most %(n)s rows at a time.") % {"n": MAX_ROWS})
+            yield number, [_cell_text(v) for v in record]
+    except (zipfile.BadZipFile, InvalidFileException, KeyError, IndexError, OSError, ValueError):
+        raise ValidationError(_("This does not look like an Excel (.xlsx) file. Save it as .xlsx or as CSV.")) from None
+
+
+def parse_upload(kind: str, upload) -> list[dict]:
+    """Rows as [{"line", "data", "errors"}] from a .csv or .xlsx upload. Problems with the whole file raise
+    ValidationError."""
+    name = getattr(upload, "name", "").lower()
+    if name.endswith(".xls"):
+        raise ValidationError(_("Old .xls files are not supported. In Excel choose Save As, then .xlsx or CSV."))
+    records = _read_xlsx(upload) if name.endswith((".xlsx", ".xlsm")) else _read_csv(upload)
+    header, names, rows = None, [], []
+    for line, record in records:
+        if not any(str(v).strip() for v in record):
+            continue
+        if header is None:
+            header = record
+            names = [_header(h, kind) for h in header]
+            unknown = [str(h) for h, n in zip(header, names, strict=True) if n and n not in COLUMNS[kind]]
+            if unknown:
+                raise ValidationError(_("Unknown columns: %(cols)s. Use the template's column names.")
+                                      % {"cols": ", ".join(unknown)})
+            missing = [c for c in REQUIRED[kind] if c not in names]
+            if missing:
+                raise ValidationError(_("Missing columns: %(cols)s.") % {"cols": ", ".join(missing)})
+            continue
+        row = _row(kind, line, {n: str(v).strip() for n, v in zip(names, record, strict=False) if n})
+        if row is None:
+            continue
+        if len(rows) == MAX_ROWS:
+            raise ValidationError(_("Import at most %(n)s rows at a time.") % {"n": MAX_ROWS})
+        rows.append(row)
+    if header is None:
+        raise ValidationError(_("The file is empty."))
     if not rows:
         raise ValidationError(_("The file has no rows to import."))
     return rows
+
+
+def make_row(kind: str, line: int, data: dict) -> dict | None:
+    """One row ready to check: its required columns tested, or None for a row left empty on a pre-filled sheet."""
+    skip = SKIP_IF_EMPTY.get(kind)
+    if skip and not any(data.get(c) for c in skip):
+        return None
+    for c in PHONE_COLUMNS:
+        if data.get(c):
+            data[c] = _fix_phone(data[c])
+    errors = [_("%(col)s is required.") % {"col": c} for c in REQUIRED[kind] if not data.get(c)]
+    return {"line": line, "data": data, "errors": errors}
+
+
+_row = make_row
 
 
 def _choice(choices, value: str, default=""):
@@ -193,7 +272,7 @@ def _date(value: str) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
-def _create_unit(actor: Membership, data: dict, request):
+def _create_unit(actor: Membership, data: dict, request, ctx):
     code = clean_code(data["property_code"])
     prop = visible_properties(actor, Property.objects.all()).filter(code__iexact=code).first()
     if prop is None:
@@ -214,7 +293,7 @@ def _create_unit(actor: Membership, data: dict, request):
     return unit, unit.payment_reference
 
 
-def _create_tenant(actor: Membership, data: dict, request):
+def _create_tenant(actor: Membership, data: dict, request, ctx):
     if any(data.get(f) for f in SENSITIVE) and not can(actor, "tenants.view_sensitive"):
         raise ValidationError(_("You may not import ID numbers or KRA PINs. Leave those columns empty."))
     try:
@@ -242,7 +321,7 @@ def _unit(actor: Membership, data: dict) -> Unit:
     return unit
 
 
-def _create_balance(actor: Membership, data: dict, request):
+def _create_balance(actor: Membership, data: dict, request, ctx):
     """A balance brought forward for the unit's active lease, or for the lease named in lease_number."""
     unit = _unit(actor, data)
     leases = Lease.all_objects.filter(unit=unit).exclude(status=Lease.Status.DRAFT)
@@ -266,7 +345,45 @@ def _create_balance(actor: Membership, data: dict, request):
     return entry, f"{unit.payment_reference} · {lease.number}"
 
 
-CREATE = {Kind.UNITS: _create_unit, Kind.TENANTS: _create_tenant, Kind.BALANCES: _create_balance}
+def _whole(value: str, field: str, low: int, high: int) -> int:
+    try:
+        number = int(value)
+    except ValueError:
+        number = None
+    if number is None or not low <= number <= high:
+        raise ValidationError(_("%(field)s must be a whole number from %(low)s to %(high)s.")
+                              % {"field": field, "low": low, "high": high})
+    return number
+
+
+def _create_lease(actor: Membership, data: dict, request, ctx):
+    """A tenant (the one with this phone, or a new one) on a lease for the unit: a draft, or issued if asked."""
+    unit = _unit(actor, data)
+    start = _date(data["start_date"])
+    rent, deposit = _money(data["rent"]), _money(data.get("deposit", ""))
+    due_day = _whole(data["due_day"], "due_day", 1, 28) if data.get("due_day") else 1
+    taken = Lease.all_objects.filter(unit=unit, status__in=[Lease.Status.DRAFT, Lease.Status.ACTIVE]).first()
+    if taken is not None:
+        raise ValidationError(_("%(unit)s already has a lease (%(lease)s).")
+                              % {"unit": unit.payment_reference, "lease": taken.number or _("draft")})
+    try:
+        phone = normalize_phone(data["phone"])
+    except InvalidPhoneNumber as exc:
+        raise ValidationError(str(exc)) from None
+    tenant = tenant_services.tenants_with_phone(actor.organization, phone).first()
+    if tenant is None:
+        tenant = tenant_services.create_tenant(actor, name=data["name"], phone=phone, email=data.get("email", ""),
+                                               request=request)
+        ctx["tenants"].append(tenant.pk)
+    lease = lease_services.create_lease(actor, unit=unit, tenants=[tenant], start_date=start, rent=rent,
+                                        deposit_amount=deposit or 0, due_day=due_day, request=request)
+    if ctx["activate"]:
+        lease = lease_services.activate_lease(actor, lease, request=request)
+    return lease, f"{unit.payment_reference} · {tenant.name}"
+
+
+CREATE = {Kind.UNITS: _create_unit, Kind.TENANTS: _create_tenant, Kind.BALANCES: _create_balance,
+          Kind.LEASES: _create_lease}
 MODEL = {Kind.UNITS: Unit, Kind.TENANTS: Tenant}
 
 
@@ -277,22 +394,26 @@ def _messages(exc: ValidationError) -> list[str]:
             for field, msgs in exc.message_dict.items() for m in msgs]
 
 
-def _process(actor: Membership, kind: str, rows: list[dict], request) -> tuple[list[dict], list[int]]:
-    checked, created = [], []
+def _process(actor: Membership, kind: str, rows: list[dict], request,
+             activate: bool = False) -> tuple[list[dict], list[int], list[int]]:
+    """Runs every row. Returns (rows with their errors, ids created, ids of tenants created along the way)."""
+    checked, created, tenants = [], [], []
     for row in rows:
         errors, label = list(row.get("parse_errors", row["errors"])), ""
+        ctx = {"activate": activate, "tenants": []}
         if not errors:
             try:
                 with transaction.atomic():
-                    obj, label = CREATE[kind](actor, row["data"], request)
+                    obj, label = CREATE[kind](actor, row["data"], request, ctx)
             except ValidationError as exc:
                 errors = _messages(exc)
             except PermissionDenied:
                 errors = [_("You are not allowed to add this.")]
             else:
                 created.append(obj.pk)
+                tenants.extend(ctx["tenants"])
         checked.append({**row, "errors": errors, "label": label})
-    return checked, created
+    return checked, created, tenants
 
 
 def _counts(rows):
@@ -305,19 +426,27 @@ def _counts(rows):
 # ---------------------------------------------------------------------------
 
 
-def preview_import(actor: Membership, kind: str, upload, request=None) -> ImportBatch:
-    """Checks every row without keeping anything, and stores the result as a PREVIEW batch."""
+def preview_import(actor: Membership, kind: str, upload, request=None, activate: bool = False) -> ImportBatch:
+    """Checks every row of a CSV or Excel file without keeping anything, and stores a PREVIEW batch."""
     require(actor, CAPABILITY[kind])
-    rows = parse_csv(kind, upload)
+    rows = parse_upload(kind, upload)
+    return preview_rows(actor, kind, rows, file_name=getattr(upload, "name", ""), activate=activate)
+
+
+def preview_rows(actor: Membership, kind: str, rows: list[dict], *, file_name: str = "", activate: bool = False,
+                 source: str = ImportBatch.Source.FILE) -> ImportBatch:
+    """The same check for rows already read (from a file or a photo)."""
+    require(actor, CAPABILITY[kind])
+    activate = bool(activate and kind == Kind.LEASES and can(actor, "leases.activate"))
     for row in rows:
         row["parse_errors"] = row["errors"]
     with transaction.atomic():
-        checked, _created = _process(actor, kind, rows, None)
+        checked, _created, _tenants = _process(actor, kind, rows, None, activate)
         transaction.set_rollback(True)
     ok, bad = _counts(checked)
     return ImportBatch.objects.create(
-        organization=actor.organization, kind=kind, created_by=actor.user,
-        file_name=getattr(upload, "name", "")[:200], rows=checked, ok_count=ok, error_count=bad,
+        organization=actor.organization, kind=kind, created_by=actor.user, source=source, activate=activate,
+        file_name=file_name[:200], rows=checked, ok_count=ok, error_count=bad,
     )
 
 
@@ -335,15 +464,18 @@ def _scrub(rows):
 
 
 @transaction.atomic
-def apply_import(actor: Membership, batch: ImportBatch, request=None) -> ImportBatch:
+def apply_import(actor: Membership, batch: ImportBatch, request=None, *, checked_by_eye: bool = False) -> ImportBatch:
     locked = _locked(actor, batch)
     if locked.status != Status.PREVIEW:
         raise ValidationError(_("This import has already been applied or discarded."))
     if is_expired(locked):
         raise ValidationError(_("This preview is more than a day old. Upload the file again."))
-    checked, created = _process(actor, locked.kind, locked.rows, request)
+    if locked.source == ImportBatch.Source.PHOTO and not checked_by_eye:
+        raise ValidationError(_("Tick the box to confirm you checked the rows against the paper."))
+    checked, created, tenants = _process(actor, locked.kind, locked.rows, request, locked.activate)
     ok, bad = _counts(checked)
     locked.rows, locked.created_ids, locked.ok_count, locked.error_count = _scrub(checked), created, ok, bad
+    locked.created_tenant_ids = tenants
     locked.status, locked.applied_at = Status.APPLIED, timezone.now()
     locked.save()
     audit.record("import.apply", actor=actor.user, organization=actor.organization, obj=locked, request=request,
@@ -387,6 +519,38 @@ def _undo_balances(actor: Membership, batch: ImportBatch, request) -> tuple[list
     return removed, kept
 
 
+def _undo_leases(actor: Membership, batch: ImportBatch, request) -> tuple[list[str], list[str]]:
+    """Deletes the draft leases the batch made, then the tenants it made that no lease uses. Issued leases stay."""
+    removed, kept = [], []
+    leases = Lease.all_objects.filter(organization=actor.organization, pk__in=batch.created_ids)
+    for lease in leases.select_related("unit__property"):
+        label = f"{lease.unit.payment_reference} · {lease.number or _('draft')}"
+        if lease.status != Lease.Status.DRAFT:
+            kept.append(label)
+            continue
+        try:
+            with transaction.atomic():
+                lease_services.delete_draft_lease(actor, lease, request=request)
+        except (PermissionDenied, ValidationError, ProtectedError):
+            kept.append(label)
+        else:
+            removed.append(label)
+    visible = set(tenant_services.visible_tenants(actor, Tenant.all_objects.filter(pk__in=batch.created_tenant_ids))
+                  .values_list("pk", flat=True))
+    for tenant in Tenant.all_objects.for_org(actor.organization).filter(pk__in=batch.created_tenant_ids):
+        if tenant.pk not in visible or _in_use(Kind.TENANTS, tenant):
+            kept.append(tenant.name)
+            continue
+        try:
+            with transaction.atomic():
+                tenant.delete()
+        except ProtectedError:
+            kept.append(tenant.name)
+        else:
+            removed.append(tenant.name)
+    return removed, kept
+
+
 @transaction.atomic
 def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[list[str], list[str]]:
     """Deletes what the batch created, keeping anything already used. Returns (removed, kept) labels."""
@@ -395,6 +559,9 @@ def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[li
         raise ValidationError(_("An import can only be undone within 24 hours of applying it."))
     if locked.kind == Kind.BALANCES:
         removed, kept = _undo_balances(actor, locked, request)
+        return _finish_undo(actor, locked, removed, kept, request)
+    if locked.kind == Kind.LEASES:
+        removed, kept = _undo_leases(actor, locked, request)
         return _finish_undo(actor, locked, removed, kept, request)
     model = MODEL[locked.kind]
     removed, kept = [], []
@@ -427,3 +594,6 @@ def _finish_undo(actor, locked, removed, kept, request):
     audit.record("import.undo", actor=actor.user, organization=actor.organization, obj=locked, request=request,
                  changes={"removed": [None, removed], "kept": [None, kept]})
     return removed, kept
+
+
+parse_csv = parse_upload  # the name the first version used; it reads Excel files too now

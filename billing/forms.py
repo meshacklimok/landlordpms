@@ -4,6 +4,7 @@ from decimal import Decimal
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
+from . import deposits
 from .models import ChargeType, DepositEntry, FollowUp
 
 
@@ -59,7 +60,8 @@ class StatementForm(forms.Form):
 class DepositForm(forms.Form):
     """Receive, deduct or refund; the view says which."""
 
-    amount = forms.CharField(label=_("Amount"), max_length=20)
+    amount = forms.CharField(label=_("Amount"), max_length=20,
+                             widget=forms.TextInput(attrs={"inputmode": "decimal", "autocomplete": "off"}))
     deposit_type = forms.ChoiceField(label=_("Deposit"), choices=DepositEntry.DepositType.choices)
     entry_date = forms.DateField(label=_("Date"), widget=DateInput)
     reference = forms.CharField(label=_("Reference"), max_length=60, required=False,
@@ -68,8 +70,30 @@ class DepositForm(forms.Form):
 
 
 class DeductForm(DepositForm):
+    """A deduction, shaped by the owner's deposit rules (D-150)."""
+
     reference = None
+    heading = forms.ChoiceField(label=_("Deducted for"), choices=[], required=False)
+    evidence = forms.FileField(label=_("Receipt, quote or photo"), required=False,
+                               widget=forms.FileInput(attrs={"accept": "image/jpeg,image/png,application/pdf"}),
+                               help_text=_("A photo (JPEG or PNG) or a PDF, up to 10 MB."))
     apply_to_balance = forms.BooleanField(label=_("Put it towards what the tenant owes"), required=False)
+    field_order = ["amount", "deposit_type", "entry_date", "heading", "reason", "evidence", "apply_to_balance"]
+
+    def __init__(self, *args, organization=None, cites_report=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        if cites_report:  # the move-out report is the proof
+            del self.fields["evidence"]
+        allowed = deposits.allowed_headings(organization) if organization is not None else []
+        headings = [(c, l) for c, l in DepositEntry.Heading.choices if not allowed or c in allowed]
+        self.fields["heading"].choices = headings if allowed else [("", "---------"), *headings]
+        self.fields["heading"].required = bool(allowed)
+        if organization is not None:
+            if not organization.deposit_allow_offset:
+                del self.fields["apply_to_balance"]
+            if organization.deposit_proof_required and "evidence" in self.fields:
+                self.fields["evidence"].help_text = _(
+                    "Required unless the move-out report is cited. A photo (JPEG or PNG) or a PDF, up to 10 MB.")
 
 
 class ReverseDepositForm(forms.Form):
@@ -101,6 +125,7 @@ class CallListFilterForm(forms.Form):
         self.fields["property"].queryset = properties
         for f in self.fields.values():
             f.widget.attrs["class"] = "form-select form-select-sm w-auto"
+            f.widget.attrs["aria-label"] = f.label
 
     def value(self, name):
         return self.cleaned_data.get(name) if self.is_valid() else None

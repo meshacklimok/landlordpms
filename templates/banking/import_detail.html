@@ -2,7 +2,7 @@
 {% block title %}{{ batch.file_name|default:batch.get_kind_display }}{% endblock %}
 {% block content %}
 <div class="wide mx-auto">
-  <a href="{% url 'banking:import' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Import a statement" %}</a>
+  <a href="{% url 'banking:import' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Import a statement" %}</a>
   <h1 class="h3 mt-2 mb-0">{{ batch.file_name|default:batch.get_kind_display }}</h1>
   <p class="small text-body-secondary">{{ batch.get_kind_display }} · {{ batch.payment_account.display_name }} · {{ batch.created_at|date:"j M Y, H:i" }} · {{ batch.get_status_display }}</p>
 
@@ -24,7 +24,7 @@
     {% else %}
     <div class="d-flex flex-wrap gap-2 mb-3">
       {% if batch.new_count %}
-      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><button class="btn btn-dark"><i class="bi bi-check2"></i> {% blocktrans count n=batch.new_count %}Import {{ n }} line{% plural %}Import {{ n }} lines{% endblocktrans %}</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="apply"><button class="btn btn-primary"><i class="bi bi-check2" aria-hidden="true"></i> {% blocktrans count n=batch.new_count %}Import {{ n }} line{% plural %}Import {{ n }} lines{% endblocktrans %}</button></form>
       {% endif %}
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="discard"><button class="btn btn-outline-secondary">{% trans "Discard" %}</button></form>
     </div>
