@@ -1,0 +1,27 @@
+{% extends "prospects/_base.html" %}{% load i18n %}
+{% block title %}{% if prospect %}{% trans "Edit prospect" %}{% else %}{% trans "Add a prospect" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  {% if prospect %}
+  <a href="{% url 'prospects:detail' prospect.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ prospect.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Edit prospect" %}</h1>
+  <p class="small text-body-secondary">{{ prospect.property.name }}</p>
+  {% else %}
+  <a href="{% url 'prospects:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Prospects" %}</a>
+  <h1 class="h4 mt-2">{% trans "Add a prospect" %}</h1>
+  <p class="small text-body-secondary">{% trans "Someone who called, messaged or walked in about a unit." %}</p>
+  {% endif %}
+  {% if duplicates %}
+  <div class="alert alert-warning small">
+    <div class="fw-semibold mb-1">{% trans "Someone with this phone is already an open prospect here:" %}</div>
+    <ul class="mb-2">{% for d in duplicates %}<li><a href="{% url 'prospects:detail' d.public_id %}">{{ d.name }}</a> · {{ d.get_status_display }}{% if d.assigned_to %} · {{ d.assigned_to }}{% endif %}</li>{% endfor %}</ul>
+    {% trans "Add a note there instead, or save again to add them anyway." %}
+  </div>
+  {% endif %}
+  <form method="post" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    {% if duplicates %}<input type="hidden" name="confirm_duplicate" value="on">{% endif %}
+    <button class="btn btn-primary">{% if duplicates %}{% trans "Add anyway" %}{% elif prospect %}{% trans "Save" %}{% else %}{% trans "Add" %}{% endif %}</button>
+  </div></form>
+</div>
+{% endblock %}
