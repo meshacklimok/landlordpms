@@ -1,0 +1,93 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "WhatsApp number" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <div class="mb-2">
+    <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
+    <div class="small text-body-secondary">{% trans "Send WhatsApp messages to tenants from your own business number." %}</div>
+  </div>
+  {% include "notifications/_tabs.html" with tab="whatsapp" %}
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Your WhatsApp number" %}
+      {% if account.usable %}
+        {% if account.checked_at and not account.check_error %}<span class="badge text-bg-success ms-1">{% trans "Connected" %}</span>
+        {% elif account.check_error %}<span class="badge text-bg-danger ms-1">{% trans "Meta refused it" %}</span>
+        {% else %}<span class="badge text-bg-warning ms-1">{% trans "Not checked yet" %}</span>{% endif %}
+      {% elif account %}<span class="badge text-bg-secondary ms-1">{% trans "Switched off" %}</span>
+      {% else %}<span class="badge text-bg-secondary ms-1">{% trans "Not set up" %}</span>{% endif %}
+    </h2>
+    <p class="small text-body-secondary">
+      {% if account %}{% if account.verified_name or account.display_number %}{{ account.verified_name }} {{ account.display_number }} · {% endif %}{% endif %}
+      {% if account.usable %}{% trans "Tenants who agreed to WhatsApp get your messages from this number." %}
+      {% elif platform_number %}{% trans "Until you add your own number, WhatsApp messages go from the platform's shared number." %}
+      {% else %}{% trans "Until you add a number, tenants get SMS and email only." %}{% endif %}
+    </p>
+    {% if account.check_error %}<div class="alert alert-danger small" role="alert">{{ account.check_error }}</div>{% endif %}
+
+    <form method="post" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="save">
+      {% if form.non_field_errors %}<div class="alert alert-danger small" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="row g-3">
+        <div class="col-12 col-sm-6">
+          <label class="form-label small mb-1" for="{{ form.phone_number_id.id_for_label }}">{{ form.phone_number_id.label }}</label>
+          {{ form.phone_number_id }}
+          {% for e in form.phone_number_id.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          <div class="form-text">{% trans "In Meta: WhatsApp > API setup. It is not the phone number itself." %}</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small mb-1" for="{{ form.access_token.id_for_label }}">{{ form.access_token.label }}</label>
+          {{ form.access_token }}
+          {% for e in form.access_token.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          <div class="form-text">{% if account.access_token_encrypted %}{% trans "Saved. Leave empty to keep it." %} {% endif %}{% trans "Use a permanent token from a system user, so it does not expire. It is stored encrypted and never shown again." %}</div>
+        </div>
+        <div class="col-12">
+          <label class="form-label small mb-1" for="{{ form.app_secret.id_for_label }}">{{ form.app_secret.label }}</label>
+          {{ form.app_secret }}
+          {% for e in form.app_secret.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+          <div class="form-text">{% if account.app_secret_encrypted %}{% trans "Saved. Leave empty to keep it." %} {% endif %}{% trans "Meta app > Settings > Basic. Needed to read delivery reports and tenants' replies safely." %}</div>
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            {{ form.enabled }}
+            <label class="form-check-label" for="{{ form.enabled.id_for_label }}">{{ form.enabled.label }}</label>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-primary mt-3">{% trans "Save" %}</button>
+    </form>
+
+    {% if account %}
+    <div class="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="check"><button class="btn btn-outline-primary btn-sm">{% trans "Check the connection" %}</button></form>
+      <form method="post" data-confirm='{% trans "Remove your WhatsApp number? Messages go back to the shared number, or SMS." %}'>{% csrf_token %}<input type="hidden" name="action" value="remove"><button class="btn btn-outline-danger btn-sm">{% trans "Remove" %}</button></form>
+    </div>
+    {% endif %}
+  </div></div>
+
+  {% if account %}
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Delivery reports and replies" %}</h2>
+    <p class="small text-body-secondary">{% trans "In Meta: WhatsApp > Configuration > Webhook. Paste these two values, then subscribe to “messages”. Without this, messages still go out, but you will not see delivered or failed, and a tenant's STOP will not be heard." %}</p>
+    <label class="form-label small mb-1" for="wa-url">{% trans "Callback URL" %}</label>
+    <input id="wa-url" class="form-control form-control-sm font-monospace mb-2" value="{{ webhook_url }}" readonly>
+    <label class="form-label small mb-1" for="wa-verify">{% trans "Verify token" %}</label>
+    <input id="wa-verify" class="form-control form-control-sm font-monospace mb-2" value="{{ account.verify_token }}" readonly>
+    {% if not account.app_secret_encrypted %}<div class="alert alert-warning small py-2" role="alert">{% trans "Add the app secret above first: replies are ignored without it." %}</div>{% endif %}
+    <form method="post" class="mt-2" data-confirm='{% trans "Make a new address and token? Meta needs the new ones, or it stops reporting." %}'>{% csrf_token %}<input type="hidden" name="action" value="webhook"><button class="btn btn-outline-secondary btn-sm">{% trans "Make new ones" %}</button></form>
+  </div></div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Message templates to create in Meta" %}</h2>
+    <p class="small text-body-secondary">{% trans "WhatsApp only delivers wording it approved beforehand. In your Meta account (WhatsApp Manager > Message templates), create each of these with exactly this name and language, category Utility. Until a template is approved, that message cannot go by WhatsApp." %}</p>
+    {% for t in templates %}
+    <details class="mb-2">
+      <summary class="small"><span class="font-monospace">{{ t.name }}</span> · {{ t.language }}</summary>
+      <pre class="small bg-body-tertiary border rounded p-2 mt-1 mb-1 text-wrap">{{ t.body }}</pre>
+      <div class="small text-body-secondary">{% for f in t.fields %}{{ forloop.counter }} = {{ f }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+    </details>
+    {% endfor %}
+  </div></div>
+</div>
+{% endblock %}

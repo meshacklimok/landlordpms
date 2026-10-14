@@ -1,0 +1,43 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Statement" %}{% endblock %}
+{% block content %}
+<a href="{% url 'owner_portal:account' account.public_id %}" class="small">← {{ account.owner.name }}</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center mt-1 mb-2 gap-2">
+  <h1 class="h4 mb-0">{% blocktrans with m=month|date:"F Y" %}Statement for {{ m }}{% endblocktrans %}</h1>
+  {% if months %}
+  <form method="get" data-autosubmit class="d-flex gap-2">
+    <select name="month" class="form-select form-select-sm" aria-label="{% trans 'Month' %}">
+      {% for m in months %}<option value="{{ m|date:'Y-m' }}"{% if m == month %} selected{% endif %}>{{ m|date:"F Y" }}</option>{% endfor %}
+    </select>
+    <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
+  </form>
+  {% endif %}
+</div>
+{% if st %}{% with cur=st.currency %}
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <div class="card shadow-sm"><div class="card-body p-2">
+      {% include "reports/_statement_summary.html" %}
+    </div></div>
+  </div>
+  <div class="col-md-6 small">
+    <div class="card h-100"><div class="card-body p-2">
+      <div>{% trans "Rent and charges billed for the month" %}: <span class="fw-semibold">{{ st.billed|money:cur }}</span></div>
+      <div>{% trans "Owed by tenants at month end" %}: <span class="fw-semibold">{{ st.balance|money:cur }}</span></div>
+      {% if st.deposit %}<div>{% trans "Deposits received (held, not included)" %}: <span class="fw-semibold">{{ st.deposit|money:cur }}</span></div>{% endif %}
+      <a class="btn btn-sm btn-primary mt-2" href="?month={{ st.month|date:'Y-m' }}&amp;format=pdf">{% trans "Download PDF" %}</a>
+    </div></div>
+  </div>
+</div>
+{% if st.remittances %}
+<div class="card mb-3"><div class="card-body p-2">
+  <h2 class="h6">{% trans "Paid to you for this month" %}</h2>
+  {% include "reports/_remittances.html" with remittances=st.remittances can_remit=False %}
+</div></div>
+{% endif %}
+{% include "reports/_statement_blocks.html" with link_expenses=False %}
+<ul class="small text-muted mt-3">{% for note in st.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}{% else %}
+<p class="text-muted">{% trans "Nothing to show for this month." %}</p>
+{% endif %}
+{% endblock %}

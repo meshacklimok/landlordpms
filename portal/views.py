@@ -3,24 +3,36 @@
 Portal pages see only `selectors.own_*`: anything outside the user's own leases is a 404.
 """
 
+import csv
+
+from django.conf import settings
 from django.contrib import messages
+from django.db.models import Sum
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import PORTAL_INVITE_KEY
+from ai_assistant import tenant as tenant_assistant
+from billing import deposits
+from documents.views import file_response
+from leases import forms as lease_forms
+from leases import services as lease_services
 from leases.models import Lease
 from maintenance import forms as maintenance_forms
 from maintenance import services as maintenance
 from maintenance.views import photo_response
+from reports import patterns
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
-from . import selectors, services
+from . import conversation, offers, selectors, services
+from . import forms as portal_forms
 
 
 def _error_text(exc) -> str:
@@ -50,6 +62,8 @@ class HomeView(PortalRequiredMixin, View):
         leases = list(selectors.own_leases(request.user))
         return _no_store(render(request, self.template_name, {
             "summaries": [selectors.summary(lease) for lease in leases],
+            "ussd_code": getattr(settings, "USSD_CODE", ""),
+            "can_ask": tenant_assistant.portal_caller(request.user) is not None,
         }))
 
 
@@ -67,7 +81,218 @@ class LeaseView(PortalRequiredMixin, View):
             "payments": selectors.payments(lease),
             "repairs": list(selectors.own_requests(request.user).filter(lease=lease)[:selectors.REQUESTS_SHOWN]),
             "can_report": lease.status == Lease.Status.ACTIVE,
+            "documents": selectors.own_documents(lease),
+            "notice": lease_services.open_notice(lease) if lease.status == Lease.Status.ACTIVE else None,
+            "months": _rent_months(lease),
+            "rent": lease.rent_on(timezone.localdate()),
+            "offer": offers.open_offer(lease) if lease.status == Lease.Status.ACTIVE else None,
+            "unread": conversation.unread_for_tenant(request.user).get(lease.pk, 0),
+            "deposit": _deposit_statement(lease),
         }))
+
+
+def _deposit_statement(lease):
+    """What the tenant sees of their deposit (D-150): held, each deduction with its reason, and the refund deadline."""
+    if not lease.organization.takes_deposits:
+        return None
+    clearance = deposits.clearance_statement(lease)
+    if not clearance["types"]:
+        return None
+    due = deposits.settle_by(lease) if clearance["held"] > 0 else None
+    return {"clearance": clearance, "settle_by": due,
+            "overdue": due is not None and due < timezone.localdate()}
+
+
+class PaymentsView(PortalRequiredMixin, View):
+    """Every payment on the lease, by year, with a CSV download."""
+
+    template_name = "portal/payments.html"
+
+    def get(self, request, public_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        years = selectors.payment_years(lease)
+        try:
+            year = int(request.GET.get("year", ""))
+        except ValueError:
+            year = None
+        if year not in years:
+            year = None
+        query = request.GET.get("q", "").strip()[:60]
+        found = selectors.payment_history(lease, year, query)
+        if request.GET.get("download") == "csv":
+            return self._csv(lease, found, year)
+        total = found.aggregate(total=Sum("amount"))["total"] or 0
+        return _no_store(render(request, self.template_name, {
+            "lease": lease, "payments": found, "years": years, "year": year, "total": total, "query": query,
+            "summary": selectors.summary(lease), "pending": selectors.pending_payments(lease),
+            "kinds": selectors.totals_by_kind(found), "can_write": lease.status == Lease.Status.ACTIVE,
+        }))
+
+    def _csv(self, lease, found, year):
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        suffix = f"-{year}" if year else ""
+        response["Content-Disposition"] = f'attachment; filename="payments-{lease.number or "lease"}{suffix}.csv"'
+        writer = csv.writer(response)
+        writer.writerow([_("Date"), _("Method"), _("Reference"), _("Amount"), _("Receipt")])
+        for payment in found:
+            receipt = getattr(payment, "receipt", None)
+            writer.writerow([payment.paid_at.isoformat(), payment.get_method_display(), payment.reference,
+                             payment.amount, receipt.number if receipt and receipt.pdf else ""])
+        return _no_store(response)
+
+
+class PaymentReportView(PortalRequiredMixin, View):
+    """"Something is wrong with this payment": a note to the office through the lease's messages."""
+
+    def post(self, request, public_id):
+        payment = selectors.own_payment(request.user, public_id)
+        if payment is None:
+            raise Http404
+        lease = payment.lease
+        note = request.POST.get("note", "").strip()
+        about = _("About my payment of %(amount)s on %(day)s%(ref)s:") % {
+            "amount": f"{payment.amount:,.2f}", "day": payment.paid_at.strftime("%d %b %Y"),
+            "ref": f" ({payment.reference})" if payment.reference else ""}
+        try:
+            conversation.tenant_send(request.user, lease, f"{about} {note or _('this does not look right.')}")
+        except (ValidationError, PermissionDenied) as exc:
+            messages.error(request, _error_text(exc))
+            return redirect("portal:payments", public_id=lease.public_id)
+        messages.success(request, _("Sent to %(org)s. They will reply in your messages.")
+                         % {"org": lease.organization.name})
+        return redirect("portal:messages", public_id=lease.public_id)
+
+
+def _rent_months(lease):
+    """The tenant's last 12 months of rent, paid in time or not (D-114); None when no rent was billed."""
+    months = patterns.lease_months(lease, timezone.localdate())
+    return months if months.billed else None
+
+
+class LeaseTermsView(PortalRequiredMixin, View):
+    """The tenancy agreement as it stands, as a PDF: the terms the tenant signed, without ID numbers (D-131)."""
+
+    def get(self, request, public_id):
+        from leases import paperwork, pdf
+
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        content = pdf.render_agreement(paperwork.agreement(lease, None))
+        response = HttpResponse(content, content_type="application/pdf")
+        disposition = "attachment" if request.GET.get("download") == "1" else "inline"
+        response["Content-Disposition"] = f'{disposition}; filename="{lease.number or "lease"}-agreement.pdf"'
+        return _no_store(response)
+
+
+class MessagesView(PortalRequiredMixin, View):
+    """The thread with the office, and the announcements the office sent (D-131)."""
+
+    template_name = "portal/messages.html"
+
+    def _render(self, request, lease, form, status=200):
+        response = render(request, self.template_name, {
+            "lease": lease, "form": form, "thread": conversation.thread(lease),
+            "received": conversation.received(lease), "can_write": lease.status == Lease.Status.ACTIVE,
+        }, status=status)
+        return _no_store(response)
+
+    def get(self, request, public_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        response = self._render(request, lease, portal_forms.MessageForm())
+        conversation.mark_read_by_tenant(lease)
+        return response
+
+    def post(self, request, public_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        form = portal_forms.MessageForm(request.POST)
+        if form.is_valid():
+            try:
+                conversation.tenant_send(request.user, lease, form.cleaned_data["body"])
+            except ValidationError as exc:
+                form.add_error("body" if hasattr(exc, "error_dict") and "body" in exc.error_dict else None, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Sent. The office will reply here."))
+                return redirect("portal:messages", public_id=lease.public_id)
+        return self._render(request, lease, form, status=400)
+
+
+class OfferAnswerView(PortalRequiredMixin, View):
+    """Accept or decline the office's renewal offer (D-131). It changes nothing on the lease until the office act."""
+
+    def post(self, request, public_id):
+        from .models import RenewalOffer
+
+        offer = RenewalOffer.objects.filter(public_id=public_id, lease_id__in=selectors.own_lease_ids(request.user)
+                                            ).select_related("lease").first()
+        if offer is None:
+            raise Http404
+        choice = request.POST.get("answer")
+        if choice not in ("accept", "decline"):
+            raise Http404
+        try:
+            offers.answer(request.user, offer, accept=choice == "accept", request=request)
+        except ValidationError as exc:
+            messages.error(request, _error_text(exc))
+        except PermissionDenied:
+            raise Http404 from None
+        else:
+            messages.success(request, _("Thank you. The office has been told you accepted.") if choice == "accept"
+                             else _("Thank you. The office has been told you declined."))
+        return redirect("portal:lease", public_id=offer.lease.public_id)
+
+
+class NoticeCreateView(PortalRequiredMixin, View):
+    """The tenant gives notice to vacate (D-106). Changing it afterwards is for the office."""
+
+    template_name = "portal/notice_form.html"
+
+    def load(self, request, public_id) -> Lease:
+        lease = selectors.own_lease(request.user, public_id)
+        # Estates, water vendors and garbage collectors have no notice to vacate (D-130 item 4).
+        if lease is None or lease.status != Lease.Status.ACTIVE or not lease.organization.bills_rent:
+            raise Http404
+        return lease
+
+    def _render(self, request, lease, form):
+        earliest = lease.earliest_move_out(timezone.localdate())
+        return _no_store(render(request, self.template_name, {
+            "lease": lease, "form": form, "earliest": earliest, "notice": lease_services.open_notice(lease)}))
+
+    def get(self, request, public_id):
+        lease = self.load(request, public_id)
+        initial = {"move_out_on": lease.earliest_move_out(timezone.localdate()).isoformat()}
+        return self._render(request, lease, lease_forms.PortalNoticeForm(initial=initial))
+
+    def post(self, request, public_id):
+        lease = self.load(request, public_id)
+        form = lease_forms.PortalNoticeForm(request.POST)
+        if form.is_valid():
+            try:
+                notice = lease_services.portal_give_notice(
+                    request.user, lease, move_out_on=form.cleaned_data["move_out_on"],
+                    reason=form.cleaned_data["reason"], request=request)
+            except ValidationError as exc:
+                if hasattr(exc, "error_dict"):
+                    for name, errors in exc.error_dict.items():
+                        form.add_error(name if name in form.fields else None, errors)
+                else:
+                    form.add_error(None, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Your notice is recorded. Move-out day: %(day)s.")
+                                 % {"day": notice.move_out_on.strftime("%d %b %Y")})
+                return redirect("portal:lease", public_id=lease.public_id)
+        return self._render(request, lease, form)
 
 
 class RepairCreateView(PortalRequiredMixin, View):
@@ -143,6 +368,16 @@ class RepairPhotoView(PortalRequiredMixin, View):
         return photo_response(photo)
 
 
+class DocumentView(PortalRequiredMixin, View):
+    """A document staff shared with the tenant (D-071 item 4)."""
+
+    def get(self, request, public_id):
+        doc = selectors.own_document(request.user, public_id)
+        if doc is None:
+            raise Http404
+        return _no_store(file_response(doc))
+
+
 class ReceiptView(PortalRequiredMixin, View):
     def get(self, request, public_id):
         payment = selectors.own_payment(request.user, public_id)
@@ -152,6 +387,18 @@ class ReceiptView(PortalRequiredMixin, View):
         return _no_store(FileResponse(receipt.pdf.open("rb"), content_type="application/pdf",
                                       as_attachment=request.GET.get("download") == "1",
                                       filename=f"{receipt.number}.pdf"))
+
+
+class InvoicePdfView(PortalRequiredMixin, View):
+    def get(self, request, public_id):
+        from billing.pdf import render_invoice
+
+        invoice = selectors.own_invoice(request.user, public_id)
+        if invoice is None:
+            raise Http404
+        response = HttpResponse(render_invoice(invoice), content_type="application/pdf")
+        response["Content-Disposition"] = f'inline; filename="{invoice.number}.pdf"'
+        return _no_store(response)
 
 
 class AcceptView(View):
@@ -237,9 +484,20 @@ class RevokeAccountView(CapabilityRequiredMixin, View):
         return redirect("tenants:detail", public_id=tenant.public_id)
 
 
+class RemoveUssdPinView(CapabilityRequiredMixin, View):
+    required_capability = "tenants.invite_portal"
+
+    def post(self, request, public_id):
+        tenant = _staff_tenant(request, public_id)
+        if services.remove_ussd_pin(request.membership, tenant, request=request):
+            messages.success(request, _("USSD PIN removed. The tenant can set a new one from the menu."))
+        return redirect("tenants:detail", public_id=tenant.public_id)
+
+
 def tenant_card(tenant: Tenant) -> dict:
-    """What the tenant page shows about the portal."""
+    """What the tenant page shows about the portal and the USSD PIN."""
     return {
+        "ussd_pin": services.ussd_pin(tenant),
         "account": services.live_account(tenant),
         "invitation": services.pending_invitation(tenant),
         "has_leases": services.has_leases(tenant),

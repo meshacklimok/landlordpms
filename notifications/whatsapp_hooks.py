@@ -1,7 +1,8 @@
 """What Meta tells us back about WhatsApp: message statuses and replies (D-044 item 16).
 
-One business number serves every organization, so a STOP reply stops WhatsApp for every tenant
-with that phone, and START restarts it only where the tenant had agreed before.
+The platform's business number serves every organization, so a STOP reply stops WhatsApp for every tenant
+with that phone, and START restarts it only where the tenant had agreed before. An organization's own number
+(Messages > Settings) has its own webhook, and its replies only reach that organization's tenants.
 """
 
 import datetime
@@ -16,18 +17,19 @@ from .sms_hooks import START_WORDS, STOP_WORDS, keyword, set_channel_from_phone
 
 logger = logging.getLogger(__name__)
 
+KEYWORDS = START_WORDS | STOP_WORDS
 DELIVERED = {"delivered", "read"}
 FAILED = {"failed"}
 
 
 @transaction.atomic
 def status_update(provider_id: str, status: str, errors: list | None = None,
-                  now: datetime.datetime | None = None) -> Message | None:
+                  now: datetime.datetime | None = None, organization=None) -> Message | None:
     """Marks a sent message delivered or failed. Unknown ids and "sent" change nothing."""
     if not provider_id:
         return None
-    message = (Message.objects.select_for_update()
-               .filter(channel=catalog.WHATSAPP, provider_id=provider_id).first())
+    found = Message.objects.select_for_update().filter(channel=catalog.WHATSAPP, provider_id=provider_id)
+    message = (found.filter(organization=organization) if organization is not None else found).first()
     if message is None:
         logger.info("WhatsApp status for unknown message %s", provider_id)
         return None
@@ -43,16 +45,16 @@ def status_update(provider_id: str, status: str, errors: list | None = None,
     return message
 
 
-def reply(phone: str, text: str) -> int | None:
+def reply(phone: str, text: str, organization=None) -> int | None:
     """STOP-type words stop WhatsApp; START-type words restart it where the tenant agreed before."""
     word = keyword(text)
     source = ConsentRecord.Source.WA_REPLY
     if word in STOP_WORDS:
         return set_channel_from_phone(phone, catalog.WHATSAPP, allowed=False, note=f"Replied {word}",
-                                      source=source)
+                                      source=source, organization=organization)
     if word in START_WORDS:
         return set_channel_from_phone(phone, catalog.WHATSAPP, allowed=True, note=f"Replied {word}",
-                                      source=source, only_restore=True)
+                                      source=source, only_restore=True, organization=organization)
     return None
 
 
@@ -65,16 +67,32 @@ def _reply_text(message: dict) -> str:
     return ""
 
 
-def process(payload: dict) -> None:
-    """Handles one webhook delivery: any number of statuses and replies."""
+def process(payload: dict, organization=None) -> list[int]:
+    """Handles one webhook delivery: any number of statuses and replies.
+
+    Other text messages may be tenants' questions (D-093): the ids of those to answer once the webhook has
+    been answered are returned. `organization` is the landlord whose own number the webhook belongs to.
+    """
+    questions = []
     for entry in payload.get("entry") or []:
         for change in entry.get("changes") or []:
             if change.get("field") != "messages":
                 continue
             value = change.get("value") or {}
             for s in value.get("statuses") or []:
-                status_update(str(s.get("id") or ""), str(s.get("status") or ""), s.get("errors"))
+                status_update(str(s.get("id") or ""), str(s.get("status") or ""), s.get("errors"),
+                              organization=organization)
             for m in value.get("messages") or []:
                 phone = str(m.get("from") or "")
-                if phone:
-                    reply("+" + phone.lstrip("+"), _reply_text(m))
+                if not phone:
+                    continue
+                phone = "+" + phone.lstrip("+")
+                text = _reply_text(m)
+                if (reply(phone, text, organization) is None and m.get("type") == "text"
+                        and keyword(text) not in KEYWORDS):
+                    from ai_assistant import tenant  # the assistant app builds on notifications
+
+                    question = tenant.receive(phone, text, str(m.get("id") or "")[:128], organization=organization)
+                    if question is not None:
+                        questions.append(question.pk)
+    return questions

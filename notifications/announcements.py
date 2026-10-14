@@ -23,7 +23,7 @@ from leases.models import Lease, LeaseTenant
 from leases.services import occupying_leases, visible_leases
 
 from . import catalog
-from .delivery import effective_rule, notify
+from .delivery import effective_rule, email_copy_goes, notify
 from .delivery import preview as preview_one
 from .models import Announcement, Message
 from .rendering import SMS_MAX, SMS_SEGMENT, fields_in, render
@@ -47,16 +47,20 @@ class Audience:
     # Lease contract ending within this many days (None: no filter).
     ending_within: int | None = None
     include_co_tenants: bool = True
+    # One or more leases only, e.g. a message proposed by the assistant (D-092).
+    leases: tuple = ()
 
     def as_json(self) -> dict:
         return {"properties": [p.pk for p in self.properties], "buildings": [b.pk for b in self.buildings],
                 "owing_days": self.owing_days, "ending_within": self.ending_within,
-                "include_co_tenants": self.include_co_tenants}
+                "include_co_tenants": self.include_co_tenants, "leases": [x.pk for x in self.leases]}
 
     def summary(self) -> str:
         parts = [", ".join(p.name for p in self.properties) if self.properties else _("All properties")]
         if self.buildings:
             parts.append(", ".join(b.name for b in self.buildings))
+        if self.leases:
+            parts.append(", ".join(f"{x.unit.code} ({x.number})" for x in self.leases))
         if self.owing_days is not None:
             parts.append(ngettext("owing %(n)s+ day", "owing %(n)s+ days", self.owing_days)
                          % {"n": self.owing_days})
@@ -88,6 +92,8 @@ class Preview:
     sending: int = 0
     # Of those, how many go on WhatsApp (not counted in `parts` or `cost`).
     whatsapp: int = 0
+    # Tenants who also get an email copy (D-076).
+    email: int = 0
     parts: int = 0
     cost: Decimal = Decimal("0")
     skipped: dict[str, int] = field(default_factory=dict)
@@ -141,6 +147,11 @@ def _check_audience(actor: Membership, audience: Audience) -> None:
         prop = getattr(obj, "property", obj)
         if not can(actor, "messages.send_bulk", prop):
             raise ValidationError(_("You cannot send to %(name)s.") % {"name": prop.name})
+    for lease in audience.leases:
+        if lease.organization_id != actor.organization_id:
+            raise ValidationError(_("That lease belongs to another organization."))
+        if not can(actor, "messages.send_bulk", lease.unit.property):
+            raise ValidationError(_("You cannot send to %(name)s.") % {"name": lease.unit.property.name})
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +173,8 @@ def recipients(actor: Membership, audience: Audience, today: datetime.date | Non
         leases = leases.filter(unit__property__in=audience.properties)
     if audience.buildings:
         leases = leases.filter(unit__building__in=audience.buildings)
+    if audience.leases:
+        leases = leases.filter(pk__in=[x.pk for x in audience.leases])
     if audience.ending_within is not None:
         leases = leases.filter(status=Lease.Status.ACTIVE, end_date__gte=today,
                                end_date__lte=today + datetime.timedelta(days=audience.ending_within))
@@ -199,7 +212,9 @@ def preview(actor: Membership, text: str, audience: Audience, today: datetime.da
     _check_audience(actor, audience)
     rule = effective_rule(org, catalog.get(TYPE))
     result = Preview(recipients=recipients(actor, audience, today))
+    ntype = catalog.get(TYPE)
     for r in result.recipients:
+        result.email += email_copy_goes(org, ntype, rule, r.tenant)
         chosen, reason = preview_one(org, TYPE, tenant=r.tenant, rule=rule)
         if chosen is None:
             r.skip_reason = reason

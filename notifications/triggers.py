@@ -73,6 +73,24 @@ def receipt_link(receipt) -> str:
     return settings.SITE_URL + reverse("receipt_link", args=[receipt.share_token])
 
 
+def tenancy_fields(lease: Lease, tenant) -> dict:
+    return _tenancy(lease, tenant)
+
+
+def invoice_fields(invoice: Invoice, lease: Lease) -> dict:
+    """The fields of the invoice message (D-044), also used to start a message staff write (D-125)."""
+    return {"invoice_number": invoice.number, "amount": format_money(invoice.total, invoice.currency),
+            "due_date": _date(invoice.due_date), "balance": _balance(lease), "pay_link": _pay_link(lease)}
+
+
+def payment_fields(payment, lease: Lease) -> dict:
+    """The fields of the payment message (D-044), also used to start a message staff write (D-125)."""
+    receipt = getattr(payment, "receipt", None)
+    return {"amount": format_money(payment.amount, lease.currency), "paid_on": _date(payment.paid_at),
+            "receipt_number": receipt.number if receipt else "", "balance": _balance(lease),
+            "receipt_link": receipt_link(receipt) if receipt else ""}
+
+
 # ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
@@ -86,8 +104,7 @@ def invoice_issued(invoice: Invoice, *, send_now: bool = False) -> int:
     org = lease.organization
     ntype = catalog.get("invoice_issued")
     rule = effective_rule(org, ntype)
-    fields = {"invoice_number": invoice.number, "amount": format_money(invoice.total, invoice.currency),
-              "due_date": _date(invoice.due_date), "balance": _balance(lease), "pay_link": _pay_link(lease)}
+    fields = invoice_fields(invoice, lease)
     sent = 0
     for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
         if notify(org, ntype.codename, tenant=tenant, context={**_tenancy(lease, tenant), **fields},
@@ -103,10 +120,7 @@ def payment_received(payment) -> int:
     org = lease.organization
     ntype = catalog.get("payment_received")
     rule = effective_rule(org, ntype)
-    receipt = getattr(payment, "receipt", None)
-    fields = {"amount": format_money(payment.amount, lease.currency), "paid_on": _date(payment.paid_at),
-              "receipt_number": receipt.number if receipt else "", "balance": _balance(lease),
-              "receipt_link": receipt_link(receipt) if receipt else ""}
+    fields = payment_fields(payment, lease)
     sent = 0
     for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants, first=payment.tenant):
         if notify(org, ntype.codename, tenant=tenant, context={**_tenancy(lease, tenant), **fields},
@@ -227,13 +241,118 @@ def _remind(org, ntype, rule, invoice: Invoice, offset: int) -> int:
     return sent
 
 
+def notice_given(notice) -> int:
+    """A notice to vacate was recorded (D-106): staff who handle move-outs hear of it, and a tenant who gave
+    notice hears back with the move-out day. Returns the number of messages written."""
+    lease = _lease(notice.lease)
+    org, unit = lease.organization, lease.unit
+    by = notice.recorded_by
+    lead = notice.tenant or lease.primary_tenant
+    sent = 0
+    context = {"tenant_name": lead.name if lead else "", "property": unit.property.name, "unit": unit.code,
+               "given_by": str(notice.get_given_by_display()).lower(), "move_out_on": _date(notice.move_out_on),
+               "recorded_by": str(by) if by else ""}
+    for user in staff_with(org, "leases.terminate", unit.property):
+        if by is not None and user.pk == by.pk:
+            continue
+        if notify(org, "notice_given", user=user, context=context, lease=lease, created_by=by,
+                  dedupe_key=f"notice_given:{notice.pk}:{user.pk}"):
+            sent += 1
+    if notice.given_by != notice.GivenBy.TENANT:
+        return sent
+    rule = effective_rule(org, catalog.get("notice_received"))
+    fields = {"move_out_on": _date(notice.move_out_on), "balance": _balance(lease)}
+    for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants, first=notice.tenant):
+        if notify(org, "notice_received", tenant=tenant, context={**_tenancy(lease, tenant), **fields}, lease=lease,
+                  created_by=by, dedupe_key=f"notice_received:{notice.pk}:{tenant.pk}"):
+            sent += 1
+    return sent
+
+
+def portal_message_received(message) -> int:
+    """A tenant wrote to the office in the portal (D-131): staff who can reply hear of it."""
+    lease = _lease(message.lease)
+    org, unit = lease.organization, lease.unit
+    context = {"tenant_name": message.tenant.name, "property": unit.property.name, "unit": unit.code}
+    sent = 0
+    for user in staff_with(org, "messages.send", unit.property):
+        if notify(org, "portal_message_received", user=user, context=context, lease=lease, created_by=message.author,
+                  dedupe_key=f"portal_message_received:{message.pk}:{user.pk}"):
+            sent += 1
+    return sent
+
+
+def portal_message_reply(message) -> int:
+    """The office replied in the portal (D-131): the tenant is told by SMS to open it."""
+    lease = _lease(message.lease)
+    if notify(lease.organization, "portal_message_reply", tenant=message.tenant,
+              context=_tenancy(lease, message.tenant), lease=lease, created_by=message.author,
+              dedupe_key=f"portal_message_reply:{message.pk}"):
+        return 1
+    return 0
+
+
+def renewal_offered(offer) -> int:
+    """A renewal offer was made (D-131): the tenants on the lease are told by SMS to open the portal."""
+    lease = _lease(offer.lease)
+    rule = effective_rule(lease.organization, catalog.get("renewal_offered"))
+    fields = {"start_date": _date(offer.start_date), "rent": format_money(offer.rent, lease.currency),
+              "expires_on": _date(offer.expires_on)}
+    sent = 0
+    for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
+        if notify(lease.organization, "renewal_offered", tenant=tenant, context={**_tenancy(lease, tenant), **fields},
+                  lease=lease, created_by=offer.offered_by, dedupe_key=f"renewal_offered:{offer.pk}:{tenant.pk}"):
+            sent += 1
+    return sent
+
+
+def renewal_answered(offer) -> int:
+    """The tenant accepted or declined the offer (D-131): staff who can draft leases hear of it."""
+    lease = _lease(offer.lease)
+    org, unit = lease.organization, lease.unit
+    answer = "accepted" if offer.status == offer.Status.ACCEPTED else "declined"
+    context = {"tenant_name": offer.responded_by_name, "property": unit.property.name, "unit": unit.code,
+               "answer": answer}
+    sent = 0
+    for user in staff_with(org, "leases.draft", unit.property):
+        if notify(org, "renewal_answered", user=user, context=context, lease=lease,
+                  dedupe_key=f"renewal_answered:{offer.pk}:{user.pk}"):
+            sent += 1
+    return sent
+
+
+def _move_out_reminders(org: Organization, today: datetime.date) -> int:
+    ntype = catalog.get("move_out_soon")
+    rule = effective_rule(org, ntype)
+    if not (rule.enabled and rule.offsets):
+        return 0
+    sent = 0
+    horizon = today + datetime.timedelta(days=max(rule.offsets))
+    leases = Lease.objects.filter(organization=org, status=Lease.Status.ACTIVE, move_out_on__gte=today,
+                                  move_out_on__lte=horizon).order_by("move_out_on", "pk")
+    for lease in leases:
+        # The nearest reminder day that has come; a notice given after it already said the day.
+        reached = [o for o in rule.offsets if o >= 0 and lease.move_out_on - datetime.timedelta(days=o) <= today]
+        if not reached or lease.notice_given_on >= lease.move_out_on - datetime.timedelta(days=min(reached)):
+            continue
+        offset = min(reached)
+        lease = _lease(lease)
+        fields = {"move_out_on": _date(lease.move_out_on), "balance": _balance(lease)}
+        for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
+            if notify(org, ntype.codename, tenant=tenant, context={**_tenancy(lease, tenant), **fields}, lease=lease,
+                      dedupe_key=f"move_out_soon:{lease.pk}:{lease.move_out_on}:{offset}:{tenant.pk}",
+                      send_now=False):
+                sent += 1
+    return sent
+
+
 def send_reminders(today: datetime.date | None = None) -> dict[str, int]:
-    """Rent due soon and rent overdue, for every active organization. Part of the daily job.
+    """Rent due soon, rent overdue and move-out day coming, for every active organization. Part of the daily job.
 
     Messages are queued; `send_due_messages` sends them (after quiet hours if the job runs at night).
     """
     today = today or timezone.localdate()
-    counts = {"rent_due_soon": 0, "rent_overdue": 0}
+    counts = {"rent_due_soon": 0, "rent_overdue": 0, "move_out_soon": 0}
     due_soon, overdue = catalog.get("rent_due_soon"), catalog.get("rent_overdue")
     for org in Organization.objects.filter(archived_at__isnull=True, status=Organization.Status.ACTIVE):
         if not org.is_operational:
@@ -254,4 +373,5 @@ def send_reminders(today: datetime.date | None = None) -> dict[str, int]:
                 offset = overdue_offset(invoice, rule.offsets, today)
                 if offset is not None:
                     counts["rent_overdue"] += _remind(org, overdue, rule, invoice, offset)
+        counts["move_out_soon"] += _move_out_reminders(org, today)
     return counts

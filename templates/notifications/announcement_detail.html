@@ -10,7 +10,7 @@
   </div>
 
   <div class="card shadow-sm mb-3"><div class="card-body">
-    <p class="mb-2" style="white-space: pre-line">{{ announcement.text }}</p>
+    <p class="mb-2 pre-line">{{ announcement.text }}</p>
     <div class="small text-body-secondary">
       {{ announcement.summary }} ·
       {% blocktrans count n=announcement.recipient_count %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}

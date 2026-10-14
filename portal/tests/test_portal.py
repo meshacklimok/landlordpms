@@ -1,6 +1,7 @@
 """The tenant portal (D-055): invitations, claiming them, and that a tenant sees only their own data."""
 
 import datetime
+import re
 
 import pytest
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -10,6 +11,7 @@ from accounts import identity
 from accounts.tests.factories import add_member, make_org, make_property, make_user
 from accounts.tests.test_identity import last_code
 from audit.models import AuditEvent
+from billing.models import Invoice
 from leases import services as lease_services
 from notifications import services as notifications
 from notifications.catalog import SMS
@@ -273,6 +275,54 @@ def test_the_home_and_lease_pages(client, owner, a1):
     assert receipt.status_code == 200 and receipt["Content-Type"] == "application/pdf"
 
 
+def test_the_payment_history_page(client, owner, a1, b7):
+    pay(owner, a1, 5000, D(2024, 6, 3))
+    client.force_login(join(owner, a1))
+    url = f"/my/leases/{a1.public_id}/payments/"
+    page = client.get(url)
+    assert page["Cache-Control"] == "private, no-store" and "QAB12CD34E" in page.content.decode()
+    assert "3 Jun 2024" in page.content.decode()
+    only_2024 = client.get(url, {"year": 2024}).content.decode()
+    assert "3 Jun 2024" in only_2024 and "QAB12CD34E" not in only_2024
+    csv_file = client.get(url, {"download": "csv"})
+    assert csv_file["Content-Type"].startswith("text/csv") and "QAB12CD34E" in csv_file.content.decode()
+    assert client.get(f"/my/leases/{b7.public_id}/payments/").status_code == 404
+
+
+def test_the_payments_page_search_pending_kinds_and_pay_button(client, owner, a1):
+    from decimal import Decimal
+
+    from payments.models import Payment
+
+    client.force_login(join(owner, a1))
+    url = f"/my/leases/{a1.public_id}/payments/"
+    confirmed = a1.payments.get()
+    pending = Payment.objects.create(organization=a1.organization, lease=a1, amount=Decimal("700"), method="MPESA",
+                                     paid_at=D(2025, 2, 2), reference="QPENDING01")
+    text = client.get(url).content.decode()
+    assert "Being checked" in text and "QPENDING01" in text and "You owe" in text
+    assert "QAB12CD34E" in text and "What it went towards" in text
+    assert "QAB12CD34E" in client.get(url, {"q": "ab12cd"}).content.decode()
+    miss = client.get(url, {"q": "nothing"}).content.decode()
+    assert "QAB12CD34E" not in miss and "No payment matches" in miss
+    assert selectors.pending_payments(a1) == [pending]
+    kinds = dict(selectors.totals_by_kind(selectors.payment_history(a1)))
+    assert sum(kinds.values()) == confirmed.amount
+
+
+def test_a_tenant_reports_a_payment_to_the_office(client, owner, a1, b7):
+    from portal.models import PortalMessage
+
+    client.force_login(join(owner, a1))
+    payment = a1.payments.get()
+    response = client.post(f"/my/payments/{payment.public_id}/report/", {"note": "I paid 3,000 more"})
+    assert response.status_code == 302 and response["Location"].endswith(f"/my/leases/{a1.public_id}/messages/")
+    message = PortalMessage.objects.get(lease=a1)
+    assert "I paid 3,000 more" in message.body and "QAB12CD34E" in message.body
+    assert client.post(f"/my/payments/{b7.payments.get().public_id}/report/", {"note": "x"}).status_code == 404
+    assert client.get(f"/my/payments/{payment.public_id}/report/").status_code == 405
+
+
 def test_the_summary(owner, a1):
     bill(a1, D(2025, 2, 1))
     summary = selectors.summary(a1)
@@ -287,7 +337,8 @@ def test_no_neighbour_data(client, owner, a1, b7):
     assert client.get(f"/my/leases/{b7.public_id}/").status_code == 404
     assert client.get(f"/my/receipts/{b7.payments.get().public_id}/").status_code == 404
     page = client.get("/my/").content.decode()
-    assert "B7" not in page and "Tenant B7" not in page
+    # A whole word, so a random CSRF token that happens to contain "B7" does not fail the test.
+    assert not re.search(r"\bB7\b", page) and str(b7.public_id) not in page
 
 
 def test_no_data_from_another_organization(client, owner, a1):
@@ -347,3 +398,66 @@ def test_portal_pages_need_a_login_and_access(client, owner, a1):
     assert client.get("/my/").status_code == 404
     client.force_login(owner.user)
     assert client.get("/my/").status_code == 404
+
+
+def test_invoice_pdf_is_own_and_issued_only(client, owner, a1, b7):
+    client.force_login(join(owner, a1))
+    mine, theirs = a1.invoices.get(), b7.invoices.get()
+    r = client.get(f"/my/invoices/{mine.public_id}/pdf/")
+    assert r.status_code == 200 and r["Content-Type"] == "application/pdf" and r.content.startswith(b"%PDF-")
+    assert client.get(f"/my/invoices/{theirs.public_id}/pdf/").status_code == 404
+    Invoice.objects.filter(pk=mine.pk).update(status=Invoice.Status.DRAFT)
+    assert client.get(f"/my/invoices/{mine.public_id}/pdf/").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Notice to vacate (D-106)
+# ---------------------------------------------------------------------------
+
+
+def test_a_tenant_gives_notice_once_in_the_portal(client, owner, a1, b7):
+    client.force_login(join(owner, a1))
+    url = f"/my/leases/{a1.public_id}/notice/"
+    assert "Give notice to vacate" in client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    today = timezone.localdate()
+    too_soon = client.post(url, {"move_out_on": (today + datetime.timedelta(days=3)).isoformat(), "confirm": "on"})
+    assert too_soon.status_code == 200 and "earliest move-out day" in too_soon.content.decode()
+    day = a1.earliest_move_out(today)
+    r = client.post(url, {"move_out_on": day.isoformat(), "reason": "New job", "confirm": "on"})
+    assert r.status_code == 302
+    notice = a1.notices.get()
+    assert notice.via == "PORTAL" and notice.tenant == tenant_of(a1) and notice.move_out_on == day
+    assert AuditEvent.objects.filter(action="lease.notice", object_id=str(a1.public_id)).exists()
+    assert "To change it, call" in client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    with pytest.raises(ValidationError):
+        lease_services.portal_give_notice(r.wsgi_request.user, a1, move_out_on=day)
+    # Not someone else's lease.
+    assert client.get(f"/my/leases/{b7.public_id}/notice/").status_code == 404
+
+
+def test_the_lease_page_uses_the_organizations_own_words(client, owner, a1):
+    client.force_login(join(owner, a1))
+    page = client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    assert "Your lease" in page
+
+    org = owner.organization
+    org.org_type = org.Type.ESTATE
+    org.save(update_fields=["org_type"])
+    page = client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    assert "Your membership" in page and "Your lease" not in page
+
+
+def test_billers_that_are_not_landlords_have_no_deposit_or_notice_to_vacate(client, owner, a1):
+    client.force_login(join(owner, a1))
+    page = client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    assert "Give notice to vacate" in page and "Deposit" in page
+    assert client.get(f"/my/leases/{a1.public_id}/notice/").status_code == 200
+
+    org = owner.organization
+    org.org_type = org.Type.WATER
+    org.save(update_fields=["org_type"])
+    page = client.get(f"/my/leases/{a1.public_id}/").content.decode()
+    assert "Give notice to vacate" not in page and "Moving out" not in page
+    assert "Deposit" not in page and "Notice to leave" not in page
+    assert client.get(f"/my/leases/{a1.public_id}/notice/").status_code == 404
+    assert client.post(f"/my/leases/{a1.public_id}/notice/", {"move_out_on": "2030-01-01"}).status_code == 404

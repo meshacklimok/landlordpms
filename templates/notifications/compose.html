@@ -1,0 +1,84 @@
+{% extends "notifications/_base.html" %}{% load i18n static %}
+{% block title %}{% trans "Send to tenant" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-720">
+  {% if topic.invoice %}<a href="{% url 'billing:invoice' topic.invoice.public_id %}" class="small">← {{ topic.invoice.number }}</a>
+  {% elif topic.payment %}<a href="{% url 'payments:detail' topic.payment.public_id %}" class="small">← {% trans "Payment" %} {{ topic.payment.receipt.number }}</a>
+  {% else %}<a href="{% url 'tenants:detail' tenant.public_id %}" class="small">← {{ tenant.name }}</a>{% endif %}
+  <h1 class="h4 mt-2 mb-1">
+    {% if topic.invoice %}{% blocktrans with n=topic.invoice.number %}Send invoice {{ n }}{% endblocktrans %}
+    {% elif topic.payment %}{% blocktrans with n=topic.payment.receipt.number %}Send receipt {{ n }}{% endblocktrans %}
+    {% else %}{% blocktrans with name=tenant.name %}Message {{ name }}{% endblocktrans %}{% endif %}
+  </h1>
+  {% if topic.lease %}<div class="small text-body-secondary mb-3">{{ topic.lease.unit.property.name }} · {% trans "Unit" %} {{ topic.lease.unit.code }}</div>{% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    {% if tenants|length > 1 %}
+    <div class="fw-medium small mb-1">{% trans "To" %}</div>
+    <div class="d-flex flex-wrap gap-1 mb-3">
+      {% for t in tenants %}<a class="btn btn-sm {% if t == tenant %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?{{ query }}&amp;to={{ t.public_id }}&amp;channel={{ channel }}">{{ t.name }}</a>{% endfor %}
+    </div>
+    {% else %}
+    <div class="small mb-3"><span class="fw-medium">{% trans "To" %}:</span> {{ tenant.name }}</div>
+    {% endif %}
+
+    <div class="fw-medium small mb-1">{% trans "Send by" %}</div>
+    <div class="d-flex flex-wrap gap-1">
+      {% for c in channels %}<a class="btn btn-sm {% if c.code == channel %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?{{ query }}&amp;to={{ tenant.public_id }}&amp;channel={{ c.code }}"{% if c.reason %} title="{{ c.reason }}"{% endif %}>{% if c.code == "EMAIL" %}<i class="bi bi-envelope" aria-hidden="true"></i>{% elif c.code == "SMS" %}<i class="bi bi-chat-text" aria-hidden="true"></i>{% else %}<i class="bi bi-whatsapp" aria-hidden="true"></i>{% endif %} {{ c.label }}{% if c.reason %} <span class="small opacity-75">· {% trans "unavailable" %}</span>{% endif %}</a>{% endfor %}
+    </div>
+    {% if channel == "EMAIL" and tenant.email %}<div class="form-text">{{ tenant.email }}{% if topic.invoice or topic.payment %} · {% if topic.invoice %}{% trans "the invoice PDF is attached" %}{% else %}{% trans "the receipt PDF is attached" %}{% endif %}{% endif %}</div>
+    {% elif channel != "EMAIL" and tenant.phone and not blocked %}<div class="form-text">{{ tenant.phone }}</div>{% endif %}
+  </div></div>
+
+  {% if blocked %}
+  {% for c in channels %}{% if c.code == channel %}
+  <div class="alert alert-warning small">
+    {% blocktrans with channel=c.label reason=c.reason %}{{ channel }} cannot reach this tenant: {{ reason }}.{% endblocktrans %}
+    {% if blocked == "NO_ADDRESS" %}<a href="{% url 'tenants:edit' tenant.public_id %}">{% trans "Add it on the tenant" %}</a>.
+    {% elif blocked == "NO_CONSENT" or blocked == "OPTED_OUT" %}<a href="{% url 'tenants:detail' tenant.public_id %}">{% trans "See the tenant's message choices" %}</a>.{% endif %}
+  </div>
+  {% endif %}{% endfor %}
+  {% else %}
+  <form method="post" action="?{{ query }}">{% csrf_token %}
+    {{ form.nonce }}
+    <input type="hidden" name="to" value="{{ tenant.public_id }}">
+    <input type="hidden" name="channel" value="{{ channel }}">
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      {% if channel == "EMAIL" %}
+      <label class="form-label fw-medium" for="msg-subject">{% trans "Subject" %}</label>
+      <input type="text" name="subject" id="msg-subject" maxlength="200" value="{{ form.subject.value|default:'' }}" class="form-control mb-3{% if form.subject.errors %} is-invalid{% endif %}" required>
+      {% for e in form.subject.errors %}<div class="invalid-feedback d-block mb-2">{{ e }}</div>{% endfor %}
+      {% endif %}
+
+      <label class="form-label fw-medium" for="msg-text">{% trans "Message" %}</label>
+      {% if channel == "SMS" %}
+      <textarea name="text" id="msg-text" data-sms-box data-trim data-extra="{{ org_name|length|add:1 }}" data-count="#msg-count" data-count-format="{% trans '{n} characters with your name · {parts} SMS' %}" rows="5" maxlength="{{ sms_room }}" class="form-control{% if form.text.errors %} is-invalid{% endif %}" required>{{ form.text.value|default:'' }}</textarea>
+      {% else %}
+      <textarea name="text" id="msg-text" rows="{% if channel == 'EMAIL' %}12{% else %}6{% endif %}" maxlength="{% if channel == 'EMAIL' %}5000{% else %}900{% endif %}" class="form-control{% if form.text.errors %} is-invalid{% endif %}" required>{{ form.text.value|default:'' }}</textarea>
+      {% endif %}
+      {% for e in form.text.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      <div class="form-text" id="msg-count"></div>
+      <div class="form-text">
+        {% if channel == "SMS" %}{% blocktrans %}“{{ org_name }}” is added at the end.{% endblocktrans %}
+        {% elif channel == "WHATSAPP" %}{% blocktrans %}Sent as “Message from {{ org_name }}.”, your text, then how to stop WhatsApp messages. Line breaks become spaces.{% endblocktrans %}
+        {% else %}{% trans "A line on how to stop emails is added at the end. Replies go to your reply address in message settings." %}{% endif %}
+      </div>
+    </div></div>
+
+    {% if channel != "EMAIL" %}
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="checkbox" name="urgent" id="msg-urgent" {% if form.urgent.value %}checked{% endif %}>
+      <label class="form-check-label" for="msg-urgent">{% trans "Send now, even during quiet hours" %}</label>
+    </div>
+    {% endif %}
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+      <button class="btn btn-primary" data-confirm="{% blocktrans with name=tenant.name %}Send this to {{ name }}?{% endblocktrans %}"><i class="bi bi-send" aria-hidden="true"></i> {% trans "Send" %}</button>
+    </div>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'js/sms_editor.js' %}" defer></script>{% endblock %}

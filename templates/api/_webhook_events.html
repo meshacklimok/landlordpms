@@ -1,0 +1,5 @@
+{% load i18n %}<fieldset class="mb-3">
+  <legend class="form-label fs-6">{{ form.events.label }}</legend>
+  {% for choice in form.events %}<div class="form-check">{{ choice.tag }} <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }} <code class="small">{{ choice.data.value }}</code></label></div>{% endfor %}
+  {% for e in form.events.errors %}<div class="small text-danger">{{ e }}</div>{% endfor %}
+</fieldset>

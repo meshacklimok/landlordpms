@@ -1,0 +1,70 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "API keys" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'accounts:staff' %}" class="small">← {% trans "Staff" %}</a>
+  <h1 class="h4 mt-2">{% trans "API keys" %}</h1>
+  <p class="small text-muted">{% blocktrans %}A key lets another program, such as your accounting software, read your data. It can only read, never change anything. It reads with your rights and stops working if you leave or lose the right to manage the organization.{% endblocktrans %} <a href="{% url 'support:help_topic' 'staff-roles' %}#api">{% trans "How to use the API" %}</a></p>
+
+  {% if secret %}
+  <div class="alert alert-success" role="status">
+    <div class="fw-semibold mb-1">{% blocktrans with name=created.name %}Key “{{ name }}” created. Copy it now: it will not be shown again.{% endblocktrans %}</div>
+    <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" aria-label="{% trans 'API key' %}" data-api-secret data-select-on-focus>
+    <div class="small mt-2">{% blocktrans %}Send it as <code>Authorization: Bearer &lt;key&gt;</code> to{% endblocktrans %} <code>{{ api_base }}</code></div>
+  </div>
+  {% endif %}
+
+  <div class="list-group mb-4">
+    {% for key in keys %}
+    <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+      <div>
+        <div class="fw-semibold">{{ key.name }} <span class="small text-muted font-monospace">lpk_{{ key.prefix }}_…</span>
+          {% if key.revoked_at %}<span class="badge text-bg-secondary">{% trans "Revoked" %}</span>{% elif key.is_expired %}<span class="badge text-bg-warning">{% trans "Expired" %}</span>{% endif %}</div>
+        <div class="small text-muted">{{ key.scope_labels|join:", " }} · {% blocktrans with who=key.membership.user.full_name when=key.created_at|date:"j M Y" %}by {{ who }} on {{ when }}{% endblocktrans %}
+          · {% if key.last_used_at %}{% blocktrans with when=key.last_used_at|timesince %}last used {{ when }} ago{% endblocktrans %}{% else %}{% trans "never used" %}{% endif %}
+          {% if key.expires_at and not key.revoked_at %} · {% blocktrans with when=key.expires_at|date:"j M Y" %}expires {{ when }}{% endblocktrans %}{% endif %}</div>
+      </div>
+      {% if key.is_live %}
+      <form method="post" action="{% url 'api:revoke' key.public_id %}">{% csrf_token %}
+        <button class="btn btn-outline-danger btn-sm">{% trans "Revoke" %}</button>
+      </form>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="list-group-item text-muted">{% trans "No API keys yet." %}</div>
+    {% endfor %}
+  </div>
+
+  <h2 class="h6">{% trans "New key" %}</h2>
+  {% if live_count >= max_keys %}
+  <p class="small text-muted">{% blocktrans %}You have {{ max_keys }} keys in use. Revoke one to make another.{% endblocktrans %}</p>
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>
+        <input type="text" name="name" id="{{ form.name.id_for_label }}" maxlength="60" required class="form-control{% if form.name.errors %} is-invalid{% endif %}" value="{{ form.name.value|default:'' }}">
+        <div class="form-text small">{{ form.name.help_text }}</div>
+        {% for e in form.name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      <fieldset class="mb-3">
+        <legend class="form-label fs-6">{{ form.scopes.label }}</legend>
+        {% for choice in form.scopes %}<div class="form-check">{{ choice.tag }} <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label></div>{% endfor %}
+        {% for e in form.scopes.errors %}<div class="small text-danger">{{ e }}</div>{% endfor %}
+      </fieldset>
+      <fieldset class="mb-3" data-write-scopes>
+        <legend class="form-label fs-6">{{ form.write_scopes.label }}</legend>
+        {% for choice in form.write_scopes %}<div class="form-check">{{ choice.tag }} <label class="form-check-label" for="{{ choice.id_for_label }}">{{ choice.choice_label }}</label></div>{% endfor %}
+        <div class="form-text small">{{ form.write_scopes.help_text }}</div>
+      </fieldset>
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.expires_in_days.id_for_label }}">{{ form.expires_in_days.label }}</label>
+        {{ form.expires_in_days }}
+      </div>
+      <button class="btn btn-primary btn-sm">{% trans "Create key" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

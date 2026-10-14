@@ -1,0 +1,66 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% if kind == "email" %}{% trans "Your own email" %}{% else %}{% trans "Your own SMS account" %}{% endif %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <div class="mb-2">
+    <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
+    <div class="small text-body-secondary">
+      {% if kind == "email" %}{% trans "Optional. Send tenant email from your own company address." %}
+      {% else %}{% trans "Optional. Send tenant SMS from your own Africa's Talking account." %}{% endif %}
+    </div>
+  </div>
+  {% include "notifications/_tabs.html" %}
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% if kind == "email" %}{% trans "Your mail server" %}{% else %}{% trans "Your SMS account" %}{% endif %}
+      {% if account.usable %}
+        {% if account.checked_at and not account.check_error %}<span class="badge text-bg-success ms-1">{% trans "Working" %}</span>
+        {% elif account.check_error %}<span class="badge text-bg-danger ms-1">{% trans "Test failed" %}</span>
+        {% else %}<span class="badge text-bg-warning ms-1">{% trans "Not tested yet" %}</span>{% endif %}
+      {% elif account %}<span class="badge text-bg-secondary ms-1">{% trans "Switched off" %}</span>
+      {% else %}<span class="badge text-bg-secondary ms-1">{% trans "Not set up" %}</span>{% endif %}
+    </h2>
+    <p class="small text-body-secondary">
+      {% if kind == "email" %}
+        {% if account.usable %}{% trans "Invoices, receipts and notices by email go out through your server, from your address." %}
+        {% else %}{% trans "Until you add one, email goes out through NyumbaPMS under your company name. Nothing here is required." %}{% endif %}
+      {% else %}
+        {% if account.usable %}{% trans "Your SMS are sent and paid for by your own account. They do not use your SMS wallet. Login codes still come from NyumbaPMS." %}
+        {% else %}{% trans "Until you add one, SMS go out through NyumbaPMS and use your SMS wallet. Nothing here is required." %}{% endif %}
+      {% endif %}
+    </p>
+    {% if account.check_error %}<div class="alert alert-danger small" role="alert">{{ account.check_error }}</div>{% endif %}
+
+    <form method="post" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="save">
+      {% if form.non_field_errors %}<div class="alert alert-danger small" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="row g-3">
+        {% for field in form %}
+          {% if field.name == "enabled" or field.name == "use_tls" %}
+          <div class="col-12"><div class="form-check">
+            {{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          </div></div>
+          {% else %}
+          <div class="col-12 {% if field.name == 'port' %}col-sm-4{% else %}col-sm-6{% endif %}">
+            <label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+            {% if field.field.widget.input_type == "password" %}
+              <div class="form-text">{% if secret_saved %}{% trans "Saved. Leave empty to keep it." %} {% endif %}{% trans "Stored encrypted and never shown again." %}</div>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <button class="btn btn-primary mt-3">{% trans "Save" %}</button>
+    </form>
+
+    {% if account %}
+    <div class="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
+      <form method="post">{% csrf_token %}<input type="hidden" name="action" value="test"><button class="btn btn-outline-primary btn-sm">{% if kind == "email" %}{% trans "Send a test to my email" %}{% else %}{% trans "Send a test to my phone" %}{% endif %}</button></form>
+      <form method="post" data-confirm='{% trans "Remove it? Messages go back through NyumbaPMS." %}'>{% csrf_token %}<input type="hidden" name="action" value="remove"><button class="btn btn-outline-danger btn-sm">{% trans "Remove" %}</button></form>
+    </div>
+    {% endif %}
+  </div></div>
+</div>
+{% endblock %}
