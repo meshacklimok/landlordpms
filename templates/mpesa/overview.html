@@ -1,0 +1,252 @@
+{% extends "mpesa/_base.html" %}{% load i18n money static reports %}
+{% block title %}{% trans "M-Pesa" %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="page-head mb-1">
+  <div>
+    <h1 class="h4 mb-0">{% trans "M-Pesa" %}</h1>
+    <p class="lead-text">{% blocktrans with tenants_l=vocab.tenants|lower %}Where your {{ tenants_l }}' M-Pesa money stands, and what needs you.{% endblocktrans %}{% if accounts %} {% blocktrans with from=month_start|date:"j M" to=today|date:"j M Y" %}This month is {{ from }} to {{ to }}; ignored payments are left out.{% endblocktrans %}{% endif %}</p>
+  </div>
+  {% if accounts %}
+  <div class="d-flex flex-wrap gap-2 small">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'mpesa:transactions' %}?from={{ month_start|date:'Y-m-d' }}&amp;to={{ today|date:'Y-m-d' }}"><i class="bi bi-list-ul" aria-hidden="true"></i> {% trans "This month's transactions" %}</a>
+    <button type="button" class="btn btn-sm btn-outline-secondary" data-print><i class="bi bi-printer" aria-hidden="true"></i> {% trans "Print" %}</button>
+  </div>
+  {% endif %}
+</div>
+{% include "mpesa/_nav.html" with section="overview" %}
+
+{% if not accounts %}
+{% include "partials/empty_state.html" with icon="bi-phone" title=_("Connect your Paybill or Till") text=_("Tenants' payments then arrive here and are matched to their leases. Money goes straight to your account.") %}
+{% if can_settings %}<div class="text-center"><a class="btn btn-primary" href="{% url 'mpesa:settings' %}">{% trans "Set up M-Pesa" %}</a></div>{% endif %}
+{% else %}
+
+{% if waiting_n and can_match or not_connected or quiet or codes_count %}
+<section class="mb-3" aria-label="{% trans 'Needs attention' %}">
+  <div class="list-group shadow-sm">
+    {% if waiting_n and can_match %}
+    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" href="{% url 'mpesa:inbox' %}">
+      <span><i class="bi bi-inbox text-warning-emphasis" aria-hidden="true"></i> {% blocktrans count n=waiting_n with total=waiting_total|money:currency %}{{ n }} payment ({{ total }}) is waiting to be matched{% plural %}{{ n }} payments ({{ total }}) are waiting to be matched{% endblocktrans %}{% if oldest_days %} <span class="text-body-secondary">· {% blocktrans with d=oldest_days %}oldest {{ d }} days{% endblocktrans %}</span>{% endif %}</span>
+      <i class="bi bi-chevron-right" aria-hidden="true"></i>
+    </a>
+    {% endif %}
+    {% if codes_count %}
+    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" href="{% url 'mpesa:codes' %}">
+      <span><i class="bi bi-patch-question text-danger" aria-hidden="true"></i> {% blocktrans count n=codes_count %}{{ n }} typed-in code could not be confirmed by Safaricom{% plural %}{{ n }} typed-in codes could not be confirmed by Safaricom{% endblocktrans %}</span>
+      <i class="bi bi-chevron-right" aria-hidden="true"></i>
+    </a>
+    {% endif %}
+    {% for a in not_connected %}
+    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" href="{% if can_settings %}{% if a.creds %}{% url 'mpesa:account' a.account.public_id %}{% else %}{% url 'mpesa:settings' %}{% endif %}{% else %}#{% endif %}">
+      <span><i class="bi bi-plug text-warning-emphasis" aria-hidden="true"></i> {% blocktrans with name=a.account.display_name %}{{ name }} is not connected to Safaricom yet, so its payments will not arrive.{% endblocktrans %}</span>
+      {% if can_settings %}<i class="bi bi-chevron-right" aria-hidden="true"></i>{% endif %}
+    </a>
+    {% endfor %}
+    {% for a in quiet %}
+    <a class="list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-2" href="{% if can_settings %}{% url 'mpesa:account' a.account.public_id %}{% else %}#{% endif %}">
+      <span><i class="bi bi-exclamation-triangle text-warning-emphasis" aria-hidden="true"></i> {% blocktrans with name=a.account.display_name %}{{ name }} has received nothing for two weeks. If tenants are paying, register its addresses again.{% endblocktrans %}</span>
+      {% if can_settings %}<i class="bi bi-chevron-right" aria-hidden="true"></i>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<nav class="report-nav" aria-label="{% trans 'Sections' %}">
+  <a href="#overview">{% trans "Overview" %}</a>
+  <a href="#trend">{% trans "Trend" %}</a>
+  <a href="#matching">{% trans "Matching" %}</a>
+  <a href="#timing">{% trans "When it arrives" %}</a>
+  <a href="#accounts">{% trans "Accounts" %}</a>
+</nav>
+
+{# ------------------------------------------------------------------ Overview #}
+<section id="overview" class="report-section">
+<div class="row g-3">
+  <div class="col-6 col-lg-3">
+    <div class="stat">
+      <div class="stat-label">{% trans "Received this month" %}</div>
+      <div class="stat-value text-nowrap">{{ month|money:currency }}</div>
+      {% sparkline spark_total _("M-Pesa received over 12 months") %}
+      <div class="small text-muted">{% blocktrans with m=last_month|date:"F" t=last_month_total|money:currency %}{{ m }} in full: {{ t }}{% endblocktrans %}</div>
+      <div class="small">{% include "reports/_change.html" with c=change %}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat">
+      <div class="stat-label">{% trans "Payments" %}</div>
+      <div class="stat-value">{{ month_n }}</div>
+      {% sparkline spark_n _("Number of M-Pesa payments over 12 months") %}
+      <div class="small text-muted">{% if payers %}{% blocktrans count n=payers %}from {{ n }} phone number{% plural %}from {{ n }} phone numbers{% endblocktrans %}{% else %}{% trans "this month" %}{% endif %}</div>
+      <div class="small">{% include "reports/_change.html" with c=change_n kind="count" %}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat">
+      <div class="stat-label">{% trans "Typical payment" %}</div>
+      <div class="stat-value text-nowrap">{% if median is None %}—{% else %}{{ median|money:currency }}{% endif %}</div>
+      <div class="small text-muted">{% trans "the middle payment this month" %}</div>
+      {% if average is not None %}<div class="small text-muted">{% blocktrans with a=average|money:currency l=largest|money:currency %}Average {{ a }} · largest {{ l }}{% endblocktrans %}</div>{% endif %}
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="stat {% if waiting_n %}stat-bad{% endif %}">
+      <div class="stat-label">{% trans "Waiting for you" %}</div>
+      <div class="stat-value {% if waiting_n %}text-warning-emphasis{% endif %}">{{ waiting_n }}</div>
+      <div class="small text-muted">{% if waiting_n %}{{ waiting_total|money:currency }}{% if oldest_days %} · {% blocktrans with d=oldest_days %}oldest {{ d }} days{% endblocktrans %}{% endif %}{% else %}{% trans "Nothing to match." %}{% endif %}</div>
+      {% if waiting_n and can_match %}<div class="small"><a href="{% url 'mpesa:inbox' %}">{% trans "Open the inbox" %}</a></div>{% endif %}
+    </div>
+  </div>
+</div>
+</section>
+
+{# ------------------------------------------------------------------ Trend #}
+<section id="trend" class="report-section">
+<h2>{% trans "Trend" %}</h2>
+<p class="section-lead">{% trans "Click a bar to see its payments." %}</p>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <section class="chart-card">
+      <h3>{% trans "Received each month" %}</h3>
+      <p class="chart-sub">{% trans "Twelve months; the lighter bar is this month so far." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'M-Pesa money received each month for 12 months. The same figures are in the table below.' %}"></canvas></div>
+      <details>
+        <summary>{% trans "Show as a table" %}</summary>
+        <div class="table-responsive"><table class="table table-sm small mb-0">
+          <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "Matched by itself" %}</th></tr></thead>
+          <tbody>{% for r in months %}<tr><td class="text-nowrap">{{ r.month|date:"M Y" }}</td><td class="text-end num">{{ r.n }}</td><td class="text-end num">{{ r.total|money:currency }}</td><td class="text-end num">{{ r.auto|percent }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </details>
+    </section>
+  </div>
+  <div class="col-lg-6">
+    <section class="chart-card">
+      <h3>{% trans "Received over the last 30 days" %}</h3>
+      <p class="chart-sub">{% trans "Each day, with the average of the seven days to it as a line." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-days" role="img" aria-label="{% trans 'M-Pesa money received each day for 30 days, with a seven-day average. The same figures are in the table below.' %}"></canvas></div>
+      <details>
+        <summary>{% trans "Show as a table" %}</summary>
+        <div class="table-responsive"><table class="table table-sm small mb-0">
+          <thead><tr><th>{% trans "Day" %}</th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "7-day average" %}</th></tr></thead>
+          <tbody>{% for d, amount, avg in day_rows %}<tr><td class="text-nowrap">{{ d|date:"D j M" }}</td><td class="text-end num">{% if amount %}{{ amount|money:currency }}{% else %}<span class="text-body-secondary">—</span>{% endif %}</td><td class="text-end num">{{ avg|money:currency }}</td></tr>{% endfor %}</tbody>
+        </table></div>
+      </details>
+    </section>
+  </div>
+</div>
+</section>
+
+{# ------------------------------------------------------------------ Matching #}
+<section id="matching" class="report-section">
+<h2>{% trans "How the money found its lease" %}</h2>
+<p class="section-lead">{% trans "This month's payments: matched by themselves from the account number or a payment request, placed by a person, or still waiting." %}</p>
+<div class="row g-3">
+  <div class="col-md-6 col-xl-4">
+    <section class="chart-card">
+      <h3>{% trans "Matched by itself" %}</h3>
+      <p class="chart-sub">{% trans "Placed payments that needed no one" %}</p>
+      <div class="d-flex align-items-center gap-3 my-2">
+        {% ring by_itself _("Matched by itself") %}
+        <div class="small">
+          {% if placed_n %}{% blocktrans with a=by_itself_n b=placed_n %}{{ a }} of {{ b }} placed payments{% endblocktrans %}{% else %}{% trans "Nothing placed yet this month." %}{% endif %}
+          {% sparkline spark_auto _("Share matched by itself over 12 months") %}
+        </div>
+      </div>
+      <dl class="row small mb-0 mt-auto">
+        <dt class="col-7 fw-normal text-body-secondary">{% trans "Typical wait when placed by hand" %}</dt>
+        <dd class="col-5 text-end num mb-1">{{ hand_wait }}</dd>
+        <dt class="col-7 fw-normal text-body-secondary">{% trans "Placed by hand" %}</dt>
+        <dd class="col-5 text-end num mb-0">{% blocktrans with d=hand_days n=hand_n %}{{ n }} in {{ d }} days{% endblocktrans %}</dd>
+      </dl>
+    </section>
+  </div>
+  <div class="col-md-6 col-xl-4">
+    <section class="chart-card">
+      <h3>{% trans "By how it was matched" %}</h3>
+      <p class="chart-sub">{% trans "Share of this month's money" %}</p>
+      {% if month %}
+      <div class="chart-box donut"><canvas data-chart="chart-placed" role="img" aria-label="{% trans 'This month’s M-Pesa money by how it was matched. The same figures are in the table beside it.' %}"></canvas></div>
+      <div class="table-responsive"><table class="table table-sm small mb-0 mt-2 chart-legend">
+        <tbody>{% for p in placement %}<tr><td><span class="key" data-color="{{ p.color }}"></span>{{ p.label }}</td><td class="text-end num">{{ p.n }}</td><td class="text-end num">{{ p.total|money:currency }}</td><td class="text-end num text-body-secondary">{{ p.share|percent }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="small text-body-secondary my-auto">{% trans "No M-Pesa payments yet this month." %}</p>{% endif %}
+    </section>
+  </div>
+  <div class="col-md-12 col-xl-4">
+    <section class="chart-card">
+      <h3>{% trans "By channel" %}</h3>
+      <p class="chart-sub">{% trans "How this month's money came in" %}</p>
+      {% if month %}
+      <div class="chart-box donut"><canvas data-chart="chart-channels" role="img" aria-label="{% trans 'This month’s M-Pesa money by channel. The same figures are in the table beside it.' %}"></canvas></div>
+      <div class="table-responsive"><table class="table table-sm small mb-0 mt-2 chart-legend">
+        <tbody>{% for c in channels %}<tr><td><span class="key" data-color="{{ c.color }}"></span>{{ c.label }}</td><td class="text-end num">{{ c.n }}</td><td class="text-end num">{{ c.total|money:currency }}</td><td class="text-end num text-body-secondary">{{ c.share|percent }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+      {% else %}<p class="small text-body-secondary my-auto">{% trans "No M-Pesa payments yet this month." %}</p>{% endif %}
+    </section>
+  </div>
+</div>
+</section>
+
+{# ------------------------------------------------------------------ Timing #}
+<section id="timing" class="report-section">
+<h2>{% trans "Which days of the month the money arrives" %}</h2>
+<p class="section-lead">{% blocktrans with d=pattern_days %}All M-Pesa money of the last {{ d }} days, by the day of the month it was paid.{% endblocktrans %}{% if half_by %} {% blocktrans with h=half_by m=most_by %}Half of it was in by day {{ h }}, and nine tenths by day {{ m }}.{% endblocktrans %}{% endif %}</p>
+<section class="chart-card">
+  {% if pattern_total %}
+  <div class="chart-box h-sm"><canvas data-chart="chart-pattern" role="img" aria-label="{% trans 'M-Pesa money by day of the month. The same figures are in the table below.' %}"></canvas></div>
+  <details>
+    <summary>{% trans "Show as a table" %}</summary>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      <thead><tr><th>{% trans "Day of the month" %}</th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "Share" %}</th></tr></thead>
+      <tbody>{% for d, amount in pattern_rows %}<tr><td>{{ d }}</td><td class="text-end num">{{ amount|money:currency }}</td><td class="text-end num">{{ amount|share_of:pattern_total|percent }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </details>
+  {% else %}<p class="small text-body-secondary mb-0">{% trans "No M-Pesa payments in this time yet." %}</p>{% endif %}
+</section>
+</section>
+
+{# ------------------------------------------------------------------ Accounts #}
+<section id="accounts" class="report-section">
+<h2>{% trans "Your accounts" %}</h2>
+<div class="table-responsive card shadow-sm">
+  <table class="table table-sm align-middle mb-0">
+    <thead><tr>
+      <th>{% trans "Account" %}</th>
+      <th class="text-end">{% trans "Payments this month" %}</th>
+      <th class="text-end">{% trans "Received this month" %}</th>
+      <th class="text-end">{% trans "Share" %}</th>
+      <th>{% trans "Last payment" %}</th>
+      <th>{% trans "Status" %}</th>
+    </tr></thead>
+    <tbody>
+      {% for a in accounts %}
+      <tr>
+        <td><div class="fw-semibold">{{ a.account.display_name }}</div><div class="small text-body-secondary">{{ a.account.get_type_display }} {{ a.account.number }}</div></td>
+        <td class="text-end num">{{ a.month_n }}</td>
+        <td class="text-end num text-nowrap">{{ a.month_total|money:currency }}</td>
+        <td class="text-end num">{{ a.share|percent }}</td>
+        <td class="small text-nowrap">{% if a.last %}{% blocktrans with when=a.last|timesince %}{{ when }} ago{% endblocktrans %}{% else %}<span class="text-body-secondary">{% trans "Never" %}</span>{% endif %}</td>
+        <td>{% if a.quiet %}<span class="badge text-bg-warning">{% trans "Quiet" %}</span>
+          {% elif a.creds.urls_registered_at %}<span class="badge text-bg-success">{% trans "Connected" %}</span>
+          {% elif a.creds %}<span class="badge text-bg-warning">{% trans "Not registered" %}</span>
+          {% else %}<span class="badge text-bg-secondary">{% trans "Not set up" %}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% if accounts|length > 1 %}
+    <tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end num">{{ month_n }}</td><td class="text-end num text-nowrap">{{ month|money:currency }}</td><td class="text-end num">{% if month %}100%{% else %}—{% endif %}</td><td colspan="2"></td></tr></tfoot>
+    {% endif %}
+  </table>
+</div>
+</section>
+{% endif %}
+{{ chart|json_script:"chart-days" }}
+{{ month_chart|json_script:"chart-months" }}
+{{ placed_chart|json_script:"chart-placed" }}
+{{ channel_chart|json_script:"chart-channels" }}
+{{ pattern_chart|json_script:"chart-pattern" }}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endblock %}
