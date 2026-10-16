@@ -1,0 +1,13 @@
+{% extends "support/_help_topic.html" %}{% load i18n %}
+{% block body %}
+<p>{% trans "What the words used in the app mean. The assistants answer from this same list." %}</p>
+{% for group, terms in glossary_groups %}
+<h2 class="h6 mt-3">{{ group }}</h2>
+<dl>
+  {% for term in terms %}
+  <dt id="term-{{ term.key }}">{{ term.name }}</dt>
+  <dd>{{ term.meaning|safe }}{% if term.topic %} <a href="{% url 'support:help_topic' term.topic %}">{% trans "Read more" %}</a>{% endif %}</dd>
+  {% endfor %}
+</dl>
+{% endfor %}
+{% endblock %}
