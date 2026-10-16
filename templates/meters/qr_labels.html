@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Meter QR codes" %} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="d-print-none">
+  <div class="page-head">
+    <div>
+      <div class="page-eyebrow">{% if picked == "WATER" %}<a href="{% url 'meters:water_session' property.public_id %}">{% trans "Water readings" %}</a>{% else %}<a href="{% url 'meters:list' %}">{% trans "Meters" %}</a>{% endif %} · {{ property.name }}</div>
+      <h1 class="h4">{% trans "Meter QR codes" %}</h1>
+      <p class="lead-text">{% trans "The code only opens the page for someone signed in who may record readings here." %}</p>
+    </div>
+    {% if labels %}<div class="page-head-actions"><button type="button" class="btn btn-primary" data-print><i class="bi bi-printer" aria-hidden="true"></i> {% trans "Print labels" %}</button></div>{% endif %}
+  </div>
+  <ol class="qr-steps">
+    <li><span class="step-num" aria-hidden="true">1</span><span>{% trans "Print this page and stick each label on or next to its meter, out of the rain." %}</span></li>
+    <li><span class="step-num" aria-hidden="true">2</span><span>{% trans "At the meter, point the phone camera at the code and open the link. The meter's form opens, with the last reading shown." %}</span></li>
+    <li><span class="step-num" aria-hidden="true">3</span><span>{% trans "Type the reading and save. It is checked and approved like any other reading." %}</span></li>
+  </ol>
+  {% if labels %}<h2 class="h6 mb-2">{% blocktrans count n=labels|length %}{{ n }} label{% plural %}{{ n }} labels{% endblocktrans %}</h2>{% endif %}
+</div>
+{% if labels %}
+<div class="qr-labels">
+  {% for l in labels %}
+  <div class="qr-item">
+    <figure class="qr-label">
+      <figcaption class="qr-label-head">
+        <span class="qr-label-room">{{ l.rooms }}</span>
+        <span class="qr-label-meter">{{ l.meter.get_utility_display }} · {{ l.meter.label }}</span>
+      </figcaption>
+      <div class="qr-label-code">{{ l.svg|safe }}</div>
+      <div class="qr-label-foot">
+        <span>{% trans "Scan to record the reading" %}</span>
+        <span class="qr-label-prop">{{ property.name }}</span>
+      </div>
+    </figure>
+    <a class="qr-download small d-print-none" href="{% url 'meters:qr' l.meter.public_id %}"><i class="bi bi-download" aria-hidden="true"></i> {% blocktrans with m=l.rooms %}Download {{ m }}{% endblocktrans %}</a>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">{% trans "No meters to read on this property." %}</p>
+{% endif %}
+{% endblock %}

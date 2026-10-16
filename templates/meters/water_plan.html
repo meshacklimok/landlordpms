@@ -1,0 +1,86 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block title %}{% trans "Water settings" %} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 46rem">
+  <div class="page-head">
+    <div>
+      <div class="page-eyebrow"><a href="{% url 'meters:water_session' property.public_id %}">{% trans "Water readings" %}</a> · {{ property.name }}</div>
+      <h1 class="h4">{% trans "How water is charged" %}</h1>
+      <p class="lead-text">{% trans "A change applies to invoices made from now on. Invoices already made are not changed." %}</p>
+    </div>
+  </div>
+  <form method="post" class="card" novalidate data-water-plan>{% csrf_token %}
+    <div class="card-body">
+      {% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+
+      <fieldset class="form-step"{% if form.method.errors %} aria-describedby="method-error"{% endif %}>
+        <legend class="step-legend"><span class="step-num">1</span>{{ form.method.label }}</legend>
+        <div class="choice-cards">
+          {% for value, label in form.fields.method.choices %}
+          <label class="choice-card" for="method-{{ value }}">
+            <input type="radio" class="form-check-input" name="{{ form.method.html_name }}" id="method-{{ value }}" value="{{ value }}"{% if form.method.value == value %} checked{% endif %} aria-describedby="method-{{ value }}-help">
+            <span class="tile-icon"><i class="bi {% if value == 'METERED' %}bi-speedometer2{% elif value == 'FLAT' %}bi-receipt{% else %}bi-house-check{% endif %}" aria-hidden="true"></i></span>
+            <span>
+              <span class="choice-card-title">{{ label }}{% if value == "METERED" %} <span class="choice-tag">{% trans "most common" %}</span>{% endif %}</span>
+              <span class="choice-card-text d-block" id="method-{{ value }}-help">
+                {% if value == "METERED" %}{% trans "Each month's readings are billed on the next invoice: a unit's own meter, or a shared meter divided equally, by weight or by percentage (set on each meter)." %}
+                {% elif value == "FLAT" %}{% trans "The same amount every month on each invoice, with no readings needed. Meters can still be read to follow the use." %}
+                {% else %}{% trans "Tenants pay nothing extra for water. Meters can still be read to see how much is used." %}{% endif %}
+              </span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        {% for e in form.method.errors %}<div class="invalid-feedback d-block" id="method-error">{{ e }}</div>{% endfor %}
+
+        <div class="mt-3 p-3 rounded-3 bg-body-tertiary border" data-water-flat>
+          <label class="form-label fw-semibold" for="{{ form.flat_amount.id_for_label }}">{{ form.flat_amount.label }}</label>
+          <div class="input-group" style="max-width: 16rem">
+            <span class="input-group-text">KES</span>
+            <input class="form-control{% if form.flat_amount.errors %} is-invalid{% endif %}" name="{{ form.flat_amount.html_name }}" id="{{ form.flat_amount.id_for_label }}" value="{{ form.flat_amount.value|default_if_none:'' }}" inputmode="decimal" placeholder="0" aria-describedby="flat-help{% if form.flat_amount.errors %} flat-error{% endif %}">
+          </div>
+          {% for e in form.flat_amount.errors %}<div class="invalid-feedback d-block" id="flat-error">{{ e }}</div>{% endfor %}
+          <div class="form-text small" id="flat-help">{{ form.flat_amount.help_text }}</div>
+          {% if units %}
+          <details class="mt-2"{% for row in units %}{% if row.amount or row.error %} open{% endif %}{% endfor %}>
+            <summary class="small fw-semibold">{% trans "A different amount for some units" %}</summary>
+            <div class="unit-picks mt-2">
+              {% for row in units %}
+              <div>
+                <label class="form-label small mb-1" for="amount-{{ row.unit.pk }}">{{ row.unit.code }}</label>
+                <input class="form-control form-control-sm{% if row.error %} is-invalid{% endif %}" id="amount-{{ row.unit.pk }}" name="amount-{{ row.unit.pk }}" value="{{ row.amount }}" inputmode="decimal" placeholder="{% trans 'Same as above' %}"{% if row.error %} aria-describedby="amount-{{ row.unit.pk }}-error"{% endif %}>
+                {% if row.error %}<div class="invalid-feedback d-block" id="amount-{{ row.unit.pk }}-error">{{ row.error }}</div>{% endif %}
+              </div>
+              {% endfor %}
+            </div>
+            <p class="form-text small mb-0 mt-2">{% trans "Leave empty to use the amount above. A lease with its own water charge keeps it." %}</p>
+          </details>
+          {% endif %}
+        </div>
+      </fieldset>
+
+      <fieldset class="form-step">
+        <legend class="step-legend"><span class="step-num">2</span>{% trans "Approving readings" %}</legend>
+        <div class="form-check form-switch">
+          <input type="checkbox" role="switch" class="form-check-input" name="{{ form.approve_clean.html_name }}" id="{{ form.approve_clean.id_for_label }}"{% if form.approve_clean.value %} checked{% endif %} aria-describedby="approve-help">
+          <label class="form-check-label fw-semibold" for="{{ form.approve_clean.id_for_label }}">{{ form.approve_clean.label }}</label>
+          <div class="form-text small" id="approve-help">{{ form.approve_clean.help_text }}</div>
+        </div>
+      </fieldset>
+
+      {% if ignored %}
+      <div class="alert alert-warning small mt-3 mb-0" role="status">
+        <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+        {% blocktrans count n=ignored|length %}This meter is set to bill tenants, but with this plan nothing is billed from its readings:{% plural %}These meters are set to bill tenants, but with this plan nothing is billed from their readings:{% endblocktrans %}
+        {% for m in ignored %}<a href="{% url 'meters:detail' m.public_id %}">{{ m.label }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+      </div>
+      {% endif %}
+    </div>
+    <div class="card-footer form-actions">
+      <button class="btn btn-primary">{% trans "Save settings" %}</button>
+      <a class="btn btn-outline-secondary" href="{% url 'meters:water_session' property.public_id %}">{% trans "Cancel" %}</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'js/water_plan.js' %}" defer></script>{% endblock %}
