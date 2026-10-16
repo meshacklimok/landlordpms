@@ -1,0 +1,21 @@
+{% extends "notifications/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Message a tenant" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-720">
+  <h1 class="h4 mb-3">{% trans "Who do you want to message?" %}</h1>
+  <form method="get" class="mb-3" role="search">
+    <label for="q" class="visually-hidden">{% trans "Search by name" %}</label>
+    <div class="input-group">
+      <input type="search" id="q" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Search by name' %}">
+      <button class="btn btn-outline-primary" type="submit">{% trans "Search" %}</button>
+    </div>
+  </form>
+  <div class="list-group">
+    {% for t in tenants %}
+    <a class="list-group-item list-group-item-action" href="{% url 'notifications:compose' %}?tenant={{ t.public_id }}">{{ t.name }}</a>
+    {% empty %}
+    <p class="text-muted p-3 mb-0">{% trans "No one found." %}</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

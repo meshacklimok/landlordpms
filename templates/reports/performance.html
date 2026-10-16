@@ -1,0 +1,194 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% blocktrans with property=vocab.property %}{{ property }} performance{% endblocktrans %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+{% with f=report.focus b=report.focus.bridge %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% if selected %}{{ selected.name }}{% else %}{% blocktrans with property=vocab.property %}{{ property }} performance{% endblocktrans %}{% endif %}</h1>
+<p class="small text-body-secondary">{% if selected %}{% blocktrans with p=period.label %}How this property performed {{ p }}: what its rent could have been, where it went, what it earned and how it compares with the rest.{% endblocktrans %}{% else %}{% blocktrans with p=period.label properties_l=vocab.properties|lower %}How your {{ properties_l }} performed {{ p }}: what the rent could have been, where it went, what they earned and which do best.{% endblocktrans %}{% endif %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.rows or f.score.income or f.score.expenses or b.potential %}
+<nav class="report-nav d-print-none" aria-label="{% trans 'Sections' %}">
+  <a href="#rent">{% trans "Rent" %}</a><a href="#profit">{% trans "Profit" %}</a><a href="#trend">{% trans "Collection and occupancy" %}</a>
+  {% if report.benchmarks %}<a href="#compare">{% trans "Against the rest" %}</a>{% endif %}
+  {% if report.rows|length > 1 %}<a href="#ranking">{% trans "Ranking" %}</a>{% endif %}
+</nav>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2 d-flex gap-2 align-items-center">
+    {% trans "Rent earned of potential" as earned_label %}{% ring b.economic_occupancy earned_label size="sm" %}
+    <div><div class="stat-label">{% trans "Rent earned of potential" %}</div><div class="stat-value">{{ b.economic_occupancy|percent }}</div>
+    <div class="stat-sub">{% blocktrans with a=b.collected|money:cur c=b.potential|money:cur %}{{ a }} of {{ c }}{% endblocktrans %}</div></div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net operating income" %}</div><div class="stat-value num">{{ f.score.noi|money:cur }}</div>
+    <div class="stat-sub">{% include "reports/_change.html" with c=report.money|change:"noi" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net income per unit a month" %}</div><div class="stat-value num">{{ f.noi_per_unit_month|money:cur|default:"—" }}</div>
+    <div class="stat-sub">{% if report.rank %}{% blocktrans with k=report.rank n=report.rows|length %}{{ k }} of {{ n }} properties{% endblocktrans %}{% else %}{% blocktrans with a=f.income_per_unit_month|money:cur|default:"—" %}from {{ a }} income{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net yield a year" %}</div>
+    {% if f.net_yield is not None %}<div class="stat-value">{{ f.net_yield|percent1 }}</div>
+    <div class="stat-sub">{% blocktrans with g=f.gross_yield|percent1 v=f.value|money:cur %}{{ g }} gross, on {{ v }}{% endblocktrans %}</div>
+    {% else %}<div class="stat-value text-body-secondary">—</div>
+    <div class="stat-sub">{% if selected and can_edit_property %}<a href="{% url 'properties:edit' selected.public_id %}">{% trans "Add its estimated value" %}</a>{% elif selected %}{% trans "No estimated value yet" %}{% else %}{% trans "Give properties an estimated value" %}{% endif %}</div>{% endif %}
+  </div></div></div>
+</div>
+
+<section id="rent" class="report-section mb-3">
+  <h2 class="h5">{% blocktrans with rent=vocab.rent %}{{ rent }}: from what it could earn to what came in{% endblocktrans %}</h2>
+  <p class="small text-body-secondary">{% trans "For the months of the period, by the month the rent is for. Potential rent is rent billed plus the asking rent of the units that stood empty." %}</p>
+  {% if b.potential %}
+  <div class="row g-3">
+    <div class="col-12 col-lg-7"><div class="chart-card">
+      <div class="chart-box"><canvas data-chart="chart-bridge" role="img" aria-label="{% trans 'Potential rent, less empty units and rent not collected, down to rent collected. The same figures are in the table beside it.' %}"></canvas></div>
+    </div></div>
+    <div class="col-12 col-lg-5">
+      <div class="table-responsive"><table class="table table-sm align-middle small mb-0">
+        <thead><tr><th></th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "Of potential" %}</th></tr></thead>
+        <tbody>
+          <tr class="fw-semibold"><td><span class="key" data-color="1-soft"></span> {% trans "Potential rent" %}</td><td class="text-end num text-nowrap">{{ b.potential|money:cur }}</td><td class="text-end">100%</td></tr>
+          <tr><td><span class="key" data-color="late-2"></span> {% trans "Less empty units" %}{% if b.empty_months %}<div class="text-body-secondary">{% blocktrans count n=b.empty_months %}{{ n }} unit-month{% plural %}{{ n }} unit-months{% endblocktrans %}</div>{% endif %}</td><td class="text-end num text-nowrap">−{{ b.vacancy|money:cur }}</td><td class="text-end">{{ b.vacancy_share|percent }}</td></tr>
+          <tr><td><span class="key" data-color="1-soft"></span> {% trans "Billed" %}</td><td class="text-end num text-nowrap">{{ b.billed|money:cur }}</td><td class="text-end">{{ b.billed|share_of:b.potential|percent }}</td></tr>
+          <tr><td><span class="key" data-color="late-3"></span> {% trans "Less not collected (yet)" %}</td><td class="text-end num text-nowrap">−{{ b.uncollected|money:cur }}</td><td class="text-end">{{ b.uncollected_share|percent }}</td></tr>
+          <tr class="fw-semibold"><td><span class="key" data-color="1"></span> {% trans "Collected" %}</td><td class="text-end num text-nowrap">{{ b.collected|money:cur }}</td><td class="text-end">{{ b.economic_occupancy|percent }}</td></tr>
+        </tbody>
+      </table></div>
+      {% if b.unpriced %}<p class="small text-body-secondary mt-2 mb-0">{% blocktrans count n=b.unpriced %}{{ n }} empty unit-month had no asking rent, so it is not in the cost of empty units.{% plural %}{{ n }} empty unit-months had no asking rent, so they are not in the cost of empty units.{% endblocktrans %}</p>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-body-secondary small">{% trans "No rent billed and no empty units with an asking rent in this period." %}</p>
+  {% endif %}
+</section>
+
+<section id="profit" class="report-section mb-3">
+  <h2 class="h5">{% trans "Profit" %}</h2>
+  <p class="small text-body-secondary">{% trans "Money received and spent in each month (cash basis, as on the profit and loss)." %}</p>
+  <div class="row g-3">
+    {% if specs.trend %}<div class="col-12 col-lg-8"><div class="chart-card">
+      <h3 class="h6">{% trans "Income, expenses and net operating income" %}</h3>
+      <div class="chart-box"><canvas data-chart="chart-trend" role="img" aria-label="{% trans 'Income, expenses and net operating income by month. The same figures are in the table below.' %}"></canvas></div>
+    </div></div>{% endif %}
+    {% if specs.costs %}<div class="col-12 col-lg-4"><div class="chart-card">
+      <h3 class="h6">{% trans "Where the money went" %}</h3>
+      <div class="chart-box donut"><canvas data-chart="chart-costs" role="img" aria-label="{% trans 'Expenses by category. The same figures are in the table beside it.' %}"></canvas></div>
+      <div class="table-responsive"><table class="table table-sm small mb-0 mt-2"><tbody>
+        {% for row, color in costs %}<tr><td><span class="key" data-color="{{ color }}"></span> {{ row.0 }}</td><td class="text-end num text-nowrap">{{ row.1|money:cur }}</td><td class="text-end">{{ row.1|share_of:f.score.expenses|percent }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div></div>{% endif %}
+  </div>
+  <div class="table-responsive mt-3">
+  <table class="table table-sm align-middle small">
+    <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Income" %}</th><th class="text-end">{% trans "Expenses" %}</th><th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Margin" %}</th><th class="text-end">{% trans "Costs of income" %}</th></tr></thead>
+    <tbody>
+    {% for m in report.months_shown %}
+      <tr><td>{{ m.label }}</td><td class="text-end num text-nowrap">{{ m.income|money:cur }}</td><td class="text-end num text-nowrap">{{ m.expenses|money:cur }}</td>
+        <td class="text-end num text-nowrap{% if m.noi < 0 %} text-danger{% endif %}">{{ m.noi|money:cur }}</td><td class="text-end">{{ m.margin|percent }}</td><td class="text-end">{{ m.expense_ratio|percent }}</td></tr>
+    {% endfor %}
+    </tbody>
+    {% with t=report.money.total %}
+    <tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end num text-nowrap">{{ t.income|money:cur }}<div class="fw-normal small">{% include "reports/_change.html" with c=report.money|change:"income" bare=True %}</div></td>
+      <td class="text-end num text-nowrap">{{ t.expenses|money:cur }}<div class="fw-normal small">{% include "reports/_change.html" with c=report.money|change:"expenses" bare=True down_good=True %}</div></td>
+      <td class="text-end num text-nowrap">{{ t.noi|money:cur }}<div class="fw-normal small">{% include "reports/_change.html" with c=report.money|change:"noi" bare=True %}</div></td>
+      <td class="text-end">{{ t.margin|percent }}</td><td class="text-end">{{ t.expense_ratio|percent }}</td></tr></tfoot>
+    {% endwith %}
+  </table>
+  </div>
+  {% if report.money.previous %}<p class="small text-body-secondary">{% blocktrans with l=report.money.previous.label %}Changes are against {{ l }}, the same number of months just before.{% endblocktrans %}</p>{% endif %}
+</section>
+
+{% if report.rent_months %}
+<section id="trend" class="report-section mb-3">
+  <h2 class="h5">{% trans "Collection and occupancy" %}</h2>
+  <p class="small text-body-secondary">{% trans "Rent collected for each month as a share of what was billed for it, and units occupied on the month's last day (today, for this month)." %}</p>
+  {% if specs.rates %}<div class="chart-card mb-2"><div class="chart-box h-sm"><canvas data-chart="chart-rates" role="img" aria-label="{% trans 'Collection rate and occupancy by month. The same figures are in the table below.' %}"></canvas></div></div>{% endif %}
+  <div class="table-responsive">
+  <table class="table table-sm align-middle small">
+    <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Collection rate" %}</th><th class="text-end">{% trans "Occupied" %}</th><th class="text-end">{% trans "Occupancy" %}</th></tr></thead>
+    <tbody>
+    {% for m in report.rent_months %}
+      <tr><td>{{ m.label }}</td><td class="text-end num text-nowrap">{{ m.expected|money:cur }}</td><td class="text-end num text-nowrap">{{ m.collected|money:cur }}</td><td class="text-end">{{ m.rate|percent }}</td>
+        {% for o in report.occupancy_months %}{% if o.key == m.month %}<td class="text-end">{{ o.occupied }} / {{ o.rentable }}</td><td class="text-end">{{ o.rate|percent }}</td>{% endif %}{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% if report.benchmarks %}
+<section id="compare" class="report-section mb-3">
+  <h2 class="h5">{% blocktrans with properties_l=vocab.properties|lower %}Against all your {{ properties_l }}{% endblocktrans %}</h2>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle small">
+    <thead><tr><th></th><th class="text-end">{{ selected.name }}</th><th class="text-end">{% blocktrans with properties=vocab.properties %}All {{ properties }}{% endblocktrans %}</th><th class="text-end">{% trans "Difference" %}</th></tr></thead>
+    <tbody>
+    {% for x in report.benchmarks %}
+      <tr><td>{{ x.label }}</td>
+        {% if x.kind == "money" %}<td class="text-end num text-nowrap">{{ x.this|money:cur|default:"—" }}</td><td class="text-end num text-nowrap">{{ x.portfolio|money:cur|default:"—" }}</td>
+        {% else %}<td class="text-end">{{ x.this|percent1 }}</td><td class="text-end">{{ x.portfolio|percent1 }}</td>{% endif %}
+        <td class="text-end text-nowrap {% if x.better is True %}text-success{% elif x.better is False %}text-danger{% else %}text-body-secondary{% endif %}">
+          {% if x.delta is None %}—{% elif x.kind == "money" %}{% if x.delta > 0 %}+{% endif %}{{ x.delta|money:cur }}{% else %}{{ x.delta|points }}{% endif %}
+          {% if x.better is True %}<span class="visually-hidden">{% trans "(better)" %}</span>{% elif x.better is False %}<span class="visually-hidden">{% trans "(worse)" %}</span>{% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="small text-body-secondary">{% trans "Green is better than your properties taken together, red is worse. Differences in rates are in percentage points." %}</p>
+</section>
+{% endif %}
+
+{% if report.rows|length > 1 %}
+<section id="ranking" class="report-section mb-3">
+  <h2 class="h5">{% blocktrans with properties=vocab.properties %}{{ properties }} ranked{% endblocktrans %}</h2>
+  <p class="small text-body-secondary">{% trans "Best net income per unit first. Open one to see its own figures." %}</p>
+  {% if specs.compare %}<div class="chart-card mb-2"><h3 class="h6">{% trans "Net income per unit a month" %}</h3>
+    <div class="chart-box"><canvas data-chart="chart-compare" role="img" aria-label="{% trans 'Net income per unit a month by property. The same figures are in the table below.' %}"></canvas></div></div>{% endif %}
+  <div class="table-responsive">
+  <table class="table table-sm align-middle small">
+    <thead><tr><th>{{ vocab.property }}</th><th class="text-end">{{ vocab.units }}</th><th class="text-end">{% trans "Rent earned of potential" %}</th><th class="text-end">{% trans "Lost to empty units" %}</th><th class="text-end">{% trans "Not collected" %}</th>
+      <th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Per unit a month" %}</th><th class="text-end">{% trans "Costs of income" %}</th><th class="text-end">{% trans "Net yield" %}</th></tr></thead>
+    <tbody>
+    {% for r in report.rows %}
+      <tr{% if selected and r.property.pk == selected.pk %} class="table-active"{% endif %}>
+        <td class="fw-semibold"><a href="?{% for k, v in carry.items %}{% if k != 'property' %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}property={{ r.property.public_id }}">{{ r.name }}</a></td>
+        <td class="text-end">{{ r.score.units }}</td>
+        <td class="text-end">{{ r.bridge.economic_occupancy|percent }}</td>
+        <td class="text-end num text-nowrap">{{ r.bridge.vacancy|money:cur }}</td>
+        <td class="text-end num text-nowrap">{{ r.bridge.uncollected|money:cur }}</td>
+        <td class="text-end num text-nowrap{% if r.score.noi < 0 %} text-danger{% endif %}">{{ r.score.noi|money:cur }}</td>
+        <td class="text-end num text-nowrap">{{ r.noi_per_unit_month|money:cur|default:"—" }}</td>
+        <td class="text-end">{{ r.score.expense_ratio|percent }}</td>
+        <td class="text-end">{{ r.net_yield|percent1 }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% with t=report.total %}
+    <tfoot><tr class="fw-semibold"><td>{% trans "All" %}</td><td class="text-end">{{ t.score.units }}</td><td class="text-end">{{ t.bridge.economic_occupancy|percent }}</td>
+      <td class="text-end num text-nowrap">{{ t.bridge.vacancy|money:cur }}</td><td class="text-end num text-nowrap">{{ t.bridge.uncollected|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ t.score.noi|money:cur }}</td><td class="text-end num text-nowrap">{{ t.noi_per_unit_month|money:cur|default:"—" }}</td>
+      <td class="text-end">{{ t.score.expense_ratio|percent }}</td><td class="text-end">{{ t.net_yield|percent1 }}</td></tr></tfoot>
+    {% endwith %}
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. Rent is counted by the month it is for; income, expenses and net operating income by when the money moved, as on the profit and loss, so the two need not match. A unit counts as empty for a month when it is empty on the month's last day. Yield is a year's figures, scaled from the days of the period so far, divided by the estimated value on the property's settings; it is before loan payments and tax. Archived properties are left out.{% endblocktrans %}</p>
+{% if specs.bridge %}{{ specs.bridge|json_script:"chart-bridge" }}{% endif %}
+{% if specs.trend %}{{ specs.trend|json_script:"chart-trend" }}{% endif %}
+{% if specs.rates %}{{ specs.rates|json_script:"chart-rates" }}{% endif %}
+{% if specs.costs %}{{ specs.costs|json_script:"chart-costs" }}{% endif %}
+{% if specs.compare %}{{ specs.compare|json_script:"chart-compare" }}{% endif %}
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% blocktrans with properties_l=vocab.properties|lower units_l=vocab.units|lower %}No {{ properties_l }} with {{ units_l }} or money in this period.{% endblocktrans %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}
