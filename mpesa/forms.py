@@ -8,7 +8,11 @@ from .models import DarajaCredentials
 
 class AccountForm(forms.Form):
     type = forms.ChoiceField(label=_("Type"), choices=[(PaymentAccount.Type.PAYBILL, _("Paybill")),
-                                                        (PaymentAccount.Type.TILL, _("Till (Buy Goods)"))])
+                                                        (PaymentAccount.Type.TILL, _("Till (Buy Goods)"))],
+                             help_text=_("A Paybill is best: tenants type their unit's reference as the account "
+                                         "number, so each payment is matched at once, and you can send payment "
+                                         "requests and pay links. Till payments have no account number, so each "
+                                         "one waits in the inbox for you to match (D-100)."))
     number = forms.CharField(label=_("Number"), max_length=7)
     display_name = forms.CharField(label=_("Name"), max_length=80, required=False,
                                    help_text=_("e.g. Riverside rent Paybill"))
@@ -35,7 +39,7 @@ class StkRequestForm(forms.Form):
     phone = forms.CharField(label=_("Phone"), max_length=20,
                             help_text=_("The tenant gets a prompt to enter their M-Pesa PIN."))
     amount = forms.CharField(label=_("Amount (KES)"), max_length=12, help_text=_("Whole shillings."))
-    account = forms.ChoiceField(label=_("Paybill"), required=False)
+    account = forms.ChoiceField(label=_("Account"), required=False)
 
     def __init__(self, *args, accounts=(), phones=(), **kwargs):
         super().__init__(*args, **kwargs)

@@ -1,0 +1,9 @@
+{% load i18n money %}<div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+  <h2 class="h6">{{ name }}</h2>
+  <dl class="row small mb-0">
+    <dt class="col-6 fw-normal text-muted">{% trans "Used" %}</dt><dd class="col-6 text-end font-monospace">{{ bill.units|floatformat:"-3" }} {{ unit }}</dd>
+    <dt class="col-6 fw-normal text-muted">{% trans "Bill" %}</dt><dd class="col-6 text-end font-monospace">{{ bill.amount|money }}</dd>
+    <dt class="col-6 fw-normal text-muted">{% trans "Tenants charged" %}</dt><dd class="col-6 text-end font-monospace">{{ tenants.amount|money }}</dd>
+    <dt class="col-6 fw-normal text-muted">{% trans "Landlord pays" %}</dt><dd class="col-6 text-end font-monospace mb-0">{{ landlord.amount|money }}</dd>
+  </dl>
+</div></div></div>

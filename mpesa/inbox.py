@@ -50,7 +50,7 @@ def _locked(actor: Membership, tx: MpesaTransaction) -> MpesaTransaction:
     """The transaction, locked, if the actor may work on it; a 404-style refusal otherwise."""
     if not visible_transactions(actor, "mpesa.match").filter(pk=tx.pk).exists():
         raise PermissionDenied(_("That record belongs to another organization."))
-    return MpesaTransaction.objects.select_for_update().select_related("payment_account").get(pk=tx.pk)
+    return MpesaTransaction.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=tx.pk)
 
 
 def _record(action: str, actor: Membership, tx: MpesaTransaction, request, changes: dict) -> None:

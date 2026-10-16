@@ -8,6 +8,25 @@ with a rent, a due day and a deposit.</p>
   <li>Change rent, add charges such as service or garbage, renew, transfer or end a lease from the lease page.
     Invoices already issued follow the change.</li>
   <li>Record a move-in or move-out condition report with photos, and print a tenancy letter.</li>
+  <li>Print the agreement as a PDF from the lease page. It holds only what is recorded on the lease, so have it
+    reviewed before signing, then upload the signed copy under Documents.</li>
+  <li>Once notice is given or the lease has ended, the <strong>move-out statement</strong> shows the balance owed,
+    each deposit deduction, the move-out inspection, and what is due to or from the tenant. Save a copy to the
+    lease's documents and share it with the tenant if you wish.</li>
+  <li>To sign without paper, choose <strong>Send the tenancy agreement for e-signature</strong> (or the move-out
+    statement) under Paperwork on the lease page. Each tenant gets an SMS link, enters a code sent to their phone,
+    reads the PDF, types their name and signs. You sign for the landlord on the request page. When everyone has
+    signed, the copy with a signing record page is filed under Documents. If a tenant has stopped SMS, the page shows
+    a link for you to share yourself. Links work for 14 days. A renewal is a new draft lease, so send its agreement
+    the same way. Signing does not activate a draft lease; do that as usual. Only leases of two years or less with
+    no option to renew (or month to month) can be signed this way; longer leases are signed on paper before a
+    witness. The request page offers an evidence pack with a certificate to sign if you ever need the copy in court.
+    Keep signed copies for six years after the lease ends.</li>
+  <li>The day after a lease ends, once nothing is owed either way, no deposit is held and the last month is billed,
+    it is <strong>archived</strong>: it leaves the lease list but stays on the unit and tenant pages. Find it under
+    "Show archived leases". If money moves on it again (for example a payment is reversed), it comes back by itself.
+    To record something late, open it and choose <strong>Restore</strong>; it then stays in the lists for 30 days.</li>
   <li>Invite a tenant to the tenant portal to see their own balance, statement and receipts.</li>
+  <li>Tenants on a feature phone can dial the USSD code{% if ussd_code %} {{ ussd_code }}{% endif %} to check their balance, how to pay and their last payment. It works from the tenant's main phone number only, for leases that are issued and not archived, with no PIN: keep the main phone number up to date. The menu is in the tenant's message language. When the property has an M-Pesa Paybill with a passkey, the menu also offers <em>Pay with M-Pesa</em>: the tenant enters an amount, confirms, and gets an M-Pesa prompt on the same phone after the menu closes. A phone gets at most one prompt every 2 minutes and 5 a day from the menu; these show on the M-Pesa prompts page as <em>from USSD</em>. On an active lease the menu also offers <em>Report a repair</em>: the tenant picks what is wrong, adds a few words and says whether it is an emergency, and gets the repair number. The request shows on the Maintenance page as the tenant's, <em>from USSD</em>, and the tenant gets the usual SMS updates. At most 5 reports a day per lease. A tenant who wants the menu private can choose <em>0. Set a PIN</em>: from then on the menu asks for the 4-digit PIN first. Five wrong PINs lock it for an hour. If the tenant forgets the PIN, use <em>Remove PIN</em> under Tenant portal on their page; this removes it for that phone number with every landlord, and the tenant can set a new one.</li>
 </ul>
 {% endblock %}

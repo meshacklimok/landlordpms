@@ -57,7 +57,7 @@ def test_permanent_failure_is_not_retried(owner, tenant, monkeypatch):
                         now=noon)
 
     class Rejecting:
-        def send(self, to, body):
+        def send(self, to, body, sender_id=""):
             return SmsResult(ok=False, provider="africastalking", error="406 UserInBlacklist", permanent=True)
 
     monkeypatch.setattr(delivery, "get_sms_sender", Rejecting)

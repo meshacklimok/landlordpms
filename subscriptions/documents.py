@@ -10,9 +10,10 @@ from reportlab.pdfgen import canvas
 
 from core.money import format_money
 
+from . import collect
 from .models import PlatformReceipt, SubscriptionInvoice
 
-SELLER = "LandlordPMS"
+SELLER = "NyumbaPMS"
 
 
 def _money(value) -> str:
@@ -85,9 +86,9 @@ def invoice_pdf(invoice: SubscriptionInvoice) -> bytes:
     status = invoice.get_status_display().upper()
     row("Status", status, bold=True)
     if invoice.status == SubscriptionInvoice.Status.OPEN:
-        paybill = getattr(settings, "PLATFORM_PAYBILL", "")
+        paybill = collect.paybill()
         if paybill:
-            row("Pay by M-Pesa", f"Paybill {paybill}, account {invoice.number}")
+            row("Pay by M-Pesa", f"Paybill {paybill}, account {collect.account_number(invoice)}")
     pdf.setFont("Helvetica-Oblique", 7)
     pdf.drawString(left, 12 * mm, "Prices are before VAT." if not invoice.vat_amount else "")
     pdf.showPage()

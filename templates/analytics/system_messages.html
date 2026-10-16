@@ -1,0 +1,25 @@
+{% extends "analytics/base.html" %}{% load i18n %}
+{% block title %}{% trans "System messages" %}{% endblock %}
+{% block console_title %}{% trans "System messages" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "Our own messages: sign-in codes, security alerts, invitations and alerts to us. Switch a message off, or one channel of it. It applies to the next message. A message that is switched off is not sent and nothing is stored for it." %}</p>
+<form method="post" novalidate>
+  {% csrf_token %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th scope="col">{% trans "Message" %}</th><th scope="col">{% trans "On" %}</th><th scope="col">{% trans "By SMS" %}</th><th scope="col">{% trans "By email" %}</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <th scope="row" class="fw-normal"><div>{{ r.kind.label }}</div><div class="small text-muted">{{ r.kind.help }}</div></th>
+          <td><input class="form-check-input" type="checkbox" name="{{ r.kind.key }}.enabled"{% if r.enabled %} checked{% endif %} aria-label="{{ r.kind.label }}"></td>
+          <td>{% if r.sms is not None %}<input class="form-check-input" type="checkbox" name="{{ r.kind.key }}.sms"{% if r.sms %} checked{% endif %} aria-label="{% trans 'By SMS' %}: {{ r.kind.label }}">{% else %}<span class="text-muted" aria-hidden="true">&ndash;</span>{% endif %}</td>
+          <td>{% if r.email is not None %}<input class="form-check-input" type="checkbox" name="{{ r.kind.key }}.email"{% if r.email %} checked{% endif %} aria-label="{% trans 'By email' %}: {{ r.kind.label }}">{% else %}<span class="text-muted" aria-hidden="true">&ndash;</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <button class="btn btn-primary" type="submit">{% trans "Save" %}</button>
+</form>
+{% endblock %}

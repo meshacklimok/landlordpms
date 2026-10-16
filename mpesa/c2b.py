@@ -114,7 +114,7 @@ def receive(creds: DarajaCredentials, payload: dict) -> tuple[MpesaTransaction, 
         raise BadCallback("TransID missing")
     existing = MpesaTransaction.objects.filter(trans_id=trans_id).first()
     if existing:
-        return existing, False
+        return _confirmed_again(existing, creds), False
 
     # Problems that stop a transaction being matched (FLAGGED), then ones that only need a note.
     problems, notes = [], []
@@ -140,14 +140,28 @@ def receive(creds: DarajaCredentials, payload: dict) -> tuple[MpesaTransaction, 
                 trans_type=_text(payload, "TransactionType", 40), shortcode=shortcode,
                 bill_ref=_text(payload, "BillRefNumber", 60), amount=amount or 0, paid_at=paid_at,
                 msisdn_raw=msisdn_raw, msisdn_hash=hashed, payer_phone=phone, payer_name=" ".join(name)[:150],
-                raw_payload=payload,
+                raw_payload=payload, c2b_confirmed_at=timezone.now(),
                 status=Status.FLAGGED if problems else Status.RECEIVED, note=" ".join(problems + notes)[:300])
     except IntegrityError:
-        # The same callback arrived twice at once; the other request stored it.
-        return MpesaTransaction.objects.get(trans_id=trans_id), False
+        # Another request stored this code at the same moment (this callback again, or the payment
+        # request's receipt); it still counts as confirmed by C2B.
+        return _confirmed_again(MpesaTransaction.objects.get(trans_id=trans_id), creds), False
     safe_process(tx)
     tx.refresh_from_db()
     return tx, True
+
+
+def _confirmed_again(existing: MpesaTransaction, creds: DarajaCredentials) -> MpesaTransaction:
+    """A code already stored, now confirmed by C2B: noted, nothing else changes (D-104). Only a
+    confirmation through the same account counts; anyone holding another account's callback link
+    must not be able to vouch for this one's codes."""
+    if existing.payment_account_id != creds.payment_account_id:
+        logger.warning("C2B confirmation of %s through account %s, but it belongs to account %s",
+                       existing.trans_id, creds.payment_account_id, existing.payment_account_id)
+        return existing
+    MpesaTransaction.objects.filter(pk=existing.pk, c2b_confirmed_at__isnull=True).update(
+        c2b_confirmed_at=timezone.now())
+    return existing
 
 
 def safe_process(tx: MpesaTransaction) -> None:
@@ -280,7 +294,7 @@ def recorded_by_hand(tx: MpesaTransaction) -> Payment | None:
 @transaction.atomic
 def process(tx: MpesaTransaction) -> MpesaTransaction:
     """Matches a RECEIVED transaction: confirmed by reference, else left UNMATCHED (with a suggestion)."""
-    tx = MpesaTransaction.objects.select_for_update().select_related("payment_account").get(pk=tx.pk)
+    tx = MpesaTransaction.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=tx.pk)
     if tx.status != Status.RECEIVED:
         return tx
     tx.attempts += 1
@@ -359,7 +373,8 @@ def settle_stk(tx: MpesaTransaction) -> None:
     """Confirms an UNMATCHED transaction that turned out to answer a payment request."""
     try:
         with transaction.atomic():
-            tx = MpesaTransaction.objects.select_for_update().select_related("payment_account").get(pk=tx.pk)
+            tx = (MpesaTransaction.objects.select_for_update(of=("self",)).select_related("payment_account")
+                  .get(pk=tx.pk))
             if tx.status != Status.UNMATCHED:
                 return
             reason = _confirm_stk(tx)

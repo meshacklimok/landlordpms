@@ -1,0 +1,211 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Unit by unit" %}{% endblock %}
+{% block content %}
+{% with cur=report.currency %}
+<h1 class="h4 mb-0">{% trans "Unit by unit" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with day=report.day|date:"j M Y" %}Every unit over the last 12 months, as recorded on {{ day }}: who paid each month and when, the rent against the asking rent, the days it stood empty and what it owes.{% endblocktrans %}</p>
+{% include "reports/_finance_filter.html" %}
+
+{% if not report.rows %}
+<div class="card shadow-sm mb-3"><div class="card-body text-center py-5">
+  <h2 class="h6 mb-0">{% trans "No units yet" %}</h2>
+</div></div>
+{% else %}
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg">
+    <div class="stat">
+      <div class="stat-label">{% blocktrans with m=report.this_month|date:"M Y" %}Paid in full, {{ m }}{% endblocktrans %}</div>
+      <div class="stat-value">{% blocktrans with p=s.paid b=s.billed %}{{ p }} of {{ b }}{% endblocktrans %}</div>
+      <div class="small text-body-secondary">
+        {% if s.unpaid %}{% blocktrans count n=s.unpaid %}{{ n }} overdue and not paid{% plural %}{{ n }} overdue and not paid{% endblocktrans %}{% endif %}
+        {% if s.part %}{% if s.unpaid %} · {% endif %}{% blocktrans count n=s.part %}{{ n }} part paid{% plural %}{{ n }} part paid{% endblocktrans %}{% endif %}
+        {% if s.due %}{% if s.unpaid or s.part %} · {% endif %}{% blocktrans count n=s.due %}{{ n }} not due yet{% plural %}{{ n }} not due yet{% endblocktrans %}{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="stat">
+      <div class="stat-label">{% trans "Collected, 12 months" %}</div>
+      <div class="ring-stat mt-1">
+        {% trans "Collected, 12 months" as rate_label %}{% ring s.rate rate_label size="sm" %}
+        <div class="small text-body-secondary">{% blocktrans with c=s.collected|money:cur e=s.expected|money:cur %}{{ c }} of {{ e }}{% endblocktrans %}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="stat">
+      <div class="stat-label">{% trans "Always in time" %}</div>
+      <div class="stat-value">{% blocktrans with a=s.always_in_time o=s.occupied %}{{ a }} of {{ o }}{% endblocktrans %}</div>
+      <div class="small text-body-secondary">{% trans "tenants who paid every month in time" %}</div>
+    </div>
+  </div>
+  <div class="col-6 col-lg">
+    <div class="stat">
+      <div class="stat-label">{% trans "Average rent" %}</div>
+      <div class="stat-value text-nowrap">{{ s.average_rent|money:cur|default:"—" }}</div>
+      <div class="small text-body-secondary">
+        {% if s.below_asking_units %}{% blocktrans with a=s.below_asking|money:cur count n=s.below_asking_units %}{{ n }} unit is {{ a }} a month under its asking rent{% plural %}{{ n }} units are {{ a }} a month under their asking rent{% endblocktrans %}
+        {% else %}{% trans "a month, occupied units" %}{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg">
+    <div class="stat">
+      <div class="stat-label">{% trans "Empty, 12 months" %}</div>
+      <div class="stat-value">{% blocktrans count n=s.empty_days %}{{ n }} day{% plural %}{{ n }} days{% endblocktrans %}</div>
+      <div class="small text-body-secondary">
+        {% if s.empty_loss %}{% blocktrans with a=s.empty_loss|money:cur %}about {{ a }} at the asking rent{% endblocktrans %} · {% endif %}
+        {% blocktrans count n=s.empty_now %}{{ n }} unit empty now{% plural %}{{ n }} units empty now{% endblocktrans %}
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if s.ending %}
+<div class="card shadow-sm mb-3"><div class="card-body py-2 small">
+  <div class="fw-semibold mb-1">{% blocktrans %}Leases ending or tenants moving out in the next 90 days{% endblocktrans %}</div>
+  <ul class="list-unstyled mb-0">
+    {% for row in s.ending %}
+    <li class="d-flex justify-content-between gap-3">
+      <span>{{ row.unit.property.name }} · {{ row.unit.code }}{% if show_names and row.lease.primary_tenant %} · {{ row.lease.primary_tenant.name }}{% endif %}</span>
+      <span class="text-nowrap">{{ row.ends_on|date:"j M Y" }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div></div>
+{% endif %}
+
+{% if report.too_many %}
+<div class="alert alert-info small">{% blocktrans count n=report.rows|length %}{{ n }} unit is in view.{% plural %}{{ n }} units are in view. Choose a property above to list them one by one; the figures on this page count them all, and the CSV lists every unit.{% endblocktrans %}</div>
+{% else %}
+<div class="d-flex flex-wrap gap-3 small mb-2" aria-label="{% trans 'Key' %}">
+  {% for key, label in states %}<span><span class="unit-month {{ key|state_class }}" aria-hidden="true">{{ key|state_mark }}</span> {{ label }}</span>{% endfor %}
+</div>
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Unit" %}</th>
+    <th>{% blocktrans with a=report.months.0|date:"M Y" b=report.this_month|date:"M Y" %}{{ a }} to {{ b }}{% endblocktrans %}</th>
+    <th class="text-end">{% trans "Rent" %}</th>
+    <th class="text-end">{% trans "Asking" %}</th>
+    <th class="text-end">{% trans "Collected" %}</th>
+    <th class="text-end">{% trans "Days empty" %}</th>
+    {% if report.shows_arrears %}<th class="text-end">{% trans "Overdue" %}</th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for row in report.rows %}
+    <tr>
+      <td>
+        <div class="fw-semibold text-nowrap">{% if can_units %}<a href="{% url 'properties:unit' row.unit.public_id %}">{{ row.unit.code }}</a>{% else %}{{ row.unit.code }}{% endif %}
+          {% if not selected %}<span class="fw-normal text-body-secondary">· {{ row.unit.property.name }}</span>{% endif %}</div>
+        <div class="text-body-secondary">
+          {% if row.lease %}{% if show_names and row.lease.primary_tenant %}{% if can_leases %}<a href="{% url 'leases:detail' row.lease.public_id %}">{{ row.lease.primary_tenant.name }}</a>{% else %}{{ row.lease.primary_tenant.name }}{% endif %}{% else %}{% trans "Occupied" %}{% endif %}
+            {% if row.grade %}<span class="badge bg-body-secondary text-body border" title="{% trans 'How reliably they pay, A to E' %}">{{ row.grade.label }}</span>{% endif %}
+          {% elif row.status == "reserved" %}{% trans "Reserved" %}{% elif row.status == "maintenance" %}{% trans "Under maintenance" %}{% else %}{% trans "Empty" %}{% endif %}
+        </div>
+      </td>
+      <td><div class="unit-months">{% for c in row.cells %}<span class="unit-month {{ c.state|state_class }}" title="{{ c.month|date:'M Y' }}: {{ c.label }}{% if c.expected %} · {{ c.collected|money:cur }} / {{ c.expected|money:cur }}{% endif %}"><span aria-hidden="true">{{ c.state|state_mark }}</span><span class="visually-hidden">{{ c.month|date:'M Y' }}: {{ c.label }}</span></span>{% endfor %}</div></td>
+      <td class="text-end num text-nowrap">{% if row.rent %}{{ row.rent|money:cur }}{% if row.rent_since %}<div class="text-body-secondary">{% blocktrans with d=row.rent_since|date:"M Y" %}since {{ d }}{% endblocktrans %}</div>{% endif %}{% else %}—{% endif %}</td>
+      <td class="text-end num text-nowrap">{% if row.unit.list_rent %}{{ row.unit.list_rent|money:cur }}{% if row.below_asking %}<div class="text-warning-emphasis">−{{ row.below_asking|money:cur }}</div>{% endif %}{% else %}—{% endif %}</td>
+      <td class="text-end">{{ row.rate|percent }}<div class="text-body-secondary">{% blocktrans with p=row.months_paid_in_time b=row.months_billed %}{{ p }}/{{ b }} in time{% endblocktrans %}</div></td>
+      <td class="text-end">{{ row.empty_days }}{% if row.empty_loss %}<div class="text-body-secondary text-nowrap">≈ {{ row.empty_loss|money:cur }}</div>{% endif %}</td>
+      {% if report.shows_arrears %}<td class="text-end num text-nowrap">{% if row.overdue %}<span class="text-danger">{{ row.overdue|money:cur }}</span><div class="text-body-secondary">{% blocktrans count n=row.days_late %}{{ n }} day late{% plural %}{{ n }} days late{% endblocktrans %}</div>{% else %}—{% endif %}</td>{% endif %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+
+{% if specs %}
+<div class="chart-card mb-3">
+  <h2>{% trans "Rent paid in time or late, month by month" %}</h2>
+  <p class="chart-sub">{% trans "Each bar is every unit's rent billed for the month, split by how it was paid. The grid above shows the same unit by unit." %}</p>
+  <div class="chart-box"><canvas data-chart="chart-units-timely" role="img" aria-label="{% trans 'Rents paid in time, late, in part, not paid and not yet due, by month. The same figures are in the table below.' %}"></canvas></div>
+  <details>
+    <summary>{% trans "Show as a table" %}</summary>
+    <div class="table-responsive"><table class="table table-sm align-middle small mb-0">
+      <thead><tr>
+        <th>{% trans "Month" %}</th>
+        {% for key, label in state_labels %}<th class="text-end"><span class="chart-legend d-inline"><span class="key key-{{ key }}"></span></span>{{ label }}</th>{% endfor %}
+        <th class="text-end">{% trans "In time" %}</th>
+      </tr></thead>
+      <tbody>
+        {% for row in timely %}
+        <tr>
+          <td class="text-nowrap">{{ row.label }}</td>
+          {% for value in row.counts.values %}<td class="text-end">{{ value }}</td>{% endfor %}
+          <td class="text-end">{{ row.in_time_share|percent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </details>
+</div>
+{{ specs.timely|json_script:"chart-units-timely" }}
+{% if specs.kinds %}{{ specs.kinds|json_script:"chart-kinds" }}{% endif %}
+{% if specs.pay_days %}{{ specs.pay_days|json_script:"chart-units-pay-days" }}{% endif %}
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <h2 class="h6">{% trans "By kind of unit" %}</h2>
+    {% if specs.kinds %}<div class="chart-box mb-2"><canvas data-chart="chart-kinds" role="img" aria-label="{% trans 'Occupancy and rent collected by kind of unit. The same figures are in the table below.' %}"></canvas></div>{% endif %}
+    <div class="table-responsive">
+    <table class="table table-sm align-middle small">
+      <thead><tr>
+        <th>{% trans "Kind" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Occupied" %}</th>
+        <th class="text-end">{% trans "Average rent" %}</th><th class="text-end">{% trans "Average asking" %}</th>
+        <th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Empty" %}</th>
+      </tr></thead>
+      <tbody>
+      {% for t in report.by_type %}
+        <tr>
+          <td>{{ t.label }}</td>
+          <td class="text-end">{{ t.units }}</td>
+          <td class="text-end">{{ t.occupancy|percent }}</td>
+          <td class="text-end num text-nowrap">{{ t.average_rent|money:cur|default:"—" }}</td>
+          <td class="text-end num text-nowrap">{{ t.average_asking|money:cur|default:"—" }}</td>
+          <td class="text-end">{{ t.rate|percent }}</td>
+          <td class="text-end">{{ t.empty_share|percent }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="small text-body-secondary">{% trans "Units are grouped by their label (such as \"2 bedroom\"), or by their type when they have none. Empty is the share of the last 12 months they stood empty." %}</p>
+  </div>
+  <div class="col-lg-5">
+    <h2 class="h6">{% trans "When in the month tenants pay" %}</h2>
+    {% if report.pay_days %}
+    {% if specs.pay_days %}<div class="chart-box h-sm mb-2"><canvas data-chart="chart-units-pay-days" role="img" aria-label="{% trans 'Money paid by day of the month. The same figures are in the table below.' %}"></canvas></div>{% endif %}
+    <div class="table-responsive"><table class="table table-sm align-middle small">
+      <thead><tr><th>{% trans "Days" %}</th><th class="w-50"></th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Share" %}</th></tr></thead>
+      <tbody>
+      {% for p in report.pay_days %}
+        <tr>
+          <td class="text-nowrap">{{ p.label }}</td>
+          <td><div class="progress" role="progressbar" aria-label="{{ p.label }}" aria-valuenow="{{ p.share|percent_number }}" aria-valuemin="0" aria-valuemax="100" style="height: 8px"><div class="progress-bar" style="width: {{ p.share|percent_number }}%"></div></div></td>
+          <td class="text-end">{{ p.count }}</td>
+          <td class="text-end">{{ p.share|percent }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    <p class="small text-body-secondary">{% trans "Confirmed payments of the last 12 months by the day they are dated, with the share of the money. It shows when cash comes in, for paying bills and choosing due days." %}</p>
+    {% else %}
+    <p class="small text-body-secondary">{% trans "No payments in the last 12 months." %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+<p class="small text-body-secondary">{% trans "A month is paid in time when the whole invoice was paid by its due date plus grace days. Rent collected is the rent's share of each payment, as on the dashboard. Empty days count from when the unit came in, and at the asking rent are an estimate." %}</p>
+{% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

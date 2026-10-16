@@ -28,7 +28,7 @@
         </div>
         <div class="text-end">
           <div class="h5 num mb-0">{{ p.amount|money:currency }}</div>
-          <a class="small" href="{% url 'payments:detail' p.public_id %}">{% if p.state == "pending" %}{% trans "Review or reject" %}{% else %}{% trans "Open to reverse" %}{% endif %} <i class="bi bi-chevron-right"></i></a>
+          <a class="small" href="{% url 'payments:detail' p.public_id %}">{% if p.state == "pending" %}{% trans "Review or reject" %}{% else %}{% trans "Open to reverse" %}{% endif %} <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
         </div>
       </div>
       <form method="post" class="mt-2" novalidate>{% csrf_token %}
@@ -42,11 +42,7 @@
     {% endwith %}{% endfor %}
   </div>
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
-    <h2 class="h6">{% trans "Nothing to check" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Every hand-typed M-Pesa code that can be checked was found with the same amount." %}</p>
-  </div></div>
+  {% include "partials/empty_state.html" with icon="bi-check2-circle" title=_("Nothing to check") text=_("Every hand-typed M-Pesa code that can be checked was found with the same amount.") tone="success" %}
   {% endif %}
 
   {% if review.waiting or review.cannot_check %}

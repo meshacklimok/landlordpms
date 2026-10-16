@@ -51,7 +51,8 @@ class SettingsView(CapabilityRequiredMixin, View):
             creds = getattr(account, "daraja", None)
             rows.append({"account": account, "creds": creds})
         can_add = can(request.membership, "payment_accounts.manage")
-        return {"rows": rows, "can_add": can_add, "form": form or (forms.AccountForm() if can_add else None)}
+        return {"rows": rows, "can_add": can_add,
+                "form": form or (forms.AccountForm() if can_add else None)}
 
     def get(self, request):
         return render(request, self.template_name, self.context(request))
@@ -379,7 +380,9 @@ class RequestPaymentView(CapabilityRequiredMixin, View):
             except ValidationError as e:
                 messages.info(request, " ".join(e.messages))
             else:
-                if req.status == StkRequest.Status.FAILED:
+                if req.status == StkRequest.Status.PAID:
+                    messages.success(request, _("Paid. The payment is recorded on the lease."))
+                elif req.status == StkRequest.Status.FAILED:
                     messages.info(request, _("Not paid: %(why)s") % {"why": req.result_desc or req.result_code})
                 elif req.status == StkRequest.Status.PENDING and req.result_code == "0":
                     messages.info(request, _("Safaricom says it was paid. It shows here when the confirmation "

@@ -11,7 +11,11 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from core.http import ReplyThen
+
 from . import sms_hooks, whatsapp_hooks
+from .models import WhatsAppAccount
+from .whatsapp_account import platform_number
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -41,7 +45,8 @@ class WhatsAppHookView(View):
     http_method_names = ["get", "post"]
 
     def get(self, request):
-        expected = getattr(settings, "WA_VERIFY_TOKEN", "")
+        shared = platform_number()
+        expected = shared.verify_token if shared is not None else getattr(settings, "WA_VERIFY_TOKEN", "")
         token = request.GET.get("hub.verify_token", "")
         if not expected or request.GET.get("hub.mode") != "subscribe" \
                 or not hmac.compare_digest(token.encode(), expected.encode()):
@@ -49,16 +54,59 @@ class WhatsAppHookView(View):
         return HttpResponse(request.GET.get("hub.challenge", ""), content_type="text/plain")
 
     def post(self, request):
-        secret = getattr(settings, "WA_APP_SECRET", "")
-        if not secret:
-            raise Http404
-        expected = "sha256=" + hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(request.headers.get("X-Hub-Signature-256", "").encode(), expected.encode()):
-            return HttpResponseForbidden()
-        try:
-            payload = json.loads(request.body.decode())
-        except (ValueError, UnicodeDecodeError):
-            return HttpResponseBadRequest()
-        if isinstance(payload, dict):
-            whatsapp_hooks.process(payload)
+        shared = platform_number()
+        secret = shared.secret("app_secret") if shared is not None and shared.has("app_secret") else \
+            getattr(settings, "WA_APP_SECRET", "")
+        return _signed_delivery(request, secret)
+
+
+def _signed_delivery(request, secret: str, organization=None):
+    """A POST from Meta, checked against the app secret, then handled for the platform number or one landlord."""
+    if not secret:
+        raise Http404
+    expected = "sha256=" + hmac.new(secret.encode(), request.body, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(request.headers.get("X-Hub-Signature-256", "").encode(), expected.encode()):
+        return HttpResponseForbidden()
+    try:
+        payload = json.loads(request.body.decode())
+    except (ValueError, UnicodeDecodeError):
+        return HttpResponseBadRequest()
+    questions = whatsapp_hooks.process(payload, organization) if isinstance(payload, dict) else []
+    if not questions:
         return HttpResponse("OK", content_type="text/plain")
+    return ReplyThen("OK", content_type="text/plain", then=lambda: _answer(questions))
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class OrgWhatsAppHookView(View):
+    """The webhook of one landlord's own WhatsApp number: the secret in the URL says whose it is, and the
+    landlord's own app secret signs what Meta sends."""
+
+    http_method_names = ["get", "post"]
+
+    def _account(self, token) -> WhatsAppAccount:
+        account = WhatsAppAccount.objects.filter(webhook_token=token, enabled=True).select_related(
+            "organization").first()
+        if account is None:
+            raise Http404
+        return account
+
+    def get(self, request, token):
+        account = self._account(token)
+        given = request.GET.get("hub.verify_token", "")
+        if request.GET.get("hub.mode") != "subscribe" or not hmac.compare_digest(
+                given.encode(), account.verify_token.encode()):
+            raise Http404
+        return HttpResponse(request.GET.get("hub.challenge", ""), content_type="text/plain")
+
+    def post(self, request, token):
+        account = self._account(token)
+        return _signed_delivery(request, account.secret("app_secret"), account.organization)
+
+
+def _answer(questions: list[int]) -> None:
+    """Tenants' questions are answered after Meta has its 200 (D-093 item 6)."""
+    from ai_assistant import tenant
+
+    for pk in questions:
+        tenant.respond(pk)

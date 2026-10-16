@@ -11,7 +11,7 @@ from django.utils import timezone
 from accounts import identity, otp
 from accounts.models import OTPCode, User
 
-from .factories import PASSWORD, make_user
+from .factories import PASSWORD, make_org, make_user
 
 pytestmark = pytest.mark.django_db
 
@@ -155,7 +155,7 @@ def test_password_reset_limits_match_for_unknown_phones(outbox):
 
 def test_password_reset_rejects_weak_password_for_unknown_phone():
     with pytest.raises(ValidationError):
-        identity.reset_password(phone="0799999999", code="123456", new_password="123")
+        identity.reset_password(identifier="0799999999", code="123456", new_password="123")
 
 
 def test_otp_attempts_cannot_be_shared_by_parallel_guesses(outbox):
@@ -168,22 +168,43 @@ def test_otp_attempts_cannot_be_shared_by_parallel_guesses(outbox):
     assert OTPCode.objects.get().attempts == otp.MAX_ATTEMPTS
 
 
-def test_password_reset_flow_warns_owner(outbox):
+def test_password_reset_goes_to_the_email_and_warns_owner(outbox):
     user = make_user(phone="0712345678", email="w@example.com")
-    identity.request_password_reset("0712 345 678")
-    code = last_code(outbox)
-    assert identity.reset_password(phone="0712345678", code=code, new_password="Brand-New-Pass-1") == user
+    identity.request_password_reset("W@Example.com")
+    assert outbox == []  # no SMS: the code went by email
+    code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+    assert mail.outbox[-1].to == ["w@example.com"]
+    assert identity.reset_password(identifier="w@example.com", code=code, new_password="Brand-New-Pass-1") == user
     user.refresh_from_db()
     assert user.check_password("Brand-New-Pass-1")
-    assert user.password_reset_at is not None
+    assert user.password_reset_at is not None and user.email_verified_at is not None
     assert "password was just changed" in outbox[-1][1]
-    assert len(mail.outbox) == 1
+    assert len(mail.outbox) == 2
+
+
+def test_password_reset_by_phone_still_emails_an_account_that_has_one(outbox):
+    make_user(phone="0712345678", email="w@example.com")
+    identity.request_password_reset("0712 345 678")
+    assert outbox == [] and mail.outbox[-1].to == ["w@example.com"]
+
+
+def test_password_reset_by_sms_only_when_there_is_no_email(outbox):
+    user = make_user(phone="0712345678")
+    identity.request_password_reset("0712345678")
+    assert len(outbox) == 1 and mail.outbox == []
+    assert identity.reset_password(identifier="0712345678", code=last_code(outbox),
+                                   new_password="Brand-New-Pass-1") == user
+
+
+def test_password_reset_for_unknown_email_is_silent(outbox):
+    identity.request_password_reset("nobody@example.com")
+    assert outbox == [] and mail.outbox == []
 
 
 def test_password_reset_wrong_code():
     make_user(phone="0712345678")
     identity.request_password_reset("0712345678")
-    assert identity.reset_password(phone="0712345678", code="xxxxxx", new_password="Brand-New-Pass-1") is None
+    assert identity.reset_password(identifier="0712345678", code="xxxxxx", new_password="Brand-New-Pass-1") is None
 
 
 # --- login ------------------------------------------------------------------------------------
@@ -222,14 +243,58 @@ def test_login_view_ignores_offsite_next(client):
     assert "evil" not in response["Location"]
 
 
+SIGN_UP = {"full_name": "Wanjiku", "phone": "0712345678", "email": "Wanjiku@Example.com", "password": PASSWORD,
+           "accept_terms": "on"}
+
+
 def test_register_view_sends_code_then_verify_lands_on_onboarding(client, outbox):
-    response = client.post(reverse("accounts:register"), {
-        "full_name": "Wanjiku", "phone": "0712345678", "password": PASSWORD, "accept_terms": "on",
-    })
+    response = client.post(reverse("accounts:register"), SIGN_UP)
     assert response.status_code == 302
     assert response["Location"] == reverse("accounts:verify_phone")
-    client.post(reverse("accounts:verify_phone"), {"code": last_code(outbox)})
+    response = client.post(reverse("accounts:verify_phone"), {"code": last_code(outbox)})
+    assert response["Location"] == reverse("accounts:verify_email")
     assert client.get(reverse("accounts:home"))["Location"] == reverse("accounts:onboarding")
+
+
+def test_sign_up_needs_an_email(client):
+    data = {k: v for k, v in SIGN_UP.items() if k != "email"}
+    assert client.post(reverse("accounts:register"), data).status_code == 200
+    assert not User.objects.exists()
+
+
+def test_email_is_confirmed_with_the_code_sent_to_it(client, outbox):
+    client.post(reverse("accounts:register"), SIGN_UP)
+    client.post(reverse("accounts:verify_phone"), {"code": last_code(outbox)})
+    assert mail.outbox[-1].to == ["wanjiku@example.com"]
+    code = re.search(r"\b(\d{6})\b", mail.outbox[-1].body).group(1)
+    assert client.post(reverse("accounts:verify_email"), {"code": "000000"}).status_code == 200
+    assert User.objects.get().email_verified_at is None
+    assert client.post(reverse("accounts:verify_email"), {"code": code})["Location"] == reverse("accounts:home")
+    assert User.objects.get().email_verified_at is not None
+
+
+def test_an_sms_code_does_not_confirm_the_email(client, outbox):
+    client.post(reverse("accounts:register"), SIGN_UP)
+    client.post(reverse("accounts:verify_phone"), {"code": last_code(outbox)})
+    client.post(reverse("accounts:verify_email"), {"code": "123456"})
+    assert User.objects.get().email_verified_at is None
+
+
+def test_a_verified_email_cannot_be_taken_but_an_abandoned_one_can(client):
+    taken = make_user(phone="+254711111111", email="a@example.com")
+    with pytest.raises(ValidationError):
+        identity.register_user(phone="0722222222", full_name="B", password=PASSWORD, email="A@example.com")
+    User.objects.filter(pk=taken.pk).update(phone_verified_at=None, email_verified_at=None)
+    identity.register_user(phone="0722222222", full_name="B", password=PASSWORD, email="a@example.com")
+    assert User.objects.get(pk=taken.pk).email is None
+
+
+def test_staff_without_a_confirmed_email_see_the_reminder(client):
+    user = make_user(phone="+254712345678")
+    make_org(owner=user)
+    User.objects.filter(pk=user.pk).update(email=None)
+    client.force_login(user)
+    assert "data-email-notice" in client.get(reverse("accounts:home"), follow=True).content.decode()
 
 
 def test_unverified_user_is_sent_to_verification(client):

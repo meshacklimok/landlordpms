@@ -1,4 +1,5 @@
 from django import forms
+from django.utils.translation import gettext, ngettext
 from django.utils.translation import gettext_lazy as _
 
 from expenses.forms import ExpenseForm
@@ -38,15 +39,20 @@ class RequestForm(forms.Form):
     kind = forms.ChoiceField(label=_("Kind"), choices=MaintenanceRequest.Kind.choices,
                              initial=MaintenanceRequest.Kind.OTHER)
     priority = forms.ChoiceField(label=_("Priority"), choices=MaintenanceRequest.Priority.choices,
-                                 initial=MaintenanceRequest.Priority.NORMAL,
-                                 help_text=_("Emergency: due in 24 hours. High: 3 days. Normal: 7 days. Low: 30 days."))
+                                 initial=MaintenanceRequest.Priority.NORMAL)
     from_tenant = forms.BooleanField(label=_("Reported by the tenant of the unit"), required=False,
                                      help_text=_("They follow it in the portal and get an SMS when it is fixed."))
     photos = PhotosField(label=_("Photos (optional)"))
 
-    def __init__(self, *args, properties, **kwargs):
+    def __init__(self, *args, properties, targets=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["property"].queryset = properties
+        if targets:
+            self.fields["priority"].help_text = " ".join(
+                gettext("%(priority)s: start within %(respond)s, fix within %(fix)s.") % {
+                    "priority": label, "respond": duration(targets[value].respond),
+                    "fix": duration(targets[value].fix)}
+                for value, label in MaintenanceRequest.Priority.choices)
         units = [(str(u.public_id), f"{p.name} · {u.code}") for p in properties for u in p.units.all()]
         self.fields["unit"].choices = [("", _("Common areas (no unit)")), *units]
 
@@ -87,6 +93,13 @@ class PriorityForm(forms.Form):
                                  help_text=_("Leave as it is to set it from the priority."))
 
 
+class DetailsForm(forms.Form):
+    title = forms.CharField(label=_("What is wrong"), max_length=120)
+    description = forms.CharField(label=_("Details"), max_length=2000, required=False,
+                                  widget=forms.Textarea(attrs={"rows": 3}))
+    kind = forms.ChoiceField(label=_("Kind"), choices=MaintenanceRequest.Kind.choices)
+
+
 class NoteForm(forms.Form):
     text = forms.CharField(label=_("Note"), max_length=1000, required=False,
                            widget=forms.Textarea(attrs={"rows": 2}))
@@ -100,3 +113,49 @@ class CostForm(ExpenseForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, properties=None, **kwargs)
         del self.fields["property"]
+
+
+def duration(delta) -> str:
+    """"4 hours", "3 days": whole days when it divides, else hours."""
+    hours = int(delta.total_seconds() // 3600)
+    if hours % 24 == 0:
+        return ngettext("%(n)s day", "%(n)s days", hours // 24) % {"n": hours // 24}
+    return ngettext("%(n)s hour", "%(n)s hours", hours) % {"n": hours}
+
+
+UNITS = [("hours", _("hours")), ("days", _("days"))]
+
+
+class TargetsForm(forms.Form):
+    """Respond-by and fix-by for each priority, in hours or days (D-074 item 2)."""
+
+    def __init__(self, *args, targets, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rows = []
+        for value, label in MaintenanceRequest.Priority.choices:
+            row = {"priority": value, "label": label}
+            for part in ("respond", "fix"):
+                said = gettext("%(priority)s: start within") if part == "respond" else gettext("%(priority)s: fix within")
+                said = said % {"priority": label}
+                hours = int(getattr(targets[value], part).total_seconds() // 3600)
+                days = hours % 24 == 0
+                amount = forms.IntegerField(label=f"{label}: {part}", min_value=1, max_value=365 * 24,
+                                            initial=hours // 24 if days else hours,
+                                            widget=forms.NumberInput(attrs={"class": "form-control", "min": 1, "aria-label": said}))
+                unit = forms.ChoiceField(label=f"{label}: {part} unit", choices=UNITS,
+                                         initial="days" if days else "hours",
+                                         widget=forms.Select(attrs={"class": "form-select",
+                                                                    "aria-label": gettext("%(field)s, in hours or days") % {"field": said}}))
+                self.fields[f"{value}_{part}"] = amount
+                self.fields[f"{value}_{part}_unit"] = unit
+                row[part] = self[f"{value}_{part}"]
+                row[f"{part}_unit"] = self[f"{value}_{part}_unit"]
+            self.rows.append(row)
+
+    def hours(self) -> dict[str, tuple[int, int]]:
+        d = self.cleaned_data
+
+        def h(value, part):
+            return d[f"{value}_{part}"] * (24 if d[f"{value}_{part}_unit"] == "days" else 1)
+
+        return {value: (h(value, "respond"), h(value, "fix")) for value in MaintenanceRequest.Priority.values}

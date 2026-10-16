@@ -3,6 +3,7 @@
 {% block content %}
 <div class="narrow mx-auto">
   <h1 class="h4 mb-3">{% trans "My home" %}</h1>
+  {% if can_ask %}<a class="btn btn-outline-primary btn-sm mb-3" href="{% url 'portal:ask' %}">{% trans "Ask about your rent or a repair" %}</a>{% endif %}
   {% for summary in summaries %}
   <div class="mb-4">
     <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
@@ -18,5 +19,6 @@
   {% empty %}
   <p class="text-muted">{% trans "You have no leases to show yet." %}</p>
   {% endfor %}
+  {% if ussd_code and summaries %}<p class="small text-muted">{% blocktrans %}No smartphone at hand? Dial {{ ussd_code }} from the phone number your landlord has for you to check your balance, how to pay and your last payment.{% endblocktrans %}</p>{% endif %}
 </div>
 {% endblock %}

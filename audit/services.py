@@ -24,6 +24,9 @@ def record(
     changes: dict[str, Any] | None = None,
     request=None,
 ) -> AuditEvent:
+    api_key = getattr(request, "api_key", None) if request is not None else None
+    if api_key is not None:  # a write through the API names its key (D-087 item 5)
+        changes = {**(changes or {}), "api_key": [None, str(api_key)]}
     if actor is None and request is not None and getattr(request, "user", None) is not None:
         actor = request.user if request.user.is_authenticated else None
     event = AuditEvent(

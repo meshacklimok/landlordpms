@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% load i18n money static %}
+{% block title %}{% if current %}{{ current.label }} · {% endif %}{% trans "Report centre" %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="h4">{% trans "Report centre" %}</h1>
+    <p class="lead-text">{% trans "Pick a report on the left to read it here. Step through them all with Previous and Next, or the arrow keys. You see only the reports your role allows." %}</p>
+  </div>
+  <span class="code-tag">{% blocktrans with m=month|date:"F Y" %}Figures for {{ m }}{% endblocktrans %}</span>
+</div>
+
+{% if current %}
+<div class="reader" data-reader>
+  {# The list: a column beside the report on a laptop, a drop-down above it on a phone. #}
+  <nav class="reader-nav" aria-label="{% trans 'Reports' %}">
+    {% for title, items in groups %}
+    <div class="reader-group" id="rg-{{ forloop.counter }}">{{ title }}</div>
+    <ul aria-labelledby="rg-{{ forloop.counter }}">
+      {% for r in items %}
+      <li><a class="reader-link{% if r.key == current.key %} active{% endif %}" href="{% url 'reports:centre' %}?r={{ r.key }}" data-report="{{ r.key }}"{% if r.key == current.key %} aria-current="page"{% endif %}>
+        <span class="reader-label">{{ r.label }}</span>
+        {% with f=r.facts.0 %}{% if f %}<span class="reader-fact{% if f.3 %} text-{{ f.3 }}{% endif %}" title="{{ f.0 }}">{% if f.2 == "money" %}{{ f.1|money:cur }}{% else %}{{ f.1 }}{% endif %}</span>{% endif %}{% endwith %}
+      </a></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </nav>
+
+  <section class="reader-main" aria-labelledby="reader-title">
+    <div class="reader-bar">
+      <label class="visually-hidden" for="reader-pick">{% trans "Report" %}</label>
+      <select id="reader-pick" class="form-select reader-pick" data-reader-pick>
+        {% for title, items in groups %}<optgroup label="{{ title }}">{% for r in items %}<option value="{{ r.key }}"{% if r.key == current.key %} selected{% endif %}>{{ r.label }}</option>{% endfor %}</optgroup>{% endfor %}
+      </select>
+      <div class="reader-heading">
+        <div class="reader-kicker" data-reader-group>{{ current.group }}</div>
+        <h2 id="reader-title" data-reader-title>{{ current.label }}</h2>
+      </div>
+      <div class="reader-actions">
+        <a class="btn btn-sm btn-outline-secondary{% if not previous %} disabled{% endif %}" data-reader-step="-1" href="{% if previous %}?r={{ previous.key }}{% else %}#{% endif %}"{% if not previous %} aria-disabled="true" tabindex="-1"{% endif %}><i class="bi bi-chevron-left" aria-hidden="true"></i><span class="label-sm-up"> {% trans "Previous" %}</span><span class="visually-hidden"> {% trans "report" %}</span></a>
+        <span class="reader-count" data-reader-count>{% blocktrans with n=position total=reports|length %}{{ n }} of {{ total }}{% endblocktrans %}</span>
+        <a class="btn btn-sm btn-outline-secondary{% if not next %} disabled{% endif %}" data-reader-step="1" href="{% if next %}?r={{ next.key }}{% else %}#{% endif %}"{% if not next %} aria-disabled="true" tabindex="-1"{% endif %}><span class="label-sm-up">{% trans "Next" %} </span><span class="visually-hidden">{% trans "report" %} </span><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+        <a class="btn btn-sm btn-outline-secondary" data-reader-full href="{{ current.url }}" title="{% trans 'Open this report on its own page' %}"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i><span class="label-sm-up"> {% trans "Full page" %}</span></a>
+      </div>
+    </div>
+    <div class="reader-frame-wrap" data-reader-wrap>
+      <iframe class="reader-frame" data-reader-frame src="{{ current.url }}?pane=1" title="{{ current.label }}"></iframe>
+      <div class="reader-failed" data-reader-failed>
+        <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+        <p class="mb-2">{% trans "This report could not be shown here. Your login may have ended, or the report failed to load." %}</p>
+        <a class="btn btn-sm btn-primary" data-reader-full href="{{ current.url }}">{% trans "Open it on its own page" %}</a>
+      </div>
+      <div class="reader-loading" aria-hidden="true"><span class="spinner-border spinner-border-sm" role="presentation"></span> {% trans "Loading the report…" %}</div>
+    </div>
+    <div class="reader-foot">
+      <a class="reader-next{% if not previous %} invisible{% endif %}" data-reader-step="-1" href="{% if previous %}?r={{ previous.key }}{% else %}#{% endif %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> <span data-reader-name="-1">{{ previous.label }}</span></a>
+      <a class="reader-next text-end{% if not next %} invisible{% endif %}" data-reader-step="1" href="{% if next %}?r={{ next.key }}{% else %}#{% endif %}"><span data-reader-name="1">{{ next.label }}</span> <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
+    <p class="visually-hidden" aria-live="polite" data-reader-status></p>
+  </section>
+</div>
+{{ reader|json_script:"reader-reports" }}
+{% else %}
+{% include "partials/empty_state.html" with icon="bi-bar-chart" title=_("No reports yet") text=_("No reports are open to your role.") %}
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/report_reader.js' %}" defer></script>{% endblock %}

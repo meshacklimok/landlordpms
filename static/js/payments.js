@@ -1,4 +1,4 @@
-// Payments pages: live allocation totals, quick fills, clickable rows, bulk selection and confirmations.
+// Payments pages: live allocation totals, quick fills, clickable rows and bulk selection (ui.js asks to confirm).
 // Everything here is an enhancement; the forms work the same without it.
 (function () {
   "use strict";
@@ -18,13 +18,6 @@
     row.addEventListener("click", function (e) {
       if (e.target.closest("a, button, input, label")) return;
       window.location = row.dataset.href;
-    });
-  });
-
-  // Ask before a destructive submit.
-  document.querySelectorAll("form[data-confirm]").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      if (!window.confirm(form.dataset.confirm)) e.preventDefault();
     });
   });
 

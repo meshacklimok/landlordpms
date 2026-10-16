@@ -1,7 +1,7 @@
 {% extends "notifications/_base.html" %}{% load i18n %}
 {% block title %}{{ message.get_type_display }}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 560px">
+<div class="mx-auto mw-560">
   <a href="{% url 'notifications:log' %}" class="small">← {% trans "Messages" %}</a>
   <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
     <div>
@@ -17,7 +17,7 @@
   <div class="alert alert-danger small d-flex justify-content-between align-items-center gap-2">
     <span>{% blocktrans count n=message.attempts %}Failed after {{ n }} attempt.{% plural %}Failed after {{ n }} attempts.{% endblocktrans %}{% if message.error %} {{ message.error }}{% endif %}</span>
     {% if can_retry %}
-    <form method="post">{% csrf_token %}<button class="btn btn-sm btn-danger text-nowrap"><i class="bi bi-arrow-clockwise"></i> {% trans "Send again" %}</button></form>
+    <form method="post">{% csrf_token %}<button class="btn btn-sm btn-danger text-nowrap"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> {% trans "Send again" %}</button></form>
     {% endif %}
   </div>
   {% elif message.status == "QUEUED" and message.send_after %}
@@ -25,7 +25,8 @@
   {% endif %}
 
   <div class="card shadow-sm mb-3"><div class="card-body">
-    <p class="mb-2" style="white-space: pre-line">{{ message.body|default:"—" }}</p>
+    {% if message.subject %}<div class="fw-medium mb-2">{{ message.subject }}</div>{% endif %}
+    <p class="mb-2 pre-line">{{ message.body|default:"—" }}</p>
     {% if segments %}<div class="small text-body-secondary">{% blocktrans with c=message.body|length n=segments %}{{ c }} characters · {{ n }} SMS{% endblocktrans %}</div>{% endif %}
   </div></div>
 

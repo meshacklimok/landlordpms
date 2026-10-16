@@ -203,26 +203,32 @@ def unbilled_meter_charges():
 def meter_lines(lease: Lease, months: list[datetime.date]) -> list[DraftLine]:
     """One line per unbilled meter charge of the lease billed in `months`, oldest reading first."""
     charges = (unbilled_meter_charges().filter(lease=lease, billing_month__in=months)
-               .order_by("service_start", "pk"))
-    if not charges:
-        return []
-    charge_type = metered_charge_type(lease.organization)
-    return [DraftLine(charge_type, c.description, c.amount, c.service_start, c.service_end, c.billing_month, c)
-            for c in charges]
+               .select_related("reading__meter").order_by("service_start", "pk"))
+    types = {}
+    lines = []
+    for c in charges:
+        utility = c.reading.meter.utility
+        if utility not in types:
+            types[utility] = metered_charge_type(lease.organization, utility=utility)
+        lines.append(DraftLine(types[utility], c.description, c.amount, c.service_start, c.service_end,
+                               c.billing_month, c))
+    return lines
 
 
-def metered_charge_type(org: Organization) -> ChargeType:
-    """The organization's system "Metered water" charge type, made on first use."""
-    qs = ChargeType.all_objects.for_org(org).filter(is_system=True, category=ChargeType.Category.METERED_WATER)
+def metered_charge_type(org: Organization, *, utility: str = "WATER") -> ChargeType:
+    """The organization's system "Metered water" or "Metered electricity" (D-070) charge type, made on first use."""
+    category = (ChargeType.Category.METERED_ELECTRICITY if utility == "ELECTRICITY"
+                else ChargeType.Category.METERED_WATER)
+    qs = ChargeType.all_objects.for_org(org).filter(is_system=True, category=category)
     found = qs.first()
     if found is not None:
         return found
-    name = _("Metered water")
+    name = str(category.label)
     taken = ChargeType.all_objects.for_org(org).filter(name__iexact=name).exists()
     try:
         with transaction.atomic():
             return ChargeType.objects.create(organization=org, name=name if not taken else f"{name} (meters)",
-                                             category=ChargeType.Category.METERED_WATER, is_system=True)
+                                             category=category, is_system=True)
     except IntegrityError:
         return qs.get()  # made at the same time
 
@@ -257,7 +263,7 @@ def _issue(invoice: Invoice, *, actor_user=None, today: datetime.date) -> None:
 
 
 def _lock_lease(lease: Lease) -> Lease:
-    return Lease.all_objects.select_for_update().select_related("organization").get(pk=lease.pk)
+    return Lease.all_objects.select_for_update(of=("self",)).select_related("organization").get(pk=lease.pk)
 
 
 def _billable(lease: Lease) -> bool:
@@ -320,6 +326,10 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
                          "total": [None, str(invoice.total)],
                          **({} if actor else {"source": [None, "monthly job"]}),
                      })
+        # Rent paid ahead settles the new invoice at once.
+        from payments.services import auto_apply_credit
+        auto_apply_credit(lease)
+        invoice.refresh_from_db()
     return invoice
 
 

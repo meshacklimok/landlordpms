@@ -5,7 +5,7 @@
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
         <div class="fw-medium">{{ t.label }}{% if row.changed %} <span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Changed" %}</span>{% endif %}</div>
-        <div class="small text-body-secondary">{% for c in rule.channels %}{% if c == "SMS" %}{% trans "SMS" %}{% elif c == "IN_APP" %}{% trans "In-app" %}{% else %}{{ c }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if t.mandatory %} · {% trans "Always sent" %}{% endif %}</div>
+        <div class="small text-body-secondary">{% for c in rule.channels %}{% if c == "SMS" %}{% trans "SMS" %}{% elif c == "IN_APP" %}{% trans "In-app" %}{% elif c == "EMAIL" %}{% trans "email copy" %}{% else %}{{ c }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if t.mandatory %} · {% trans "Always sent" %}{% endif %}</div>
       </div>
       {% if t.mandatory %}
       <span class="badge bg-secondary-subtle text-secondary-emphasis">{% trans "Required" %}</span>
@@ -32,14 +32,20 @@
           <input class="form-check-input" type="checkbox" name="include_co_tenants" id="co-{{ t.codename }}" {% if rule.include_co_tenants %}checked{% endif %}>
           <label class="form-check-label small" for="co-{{ t.codename }}">{% trans "Also send to co-tenants on the lease" %}</label>
         </div>
+        {% if row.email_possible %}
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="email" id="em-{{ t.codename }}" {% if row.email_on %}checked{% endif %}>
+          <label class="form-check-label small" for="em-{{ t.codename }}">{% trans "Also email tenants who have an email address" %}</label>
+        </div>
+        {% endif %}
       </div>
       {% endif %}
     </div>
     {% endif %}
     {% if row.error %}<div class="small text-danger mt-2">{{ row.error }}</div>{% endif %}
 
-    <div class="d-flex gap-2 mt-2">
-      <button class="btn btn-sm btn-dark" name="action" value="save">{% trans "Save" %}</button>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <button class="btn btn-sm btn-primary" name="action" value="save">{% trans "Save" %}</button>
       {% if row.changed %}<button class="btn btn-sm btn-link text-body-secondary" name="action" value="reset">{% trans "Back to default" %}</button>{% endif %}
     </div>
   </div>

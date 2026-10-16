@@ -113,7 +113,7 @@ def _leave(line: BankTransaction, lease: Lease | None, note: str) -> None:
 @transaction.atomic
 def process(line: BankTransaction) -> BankTransaction:
     """Matches a new line: confirmed by reference, else left UNMATCHED, perhaps with a suggestion."""
-    line = BankTransaction.objects.select_for_update().select_related("payment_account").get(pk=line.pk)
+    line = BankTransaction.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=line.pk)
     if line.status != Status.UNMATCHED or line.matched_at is not None or line.payment_id:
         return line
     recorded = same_reference(line)

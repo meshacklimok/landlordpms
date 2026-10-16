@@ -50,11 +50,11 @@ def stk_accounts(lease: Lease) -> list[DarajaCredentials]:
     the lease's property, or for no property in particular. The property's default comes first."""
     served = PropertyPaymentAccount.objects.filter(property_id=lease.unit.property_id)
     unassigned = ~Q(payment_account__properties__isnull=False)
+    defaults = set(served.filter(is_default=True).values_list("payment_account_id", flat=True))
     creds = (DarajaCredentials.objects.filter(organization_id=lease.organization_id,
                                               payment_account__archived_at__isnull=True)
              .filter(Q(payment_account__in=served.values("payment_account_id")) | unassigned)
              .select_related("payment_account").distinct())
-    defaults = set(served.filter(is_default=True).values_list("payment_account_id", flat=True))
     usable = [c for c in creds if c.can_request_payment]
     return sorted(usable, key=lambda c: (c.payment_account_id not in defaults, c.payment_account.display_name))
 
@@ -96,7 +96,7 @@ def request_payment(actor: Membership, lease: Lease, *, phone: str, amount, paym
 
 
 def send(lease: Lease, *, phone: str, amount, payment_account: PaymentAccount = None, requested_by=None,
-         pay_link=None, request=None) -> StkRequest:
+         pay_link=None, via_ussd: bool = False, via_assistant: bool = False, request=None) -> StkRequest:
     """Checks the phone and amount, then sends the prompt. Callers check who may send it."""
     phone, amount = _phone(phone), _whole_shillings(amount)
     accounts = stk_accounts(lease)
@@ -115,11 +115,16 @@ def send(lease: Lease, *, phone: str, amount, payment_account: PaymentAccount = 
 
     stk = StkRequest.objects.create(
         organization_id=lease.organization_id, payment_account=creds.payment_account, lease=lease,
-        requested_by=requested_by, pay_link=pay_link, phone=phone, amount=amount,
+        requested_by=requested_by, pay_link=pay_link, via_ussd=via_ussd,
+        via_assistant=via_assistant, phone=phone, amount=amount,
         account_reference=lease.unit.payment_reference[:12])
     changes = {"lease": [None, lease.number], "phone": [None, phone], "amount": [None, str(amount)]}
     if pay_link is not None:
         changes["via"] = [None, "payment link"]
+    elif via_ussd:
+        changes["via"] = [None, "ussd"]
+    elif via_assistant:
+        changes["via"] = [None, "assistant"]
     try:
         data = get_client(creds).stk_push(phone=phone, amount=int(amount), account_reference=stk.account_reference,
                                           description="Rent", callback_url=url)
@@ -220,6 +225,11 @@ def receive(creds: DarajaCredentials, payload: dict) -> StkRequest | None:
             stk.save(update_fields=["result_code", "result_desc", "updated_at"])
             return stk
         tx = _store(creds, stk, receipt, items, payload)
+        if tx.payment_account_id != stk.payment_account_id:
+            # A forged or mistaken callback naming another account's payment: never move money across.
+            logger.error("M-Pesa receipt %s belongs to another account than STK request %s", receipt, stk.pk)
+            _finish(stk, Status.FAILED, code, f"Receipt {receipt} belongs to another account.")
+            return stk
         if hasattr(tx, "stk_request") and tx.stk_request.pk != stk.pk:
             logger.error("M-Pesa receipt %s already belongs to another STK request", receipt)
             _finish(stk, Status.FAILED, code, f"Receipt {receipt} is already on another request.")

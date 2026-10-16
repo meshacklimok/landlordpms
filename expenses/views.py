@@ -18,6 +18,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core.ids import uuid_or_none
 from maintenance import services as maintenance
 from properties.models import Property
 from properties.views import _apply_errors
@@ -174,6 +175,7 @@ class ExpenseDetailView(CapabilityRequiredMixin, View):
             "expense": expense, "currency": m.organization.currency,
             "can_approve": services.can_approve(m, expense), "can_void": services.can_void(m, expense),
             "can_add_receipt": services.can_add_receipt(m, expense), "receipt_form": forms.ReceiptForm(),
+            "can_edit": services.can_edit(m, expense),
             "can_suppliers": can(m, "contractors.manage"),
             "can_see_repair": (expense.maintenance_request is not None
                                and maintenance.sees(m, expense.maintenance_request)),
@@ -203,6 +205,56 @@ class ExpenseDetailView(CapabilityRequiredMixin, View):
         if request.POST.get("next") == "list":
             return redirect(f"{reverse('expenses:list')}?status={Status.SUBMITTED}")
         return redirect("expenses:detail", public_id=expense.public_id)
+
+
+class ExpenseEditView(CapabilityRequiredMixin, View):
+    """Corrects a live expense (D-123). The receipt is added on the expense page, not here."""
+
+    template_name = "expenses/edit.html"
+    required_capability = "expenses.view"
+
+    def form(self, request, expense, data=None):
+        m, org = request.membership, request.membership.organization
+        ids = {p.pk for p in services.recordable_properties(m)} | {expense.property_id}
+        form = forms.ExpenseForm(
+            data, initial=None if data else {
+                "property": str(expense.property.public_id), "category": str(expense.category.public_id),
+                "supplier": str(expense.supplier.public_id) if expense.supplier else "",
+                "description": expense.description, "amount": expense.amount,
+                "paid_on": expense.paid_on.isoformat(), "method": expense.method, "reference": expense.reference},
+            properties=Property.objects.filter(pk__in=ids).order_by("name"),
+            categories=(services.categories(org) | ExpenseCategory.objects.filter(pk=expense.category_id))
+            .order_by("name"),
+            suppliers=Supplier.objects.for_org(org).order_by("name"))
+        del form.fields["receipt"]
+        return form
+
+    def editable(self, request, public_id) -> Expense:
+        expense = _get_expense(request, public_id)
+        if not services.can_edit(request.membership, expense):
+            raise Http404
+        return expense
+
+    def get(self, request, public_id):
+        expense = self.editable(request, public_id)
+        return render(request, self.template_name, {"form": self.form(request, expense), "expense": expense})
+
+    def post(self, request, public_id):
+        expense = self.editable(request, public_id)
+        form = self.form(request, expense, request.POST)
+        if form.is_valid():
+            data = dict(form.cleaned_data)
+            try:
+                services.update_expense(request.membership, expense, prop=data.pop("property"), request=request,
+                                        **data)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Expense %(n)s saved.") % {"n": expense.number})
+                return redirect("expenses:detail", public_id=expense.public_id)
+        return render(request, self.template_name, {"form": form, "expense": expense})
 
 
 class ReceiptView(CapabilityRequiredMixin, View):
@@ -325,7 +377,7 @@ class CategoryView(CapabilityRequiredMixin, View):
             messages.success(request, _("Category added."))
             return redirect("expenses:categories")
         category = get_object_or_404(ExpenseCategory.all_objects.for_org(m.organization),
-                                     public_id=request.POST.get("category") or None)
+                                     public_id=uuid_or_none(request.POST.get("category")))
         try:
             if action == "rename":
                 services.rename_category(m, category, name=request.POST.get("name", ""), request=request)

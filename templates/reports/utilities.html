@@ -1,0 +1,54 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Water and electricity" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Water and electricity" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Meter use {{ p }}, from approved readings. Replaced meters add no use for the reading that restarted the count. Billed is what those readings charged tenants (it reaches invoices the month after); paid is an estimate that spreads each invoice's payments over its lines.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.by_utility or report.waiting %}
+<div class="row g-2 mb-3">
+  {% for row in report.by_utility %}
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% blocktrans with n=row.name %}{{ n }} used{% endblocktrans %}</div><div class="stat-value">{{ row.usage|floatformat:"-1" }}</div>
+    <div class="stat-sub">{% blocktrans with n=row.readings %}{{ n }} readings{% endblocktrans %}</div></div></div></div>
+  {% endfor %}
+  {% if report.show_money %}
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Billed" %}</div><div class="stat-value num">{{ report.billed|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with m=report.uninvoiced|money:cur %}{{ m }} not on an invoice yet{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Paid (estimate)" %}</div><div class="stat-value num">{{ report.collected|money:cur }}</div>
+    <div class="stat-sub">{% if report.collection_rate is None %}—{% else %}{% blocktrans with p=report.collection_rate|percent %}{{ p }} of what was invoiced{% endblocktrans %}{% endif %}</div></div></div></div>
+  {% endif %}
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Needs a look" %}</div><div class="stat-value">{{ report.flagged }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.waiting %}flagged readings · {{ n }} waiting for approval{% endblocktrans %}</div></div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  {% if specs.months %}<div class="col-12 col-lg-7"><div class="chart-card">
+    <h2>{% trans "Units used by month" %}</h2>
+    <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Meter use by month. The same figures are in the tables below.' %}"></canvas></div>
+  </div></div>{{ specs.months|json_script:"chart-months" }}{% endif %}
+  {% if specs.money %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "What was billed" %}</h2>
+    <div class="chart-box donut"><canvas data-chart="chart-money" role="img" aria-label="{% trans 'Billed meter charges: paid, invoiced and not paid, and not invoiced yet.' %}"></canvas></div>
+  </div></div>{{ specs.money|json_script:"chart-money" }}{% endif %}
+</section>
+
+<div class="row g-3">
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "By property" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Property" %}</th><th class="text-end">{% trans "Units used" %}</th>{% if report.show_money %}<th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Paid" %}</th>{% endif %}</tr></thead>
+    <tbody>{% for r in report.by_property %}<tr><td>{{ r.name }}</td><td class="text-end">{{ r.usage|floatformat:"-1" }}</td>{% if report.show_money %}<td class="text-end num text-nowrap">{{ r.billed|money:cur }}</td><td class="text-end num text-nowrap">{{ r.collected|money:cur }}</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "Biggest users" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Meter" %}</th><th class="text-end">{% trans "Units used" %}</th>{% if report.show_money %}<th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Per unit" %}</th>{% endif %}</tr></thead>
+    <tbody>{% for r in report.by_meter %}<tr><td>{{ r.name }}</td><td class="text-end">{{ r.usage|floatformat:"-1" }}</td>{% if report.show_money %}<td class="text-end num text-nowrap">{{ r.billed|money:cur }}</td><td class="text-end num">{% if r.average_price is None %}—{% else %}{{ r.average_price|money:cur }}{% endif %}</td>{% endif %}</tr>{% endfor %}</tbody></table></div></div>
+</div>
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No approved meter readings fall in this period. Choose another period, or record and approve readings to see this report." %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}

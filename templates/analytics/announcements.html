@@ -1,0 +1,18 @@
+{% extends "analytics/base.html" %}{% load i18n %}
+{% block title %}{% trans "Announcements" %}{% endblock %}
+{% block console_title %}{% trans "Announcements to everyone" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "A notice shown at the top of every page for everyone signed in, until it ends or you switch it off. Use it for planned downtime or a change landlords and tenants must know about." %}</p>
+<form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Show to everyone" %}</button>
+</form>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Message" %}</th><th>{% trans "Kind" %}</th><th>{% trans "Ends" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
+  <tbody>{% for a in items %}<tr>
+    <td>{{ a.message }}</td><td>{{ a.get_level_display }}</td><td>{{ a.ends_at|date:"j M H:i"|default:"—" }}</td>
+    <td>{% if a.is_active %}{% trans "Showing" %}{% else %}<span class="text-muted">{% trans "Off" %}</span>{% endif %}</td>
+    <td class="text-end"><form method="post">{% csrf_token %}<button name="toggle" value="{{ a.pk }}" class="btn btn-sm btn-link p-0">{% if a.is_active %}{% trans "Switch off" %}{% else %}{% trans "Switch on" %}{% endif %}</button></form></td>
+  </tr>{% empty %}<tr><td colspan="5" class="text-muted">{% trans "None yet." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

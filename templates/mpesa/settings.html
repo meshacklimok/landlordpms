@@ -1,7 +1,7 @@
 {% extends "mpesa/_base.html" %}{% load i18n %}
 {% block title %}{% trans "M-Pesa settings" %}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
+<div class="mx-auto mw-760">
   <h1 class="h3 mb-0">{% trans "M-Pesa" %}</h1>
   <p class="small text-body-secondary">{% trans "Connect your own Paybill or Till so tenants' payments arrive here and are matched to their leases. Money goes straight to your account; we never hold it." %}</p>
   {% include "mpesa/_nav.html" with section="settings" %}

@@ -1,7 +1,9 @@
-"""Public status, health and security pages (D-061); help pages and support requests (D-063)."""
+"""Public status, health and security pages (D-061); help and support requests (D-063); Terms and Privacy (D-095)."""
 
 from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.views import redirect_to_login
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.decorators import method_decorator
@@ -10,11 +12,12 @@ from django.utils.translation import gettext as _
 from django.views import View
 from django.views.decorators.cache import never_cache
 
-from accounts.mixins import VerifiedUserRequiredMixin
+from accounts import identity
+from accounts.mixins import VerifiedUserRequiredMixin, no_seat_home
 from core import health
 
 from . import help as help_topics
-from . import services, status
+from . import legal, services, status
 from .forms import SupportRequestForm
 
 
@@ -43,9 +46,63 @@ class SecurityView(View):
         })
 
 
+class TermsView(View):
+    def get(self, request):
+        return render(request, "support/terms.html", legal.details())
+
+
+class PrivacyView(View):
+    def get(self, request):
+        return render(request, "support/privacy.html", legal.details())
+
+
+class DeleteAccountView(View):
+    """What deleting an account means, open to everyone (app stores ask for this page). Signed-in users can ask for
+    it here; the request goes to staff, who confirm with the person and delete. Nothing is erased on the spot,
+    because some records must be kept (Privacy Policy, section 6)."""
+
+    def get(self, request):
+        return render(request, "support/delete_account.html", self._context(request))
+
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return redirect_to_login(request.path)
+        if request.POST.get("confirm", "").strip().upper() != "DELETE":
+            messages.error(request, _("Type DELETE in the box to confirm."))
+            return render(request, "support/delete_account.html", self._context(request))
+        membership = getattr(request, "membership", None)
+        item = services.create_request(
+            request.user, membership.organization if membership else None, kind="DELETION",
+            subject=_("Delete my account"),
+            message=request.POST.get("reason", "")[:1000] or _("Please delete my account."),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""), request=request)
+        messages.success(request, _("Your request number is %(n)s. We will contact you to confirm before anything "
+                                    "is deleted.") % {"n": item.number})
+        return redirect("support:delete_account")
+
+    @staticmethod
+    def _context(request):
+        return {"dpo_email": getattr(settings, "DATA_PROTECTION_EMAIL", ""),
+                "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
+                "is_owner": bool(getattr(request, "membership", None))}
+
+
+class AcceptTermsView(LoginRequiredMixin, View):
+    """The "I accept" button on the notice about new Terms (D-095 item 5)."""
+
+    def post(self, request):
+        identity.accept_terms(request.user, request=request)
+        messages.success(request, _("Thank you. Your acceptance is recorded."))
+        target = request.POST.get("next", "")
+        if not url_has_allowed_host_and_scheme(target, {request.get_host()}, require_https=request.is_secure()):
+            target = "/"
+        return redirect(target)
+
+
 def _support_context():
     whatsapp = "".join(ch for ch in getattr(settings, "SUPPORT_WHATSAPP", "") if ch.isdigit())
-    return {"support_whatsapp": whatsapp, "support_email": getattr(settings, "SUPPORT_EMAIL", "")}
+    return {"support_whatsapp": whatsapp, "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
+            "ussd_code": getattr(settings, "USSD_CODE", "")}
 
 
 class HelpIndexView(VerifiedUserRequiredMixin, View):
@@ -70,9 +127,7 @@ class ContactView(VerifiedUserRequiredMixin, View):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and request.user.phone_verified and request.membership is None:
-            from portal.selectors import has_access
-
-            return redirect("portal:home" if has_access(request.user) else "accounts:onboarding")
+            return redirect(no_seat_home(request.user))
         return super().dispatch(request, *args, **kwargs)
 
     def _page(self, request):

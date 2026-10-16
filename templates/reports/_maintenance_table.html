@@ -1,0 +1,12 @@
+{% load i18n money %}
+<h2 class="h6 mt-3">{{ title }}</h2>
+<div class="table-responsive mb-2"><table class="table table-sm small align-middle">
+  <thead><tr><th>{{ title }}</th><th class="text-end">{% trans "Requests" %}</th><th class="text-end">{% trans "Resolved" %}</th>
+    <th class="text-end">{% trans "Open now" %}</th><th class="text-end">{% trans "Overdue" %}</th>
+    <th class="text-end">{% trans "Avg hours to resolve" %}</th><th class="text-end">{% trans "Cost" %}</th></tr></thead>
+  <tbody>{% for r in rows %}
+    <tr><td>{{ r.label }}</td><td class="text-end">{{ r.total }}</td><td class="text-end">{{ r.resolved }}</td>
+      <td class="text-end">{{ r.open }}</td><td class="text-end">{{ r.overdue }}</td>
+      <td class="text-end">{{ r.hours|default_if_none:"—" }}</td><td class="text-end num text-nowrap">{{ r.cost|money:currency }}</td></tr>
+  {% endfor %}</tbody>
+</table></div>

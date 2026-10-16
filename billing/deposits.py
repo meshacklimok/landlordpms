@@ -65,10 +65,37 @@ def clearance_statement(lease: Lease) -> dict:
     return {"lease": lease, "types": types, "held": sum((t["held"] for t in types), ZERO)}
 
 
+def settle_by(lease: Lease) -> datetime.date | None:
+    """The day a deposit should be refunded or accounted for: the owner's days after the lease ended (D-150).
+
+    None while the lease is still running, or when nothing is held.
+    """
+    if lease.status not in (Lease.Status.ENDED, Lease.Status.TERMINATED) or lease.ended_on is None:
+        return None
+    return lease.ended_on + datetime.timedelta(days=lease.organization.deposit_refund_days)
+
+
+def allowed_headings(org) -> list[str]:
+    """The headings the owner lets staff deduct under; empty means any."""
+    valid = set(DepositEntry.Heading.values)
+    return [h for h in (org.deposit_deduction_headings or []) if h in valid]
+
+
+def _evidence(upload):
+    from expenses.services import process_receipt
+
+    try:
+        return process_receipt(upload)
+    except ValidationError as exc:
+        raise ValidationError({"evidence": exc.messages}) from None
+
+
 def _check(actor: Membership, lease: Lease, capability: str) -> Lease:
     if lease.organization_id != actor.organization_id:
         raise PermissionDenied(_("That record belongs to another organization."))
     require(actor, capability, lease.unit.property)
+    if not lease.organization.takes_deposits:
+        raise ValidationError(_("This organization does not hold deposits."))
     lease = Lease.all_objects.select_for_update().get(pk=lease.pk)
     if lease.status == Lease.Status.DRAFT:
         raise ValidationError(_("Activate the lease before recording its deposit."))
@@ -122,17 +149,32 @@ def record_received(actor: Membership, lease: Lease, *, amount, deposit_type=Dep
 
 @transaction.atomic
 def deduct(actor: Membership, lease: Lease, *, amount, reason: str, deposit_type=DepositType.RENT,
-           entry_date=None, apply_to_balance=False, condition_report=None, request=None) -> DepositEntry:
+           entry_date=None, apply_to_balance=False, condition_report=None, heading="", evidence=None,
+           request=None) -> DepositEntry:
     """Keeps part of a deposit, e.g. for damage. Needs deposits.deduct and a reason.
 
     With apply_to_balance the deduction pays down what the tenant owes on this lease.
-    A completed move-out condition report of this lease may be cited as evidence (D-047).
+    A completed move-out condition report of this lease may be cited as evidence (D-047), or a receipt, quote or
+    photo may be attached. The owner's deposit rules (D-150) can limit the headings, require proof, and forbid
+    putting a deduction towards rent owed.
     """
     lease = _check(actor, lease, "deposits.deduct")
+    org = lease.organization
     deposit_type, amount, day = _type(deposit_type), _amount(amount), _date(entry_date)
     reason = (reason or "").strip()[:300]
     if not reason:
         raise ValidationError({"reason": _("Say why the deposit is being deducted.")})
+    heading = heading or ""
+    allowed = allowed_headings(org)
+    if heading and heading not in DepositEntry.Heading.values:
+        raise ValidationError({"heading": _("Choose what the deduction is for.")})
+    if allowed and heading not in allowed:
+        raise ValidationError({"heading": _("Choose what the deduction is for.")})
+    if apply_to_balance and not org.deposit_allow_offset:
+        raise ValidationError({"apply_to_balance": _("Deposits cannot be put towards rent owed in this organization.")})
+    if org.deposit_proof_required and not evidence and condition_report is None:
+        raise ValidationError({"evidence": _("Attach a receipt, quote or photo, or cite the move-out report.")})
+    kept = _evidence(evidence) if evidence else None
     if condition_report is not None:
         from inspections.models import ConditionReport
 
@@ -148,9 +190,11 @@ def deduct(actor: Membership, lease: Lease, *, amount, reason: str, deposit_type
     entry = DepositEntry.objects.create(
         organization=lease.organization, lease=lease, deposit_type=deposit_type, entry_date=day,
         kind=Kind.DEDUCTION, amount=-amount, currency=lease.currency, reason=reason, ledger_entry=credit,
-        condition_report=condition_report, created_by=actor.user)
+        condition_report=condition_report, heading=heading, evidence=kept or "", created_by=actor.user)
     _audit("deposit.deduct", actor, lease, entry, request,
-           {"reason": [None, reason], **({"applied_to_balance": [None, True]} if credit else {}),
+           {"reason": [None, reason], **({"heading": [None, heading]} if heading else {}),
+            **({"evidence": [None, True]} if kept is not None else {}),
+            **({"applied_to_balance": [None, True]} if credit else {}),
             **({"condition_report": [None, str(condition_report.public_id)]} if condition_report else {})})
     return entry
 

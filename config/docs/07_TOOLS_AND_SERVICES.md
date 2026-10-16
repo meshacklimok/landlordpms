@@ -8,6 +8,7 @@
 | Background jobs | `celery` + `redis` |
 | REST API (later) | `djangorestframework`, `drf-spectacular` (OpenAPI docs) |
 | Forms/UI | `django-crispy-forms` + `crispy-bootstrap5`, `django-htmx` |
+| Look and themes | Bootstrap 5.3 colour modes (MIT), Inter font self-hosted (OFL), Chart.js 4 (MIT); light and dark, no gradients (D-111) |
 | Filtering/tables | `django-filter`, `django-tables2` |
 | PDF | `reportlab` (or `weasyprint`) |
 | Phone numbers | `phonenumbers` / `django-phonenumber-field` (Kenyan formats: +254, 07xx, 01xx) |
@@ -64,5 +65,5 @@
 1. **Installable PWA** (first): works for landlords and caretakers.
 2. **Tenant portal/lite page** (link in SMS/WhatsApp).
 3. **USSD menu** for feature phones (balance, receipt).
-4. **Native mobile app** (React Native/Flutter), only after the API is stable.
+4. **Native mobile app**: not before the pilot. First a Play Store wrapper of the web app if asked for, then a staff app (React Native with Expo) only on evidence (D-099). Installed-app use is counted (D-102).
 5. **Public API + webhooks** for agencies and accounting tools.

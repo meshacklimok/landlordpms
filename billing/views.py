@@ -7,21 +7,27 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
 from django.db.models import Prefetch
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.utils.translation import ngettext
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core.ids import uuid_or_none
+from leases import paperwork
 from leases.models import Lease, LeaseTenant
 from leases.services import visible_leases
+from meters import readiness
 from payments import selectors as payment_selectors
 from payments import services as payment_services
 from properties.views import _apply_errors
+from reports import metrics, patterns
 
-from . import deposits, followups, forms, invoicing, selectors, services
+from . import deposits, followups, forms, invoicing, late_fees, selectors, services
 from .models import ChargeType, DepositEntry, Invoice, LedgerEntry
 
 PAGE_SIZE = 25
@@ -58,7 +64,7 @@ class ChargeTypeListView(CapabilityRequiredMixin, View):
                     return redirect("billing:charge_types")
             return render(request, self.template_name, self.context(request, form=form))
         ct = get_object_or_404(ChargeType.all_objects.for_org(request.organization),
-                               public_id=request.POST.get("charge_type"))
+                               public_id=uuid_or_none(request.POST.get("charge_type")))
         try:
             if action == "rename":
                 services.rename_charge_type(m, ct, name=request.POST.get("name", ""), request=request)
@@ -83,6 +89,20 @@ def _get_invoice(request, public_id) -> Invoice:
     return get_object_or_404(selectors.visible_invoices(request.membership), public_id=public_id)
 
 
+class InvoicePdfView(CapabilityRequiredMixin, View):
+    required_capability = "invoices.view"
+
+    def get(self, request, public_id):
+        from .pdf import render_invoice
+
+        invoice = _get_invoice(request, public_id)
+        response = HttpResponse(render_invoice(invoice), content_type="application/pdf")
+        name = invoice.number or "draft-invoice"
+        response["Content-Disposition"] = f'inline; filename="{name}.pdf"'
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+
 def _get_lease(request, public_id) -> Lease:
     if not can(request.membership, "invoices.view"):
         raise PermissionDenied("invoices.view")
@@ -105,6 +125,8 @@ class InvoiceListView(CapabilityRequiredMixin, View):
         page = Paginator(qs.order_by("-issue_date", "-pk"), PAGE_SIZE).get_page(request.GET.get("page"))
         return render(request, self.template_name, {
             "page": page, "q": q, "status": status, "overdue": overdue, "today": today,
+            "totals": selectors.invoice_totals(qs, today), "currency": request.membership.organization.currency,
+            "filtered": bool(q or status or overdue),
             "status_filters": [(k, label) for k, (label, _cond) in selectors.STATUS_FILTERS.items()],
             "can_generate": can(request.membership, "invoices.generate"),
         })
@@ -121,6 +143,9 @@ class InvoiceDetailView(CapabilityRequiredMixin, View):
             "lines": invoice.lines.select_related("charge_type"),
             "entries": LedgerEntry.objects.filter(invoice=invoice).order_by("entry_date", "pk"),
             "can_void": can_void, "void_form": (void_form or forms.VoidForm()) if can_void else None,
+            # Send it to the tenant in words staff choose (D-125).
+            "can_send": invoice.status not in (Invoice.Status.DRAFT, Invoice.Status.VOID)
+            and can(request.membership, "messages.send", invoice.lease.unit.property),
         }
 
     def get(self, request, public_id):
@@ -149,9 +174,13 @@ class GenerateView(CapabilityRequiredMixin, View):
 
     def context(self, request, form=None, result=None, month=None):
         today = timezone.localdate()
+        due = invoicing.months_to_bill(request.organization, today)
+        shown = due + [month] if month and month not in due else due
         return {
             "form": form or forms.GenerateForm(initial={"month": today.strftime("%Y-%m")}),
-            "result": result, "month": month, "due_months": invoicing.months_to_bill(request.organization, today),
+            "result": result, "month": month, "due_months": due,
+            "meter_checks": ([readiness.check(request.membership, m) for m in shown]
+                             if can(request.membership, "meters.view") else []),
         }
 
     def get(self, request):
@@ -179,8 +208,51 @@ class ArrearsView(CapabilityRequiredMixin, View):
         rows = selectors.arrears(request.membership, today, overdue_only=not show_all)
         return render(request, self.template_name, {
             "rows": rows, "totals": selectors.aging_totals(rows), "buckets": selectors.AGING_BUCKETS,
-            "today": today, "show_all": show_all,
+            "today": today, "show_all": show_all, "summary": selectors.arrears_summary(rows, today),
+            "currency": request.membership.organization.currency,
+            "can_late_fees": can(request.membership, "invoices.generate"),
         })
+
+
+class LateFeeListView(CapabilityRequiredMixin, View):
+    """Late fees waiting to be charged or skipped, and the ones decided lately (D-129)."""
+
+    template_name = "billing/late_fees.html"
+    required_capability = "invoices.generate"
+
+    def get(self, request):
+        m = request.membership
+        pending = list(late_fees.to_approve(m).prefetch_related(
+            Prefetch("lease__lease_tenants", LeaseTenant.objects.select_related("tenant"))))
+        decided = (late_fees.visible_fees(m).exclude(status="PENDING")
+                   .select_related("invoice", "fee_invoice", "lease__unit__property", "decided_by")
+                   .order_by("-decided_at", "-pk")[:PAGE_SIZE])
+        org = request.organization
+        return render(request, self.template_name, {
+            "pending": [(fee, late_fees.fee_for(org, fee.invoice.outstanding)) for fee in pending],
+            "decided": decided, "rule": late_fees.describe_rule(org), "is_on": org.late_fee_mode != "OFF",
+            "can_settings": can(m, "organization.manage"), "currency": org.currency,
+        })
+
+    def post(self, request):
+        m = request.membership
+        ids = [uid for uid in map(uuid_or_none, request.POST.getlist("fee")) if uid]
+        fees = list(late_fees.to_approve(m).filter(public_id__in=ids))
+        if not fees:
+            messages.error(request, _("Tick at least one fee."))
+            return redirect("billing:late_fees")
+        charge = request.POST.get("action") == "charge"
+        batch = late_fees.decide_many(m, fees, charge=charge, reason=request.POST.get("reason", "")[:300],
+                                      request=request)
+        if batch.charged:
+            messages.success(request, ngettext("%(n)s late fee charged.", "%(n)s late fees charged.",
+                                               len(batch.charged)) % {"n": len(batch.charged)})
+        if batch.skipped:
+            messages.info(request, ngettext("%(n)s late fee skipped.", "%(n)s late fees skipped.",
+                                            batch.skipped) % {"n": batch.skipped})
+        for error in batch.errors:
+            messages.error(request, error)
+        return redirect("billing:late_fees")
 
 
 class CallListView(CapabilityRequiredMixin, View):
@@ -194,8 +266,11 @@ class CallListView(CapabilityRequiredMixin, View):
         today = timezone.localdate()
         filters = forms.CallListFilterForm(request.GET or None, properties=visible_properties(m))
         board = followups.call_list(m, today, property=filters.value("property"), grade=filters.value("grade") or "")
+        # Only "to call" can run long; promises and today's calls stay whole.
+        to_call = Paginator(board.to_call, PAGE_SIZE).get_page(request.GET.get("page"))
         return render(request, self.template_name, {
-            "board": board, "filters": filters, "today": today, "form": form or forms.FollowUpForm(),
+            "board": board, "to_call": to_call, "page": to_call, "filters": filters, "today": today,
+            "form": form or forms.FollowUpForm(),
             "follow_up_lease": follow_up_lease, "can_follow_up": can(m, "arrears.follow_up"),
             "can_tenants": can(m, "tenants.view"), "query": request.GET.urlencode(),
         })
@@ -249,6 +324,8 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
             "statement": selectors.statement(lease, start=start, end=end),
             "balance": invoicing.lease_balance(lease),
             "clearance": deposits.clearance_statement(lease),
+            "move_out": paperwork.move_out_applies(lease),
+            "takes_deposits": lease.organization.takes_deposits,
             "reversed_ids": set(DepositEntry.objects.filter(lease=lease, reversal_of__isnull=False)
                                 .values_list("reversal_of_id", flat=True)),
             "invoices": Invoice.objects.filter(lease=lease).order_by("-period_start", "-pk")[:12],
@@ -260,7 +337,14 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
             "credit": payment_services.unallocated_credit(lease),
             "can_record_payment": is_live and can(m, "payments.record", prop),
             "can_apply_credit": can(m, "payments.allocate", prop),
+            # D-110: how this tenancy pays, from its grade and its money over the lease's life.
+            "record": selectors.payment_record(lease),
+            "grade": metrics.grades([lease], today)[lease.pk],
         }
+        # D-114: the last 12 months of rent, billed against paid and coloured by whether it was paid in time.
+        months = patterns.lease_months(lease, today)
+        ctx["months"] = months if months.billed else None
+        ctx["months_chart"] = patterns.lease_chart(months, lease.currency) if months.billed else None
         on_day = {"entry_date": today.isoformat()}
         if ctx["can_opening"]:
             ctx["opening_form"] = forms_in.get("opening_form") or forms.OpeningBalanceForm(initial={
@@ -271,7 +355,12 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
                 initial={**on_day, "amount": lease.deposit_amount or ""}, prefix="received")
             ctx["refund_form"] = forms_in.get("refund_form") or forms.DepositForm(initial=on_day, prefix="refund")
         if ctx["can_deduct"]:
-            ctx["deduct_form"] = forms_in.get("deduct_form") or forms.DeductForm(initial=on_day, prefix="deduct")
+            ctx["deduct_form"] = forms_in.get("deduct_form") or forms.DeductForm(
+                initial=on_day, prefix="deduct", organization=lease.organization)
+        # D-150: when a refund or statement of deductions falls due, by the owner's rule.
+        due = deposits.settle_by(lease)
+        if due is not None and ctx["clearance"]["held"] > 0:
+            ctx["settle_by"], ctx["settle_days"] = due, (due - today).days
         return ctx
 
     def get(self, request, public_id):
@@ -286,7 +375,10 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
         if action not in self.FORMS:
             return redirect("billing:lease_account", public_id=lease.public_id)
         name, form_class, prefix = self.FORMS[action]
-        form = form_class(request.POST, prefix=prefix)
+        if action == "deposit_deduct":
+            form = form_class(request.POST, request.FILES, prefix=prefix, organization=lease.organization)
+        else:
+            form = form_class(request.POST, prefix=prefix)
         if form.is_valid():
             try:
                 message = self.apply(request, lease, action, form.cleaned_data)
@@ -309,7 +401,8 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
             deposits.record_received(m, lease, reference=data["reference"], reason=data["reason"], **common)
             return _("Deposit recorded.")
         if action == "deposit_deduct":
-            deposits.deduct(m, lease, reason=data["reason"], apply_to_balance=data["apply_to_balance"], **common)
+            deposits.deduct(m, lease, reason=data["reason"], apply_to_balance=data.get("apply_to_balance", False),
+                            heading=data["heading"], evidence=data.get("evidence"), **common)
             return _("Deduction recorded.")
         deposits.refund(m, lease, reference=data["reference"], reason=data["reason"], **common)
         return _("Refund recorded.")
@@ -329,3 +422,25 @@ class LeaseAccountView(CapabilityRequiredMixin, View):
         else:
             messages.success(request, _("Entry corrected."))
         return redirect("billing:lease_account", public_id=lease.public_id)
+
+
+class DepositEvidenceView(CapabilityRequiredMixin, View):
+    """Serves the receipt, quote or photo behind a deduction, only to members who may see the lease. Never public."""
+
+    required_capability = "invoices.view"
+
+    def get(self, request, public_id, entry_id):
+        lease = _get_lease(request, public_id)
+        entry = get_object_or_404(DepositEntry.objects.filter(lease=lease).exclude(evidence=""), pk=entry_id)
+        try:
+            handle = entry.evidence.open("rb")
+        except FileNotFoundError:
+            raise Http404 from None
+        if entry.evidence.name.lower().endswith(".pdf"):
+            response = FileResponse(handle, content_type="application/pdf", as_attachment=True,
+                                    filename=f"deduction-{entry.pk}-evidence.pdf")
+        else:
+            response = FileResponse(handle, content_type="image/jpeg")
+        response["Cache-Control"] = "private, max-age=3600"
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response

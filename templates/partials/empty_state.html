@@ -1,0 +1,9 @@
+{% comment %}
+Empty state card. Include with: icon="bi-name", title=_("..."), text=_("...") (optional),
+tone="success" for a good "all caught up" state (default is muted).
+{% endcomment %}
+<div class="empty-state{% if tone == 'success' %} is-good{% endif %}">
+  <span class="empty-state-icon" aria-hidden="true"><i class="bi {{ icon }}" aria-hidden="true"></i></span>
+  <h2>{{ title }}</h2>
+  {% if text %}<p>{{ text }}</p>{% endif %}
+</div>

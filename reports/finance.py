@@ -13,6 +13,7 @@
 """
 
 import datetime
+from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -25,13 +26,13 @@ from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require, visible_properties
 from billing import selectors as billing_selectors
 from billing.models import ChargeType, DepositEntry, Invoice, InvoiceLine
-from core.money import ZERO, format_money
+from core.money import ZERO, format_money, round_money
 from expenses import services as expense_services
 from payments.models import Payment
 from properties.models import Property
 
 from .income import _invoice_shares, _split
-from .metrics import add_months, month_end, month_start, rate
+from .metrics import Change, add_months, month_end, month_start, rate
 from .models import OwnerRemittance
 
 MAX_MONTHS = 12
@@ -110,6 +111,16 @@ class Month:
     def net(self) -> Decimal:
         return self.money_in - self.money_out
 
+    @property
+    def expense_ratio(self) -> Decimal | None:
+        """Expenses ÷ income (D-110): how much of what came in went on running the property."""
+        return rate(self.expenses, self.income)
+
+    @property
+    def margin(self) -> Decimal | None:
+        """Net operating income ÷ income (D-110)."""
+        return rate(self.noi, self.income)
+
     def add(self, other: "Month") -> None:
         for name in self.FIELDS:
             setattr(self, name, getattr(self, name) + getattr(other, name))
@@ -127,6 +138,25 @@ class Report:
     # (category name, total) for the whole period, largest first.
     expense_categories: list = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # D-110: each property's totals when more than one is in view. Owner payments are left out: they
+    # belong to an owner, not a property.
+    by_property: list["PropertyMoney"] = field(default_factory=list)
+    # D-110: the same report for the same number of months just before, for comparison.
+    previous: "Report | None" = None
+
+    @property
+    def average(self) -> Month:
+        """Each figure's monthly average over the period."""
+        avg = Month(label=_("Monthly average"))
+        for name in Month.FIELDS:
+            setattr(avg, name, round_money(getattr(self.total, name) / len(self.months)))
+        return avg
+
+    def change(self, name: str) -> Change:
+        """This period's total of one figure against the previous period's."""
+        if self.previous is None:
+            return Change(None, None)
+        return Change(getattr(self.total, name), getattr(self.previous.total, name), self.previous.label)
 
     @property
     def currency(self) -> str:
@@ -139,14 +169,29 @@ class Report:
         return f"{self.start:%b %Y} – {self.end:%b %Y}"
 
 
+@dataclass
+class PropertyMoney:
+    property: Property
+    figures: Month
+
+
+def previous_period(start: datetime.date, end: datetime.date) -> tuple[datetime.date, datetime.date]:
+    """The same number of months, ending the month before `start`."""
+    count = (end.year - start.year) * 12 + end.month - start.month + 1
+    return add_months(start, -count), add_months(start, -1)
+
+
 def _properties(membership: Membership, prop: Property | None):
     properties = visible_properties(membership, Property.all_objects.all())
     return properties.filter(pk=prop.pk) if prop is not None else properties
 
 
 def money_report(membership: Membership, start: datetime.date, end: datetime.date,
-                 prop: Property | None = None) -> Report:
-    """The figures for both the profit and loss and the cash flow pages."""
+                 prop: Property | None = None, *, compare: bool = False) -> Report:
+    """The figures for both the profit and loss and the cash flow pages.
+
+    With `compare`, `previous` holds the same report for the months just before (D-110).
+    """
     require(membership, "reports.view_financial")
     org = membership.organization
     properties = _properties(membership, prop)
@@ -156,41 +201,46 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
     while key <= end:
         months[key] = Month(label=f"{key:%b %Y}", key=key)
         key = add_months(key, 1)
+    places: dict[int, Month] = defaultdict(lambda: Month(label=""))
 
     # Rent billed, by the month each line bills.
     for r in (InvoiceLine.objects.filter(organization=org, is_void=False, invoice__status__in=LIVE_INVOICE,
                                          lease__unit__property__in=properties,
                                          charge_type__category=ChargeType.Category.RENT)
               .annotate(month=Coalesce("billing_month", Cast(TruncMonth("invoice__period_start"), DateField())))
-              .filter(month__gte=first, month__lte=last).values("month").annotate(total=Sum("amount"))):
+              .filter(month__gte=first, month__lte=last).values("month", "lease__unit__property_id")
+              .annotate(total=Sum("amount"))):
         months[r["month"]].rent_billed += r["total"]
+        places[r["lease__unit__property_id"]].rent_billed += r["total"]
 
     # Money received, split by what each payment paid.
     payments = list(Payment.objects.filter(organization=org, status=Payment.Status.CONFIRMED, paid_at__gte=first,
                                            paid_at__lte=last, lease__unit__property__in=properties)
-                    .prefetch_related("allocations"))
+                    .select_related("lease__unit").prefetch_related("allocations"))
     shares = _invoice_shares(payments)
     for p in payments:
         part = _split(p, shares)
-        row = months[month_start(p.paid_at)]
-        row.rent += part.rent
-        row.other += part.other
-        row.deposits += part.deposit
-        row.unapplied += part.unapplied
+        for row in (months[month_start(p.paid_at)], places[p.lease.unit.property_id]):
+            row.rent += part.rent
+            row.other += part.other
+            row.deposits += part.deposit
+            row.unapplied += part.unapplied
 
     # Deposit refunds; a corrected refund is left out, whenever corrected, as reversed payments are.
     refunds = (DepositEntry.objects.filter(organization=org, lease__unit__property__in=properties,
                                            kind=DepositEntry.Kind.REFUNDED, reversed_by__isnull=True,
                                            entry_date__gte=first, entry_date__lte=last)
-               .annotate(month=Cast(TruncMonth("entry_date"), DateField())).values("month")
-               .annotate(total=Sum("amount")))
+               .annotate(month=Cast(TruncMonth("entry_date"), DateField()))
+               .values("month", "lease__unit__property_id").annotate(total=Sum("amount")))
     for r in refunds:
         months[r["month"]].refunds -= r["total"]
+        places[r["lease__unit__property_id"]].refunds -= r["total"]
 
     spent = expense_services.approved(org, properties, first, last)
-    for r in (spent.annotate(bucket=Cast(TruncMonth("paid_on"), DateField())).values("bucket")
+    for r in (spent.annotate(bucket=Cast(TruncMonth("paid_on"), DateField())).values("bucket", "property_id")
               .annotate(total=Sum("amount"))):
         months[r["bucket"]].expenses += r["total"]
+        places[r["property_id"]].expenses += r["total"]
     categories = [(r["category__name"], r["total"]) for r in
                   spent.values("category__name").annotate(total=Sum("amount")).order_by("-total", "category__name")]
 
@@ -206,7 +256,15 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
         total.add(row)
     report = Report(organization=org, start=start, end=end, property=prop, months=list(months.values()),
                     total=total, whole_organization=whole, expense_categories=categories)
+    if prop is None and len(places) > 1:
+        named = {p.pk: p for p in properties.filter(pk__in=places)}
+        for pk, figures in places.items():
+            figures.label = named[pk].name
+        report.by_property = sorted((PropertyMoney(named[pk], figures) for pk, figures in places.items()),
+                                    key=lambda r: (-r.figures.noi, r.property.name.lower()))
     report.notes = _notes(report, membership, expense_services.waiting_summary(org, properties, first, last))
+    if compare:
+        report.previous = money_report(membership, *previous_period(start, end), prop)
     return report
 
 
@@ -239,6 +297,8 @@ def _notes(report: Report, membership: Membership, waiting) -> list[str]:
 
 
 BUCKETS = [key for key, *_rest in billing_selectors.AGING_BUCKETS]
+# Chart colours (D-114): not yet due in the first series colour, then later and later down the late scale.
+AGING_CHART_COLORS = {"current": "1", "d1_30": "late-1", "d31_60": "late-2", "d61_90": "late-3", "d90": "late-4"}
 
 
 @dataclass
@@ -271,3 +331,33 @@ def receivables(membership: Membership, today: datetime.date,
         row.add(lease_row.buckets)
         total.add(lease_row.buckets)
     return sorted(rows.values(), key=lambda r: (-r.total, r.property.name.lower())), total
+
+
+@dataclass
+class ReceivablesSummary:
+    """What the aged receivables add up to (D-110): each bucket's share, what is overdue and who owes most."""
+
+    total: PropertyAging
+    leases: int
+    largest: list  # LeaseArrears rows with the largest balances owed, largest first
+
+    @property
+    def overdue(self) -> Decimal:
+        return self.total.total - self.total.buckets["current"]
+
+    @property
+    def shares(self) -> list[tuple[str, str, Decimal, Decimal | None]]:
+        """(key, label, amount, share of everything owed) for each bucket."""
+        return [(key, label, self.total.buckets[key], rate(self.total.buckets[key], self.total.total))
+                for key, label, *_rest in billing_selectors.AGING_BUCKETS]
+
+    @property
+    def over_60_share(self) -> Decimal | None:
+        """The share owed more than 60 days late: the money least likely to come in."""
+        return rate(self.total.buckets["d61_90"] + self.total.buckets["d90"], self.total.total)
+
+
+def receivables_summary(rows: list[PropertyAging], total: PropertyAging, count: int = 10) -> ReceivablesSummary:
+    lease_rows = [lease_row for row in rows for lease_row in row.leases]
+    largest = sorted(lease_rows, key=lambda r: (-sum(r.buckets.values(), ZERO), r.lease.number))[:count]
+    return ReceivablesSummary(total=total, leases=len(lease_rows), largest=largest)

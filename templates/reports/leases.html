@@ -1,0 +1,78 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Leases and turnover" %}{% endblock %}
+{% block content %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Leases and turnover" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Lease movement {{ p }}. Move-outs are leases that ended or were terminated; renewals are leases replaced by a new one and are not counted as move-outs. "Ending soon" and "past end date" are as of today.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Active leases now" %}</div><div class="stat-value">{{ report.active_now }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.in_force %}{{ n }} in force during the period{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Moved in" %}</div><div class="stat-value">{{ report.move_ins }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.renewals %}{{ n }} renewed{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Moved out" %}</div><div class="stat-value">{{ report.move_outs }}</div>
+    <div class="stat-sub">{% if report.turnover is None %}{% trans "no leases in force" %}{% else %}{% blocktrans with p=report.turnover|percent %}{{ p }} turnover{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Average stay" %}</div>
+    <div class="stat-value">{% if report.average_months is None %}—{% else %}{{ report.average_months }} {% trans "months" %}{% endif %}</div>
+    <div class="stat-sub">{% trans "of leases that ended in the period" %}</div></div></div></div>
+</div>
+
+<h2 class="h6">{% trans "Ending soon" %}</h2>
+<p class="small">{% for days, n in report.windows %}<span class="me-3">{% blocktrans %}Within {{ days }} days:{% endblocktrans %} <strong>{{ n }}</strong></span>{% endfor %}</p>
+{% include "reports/_lease_lines.html" with lines=report.expiring empty=_("No active lease ends in the next 90 days.") %}
+
+<h2 class="h6 mt-3">{% trans "Past their end date and still active" %}</h2>
+<p class="small text-body-secondary">{% trans "These need renewing or ending so the records stay true." %}</p>
+{% include "reports/_lease_lines.html" with lines=report.holding_over empty=_("None.") %}
+
+<h2 class="h6 mt-4">{% trans "Rent and re-letting" %}</h2>
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-4"><div class="stat"><div class="stat-label">{% trans "Rent increases" %}</div>
+    <div class="stat-value">{{ report.increases }}</div>
+    <div class="stat-sub">{% if report.average_increase is None %}{% trans "none took effect in the period" %}{% else %}{% blocktrans with p=report.average_increase|percent %}{{ p }} on average{% endblocktrans %}{% endif %}</div></div></div>
+  <div class="col-6 col-lg-4"><div class="stat"><div class="stat-label">{% trans "Time to re-let" %}</div>
+    <div class="stat-value">{% if report.relet_days is None %}—{% else %}{{ report.relet_days }} {% trans "days" %}{% endif %}</div>
+    <div class="stat-sub">{% blocktrans count n=report.relets %}{{ n }} unit let again in the period{% plural %}{{ n }} units let again in the period{% endblocktrans %}</div></div></div>
+  <div class="col-12 col-lg-4"><div class="stat"><div class="stat-label">{% trans "Rent not raised for a year" %}</div>
+    <div class="stat-value">{{ report.stale_total }}</div>
+    <div class="stat-sub">{% trans "active leases, last change a year or more ago" %}</div></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-md-6">
+    <h3 class="h6">{% trans "Length of stay, leases that ended" %}</h3>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for label, n in report.stays %}<tr><td>{% trans label %}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="col-md-6">
+    <h3 class="h6">{% trans "How long today's leases have run" %}</h3>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for label, n in report.tenure %}<tr><td>{% trans label %}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+{% if specs.stays %}<div class="chart-card mb-3">
+  <h2>{% trans "Length of stay" %}</h2><p class="chart-sub">{% trans "Leases that ended in the period, and the leases active now, by how long they ran." %}</p>
+  <div class="chart-box"><canvas data-chart="chart-stays" role="img" aria-label="{% trans 'Leases by length of stay. The same figures are in the tables below.' %}"></canvas></div>
+</div>{{ specs.stays|json_script:"chart-stays" }}{% endif %}
+{% if report.stale %}
+<h3 class="h6">{% trans "Longest without a rent change" %}</h3>
+<div class="table-responsive mb-2"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Property" %}</th><th>{% trans "Unit" %}</th>{% if report.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}<th class="text-end">{% trans "Days since change" %}</th></tr></thead>
+  <tbody>{% for x in report.stale %}<tr>
+    <td><a href="{% url 'leases:detail' x.lease.public_id %}">{{ x.lease.number }}</a></td>
+    <td>{{ x.lease.unit.property.name }}</td><td>{{ x.lease.unit.code }}</td>
+    {% if report.show_tenants %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+    <td class="text-end">{{ x.days }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endif %}
+
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

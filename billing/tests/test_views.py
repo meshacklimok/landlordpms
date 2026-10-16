@@ -106,3 +106,30 @@ def test_out_of_scope_and_other_org_are_404(client, owner, lease):
     login(client, make_org())
     assert client.get(account(lease)).status_code == 404
     assert client.get(reverse("billing:invoice", args=[invoice.public_id])).status_code == 404
+
+
+def test_the_invoice_list_shows_totals(client, owner, lease):
+    bill(lease, JAN)
+    page = client.get(reverse("billing:invoices")).content.decode()
+    assert "Billed" in page and "Totals for all invoices" in page
+    page = client.get(reverse("billing:invoices"), {"q": "Tenant"}).content.decode()
+    assert "matching your search" in page
+
+
+def test_the_arrears_page_sums_up(client, owner, lease):
+    bill(lease, JAN)
+    other = make_lease(owner, make_property(owner.organization, name="Baobab"), code="B2", due_day=5)
+    bill(other, JAN)
+    page = client.get(reverse("billing:arrears")).content.decode()
+    assert "Owed in total" in page and "How late the money is" in page and "By property" in page
+    assert "Share of total" in page and "50%" in page
+
+
+def test_the_account_shows_the_payment_record(client, owner, lease):
+    from payments import services as payment_services
+    assert "Payment record" not in client.get(account(lease)).content.decode()
+    bill(lease, JAN)
+    payment_services.record_payment(owner, lease, amount=15000, method="CASH", paid_at=JAN)
+    page = client.get(account(lease)).content.decode()
+    assert "Payment record" in page and "Billed to date" in page and "100% of it paid" in page
+    assert "Payments received" in page and "1 payment, " in page

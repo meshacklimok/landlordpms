@@ -9,7 +9,7 @@
     {% else %}
     <div class="alert alert-success small">{% blocktrans with day=letter.issued_at|date:"j M Y" %}This letter was issued by {{ organization }} on {{ day }}.{% endblocktrans %}</div>
     {% endif %}
-    <h1 class="h5">{% trans "Tenancy and payment record" %} · {{ letter.number }}</h1>
+    <h1 class="h5">{{ title }} · {{ letter.number }}</h1>
     <p class="small text-body-secondary">{% trans "Compare these facts with the copy you were given. If anything differs, the copy was changed." %}</p>
     <dl class="row small mb-0">
       {% for label, lines in rows %}

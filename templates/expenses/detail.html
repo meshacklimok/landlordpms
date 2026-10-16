@@ -1,14 +1,17 @@
 {% extends "expenses/_base.html" %}{% load i18n money %}
 {% block title %}{{ expense.number }}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
-  <a href="{% url 'expenses:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "Expenses" %}</a>
+<div class="mx-auto mw-760">
+  <a href="{% url 'expenses:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Expenses" %}</a>
   <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
     <div>
       <h1 class="h4 mb-0">{{ expense.description }} {% include "expenses/_status.html" %}</h1>
       <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }} · {{ expense.category.name }}</div>
     </div>
-    <div class="h3 num mb-0{% if not expense.is_live %} text-decoration-line-through text-body-secondary{% endif %}">{{ expense.amount|money:currency }}</div>
+    <div class="d-flex align-items-center gap-2">
+      {% if can_edit %}<a href="{% url 'expenses:edit' expense.public_id %}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil" aria-hidden="true"></i> {% trans "Edit" %}</a>{% endif %}
+      <div class="h3 num mb-0{% if not expense.is_live %} text-decoration-line-through text-body-secondary{% endif %}">{{ expense.amount|money:currency }}</div>
+    </div>
   </div>
 
   <div class="card shadow-sm mb-3"><div class="card-body">
@@ -22,7 +25,7 @@
       {% if expense.rejected_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Rejected" %}</dt><dd class="col-sm-8">{{ expense.rejected_at|date:"j M Y, H:i" }} · {{ expense.rejected_by }}<div>{{ expense.reject_reason }}</div></dd>{% endif %}
       {% if expense.voided_at %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Voided" %}</dt><dd class="col-sm-8">{{ expense.voided_at|date:"j M Y, H:i" }} · {{ expense.voided_by }}<div>{{ expense.void_reason }}</div></dd>{% endif %}
       <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Receipt" %}</dt>
-      <dd class="col-sm-8">{% if expense.receipt %}<a href="{% url 'expenses:receipt' expense.public_id %}" target="_blank" rel="noopener"><i class="bi bi-paperclip"></i> {% if expense.receipt_is_pdf %}{% trans "Open the PDF" %}{% else %}{% trans "Open the photo" %}{% endif %}</a>{% else %}<span class="text-body-secondary">{% trans "None" %}</span>{% endif %}</dd>
+      <dd class="col-sm-8">{% if expense.receipt %}<a href="{% url 'expenses:receipt' expense.public_id %}" target="_blank" rel="noopener"><i class="bi bi-paperclip" aria-hidden="true"></i> {% if expense.receipt_is_pdf %}{% trans "Open the PDF" %}{% else %}{% trans "Open the photo" %}{% endif %}</a>{% else %}<span class="text-body-secondary">{% trans "None" %}</span>{% endif %}</dd>
     </dl>
   </div></div>
 
@@ -31,7 +34,7 @@
     <h2 class="h6">{% trans "Approve" %}</h2>
     <p class="small text-body-secondary">{% trans "Once approved it counts in reports and owner statements." %}</p>
     <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="approve">
-      <button class="btn btn-success"><i class="bi bi-check2"></i> {% trans "Approve" %}</button>
+      <button class="btn btn-success"><i class="bi bi-check2" aria-hidden="true"></i> {% trans "Approve" %}</button>
     </form>
     <form method="post" novalidate>{% csrf_token %}<input type="hidden" name="action" value="reject">
       <div class="input-group">

@@ -260,3 +260,12 @@ def test_another_organization_gets_404(client, owner, jane, january):
 def test_the_home_page_lists_statements_to_send(client, owner, jane, prop):
     login(client, owner)
     assert "owner statement to send" in client.get(reverse("accounts:home")).content.decode()
+
+
+def test_account_specs_none_without_collections(db):
+    import datetime
+
+    from reports import owners
+    from reports.owners import Account, AccountRow
+    acc = Account(owner=None, rows=[AccountRow(month=datetime.date(2026, 1, 1))], remittances=[])
+    assert owners.account_specs(acc, "KES") is None

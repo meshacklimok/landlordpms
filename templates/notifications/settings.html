@@ -1,7 +1,7 @@
 {% extends "notifications/_base.html" %}{% load i18n %}
 {% block title %}{% trans "Notification settings" %}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
+<div class="mx-auto mw-760">
   <div class="mb-2">
     <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
     <div class="small text-body-secondary">{% trans "Which notifications go out, and when." %}</div>
@@ -21,9 +21,23 @@
         <label class="form-label small mb-1" for="{{ quiet_form.end.id_for_label }}">{{ quiet_form.end.label }}</label>
         {{ quiet_form.end }}
       </div>
-      <div class="col-2 col-sm-auto"><button class="btn btn-dark">{% trans "Save" %}</button></div>
+      <div class="col-2 col-sm-auto"><button class="btn btn-primary">{% trans "Save" %}</button></div>
       {% if quiet_form.errors %}<div class="col-12 small text-danger">{% trans "Enter both times as HH:MM." %}</div>{% endif %}
       {% if quiet_off %}<div class="col-12 small text-body-secondary">{% trans "Quiet hours are off: messages go out at any time." %}</div>{% endif %}
+    </form>
+  </div></div>
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Email replies" %}</h2>
+    <p class="small text-body-secondary">{% trans "Tenants who have an email address also get invoices, receipts and reminders by email. When they reply, the reply goes to this address. Leave it empty if nobody reads replies." %}</p>
+    <form method="post" class="row g-2 align-items-end">{% csrf_token %}
+      <input type="hidden" name="action" value="reply_email">
+      <div class="col-10 col-sm-7">
+        <label class="form-label small mb-1" for="{{ reply_form.reply_email.id_for_label }}">{{ reply_form.reply_email.label }}</label>
+        {{ reply_form.reply_email }}
+      </div>
+      <div class="col-2 col-sm-auto"><button class="btn btn-primary">{% trans "Save" %}</button></div>
+      {% if reply_form.errors %}<div class="col-12 small text-danger">{% trans "Enter a valid email address, or leave it empty." %}</div>{% endif %}
     </form>
   </div></div>
 

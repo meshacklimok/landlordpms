@@ -16,6 +16,7 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from billing import deposits
 from billing.forms import DeductForm
+from core.ids import uuid_or_none
 from leases.models import Lease
 from leases.services import visible_leases
 from properties.models import Unit
@@ -81,7 +82,8 @@ class ReportView(CapabilityRequiredMixin, View):
         if services.can_deduct(m, report):
             ctx["held"] = deposits.held(report.lease)
             if ctx["held"] > 0:
-                ctx["deduct_form"] = forms_in.get("deduct_form") or DeductForm(prefix="deduct", initial={
+                ctx["deduct_form"] = forms_in.get("deduct_form") or DeductForm(
+                    prefix="deduct", organization=report.lease.organization, cites_report=True, initial={
                     "entry_date": timezone.localdate().isoformat(),
                     "reason": services.deduction_reason(report, table)})
         return ctx
@@ -171,7 +173,7 @@ class ReportView(CapabilityRequiredMixin, View):
 
     def do_remove_photo(self, request, report):
         photo = get_object_or_404(ConditionPhoto.objects.filter(report=report),
-                                  public_id=request.POST.get("photo") or None)
+                                  public_id=uuid_or_none(request.POST.get("photo")))
         try:
             services.remove_photo(request.membership, photo, request=request)
         except ValidationError as exc:
@@ -193,13 +195,14 @@ class ReportView(CapabilityRequiredMixin, View):
         return self._render(request, report, cancel_form=form)
 
     def do_deduct(self, request, report):
-        form = DeductForm(request.POST, prefix="deduct")
+        form = DeductForm(request.POST, prefix="deduct", organization=report.lease.organization, cites_report=True)
         if form.is_valid():
             data = form.cleaned_data
             try:
                 services.deduct(request.membership, report, amount=data["amount"], reason=data["reason"],
                                 deposit_type=data["deposit_type"], entry_date=data["entry_date"],
-                                apply_to_balance=data["apply_to_balance"], request=request)
+                                apply_to_balance=data.get("apply_to_balance", False), heading=data["heading"],
+                                request=request)
             except ValidationError as exc:
                 _apply_errors(form, exc)
             else:

@@ -5,10 +5,14 @@ from billing.admin import ReadOnlyAdmin
 from .models import (
     Announcement,
     ConsentRecord,
+    EmailAccount,
     Message,
     MessageTemplate,
     NotificationPreference,
     OrganizationNotificationRule,
+    PlatformWhatsApp,
+    SmsAccount,
+    WhatsAppAccount,
 )
 
 
@@ -54,3 +58,98 @@ class MessageTemplateAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return MessageTemplate.all_objects.all()
+
+
+# ---------------------------------------------------------------------------
+# Accounts that replace the platform's own (D-154). The superuser can edit every one. Secrets are write-only:
+# a blank box keeps the saved value, and nothing saved is ever shown.
+# ---------------------------------------------------------------------------
+
+
+def _secret_form(model, secrets: dict[str, str]):
+    """A form for `model` with one write-only box per secret (name -> label)."""
+    from django import forms
+
+    attrs = {name: forms.CharField(label=label, required=False, strip=True,
+                                   widget=forms.PasswordInput(render_value=False,
+                                                              attrs={"autocomplete": "new-password"}),
+                                   help_text="Leave blank to keep the saved value.")
+             for name, label in secrets.items()}
+
+    excluded = [f"{name}_encrypted" for name in secrets] + ["updated_by"]
+    attrs["Meta"] = type("Meta", (), {"model": model, "exclude": excluded})
+
+    def save(self, commit=True):
+        obj = super(form, self).save(commit=False)
+        for name in secrets:
+            if self.cleaned_data.get(name):
+                obj.set_secret(name, self.cleaned_data[name])
+        if commit:
+            obj.save()
+        return obj
+
+    attrs["save"] = save
+    form = type(f"{model.__name__}AdminForm", (forms.ModelForm,), attrs)
+    return form
+
+
+class _AccountAdmin(admin.ModelAdmin):
+    secrets: dict[str, str] = {}
+    audit_action = ""
+
+    def get_form(self, request, obj=None, **kwargs):
+        kwargs["form"] = _secret_form(self.model, self.secrets)
+        return super().get_form(request, obj, **kwargs)
+
+    def save_model(self, request, obj, form, change):
+        if hasattr(obj, "updated_by_id"):
+            obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+        from audit import services as audit
+
+        changed = [f for f in form.changed_data] + [s for s in self.secrets if form.cleaned_data.get(s)]
+        audit.record(self.audit_action, actor=request.user, organization=getattr(obj, "organization", None), obj=obj,
+                     changes={"by": "platform admin", "fields": sorted(set(changed))})  # names only, never values
+
+
+@admin.register(PlatformWhatsApp)
+class PlatformWhatsAppAdmin(_AccountAdmin):
+    """The owner's own WhatsApp number, used by every organization that has none. Replaces the WA_* settings."""
+
+    secrets = {"access_token": "Access token", "app_secret": "App secret"}
+    audit_action = "platform.whatsapp"
+    list_display = ["__str__", "enabled", "updated_at"]
+
+    def changelist_view(self, request, extra_context=None):
+        PlatformWhatsApp.get()
+        return super().changelist_view(request, extra_context)
+
+    def has_add_permission(self, request):
+        return not PlatformWhatsApp.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WhatsAppAccount)
+class WhatsAppAccountAdmin(_AccountAdmin):
+    secrets = {"access_token": "Access token", "app_secret": "App secret"}
+    audit_action = "platform.whatsapp_account"
+    list_display = ["organization", "phone_number_id", "enabled", "checked_at", "check_error"]
+    search_fields = ["organization__name", "phone_number_id"]
+
+
+@admin.register(EmailAccount)
+class EmailAccountAdmin(_AccountAdmin):
+    secrets = {"password": "Password"}
+    audit_action = "platform.email_account"
+    list_display = ["organization", "host", "from_email", "enabled", "checked_at", "check_error"]
+    search_fields = ["organization__name", "host", "from_email"]
+
+
+@admin.register(SmsAccount)
+class SmsAccountAdmin(_AccountAdmin):
+    secrets = {"api_key": "API key"}
+    audit_action = "platform.sms_account"
+    list_display = ["organization", "username", "sender_id", "enabled", "checked_at", "check_error"]
+    search_fields = ["organization__name", "username"]

@@ -16,5 +16,5 @@
   </div></div></div>
 </div>
 {% if summary.pay_url and summary.balance > 0 %}
-<a class="btn btn-success w-100 mb-3" href="{{ summary.pay_url }}"><i class="bi bi-phone"></i> {% trans "Pay with M-Pesa" %}</a>
+<a class="btn btn-success w-100 mb-3" href="{{ summary.pay_url }}"><i class="bi bi-phone" aria-hidden="true"></i> {% trans "Pay with M-Pesa" %}</a>
 {% endif %}

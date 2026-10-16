@@ -1,4 +1,4 @@
-"""M-Pesa settings: payment accounts, Daraja credentials and callback URL registration (D-045 items 2, 3, 9).
+"""M-Pesa settings: payment accounts, Daraja credentials and callback URL registration (D-045 items 2, 3, 9),
 
 Secrets go in encrypted and never come back out to a page. A blank secret on save keeps the
 stored one. The audit log names the fields that changed, never their values.

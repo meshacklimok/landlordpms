@@ -1,12 +1,17 @@
 """Platform billing in admin (D-060 item 7): Platform Admins record payments and SMS top-ups here."""
 
+import csv
+
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.db.models import DecimalField, IntegerField, OuterRef, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import HttpResponse
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.translation import gettext_lazy as _
 
 from accounts.models import Organization
 from audit import services as audit
@@ -14,7 +19,10 @@ from audit import services as audit
 from . import documents, services
 from .models import (
     Plan,
+    PlatformCheckout,
+    PlatformPaySwitch,
     PlatformReceipt,
+    PlatformTransaction,
     SmsWallet,
     SmsWalletEntry,
     Subscription,
@@ -25,9 +33,36 @@ from .models import (
 
 @admin.register(Plan)
 class PlanAdmin(admin.ModelAdmin):
-    list_display = ["name", "key", "unit_limit", "seat_limit", "monthly_price", "yearly_price", "self_serve",
-                    "is_active", "sort_order"]
-    list_editable = ["sort_order"]
+    """Bands and prices (D-132). Prices are before VAT. A one-off price of 0 means no one-off offer; Free is
+    a plan with every price 0 and is offered only while "is active" is ticked."""
+
+    list_display = ["name", "key", "unit_limit", "seat_limit", "monthly_price", "yearly_price", "one_off_price",
+                    "one_off_years", "badge", "self_serve", "is_active", "sort_order"]
+    list_editable = ["unit_limit", "seat_limit", "monthly_price", "yearly_price", "one_off_price",
+                     "one_off_years", "badge", "self_serve", "is_active", "sort_order"]
+    watched = ["unit_limit", "seat_limit", "monthly_price", "yearly_price", "one_off_price", "one_off_years", "badge",
+               "features", "self_serve", "is_active"]
+
+    fieldsets = [
+        (None, {"fields": ["key", "name", "badge", "sort_order", "self_serve", "is_active"]}),
+        (_("Limits"), {"fields": ["unit_limit", "seat_limit"]}),
+        (_("Prices (before VAT)"), {"fields": ["monthly_price", "yearly_price", "one_off_price", "one_off_years"]}),
+        (_("Features on the pricing card"), {"fields": ["features"]}),
+    ]
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        field = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == "features":
+            field.widget.attrs.update(rows=8, cols=70)
+        return field
+
+    def save_model(self, request, obj, form, change):
+        before = Plan.objects.filter(pk=obj.pk).first() if change else None
+        super().save_model(request, obj, form, change)
+        changes = {f: [str(getattr(before, f)) if before else None, str(getattr(obj, f))] for f in self.watched
+                   if before is None or getattr(before, f) != getattr(obj, f)}
+        if changes:
+            audit.record("plan.admin_change", actor=request.user, obj=obj, request=request, changes=changes)
 
     def has_delete_permission(self, request, obj=None):
         return False
@@ -195,9 +230,86 @@ class SubscriptionPaymentAdmin(admin.ModelAdmin):
 
 @admin.register(SmsWallet)
 class SmsWalletAdmin(admin.ModelAdmin):
-    list_display = ["organization", "balance"]
+    """SMS for every organization this month (D-142): who pays, parts used, what Africa's Talking charged us,
+    what we billed them, and the wallet. Mode and monthly parts are edited right in the list."""
+
+    list_display = ["organization", "mode", "monthly_cap", "used", "state", "our_cost", "billed", "balance"]
+    list_editable = ["mode", "monthly_cap"]
+    list_filter = ["mode"]
     search_fields = ["organization__name"]
     readonly_fields = ["organization", "balance"]
+    fields = ["organization", "mode", "monthly_cap", "balance"]
+    actions = ["export_csv"]
+    ordering = ["organization__name"]
+
+    def get_queryset(self, request):
+        entries = SmsWalletEntry.objects.filter(
+            organization=OuterRef("organization"), kind=SmsWalletEntry.Kind.MESSAGE,
+            created_at__gte=services.month_start()).order_by().values("organization")
+
+        def total(expr, field):
+            return Coalesce(Subquery(entries.annotate(t=Sum(expr)).values("t")), Value(0), output_field=field)
+
+        money = DecimalField(max_digits=14, decimal_places=4)
+        return super().get_queryset(request).select_related("organization").annotate(
+            parts_used=total("segments", IntegerField()), cost=total("message__cost", money),
+            charged=total("amount", money))
+
+    @admin.display(description="Parts this month", ordering="parts_used")
+    def used(self, obj):
+        return obj.parts_used
+
+    @admin.display(description="State")
+    def state(self, obj):
+        cap = obj.monthly_cap
+        if obj.mode == SmsWallet.Mode.PREPAID:
+            return "No credit" if obj.balance <= 0 else "OK"
+        if cap is None:
+            return "No cap"
+        if obj.parts_used >= cap:
+            return "Cap reached" if obj.mode == SmsWallet.Mode.SPONSORED else "Allowance used"
+        return f"{round(obj.parts_used * 100 / cap)}% of {cap}" if cap else "OK"
+
+    @admin.display(description="Our cost (KES)", ordering="cost")
+    def our_cost(self, obj):
+        return f"{obj.cost:.2f}"
+
+    @admin.display(description="Billed to them (KES)", ordering="charged")
+    def billed(self, obj):
+        return f"{-obj.charged:.2f}"
+
+    def changelist_view(self, request, extra_context=None):
+        missing = Organization.objects.filter(sms_wallet__isnull=True)
+        SmsWallet.objects.bulk_create([SmsWallet(organization=o) for o in missing])
+        rows = SmsWalletEntry.objects.filter(kind=SmsWalletEntry.Kind.MESSAGE, created_at__gte=services.month_start())
+        everyone = rows.aggregate(parts=Sum("segments"), cost=Sum("message__cost"), billed=Sum("amount"))
+        sponsored = rows.filter(organization__sms_wallet__mode=SmsWallet.Mode.SPONSORED).aggregate(
+            cost=Sum("message__cost"))
+        title = (f"SMS this month: {everyone['parts'] or 0} parts, our cost KES {everyone['cost'] or 0:.2f}, "
+                 f"billed KES {-(everyone['billed'] or 0):.2f}; sponsored by us KES {sponsored['cost'] or 0:.2f}")
+        return super().changelist_view(request, {**(extra_context or {}), "title": title})
+
+    def save_model(self, request, obj, form, change):
+        before = SmsWallet.objects.filter(pk=obj.pk).values("mode", "monthly_cap").first()
+        super().save_model(request, obj, form, change)
+        now = {"mode": obj.mode, "monthly_cap": obj.monthly_cap}
+        if before and before != now:
+            SmsWallet.objects.filter(pk=obj.pk).update(alert_level=0)  # new terms, so warn afresh
+            audit.record("sms_wallet.terms", actor=request.user, organization=obj.organization, obj=obj,
+                         request=request,
+                         changes={k: [str(before[k]), str(now[k])] for k in now if before[k] != now[k]})
+
+    @admin.action(description="Export selected to CSV")
+    def export_csv(self, request, queryset):
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = 'attachment; filename="sms-usage.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Organization", "Mode", "Monthly parts", "Parts this month", "Our cost KES",
+                         "Billed KES", "Balance KES"])
+        for w in queryset:
+            writer.writerow([w.organization.name, w.mode, w.monthly_cap if w.monthly_cap is not None else "",
+                             w.parts_used, f"{w.cost:.2f}", f"{-w.charged:.2f}", w.balance])
+        return response
 
     def has_add_permission(self, request):
         return False
@@ -208,9 +320,76 @@ class SmsWalletAdmin(admin.ModelAdmin):
 
 @admin.register(SmsWalletEntry)
 class SmsWalletEntryAdmin(admin.ModelAdmin):
-    list_display = ["created_at", "organization", "kind", "amount", "balance_after", "note"]
+    list_display = ["created_at", "organization", "kind", "segments", "amount", "balance_after", "note"]
     list_filter = ["kind"]
     search_fields = ["organization__name", "note"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlatformPaySwitch)
+class PlatformPaySwitchAdmin(admin.ModelAdmin):
+    """Turns each online way of paying the subscription on or off (D-126). Keys stay in the environment."""
+
+    list_display = ["__str__", "mpesa_on", "paystack_on", "configured", "updated_at"]
+    fields = ["mpesa_on", "paystack_on", "configured"]
+    readonly_fields = ["configured"]
+
+    @admin.display(description="Keys set on the server")
+    def configured(self, obj):
+        from . import collect
+
+        return (f"M-Pesa prompt: {'yes' if collect.prompt_configured() else 'no'}; "
+                f"Paybill confirmations: {'yes' if collect.mpesa_configured() else 'no'}; "
+                f"Paystack: {'yes' if collect.paystack_configured() else 'no'}")
+
+    def changelist_view(self, request, extra_context=None):
+        PlatformPaySwitch.get()
+        return super().changelist_view(request, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        audit.record("platform.pay_switch", actor=request.user, obj=obj,
+                     changes={"mpesa_on": obj.mpesa_on, "paystack_on": obj.paystack_on})
+
+    def has_add_permission(self, request):
+        return not PlatformPaySwitch.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlatformCheckout)
+class PlatformCheckoutAdmin(admin.ModelAdmin):
+    list_display = ["created_at", "organization", "invoice", "provider", "amount", "phone", "status", "result"]
+    list_filter = ["provider", "status"]
+    search_fields = ["organization__name", "invoice__number", "reference", "phone"]
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PlatformTransaction)
+class PlatformTransactionAdmin(admin.ModelAdmin):
+    """Money into our Paybill or Paystack. "Needs a person": record it under Subscription payments with the
+    same code as its reference, for the right invoice or as an SMS top-up; that clears it."""
+
+    list_display = ["created_at", "code", "source", "amount", "account", "payer_name", "status", "invoice", "note"]
+    list_filter = ["status", "source"]
+    search_fields = ["code", "account", "payer_name", "phone", "invoice__number"]
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]

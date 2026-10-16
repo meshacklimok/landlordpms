@@ -158,10 +158,10 @@ def test_own_meter_charge_is_use_times_rate_billed_the_next_month(owner, prop):
     assert "100.000 → 112.500 m³ = 12.500 m³ × 95.50" in charge.description
 
 
-def test_a_shared_meter_splits_by_weight_and_skips_vacant_days(owner, prop):
+def test_a_shared_meter_splits_by_weight_and_the_landlord_can_pay_vacant_days(owner, prop):
     l1, u1 = let(owner, prop, code="A1")
     l2, u2 = let(owner, prop, code="A2", start=D(2026, 1, 16))
-    meter = make_meter(owner, prop, [(u1, "2"), (u2, "1")], rate="90", split="WEIGHTED")
+    meter = make_meter(owner, prop, [(u1, "2"), (u2, "1")], rate="90", split="WEIGHTED", vacant="LANDLORD")
     services.approve(owner, read(owner, meter, DEC31, 0), today=DEC31)
     charges = services.approve(owner, read(owner, meter, D(2026, 1, 30), 30), today=D(2026, 1, 10))
     by_lease = {c.lease_id: c for c in charges}

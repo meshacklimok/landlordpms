@@ -15,3 +15,4 @@ class AccountsConfig(AppConfig):
     def ready(self):
         # Keeps capabilities in the database equal to the code after every migrate.
         post_migrate.connect(_sync_catalog, sender=self, dispatch_uid="accounts_sync_catalog")
+        from . import alerts  # noqa: F401  (security alerts read from the audit trail, D-108)

@@ -1,0 +1,175 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Privacy Policy" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-46r">
+{% trans "Privacy Policy" as legal_title %}{% include "support/_legal_head.html" %}
+<div class="card shadow-sm"><div class="card-body small legal">
+
+<p>This policy explains what personal data NyumbaPMS handles, why, who it is shared with, how long it is kept and
+what your rights are. It is given under section 29 of the Data Protection Act, 2019 and the Data Protection
+(General) Regulations, 2021 (together, "the Act"). It forms part of our
+<a href="{% url 'support:terms' %}">Terms of Service</a>.</p>
+
+<h2 class="h6">1. Who we are and who is responsible for your data</h2>
+<p>NyumbaPMS is provided by {{ legal_name }}{% if legal_registration %} ({{ legal_registration }}){% endif %}{% if legal_address %}, {{ legal_address }}{% endif %}{% if odpc_registration %}, registered with the Office of the Data Protection Commissioner under number {{ odpc_registration }}{% endif %}.
+Who is responsible for your data depends on how you appear in the service:</p>
+<ul>
+  <li><strong>If you have a NyumbaPMS account</strong> (an owner, staff member, property owner or tenant using the
+    portal), we are the <strong>data controller</strong> for your account details and how you use the service.</li>
+  <li><strong>If you are a tenant, occupant, prospect, guarantor, property owner or supplier</strong> recorded by a
+    landlord or manager, that landlord or manager is the <strong>data controller</strong> for your records, and we
+    are their <strong>data processor</strong>: we keep and process the records for them, on their instructions,
+    under the processing terms in section 12 of our Terms. Questions about those records, and requests to see,
+    correct or delete them, go to your landlord first; we help them answer. If you cannot reach your landlord, you
+    can contact us and we will pass your request on.</li>
+</ul>
+
+<h2 class="h6">2. What we collect and where it comes from</h2>
+<ul>
+  <li><strong>Account details (from you):</strong> name, phone number, email (optional), a hashed password, whether
+    the phone is verified, two-step sign-in settings, your role in an organization, and the version of the Terms you
+    accepted and when.</li>
+  <li><strong>Landlords' records (from the landlord and their staff, by typing or importing):</strong> tenants' and
+    occupants' names, phone numbers, emails, ID or passport numbers where the landlord asks for them, next of kin or
+    emergency contacts, leases, rent and deposit amounts, invoices, payments, receipts, balances, meter readings,
+    inspection notes, repair requests, notes, letters and notices, documents and photos.</li>
+  <li><strong>Payments (from Safaricom or the landlord's bank):</strong> transaction codes, amounts, dates,
+    account references, and the payer's name and phone number as the provider gives them.</li>
+  <li><strong>Electronic signatures:</strong> the name typed when signing, the phone number the code was sent to,
+    the time of signing, the IP address and the browser used, and a fingerprint of the signed document.</li>
+  <li><strong>Messages:</strong> SMS, WhatsApp, email and push messages sent through the service, their delivery
+    status, USSD sessions (phone number and choices made), and replies such as STOP or YES. Questions asked of the
+    assistant and its answers.</li>
+  <li><strong>Technical records:</strong> an audit log of important actions (who did what and when, with the IP
+    address and browser), sign-in attempts and security alerts, error reports, and counts of how often the
+    installed app is opened and on which kind of phone (with no personal data). We do not keep request bodies,
+    passwords or sign-in codes in logs.</li>
+</ul>
+<p><strong>Sensitive data.</strong> The Act treats family details (such as the names of a spouse, children or next
+of kin), health information and some property details as sensitive. Landlords should record these only when they
+need them and have a lawful reason. We do not ask for biometric data, and the service is not designed to hold health
+records.</p>
+
+<h2 class="h6">3. Why we use it and our lawful basis</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>Purpose</th><th>Lawful basis under section 30 of the Act</th></tr></thead>
+  <tbody>
+    <tr><td>Creating and running your account, signing you in, sending sign-in codes</td><td>Performance of our
+      contract with you</td></tr>
+    <tr><td>Keeping landlords' records, sending invoices, receipts, reminders, notices and statements, the tenant
+      portal, USSD and payment prompts</td><td>The landlord's contract with the tenant and the landlord's legitimate
+      interests; we act on the landlord's instructions</td></tr>
+    <tr><td>Billing landlords for their plan and SMS credit, and keeping tax records</td><td>Contract and legal
+      obligation (including the Tax Procedures Act, 2015)</td></tr>
+    <tr><td>Security, fraud prevention, the audit log, fixing faults</td><td>Our legitimate interest in a safe and
+      reliable service, and legal obligation to keep data secure</td></tr>
+    <tr><td>The assistant</td><td>The landlord's instructions, once an owner switches it on</td></tr>
+    <tr><td>News about NyumbaPMS sent to account holders</td><td>Consent, which you can withdraw at any time</td></tr>
+    <tr><td>Answering courts, the Data Protection Commissioner and other authorities</td><td>Legal obligation</td></tr>
+  </tbody>
+</table></div>
+<p>We do not sell personal data, show advertising, or use it for profiling. No decision that has a legal or
+similarly significant effect on anyone is made by the service alone without a person: reminders and late notices
+follow rules the landlord sets, and the assistant cannot change anything without a person's confirmation.</p>
+
+<h2 class="h6">4. Who we share it with</h2>
+<p>We use these providers (sub-processors) to run the service. Each gets only what it needs for its part and is bound
+by written terms to protect it:</p>
+<ul>
+  <li><strong>Our hosting provider</strong>{% if hosting %} ({{ hosting }}){% endif %}: the database, files and
+    backups.</li>
+  <li><strong>Africa's Talking</strong>: SMS and the USSD menu (phone numbers and message text).</li>
+  <li><strong>Safaricom (Daraja)</strong>: M-Pesa payment confirmations and payment prompts (phone number, amount,
+    reference).</li>
+  <li><strong>Paystack</strong>, only for landlords who pay their NyumbaPMS subscription through it: the
+    payment (amount, invoice reference and the payer's email).</li>
+  <li><strong>Meta (WhatsApp)</strong>, only where the landlord has set it up: phone numbers and message text.</li>
+  <li><strong>An email provider</strong>: emails such as statements, receipts and password resets.</li>
+  <li><strong>Your browser's push service</strong> (for example Google or Apple), only if you switch on
+    notifications: a device address and the alert text.</li>
+  <li><strong>Sentry</strong>, where set up: error reports, sent without personal data.</li>
+  <li><strong>PostHog</strong>, where set up: counts of which features are used, tied to an anonymous account number,
+    never names, phone numbers, emails or amounts.</li>
+  <li><strong>OpenAI</strong>, only when an owner switches on the assistant: the question and the records needed to
+    answer it, with phone numbers, emails and ID numbers removed first. Also when staff choose to read a photo of
+    meter readings, a utility bill or a printed form filled in by hand (tenant names, phone numbers and rents): the photo, with its location data removed, to read the text from it. We
+    do not keep the photo. OpenAI does not use data sent through its API to train its models.</li>
+</ul>
+<p>We also disclose data when the law requires it (for example a court order, a request from the Data Protection
+Commissioner or the Kenya Revenue Authority), to protect someone's safety, or to a company that takes over the
+service under the same promises, after telling you. Landlords decide what they share with their own staff,
+property owners, advocates and suppliers.</p>
+
+<h2 class="h6">5. Data outside Kenya</h2>
+<p>Some providers keep or process data outside Kenya{% if hosting %}, including our hosting provider ({{ hosting }}){% endif %},
+Meta, OpenAI, Sentry and PostHog. We transfer data abroad only as sections 48 to 50 of the Act allow: to countries or
+providers with appropriate safeguards for personal data, under written terms that protect it at least as well as
+the Act, and we keep a record of these transfers. We send each provider as little as we can. Ask us for details of
+the safeguards for a particular provider.</p>
+
+<h2 class="h6">6. How long we keep it</h2>
+<ul>
+  <li><strong>Landlords' records:</strong> while the landlord's account is open. After it closes, the landlord has 30
+    days to export them, and we delete them within 90 days, except what the law requires us to keep. While an
+    account is open, the landlord decides how long to keep each tenant's records.</li>
+  <li><strong>Financial records:</strong> invoices, payments and receipts are never edited away. Mistakes are
+    corrected with a reversal, so records can be checked later. Our own invoices to landlords are kept for at least
+    five years, as tax law requires.</li>
+  <li><strong>Account details:</strong> while the account is open, then up to 12 months to deal with questions and
+    disputes, unless the law requires longer.</li>
+  <li><strong>Messages:</strong> the text and address of a sent message are cleared after {{ message_text_days }}
+    days; the record that it was sent, and when, stays with the tenant's records.</li>
+  <li><strong>Assistant questions:</strong> deleted after 90 days. <strong>Sign-in codes:</strong> deleted after a
+    few days.</li>
+  <li><strong>Audit log and signing records:</strong> kept as long as the records they relate to, because they show
+    who did what and are evidence.</li>
+  <li><strong>Backups:</strong> kept securely for up to a year, and then they expire.</li>
+</ul>
+
+<h2 class="h6">7. Your rights</h2>
+<p>Under section 26 and Part IV of the Act you have the right to:</p>
+<ul>
+  <li>be told how your personal data is used;</li>
+  <li>see the personal data held about you and get a copy;</li>
+  <li>have wrong or misleading data corrected, and data that is no longer needed or was unlawfully held deleted;</li>
+  <li>object to its use, and ask for its use to be restricted;</li>
+  <li>receive data you gave in a structured, commonly used format, and have it sent to someone else, where
+    technically possible;</li>
+  <li>withdraw consent at any time, where consent is the basis, without affecting what was done before; and</li>
+  <li>refuse direct marketing. We honour such a request within 7 days.</li>
+</ul>
+<p>Account holders can ask us directly at the address below. For records a landlord keeps, ask the landlord, and we
+help them answer. We may need to confirm who you are before we act, and we answer within the time the Act and its
+regulations set. Some rights are limited where the law requires records to be kept (for example payment records).
+If you are not satisfied, you can complain to the Office of the Data Protection Commissioner
+(<a href="https://www.odpc.go.ke" rel="noopener" target="_blank">www.odpc.go.ke</a>).</p>
+
+<h2 class="h6">8. Security and breaches</h2>
+<p>See <a href="{% url 'support:security' %}">security and your data</a> for how we protect records: separate data
+for each landlord, hashed passwords, verified phones, two-step sign-in, an audit log that cannot be changed,
+encrypted provider keys, HTTPS and daily backups. If a breach of personal data creates a real risk of harm, we tell
+the Data Protection Commissioner within 72 hours of becoming aware of it where we are the controller, tell the
+landlord within 48 hours where we are their processor, and tell the people affected as soon as practicable.</p>
+
+<h2 class="h6">9. Cookies and device storage</h2>
+<p>We use only the cookies needed to keep you signed in and to protect forms. Your browser also
+keeps your light or dark choice, and, if you use the installed app, pages and forms saved for offline use (such as
+meter rounds and repair reports) until they are sent. There are no tracking, analytics or advertising cookies, and no
+third-party trackers.</p>
+
+<h2 class="h6">10. Children</h2>
+<p>Accounts are for adults. We do not knowingly create accounts for children. Landlords may record the names of
+children living in a unit only where they need to, and are responsible for having a lawful basis under section 33 of
+the Act.</p>
+
+<h2 class="h6">11. Changes to this policy</h2>
+<p>If this policy changes in a way that matters, the effective date at the top changes and signed-in users are asked
+to read and accept it before they continue.</p>
+
+<h2 class="h6">12. Contact</h2>
+<p class="mb-0">{% trans "Questions, requests and complaints about personal data:" %}
+{% if dpo_email %}<a href="mailto:{{ dpo_email }}">{{ dpo_email }}</a>{% else %}{% trans "signed-in users can reach us from Help, Contact support." %}{% endif %}{% if legal_address %} · {{ legal_name }}, {{ legal_address }}{% endif %}
+· <a href="{% url 'support:terms' %}">{% trans "Terms of Service" %}</a></p>
+</div></div>
+</div>
+{% endblock %}

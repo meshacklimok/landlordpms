@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Webhook" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'api:webhooks' %}" class="small">← {% trans "Webhooks" %}</a>
+  <h1 class="h5 mt-2 text-break">{{ endpoint.url }}</h1>
+  <p class="small text-muted">{% blocktrans with who=endpoint.membership.user.full_name when=endpoint.created_at|date:"j M Y" %}Added by {{ who }} on {{ when }}.{% endblocktrans %}
+    {% if endpoint.last_success_at %}{% blocktrans with when=endpoint.last_success_at|timesince %}Last delivered {{ when }} ago.{% endblocktrans %}{% endif %}</p>
+  {% if blocked %}<div class="alert alert-warning small" role="status">{{ blocked }}{% if endpoint.is_paused %} {% trans "Events are kept for 30 days and sent when you resume." %}{% endif %}</div>{% endif %}
+
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <form method="post" action="{% url 'api:webhook_action' endpoint.public_id 'ping' %}">{% csrf_token %}<button class="btn btn-outline-primary btn-sm">{% trans "Send a test event" %}</button></form>
+    {% if endpoint.is_paused %}
+    <form method="post" action="{% url 'api:webhook_action' endpoint.public_id 'resume' %}">{% csrf_token %}<button class="btn btn-outline-success btn-sm">{% trans "Resume" %}</button></form>
+    {% else %}
+    <form method="post" action="{% url 'api:webhook_action' endpoint.public_id 'pause' %}">{% csrf_token %}<button class="btn btn-outline-secondary btn-sm">{% trans "Pause" %}</button></form>
+    {% endif %}
+    <form method="post" action="{% url 'api:webhook_action' endpoint.public_id 'delete' %}" data-confirm="{% trans 'Delete this webhook? Events waiting to be sent are dropped.' %}">{% csrf_token %}<button class="btn btn-outline-danger btn-sm">{% trans "Delete" %}</button></form>
+  </div>
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% include "api/_webhook_events.html" %}
+      <button class="btn btn-primary btn-sm">{% trans "Save events" %}</button>
+    </form>
+  </div></div>
+
+  <h2 class="h6">{% trans "Recent deliveries" %}</h2>
+  <div class="list-group mb-4">
+    {% for d in deliveries %}
+    <div class="list-group-item d-flex justify-content-between align-items-start gap-2">
+      <div class="small">
+        <div><code>{{ d.event }}</code>
+          {% if d.status == "SENT" %}<span class="badge text-bg-success">{{ d.get_status_display }}</span>{% elif d.status == "FAILED" %}<span class="badge text-bg-danger">{{ d.get_status_display }}</span>{% else %}<span class="badge text-bg-secondary">{{ d.get_status_display }}</span>{% endif %}
+          <span class="text-muted">{{ d.created_at|date:"j M Y H:i" }}</span></div>
+        <div class="text-muted">{% blocktrans count n=d.attempts %}{{ n }} attempt{% plural %}{{ n }} attempts{% endblocktrans %}{% if d.last_status_code %} · {{ d.last_status_code }}{% endif %}{% if d.last_error %} · {{ d.last_error }}{% endif %}{% if d.status == "PENDING" and d.attempts %} · {% blocktrans with when=d.next_attempt_at|date:"H:i" %}next try at {{ when }}{% endblocktrans %}{% endif %}</div>
+        <div class="text-muted font-monospace">{{ d.public_id }}</div>
+      </div>
+      {% if d.status == "FAILED" and d.event != "ping" %}
+      <form method="post" action="{% url 'api:redeliver' d.public_id %}">{% csrf_token %}<button class="btn btn-outline-primary btn-sm">{% trans "Send again" %}</button></form>
+      {% endif %}
+    </div>
+    {% empty %}
+    <div class="list-group-item text-muted small">{% trans "Nothing sent yet. Events are sent within about five minutes." %}</div>
+    {% endfor %}
+  </div>
+  <p class="small text-muted">{% blocktrans %}A failed delivery is tried again after 1 minute, 5 minutes, 30 minutes, 2 hours, 6 hours and 12 hours. After {{ auto_pause_after }} failures in a row the webhook is paused. Deliveries are kept for 30 days.{% endblocktrans %}</p>
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ s.title }} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about pub-read">
+<nav aria-label="{% trans 'Breadcrumb' %}" class="pub-crumb"><a href="{% url 'growth:solutions' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All solutions" %}</a></nav>
+<header class="about-hero pub-read-head">
+  <p class="about-eyebrow">{% trans "Solutions" %}</p>
+  <h1 class="about-title">{{ s.h1 }}</h1>
+  <p class="about-lead">{{ s.lead }}</p>
+  {% if not user.is_authenticated %}<div class="d-flex flex-wrap gap-2 mt-3">
+    <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+  </div>{% endif %}
+</header>
+<div class="pub-prose">
+{% for heading, text, points in s.sections %}
+  <h2>{{ heading }}</h2>
+  <p>{{ text }}</p>
+  {% if points %}<ul>{% for point in points %}<li>{{ point }}</li>{% endfor %}</ul>{% endif %}
+{% endfor %}
+  <h2>{% trans "Common questions" %}</h2>
+  {% for q, a in s.faq %}<h3 class="h5 mt-4">{{ q }}</h3><p>{{ a }}</p>{% endfor %}
+</div>
+<section class="about-section" aria-labelledby="learn-h">
+  <h2 id="learn-h" class="about-h2 mb-3">{% trans "Keep reading" %}</h2>
+  <ul class="pub-links">
+    {% if tutorial %}<li><a href="{% url 'growth:tutorial' tutorial.slug %}">{% trans "Tutorial:" %} {{ tutorial.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endif %}
+    {% if article %}<li><a href="{% url 'growth:article' article.slug %}">{% trans "Article:" %} {{ article.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endif %}
+    {% for r in related %}<li><a href="{% url 'growth:solution' r.slug %}">{{ r.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endfor %}
+    <li><a href="{% url 'growth:pricing' %}">{% trans "Pricing in KSh" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>
+  </ul>
+</section>
+{% if not user.is_authenticated %}
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Want this handled for you?" %}</h2><p class="mb-0">{% trans "The trial is free and nothing here needs a card." %}</p></div>
+  <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+</section>
+{% endif %}
+</div>
+{% endblock %}

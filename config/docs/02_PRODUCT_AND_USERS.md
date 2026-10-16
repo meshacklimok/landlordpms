@@ -46,6 +46,8 @@ AI assistant, analytics beyond one dashboard, utilities metering, accounting mod
 - Swahili UI option.
 
 ## Success measures for the pilot
+`python manage.py pilot_report` shows each organization against these each month (D-101).
+
 - 5 pilot landlords onboard in under 15 minutes each.
 - Monthly rent cycle run entirely in the app.
 - 90%+ of payments reconciled without manual work.

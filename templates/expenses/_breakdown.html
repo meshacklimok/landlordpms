@@ -1,0 +1,10 @@
+{% load i18n money reports %}{# Approved expenses split one way (D-110): rows of {name, total, n}, each with its share and a bar. #}
+<div class="col-12 col-lg-4"><div class="card shadow-sm h-100"><div class="card-body py-2 small">
+  <div class="fw-semibold mb-1">{{ title }}</div>
+  {% for row in rows|slice:":6" %}{% with share=row.total|share_of:totals.approved %}
+  <div class="mb-1">
+    <div class="d-flex justify-content-between gap-2"><span class="text-truncate">{{ row.name|default:"—" }} <span class="text-body-secondary">({{ row.n }})</span></span><span class="num text-nowrap">{{ row.total|money:currency }} <span class="text-body-secondary">{{ share|percent }}</span></span></div>
+    <div class="progress" style="height: 4px" role="progressbar" aria-label="{{ share|percent }}" aria-valuenow="{{ share|percent_number }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {{ share|percent_number }}%"></div></div>
+  </div>
+  {% endwith %}{% endfor %}
+</div></div></div>

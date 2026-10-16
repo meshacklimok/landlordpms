@@ -8,6 +8,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
+from django.core.mail import send_mail
+from core.mail import SYSTEM, mailer_for
 from django.db.models import F
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -40,7 +42,8 @@ def _throttle(phone: str, purpose: str, last_sent_at) -> None:
         raise OTPError(_("Too many codes requested. Try again in an hour."))
 
 
-def issue_otp(phone: str, purpose: str) -> None:
+def issue_otp(phone: str, purpose: str, email: str = "") -> None:
+    """Sends a code to the phone by SMS, or to `email` when given. The code stays keyed by the phone."""
     now = timezone.now()
     last = OTPCode.objects.filter(phone=phone, purpose=purpose).order_by("-created_at").first()
     _throttle(phone, purpose, last.created_at if last else None)
@@ -50,8 +53,14 @@ def issue_otp(phone: str, purpose: str) -> None:
     OTPCode.objects.filter(phone=phone, purpose=purpose, consumed_at__isnull=True).update(consumed_at=now)
     OTPCode.objects.create(phone=phone, purpose=purpose, code_hash=_hash(phone, purpose, code),
                            expires_at=now + OTP_TTL)
-    send_sms(phone, _("Your landlordpms code is %(code)s. It expires in 10 minutes. Never share it.")
-             % {"code": code})
+    text = _("Your NyumbaPMS code is %(code)s. It expires in 10 minutes. Never share it.") % {"code": code}
+    if email:
+        try:
+            send_mail(_("Your NyumbaPMS code"), text, None, [email], using=mailer_for(SYSTEM))
+        except Exception as exc:  # noqa: BLE001 - any mail failure reads the same to the user
+            raise OTPError(_("We could not send the email. Check the address and try again.")) from exc
+        return
+    send_sms(phone, text)
 
 
 def pretend_issue_otp(phone: str, purpose: str) -> None:

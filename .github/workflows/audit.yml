@@ -1,0 +1,39 @@
+name: Dependency audit
+
+# Known vulnerabilities in the Python packages we install (D-107). Runs on every change to the requirements and
+# weekly, since new advisories appear for packages that have not changed.
+on:
+  push:
+    branches: [master]
+    paths: ["requirements*.txt", ".github/workflows/audit.yml"]
+  pull_request:
+    paths: ["requirements*.txt", ".github/workflows/audit.yml"]
+  schedule:
+    - cron: "17 4 * * 1"  # Mondays 07:17 Nairobi
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install dependencies
+        # pip itself is audited too, so start from the latest.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      # Audits what was just installed, including packages pulled in by others. Fails on any known advisory;
+      # one that does not affect us is skipped with --ignore-vuln <ID> and a note in config/docs/08_DECISIONS_LOG.md.
+      - name: Audit installed packages
+        run: pip-audit --strict --progress-spinner off

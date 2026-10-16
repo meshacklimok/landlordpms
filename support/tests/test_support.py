@@ -1,6 +1,8 @@
 """Status and security pages (D-061), help pages and support requests (D-063)."""
 
 import datetime
+import io
+import zipfile
 
 import pytest
 from django.core import mail
@@ -12,7 +14,9 @@ from django.utils import timezone
 from accounts.models import Organization
 from accounts.tests.factories import make_org, make_user
 from accounts.tests.test_isolation import login
+from core.jobs import JOBS
 from core.models import JobRun
+from inspections.tests.conftest import jpeg
 from support import help as help_topics
 from support import services, status
 from support.models import Incident, IncidentUpdate, SupportRequest
@@ -43,8 +47,7 @@ def test_status_page_is_public_and_shows_incidents(client):
 
 def test_status_overall():
     now = timezone.now()
-    for name in ("send_due_messages", "billing_daily", "mpesa_daily", "subscriptions_daily", "backup",
-                 "purge_otp_codes", "purge_import_previews"):
+    for name in JOBS:
         JobRun.objects.create(name=name, started_at=now, finished_at=now, ok=True)
     assert status.build(now)["overall"] == status.OK
     outage = Incident.objects.create(title="Down", impact=Incident.Impact.OUTAGE)
@@ -102,11 +105,19 @@ def test_every_help_topic_renders(client):
 
 # --- support requests --------------------------------------------------------
 
+def _xlsx() -> bytes:
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    return out.getvalue()
+
+
 def test_a_member_sends_a_request(client, settings, django_capture_on_commit_callbacks):
     settings.SUPPORT_EMAIL = "help@example.com"
     owner = make_org()
     login(client, owner)
-    upload = SimpleUploadedFile("My Units.xlsx", b"PK\x03\x04 spreadsheet", content_type="application/octet-stream")
+    upload = SimpleUploadedFile("My Units.xlsx", _xlsx(), content_type="application/octet-stream")
     with_page = reverse("support:contact") + "?from=/tenants/"
     assert client.get(with_page).context["form"]["page"].value() == "/tenants/"
     with django_capture_on_commit_callbacks(execute=True):
@@ -130,15 +141,46 @@ def test_a_foreign_page_is_not_recorded(client):
     assert response.context["form"]["page"].value() == ""
 
 
-@pytest.mark.parametrize("name,size,ok", [("a.exe", 10, False), ("big.pdf", 10 * 1024 * 1024 + 1, False),
-                                          ("photo.JPG", 10, True)])
-def test_attachment_rules(client, name, size, ok):
+@pytest.mark.parametrize("name,content,ok", [
+    ("a.exe", b"MZ", False),
+    ("big.pdf", b"%PDF-", False),  # made 10 MB below
+    ("photo.JPG", None, True),
+    ("photo.png", b"<script>alert(1)</script>", False),  # contents must match the name (D-108)
+    ("notes.pdf", b"<html>not a pdf</html>", False),
+    ("notes.pdf", b"%PDF-1.4 fine", True),
+    ("units.xlsx", b"PK\x03\x04 not a zip", False),
+    ("units.xlsx", None, True),
+    ("old.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1rest", True),
+    ("old.xls", b"name,phone\n", False),
+    ("units.csv", b"name,phone\nWanjiku,0712000001\n", True),
+    ("units.csv", b"MZ\x90\x00\x03\x00", False),
+])
+def test_attachment_rules(client, name, content, ok):
     login(client, make_org())
-    upload = SimpleUploadedFile(name, b"x" * size)
+    if content is None:
+        content = jpeg().read() if name.lower().endswith(".jpg") else _xlsx()
+    if name == "big.pdf":
+        content += b"x" * services.MAX_ATTACHMENT
+    upload = SimpleUploadedFile(name, content)
     response = client.post(reverse("support:contact"), {
         "kind": "QUESTION", "subject": "Hi", "message": "Hello", "attachment": upload})
     assert (response.status_code == 302) is ok
     assert SupportRequest.objects.exists() is ok
+
+
+def test_a_picture_is_saved_again_without_its_location(client):
+    from PIL import Image
+
+    exif = Image.Exif()
+    exif[0x8825] = {2: (1.0, 17.0, 0.0)}  # GPS
+    exif[0x010F] = "PhoneMaker"
+    login(client, make_org())
+    client.post(reverse("support:contact"), {"kind": "QUESTION", "subject": "Hi", "message": "Hello",
+                                             "attachment": jpeg(fmt="PNG", name="Screen shot.png", exif=exif)})
+    item = SupportRequest.objects.get()
+    assert item.attachment_name == "Screen shot.jpg" and item.attachment.name.endswith(".jpg")
+    with Image.open(item.attachment.path) as stored:
+        assert stored.format == "JPEG" and not stored.getexif()
 
 
 def test_a_frozen_organization_can_still_ask_for_help(client):

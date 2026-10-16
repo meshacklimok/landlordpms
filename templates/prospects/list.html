@@ -1,0 +1,153 @@
+{% extends "prospects/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Prospects" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <h1 class="h3 mb-0">{% trans "Prospects" %}</h1>
+    <span class="d-flex gap-2">
+      {% if lapsed %}<a class="btn btn-sm btn-warning" href="?lapsed=1">{% blocktrans count n=lapsed %}{{ n }} hold past its date{% plural %}{{ n }} holds past their date{% endblocktrans %}</a>{% endif %}
+      {% if can_add %}<a class="btn btn-sm btn-primary" href="{% url 'prospects:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Add a prospect" %}</a>{% endif %}
+    </span>
+  </div>
+  <p class="small text-body-secondary">{% trans "People looking for a unit, from the first call to the lease." %}</p>
+
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-md-3"><a class="card shadow-sm h-100 text-decoration-none" href="?status=open"><div class="card-body py-2">
+      <div class="small text-body-secondary">{% trans "Open" %}</div><div class="h5 num mb-0">{{ summary.open }}</div>
+    </div></a></div>
+    <div class="col-6 col-md-3"><a class="card shadow-sm h-100 text-decoration-none" href="?due=1"><div class="card-body py-2">
+      <div class="small text-body-secondary">{% trans "To call" %}</div><div class="h5 num mb-0{% if summary.to_call %} text-warning-emphasis{% endif %}">{{ summary.to_call }}</div>
+    </div></a></div>
+    <div class="col-12 col-md-6"><div class="card shadow-sm h-100"><div class="card-body py-2">
+      <div class="small text-body-secondary">{% trans "Closed in the last 90 days" %}</div>
+      <div class="h5 num mb-0">{% blocktrans with c=summary.converted l=summary.lost %}{{ c }} became tenants, {{ l }} lost{% endblocktrans %}{% if summary.conversion is not None %} <span class="small fw-normal text-body-secondary">· {% blocktrans with pct=summary.conversion %}{{ pct }}% converted{% endblocktrans %}</span>{% endif %}</div>
+    </div></div></div>
+  </div>
+
+  {% if specs %}
+  <section class="row g-3 mb-3" aria-label="{% trans 'Prospects, in charts' %}">
+    {% if specs.stages %}
+    <div class="col-lg-{% if specs.sources %}5{% else %}12{% endif %}"><div class="chart-card h-100">
+      <h2>{% trans "Where open prospects are" %}</h2>
+      <p class="chart-sub">{% trans "How many are at each step, from the first enquiry to a held unit." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-stages" role="img" aria-label="{% trans 'Open prospects by step. The same figures are in the table below.' %}"></canvas></div>
+      <details><summary>{% trans "Show as a table" %}</summary><div class="table-responsive"><table class="table table-sm small mb-0"><tbody>
+        {% for label, n in flow.stages %}<tr><td>{{ label }}</td><td class="text-end num">{{ n }}</td></tr>{% endfor %}
+      </tbody></table></div></details>
+    </div></div>
+    {% endif %}
+    {% if specs.sources %}
+    <div class="col-lg-{% if specs.stages %}4{% else %}6{% endif %}"><div class="chart-card h-100">
+      <h2>{% trans "How they found us" %}</h2>
+      <p class="chart-sub">{% blocktrans with d=flow.days %}Enquiries in the last {{ d }} days.{% endblocktrans %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-sources" role="img" aria-label="{% trans 'Enquiries by source. The same figures are in the table below.' %}"></canvas></div>
+      <div class="table-responsive mt-2"><table class="table table-sm small mb-0"><tbody>
+        {% for label, n in flow.sources %}<tr><td>{{ label }}</td><td class="text-end num">{{ n }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div></div>
+    {% endif %}
+    {% if specs.lost %}
+    <div class="col-lg-{% if specs.stages and specs.sources %}3{% else %}6{% endif %}"><div class="chart-card h-100">
+      <h2>{% trans "Why prospects were lost" %}</h2>
+      <p class="chart-sub">{% blocktrans with d=flow.days %}Lost in the last {{ d }} days.{% endblocktrans %}</p>
+      <div class="chart-box"><canvas data-chart="chart-lost" role="img" aria-label="{% trans 'Lost prospects by reason. The same figures are in the table below.' %}"></canvas></div>
+      <details><summary>{% trans "Show as a table" %}</summary><div class="table-responsive"><table class="table table-sm small mb-0"><tbody>
+        {% for label, n in flow.lost %}<tr><td>{{ label }}</td><td class="text-end num">{{ n }}</td></tr>{% endfor %}
+      </tbody></table></div></details>
+    </div></div>
+    {% endif %}
+  </section>
+  {% if specs.stages %}{{ specs.stages|json_script:"chart-stages" }}{% endif %}
+  {% if specs.sources %}{{ specs.sources|json_script:"chart-sources" }}{% endif %}
+  {% if specs.lost %}{{ specs.lost|json_script:"chart-lost" }}{% endif %}
+  {% endif %}
+
+  {% if viewings %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Viewings in the next 7 days" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for v in viewings %}
+      <li class="d-flex justify-content-between gap-2 py-1{% if not forloop.last %} border-bottom{% endif %}">
+        <span><a href="{% url 'prospects:detail' v.prospect.public_id %}">{{ v.prospect.name }}</a> · {{ v.unit.code }}{% if v.with_user %} · <span class="text-body-secondary">{{ v.with_user }}</span>{% endif %}</span>
+        <span class="text-nowrap{% if v.scheduled_at|date:'Y-m-d' == today|date:'Y-m-d' %} fw-semibold{% endif %}">{{ v.scheduled_at|date:"D j M, H:i" }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md">
+        <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Name or phone" %}</label>
+        <input id="f-q" type="search" name="q" value="{{ f.q }}" class="form-control">
+      </div>
+      {% if many_properties %}
+      <div class="col-6 col-md">
+        <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+        <select id="f-property" name="property" class="form-select">
+          <option value="">{% trans "All properties" %}</option>
+          {% for prop in properties %}<option value="{{ prop.public_id }}" {% if prop == f.property %}selected{% endif %}>{{ prop.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-6 col-md">
+        <label class="form-label small text-body-secondary mb-1" for="f-status">{% trans "Status" %}</label>
+        <select id="f-status" name="status" class="form-select">
+          <option value="open" {% if f.status == "open" %}selected{% endif %}>{% trans "Open" %}</option>
+          {% for value, label in statuses %}<option value="{{ value }}" {% if value == f.status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          <option value="all" {% if f.status == "all" %}selected{% endif %}>{% trans "All" %}</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-auto d-flex gap-3 pb-2">
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="mine" value="1" id="f-mine" {% if f.mine %}checked{% endif %}><label class="form-check-label small" for="f-mine">{% trans "Mine" %}</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="due" value="1" id="f-due" {% if f.due %}checked{% endif %}><label class="form-check-label small" for="f-due">{% trans "To call" %}</label></div>
+      </div>
+      {% if f.unit %}<input type="hidden" name="unit" value="{{ f.unit.public_id }}">{% endif %}
+      {% if f.lapsed %}<input type="hidden" name="lapsed" value="1">{% endif %}
+      <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button>
+        {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'prospects:list' %}">{% trans "Clear" %}</a>{% endif %}
+      </div>
+    </div>
+    {% if f.unit %}<div class="small mt-2">{% blocktrans with unit=f.unit.code %}Unit {{ unit }} only.{% endblocktrans %}</div>{% endif %}
+    {% if f.lapsed %}<div class="small mt-2">{% trans "Holds past their date only." %}</div>{% endif %}
+  </div></form>
+
+  {% if page.object_list %}
+  <div class="card shadow-sm overflow-hidden">
+    <div class="table-responsive">
+      <table class="table pay-table align-middle mb-0">
+        <thead><tr>
+          <th>{% trans "Prospect" %}</th>
+          <th>{% trans "Status" %}</th>
+          <th class="d-none d-md-table-cell">{% trans "Handled by" %}</th>
+          <th class="text-end">{% trans "Follow up" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for p in page.object_list %}
+          <tr data-href="{% url 'prospects:detail' p.public_id %}">
+            <td><a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'prospects:detail' p.public_id %}">{{ p.name }}</a>
+              <div class="small text-body-secondary">{{ p.phone }} · {{ p.property.name }}{% if p.held_unit %} · {% blocktrans with unit=p.held_unit.code %}holding {{ unit }}{% endblocktrans %}{% elif p.unit %} · {{ p.unit.code }}{% endif %}</div></td>
+            <td>{% include "prospects/_status.html" %}</td>
+            <td class="d-none d-md-table-cell small">{% if p.assigned_to %}{{ p.assigned_to }}{% else %}<span class="text-body-secondary">—</span>{% endif %}</td>
+            <td class="text-end small text-nowrap">{% if p.is_open %}{% if p.status == "NEW" %}<span class="text-warning-emphasis fw-semibold">{% trans "Call" %}</span>{% elif p.next_contact_on %}<span class="{% if p.next_contact_on <= today %}text-danger fw-semibold{% endif %}">{{ p.next_contact_on|date:"j M" }}</span>{% else %}<span class="text-body-secondary">—</span>{% endif %}{% else %}<span class="text-body-secondary">—</span>{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="small text-body-secondary mt-2">{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</div>
+  {% include "partials/pager.html" %}
+  {% else %}
+  {% if filtered %}{% include "partials/empty_state.html" with icon="bi-person-lines-fill" title=_("No prospects match") %}{% else %}{% include "partials/empty_state.html" with icon="bi-person-lines-fill" title=_("No open prospects") text=_("Add people who call or walk in about a unit. Enquiries from vacancy links appear here too.") %}{% endif %}
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

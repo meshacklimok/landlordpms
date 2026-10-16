@@ -8,7 +8,7 @@
 5. **Background work is async.** Invoicing, SMS, and callbacks processing run in a task queue.
 
 ## Three separate money flows
-Landlord → LandlordPMS (`subscriptions`), Tenant → Landlord (`billing`/`payments`/`mpesa`), Landlord → Supplier (`expenses`). They never share tables, number sequences or reports. Details in doc 11 §22.
+Landlord → NyumbaPMS (`subscriptions`), Tenant → Landlord (`billing`/`payments`/`mpesa`), Landlord → Supplier (`expenses`). They never share tables, number sequences or reports. Details in doc 11 §22.
 
 ## Money, numbering, history, reporting, notifications
 Rules for decimal money and rounding (doc 11 §25), locked number sequences (§24), archive vs never-delete (§23), exact report metrics (§26) and notification preferences (§27) apply to every app.

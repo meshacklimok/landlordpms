@@ -1,0 +1,49 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Ask" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4 mb-1">{% trans "Ask" %}</h1>
+  <p class="small text-muted">{% trans "Ask about your rent, what you owe, how to pay, your receipts and your repairs. You can also ask to report a repair or to get an M-Pesa prompt on your phone." %}</p>
+
+  {% if turns %}
+  <div class="d-flex flex-column gap-3 mb-3" data-conversation>
+    {% for turn in turns %}
+    <div class="align-self-end bg-body-secondary rounded-3 px-3 py-2 small mw-85p">{{ turn.q }}</div>
+    <div class="card shadow-sm{% if not turn.ok %} border-warning{% endif %}"><div class="card-body py-2 small">{{ turn.a|linebreaksbr }}</div></div>
+    {% with card=turn.card %}{% if card %}
+    <div class="card shadow-sm border-primary" id="p-{{ card.id }}" data-proposal="{{ card.kind }}"><div class="card-body py-2 small">
+      <div class="fw-semibold mb-1">{{ card.title }}</div>
+      <dl class="row mb-2">
+        {% for label, value in card.lines %}<dt class="col-5 fw-normal text-muted">{{ label }}</dt><dd class="col-7 mb-1">{{ value }}</dd>{% endfor %}
+      </dl>
+      {% if card.state == "done" %}<div class="text-success">{{ card.result }}</div>
+      {% elif card.state == "failed" %}<div class="text-danger">{{ card.result }}</div>
+      {% elif card.state == "dismissed" %}<div class="text-muted">{% trans "Dismissed. Nothing was done." %}</div>
+      {% elif card.expired %}<div class="text-muted">{% trans "This has expired. Ask again if it is still needed." %}</div>
+      {% elif card.state == "open" %}
+      <form method="post" action="{% url 'portal:ask_confirm' %}">{% csrf_token %}
+        <input type="hidden" name="id" value="{{ card.id }}">
+        <div class="text-muted mb-2">{% trans "Nothing is done until you confirm. Check the details first." %}</div>
+        <button class="btn btn-primary btn-sm" name="action" value="confirm">{% trans "Confirm" %}</button>
+        <button class="btn btn-outline-secondary btn-sm" name="action" value="dismiss">{% trans "Dismiss" %}</button>
+      </form>
+      {% endif %}
+    </div></div>
+    {% endif %}{% endwith %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" class="card shadow-sm mb-2"><div class="card-body">{% csrf_token %}
+    <label class="form-label small" for="question">{% if turns %}{% trans "Ask a follow-up question" %}{% else %}{% trans "Your question" %}{% endif %}</label>
+    <textarea id="question" name="question" class="form-control mb-2" rows="2" maxlength="{{ max_length }}" required
+              placeholder="{% trans 'How much do I owe?' %}"></textarea>
+    <button class="btn btn-primary">{% trans "Ask" %}</button>
+  </div></form>
+  {% if turns %}
+  <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="new">
+    <button class="btn btn-sm btn-link px-0">{% trans "New conversation" %}</button></form>
+  {% endif %}
+  <p class="small text-muted">{% blocktrans with n=daily %}Answers come from your landlord's records and are written by the GPT model from OpenAI; check important figures on your statement. You can ask {{ n }} questions a day.{% endblocktrans %}</p>
+</div>
+{% endblock %}

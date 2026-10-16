@@ -10,6 +10,11 @@ __pycache__/
 # Django
 db.sqlite3
 media/
+# Database and media backups hold tenants' data (D-103)
+backups/
+# Load test sessions (D-105)
+loadtest/setup.json
+*.dump
 staticfiles/
 
 # IDE
@@ -22,3 +27,5 @@ Thumbs.db
 
 # Logs
 *.log
+
+.env.production

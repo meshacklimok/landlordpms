@@ -1,0 +1,1 @@
+{% load i18n %}{% if doc.tenant %}<i class="bi bi-person-vcard" aria-hidden="true"></i> {{ doc.tenant.name }}{% elif doc.lease %}{{ doc.property.name }} · {{ doc.lease.unit.code }} · {{ doc.lease.number|default:_("draft lease") }}{% elif doc.unit %}{{ doc.property.name }} · {{ doc.unit.code }}{% else %}{{ doc.property.name }}{% endif %}

@@ -6,8 +6,10 @@ from the catalog, so a row that matches the default is removed rather than kept.
 
 import datetime
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
@@ -37,7 +39,12 @@ def usable_channels(ntype: catalog.NotificationType) -> list[str]:
 
 
 def editable_channels(ntype: catalog.NotificationType) -> list[str]:
-    """WhatsApp wording must match the template Meta approved, so organizations cannot change it (D-044 item 16)."""
+    """WhatsApp wording must match the template Meta approved, so organizations cannot change it (D-044 item 16).
+
+    A message staff write in full has no wording to change (D-125).
+    """
+    if ntype.composed:
+        return []
     return [c for c in usable_channels(ntype) if c != catalog.WHATSAPP]
 
 
@@ -85,6 +92,8 @@ def save_rule(actor: Membership, type_codename: str, *, enabled: bool, channels=
     channels = tuple(dict.fromkeys(channels or ntype.channels))
     if not channels or any(c not in usable for c in channels):
         raise ValidationError({"channels": _("Choose from: %(channels)s.") % {"channels": ", ".join(usable)}})
+    if channels == (catalog.EMAIL,):
+        raise ValidationError({"channels": _("Email is a copy: keep SMS or WhatsApp as well.")})
     offsets = parse_offsets(ntype, offsets) if ntype.offsets else ()
     include_co_tenants = bool(include_co_tenants) and ntype.audience == catalog.TENANT
 
@@ -126,6 +135,21 @@ def set_quiet_hours(actor: Membership, *, start: datetime.time, end: datetime.ti
     actor.organization.quiet_hours_start, actor.organization.quiet_hours_end = start, end
     audit.record("notifications.quiet_hours", actor=actor.user, organization=org, obj=org, request=request,
                  changes={"quiet_hours": [f"{before[0]:%H:%M}–{before[1]:%H:%M}", f"{start:%H:%M}–{end:%H:%M}"]})
+
+
+@transaction.atomic
+def set_reply_email(actor: Membership, email: str, *, request=None) -> None:
+    """Where tenants' replies to emails go (D-076). Blank: the emails have no reply-to."""
+    require(actor, "organization.manage")
+    org = type(actor.organization).objects.select_for_update().get(pk=actor.organization_id)
+    email = (email or "").strip().lower()
+    if org.reply_email == email:
+        return
+    before, org.reply_email = org.reply_email, email
+    org.save(update_fields=["reply_email", "updated_at"])
+    actor.organization.reply_email = email
+    audit.record("notifications.reply_email", actor=actor.user, organization=org, obj=org, request=request,
+                 changes={"reply_email": [before, email]})
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +249,18 @@ def set_tenant_channel(actor: Membership, tenant, channel: str, *, allowed: bool
     return record
 
 
+@transaction.atomic
+def stop_email_by_link(tenant) -> bool:
+    """The tenant used the link in an email (D-076). Returns False when email was already stopped."""
+    if not channel_allowed(tenant, catalog.EMAIL):
+        return False
+    ConsentRecord.objects.create(organization=tenant.organization, tenant=tenant, channel=catalog.EMAIL,
+                                 granted=False, source=ConsentRecord.Source.EMAIL_LINK)
+    audit.record("tenant.consent", organization=tenant.organization, obj=tenant,
+                 changes={catalog.EMAIL: [True, False], "source": [None, "Email link"]})
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Retry and the bell
 # ---------------------------------------------------------------------------
@@ -259,3 +295,18 @@ def mark_read(user, org, pks=None) -> int:
     if pks is not None:
         qs = qs.filter(pk__in=pks)
     return qs.update(read_at=timezone.now())
+
+
+def clear_old_text(now: datetime.datetime | None = None, batch: int = 2000) -> int:
+    """Clears the text, address and WhatsApp parameters of messages older than MESSAGE_TEXT_DAYS (D-105).
+
+    The row stays: its dedupe key stops the same reminder going twice, and the type, status, cost and
+    links remain for the log and the SMS bill. Done in batches so no statement nears the timeout.
+    """
+    cutoff = (now or timezone.now()) - datetime.timedelta(days=settings.MESSAGE_TEXT_DAYS)
+    old = (Message.objects.filter(created_at__lt=cutoff).exclude(status=Message.Status.QUEUED)
+           .exclude(Q(body="") & Q(subject="") & Q(to="") & Q(provider_template={})))
+    cleared = 0
+    while ids := list(old.order_by().values_list("pk", flat=True)[:batch]):
+        cleared += Message.objects.filter(pk__in=ids).update(body="", subject="", to="", provider_template={})
+    return cleared

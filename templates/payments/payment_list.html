@@ -1,48 +1,48 @@
-{% extends "payments/_base.html" %}{% load i18n money %}
+{% extends "payments/_base.html" %}{% load i18n money reports %}
 {% block title %}{% trans "Payments" %}{% endblock %}
 {% block content %}
 <div class="wide mx-auto">
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <div class="page-head">
     <div>
-      <h1 class="h3 mb-0">{% trans "Payments" %}</h1>
-      <div class="small text-body-secondary">{% trans "Money received from tenants, and where it went." %}</div>
+      <h1 class="h4">{% trans "Payments" %}</h1>
+      <p class="lead-text">{% trans "Money received from tenants, and where it went." %}</p>
     </div>
-    <div class="d-flex flex-wrap gap-2">
+    <div class="detail-actions">
       {% if pending_count %}
-      <a class="btn btn-outline-warning text-warning-emphasis btn-sm" href="{% url 'payments:review' %}"><i class="bi bi-hourglass-split"></i> {% trans "Review" %} <span class="badge text-bg-warning ms-1">{{ pending_count }}</span></a>
+      <a class="btn btn-outline-warning text-warning-emphasis btn-sm" href="{% url 'payments:review' %}"><i class="bi bi-hourglass-split" aria-hidden="true"></i> {% trans "Review" %} <span class="badge text-bg-warning ms-1">{{ pending_count }}</span></a>
       {% endif %}
       {% if can_export %}
-      <a class="btn btn-outline-secondary btn-sm" href="{% url 'payments:export' %}{% querystring page=None %}"><i class="bi bi-download"></i> {% trans "Export CSV" %}</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'payments:export' %}{% querystring page=None %}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Export CSV" %}</a>
       {% endif %}
       {% if can_record %}
-      <a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg"></i> {% trans "Record payment" %}</a>
+      <a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Record payment" %}</a>
       {% endif %}
     </div>
   </div>
 
   {# Summary for whatever the filters select (status aside) #}
-  <div class="small text-body-secondary mb-2">
+  <div class="pay-scope">
     {% if filters.date_from or filters.date_to %}
       {% if filters.date_from and filters.date_to %}{{ filters.date_from|date:"j M Y" }} – {{ filters.date_to|date:"j M Y" }}{% elif filters.date_from %}{% blocktrans with d=filters.date_from|date:"j M Y" %}Since {{ d }}{% endblocktrans %}{% else %}{% blocktrans with d=filters.date_to|date:"j M Y" %}Up to {{ d }}{% endblocktrans %}{% endif %}{% if filters.q or filters.method or filters.property %} · {% trans "filtered" %}{% endif %}
     {% elif filtered %}{% trans "Matching your filters" %}{% else %}{% trans "All time" %}{% endif %}
   </div>
   <div class="row g-3 mb-4">
-    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-success)"><div class="card-body">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent h-100 accent-success"><div class="card-body">
       <div class="stat-label">{% trans "Collected" %}</div>
       <div class="stat-value num">{% for cur, amount in totals.confirmed.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
       <div class="stat-sub">{% blocktrans count n=totals.confirmed.count %}{{ n }} confirmed payment{% plural %}{{ n }} confirmed payments{% endblocktrans %}</div>
     </div></div></div>
-    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-warning)"><div class="card-body">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent h-100 accent-warning"><div class="card-body">
       <div class="stat-label">{% trans "Awaiting review" %}</div>
       <div class="stat-value num">{% for cur, amount in totals.pending.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
       <div class="stat-sub">{% blocktrans count n=totals.pending.count %}{{ n }} payment, not yet counted{% plural %}{{ n }} payments, not yet counted{% endblocktrans %}</div>
     </div></div></div>
-    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-danger)"><div class="card-body">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent h-100 accent-danger"><div class="card-body">
       <div class="stat-label">{% trans "Reversed" %}</div>
       <div class="stat-value num">{% for cur, amount in totals.reversed.amounts.items %}<div>{{ amount|money:cur }}</div>{% empty %}{{ 0|money:organization.currency }}{% endfor %}</div>
       <div class="stat-sub">{% blocktrans count n=totals.reversed.count %}{{ n }} reversed{% plural %}{{ n }} reversed{% endblocktrans %} · {% blocktrans count n=totals.rejected.count %}{{ n }} rejected{% plural %}{{ n }} rejected{% endblocktrans %}</div>
     </div></div></div>
-    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100" style="--accent: var(--bs-primary)"><div class="card-body">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent h-100 accent-primary"><div class="card-body">
       <div class="stat-label">{% trans "Recorded" %}</div>
       <div class="stat-value num">{{ totals.all.count }}</div>
       <div class="stat-sub">{% trans "payments in all states" %}</div>
@@ -50,51 +50,107 @@
   </div>
 
   {# Filters #}
-  <form method="get" class="card shadow-sm mb-3 d-print-none"><div class="card-body pb-2">
+  <form method="get" data-autosubmit class="card pay-filter mb-3 d-print-none"><div class="card-body pb-2">
     {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
     <div class="row g-2 align-items-end">
       <div class="col-12 col-lg">
-        <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
+        <label class="form-label mb-1" for="f-q">{% trans "Search" %}</label>
         <div class="input-group">
-          <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+          <span class="input-group-text bg-body"><i class="bi bi-search" aria-hidden="true"></i></span>
           <input type="search" id="f-q" name="q" value="{{ filters.q|default:'' }}" class="form-control" placeholder="{% trans 'Reference, receipt, tenant, unit or lease' %}">
         </div>
       </div>
       <div class="col-6 col-md-3 col-lg-2">
-        <label class="form-label small text-body-secondary mb-1" for="f-method">{% trans "Method" %}</label>
+        <label class="form-label mb-1" for="f-method">{% trans "Method" %}</label>
         <select id="f-method" name="method" class="form-select">
           {% for value, label in form.fields.method.choices %}<option value="{{ value }}" {% if value == filters.method %}selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
       </div>
       {% if show_property %}
       <div class="col-6 col-md-3 col-lg-2">
-        <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+        <label class="form-label mb-1" for="f-property">{{ vocab.property }}</label>
         <select id="f-property" name="property" class="form-select">
-          <option value="">{% trans "All properties" %}</option>
+          <option value="">All {{ vocab.properties|lower }}</option>
           {% for p in form.fields.property.queryset %}<option value="{{ p.public_id }}" {% if p == filters.property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
         </select>
       </div>
       {% endif %}
       <div class="col-6 col-md-3 col-lg-2">
-        <label class="form-label small text-body-secondary mb-1" for="f-from">{% trans "Paid from" %}</label>
+        <label class="form-label mb-1" for="f-from">{% trans "Paid from" %}</label>
         <input type="date" id="f-from" name="date_from" value="{{ filters.date_from|date:'Y-m-d' }}" class="form-control">
       </div>
       <div class="col-6 col-md-3 col-lg-2">
-        <label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "Paid to" %}</label>
+        <label class="form-label mb-1" for="f-to">{% trans "Paid to" %}</label>
         <input type="date" id="f-to" name="date_to" value="{{ filters.date_to|date:'Y-m-d' }}" class="form-control">
       </div>
-      <div class="col-12 col-lg-auto d-flex gap-2">
-        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+      <div class="col-12 col-lg-auto d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button>
         {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'payments:list' %}{% if status %}?status={{ status }}{% endif %}">{% trans "Clear" %}</a>{% endif %}
       </div>
     </div>
-    <div class="d-flex flex-wrap gap-2 mt-2 small">
-      <span class="text-body-secondary">{% trans "Quick range:" %}</span>
+    <div class="pay-presets">
+      <span>{% trans "Quick range:" %}</span>
       {% for key, start, end, active in presets %}
-      <a class="link-underline link-underline-opacity-0 {% if active %}fw-semibold link-dark{% else %}link-secondary{% endif %}" href="{% querystring date_from=start|date:'Y-m-d' date_to=end|date:'Y-m-d' page=None %}">{% if key == "this_month" %}{% trans "This month" %}{% elif key == "last_month" %}{% trans "Last month" %}{% else %}{% trans "This year" %}{% endif %}</a>
+      <a class="{% if active %}active{% endif %}"{% if active %} aria-current="true"{% endif %} href="{% querystring date_from=start|date:'Y-m-d' date_to=end|date:'Y-m-d' page=None %}">{% if key == "this_month" %}{% trans "This month" %}{% elif key == "last_month" %}{% trans "Last month" %}{% else %}{% trans "This year" %}{% endif %}</a>
       {% endfor %}
     </div>
   </div></form>
+
+  {# Charts for whatever the filters select: confirmed payments only (D-114) #}
+  {% if received %}
+  <section class="row g-3 mb-3" aria-label="{% trans 'Money received, in charts' %}">
+    <div class="col-lg-8">
+      <div class="chart-card">
+        <h2>{% if received.daily %}{% trans "Money received each day" %}{% else %}{% trans "Money received each month" %}{% endif %}</h2>
+        <p class="chart-sub">{% trans "Confirmed payments that match the filters." %}{% if received.trimmed %} {% blocktrans with n=received.periods|length %}The last {{ n }} months.{% endblocktrans %}{% endif %}{% if received.other_currencies %} {% blocktrans with cur=received.currency %}Only payments in {{ cur }}.{% endblocktrans %}{% endif %}</p>
+        <div class="chart-box"><canvas data-chart="chart-received" role="img" aria-label="{% trans 'Money received over time. The same figures are in the table below.' %}"></canvas></div>
+        <details>
+          <summary>{% trans "Show as a table" %}</summary>
+          <div class="table-responsive"><table class="table table-sm small mb-0">
+            <thead><tr><th>{% if received.daily %}{% trans "Day" %}{% else %}{% trans "Month" %}{% endif %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+            <tbody>
+              {% for day, amount, n in received.periods %}{% if n %}<tr><td class="text-nowrap">{% if received.daily %}{{ day|date:"D j M Y" }}{% else %}{{ day|date:"M Y" }}{% endif %}</td><td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:received.currency }}</td></tr>{% endif %}{% endfor %}
+            </tbody>
+          </table></div>
+        </details>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="chart-card">
+        <h2>{% trans "How tenants paid" %}</h2>
+        <p class="chart-sub">{% blocktrans with t=received.total|money:received.currency %}{{ t }} confirmed, by method.{% endblocktrans %}</p>
+        <div class="chart-box donut"><canvas data-chart="chart-methods" role="img" aria-label="{% trans 'Money received by payment method. The same figures are in the table below.' %}"></canvas></div>
+        <div class="table-responsive mt-2"><table class="table table-sm small mb-0"><tbody>
+          {% for label, amount, n in received.methods %}
+          <tr>
+            <td><span class="chart-legend d-inline"><span class="key" data-color="{{ forloop.counter0|series_color }}"></span></span>{{ label }} <span class="text-muted">({{ n }})</span></td>
+            <td class="text-end num text-nowrap">{{ amount|money:received.currency }}</td>
+            <td class="text-end text-muted">{{ amount|share_of:received.total|percent }}</td>
+          </tr>
+          {% endfor %}
+        </tbody></table></div>
+      </div>
+    </div>
+    {% if specs.places %}
+    <div class="col-12">
+      <div class="chart-card">
+        <h2>By {{ vocab.property|lower }}</h2>
+        <p class="chart-sub">{% trans "Confirmed payments that match the filters, largest first." %}</p>
+        <div class="chart-box"><canvas data-chart="chart-places" role="img" aria-label="{% trans 'Money received by property. The same figures are in the table below.' %}"></canvas></div>
+        <details>
+          <summary>{% trans "Show as a table" %}</summary>
+          <div class="table-responsive"><table class="table table-sm small mb-0"><tbody>
+            {% for name, amount in received.places %}<tr><td>{{ name }}</td><td class="text-end num text-nowrap">{{ amount|money:received.currency }}</td><td class="text-end text-muted">{{ amount|share_of:received.total|percent }}</td></tr>{% endfor %}
+          </tbody></table></div>
+        </details>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+  {{ specs.periods|json_script:"chart-received" }}
+  {{ specs.methods|json_script:"chart-methods" }}
+  {% if specs.places %}{{ specs.places|json_script:"chart-places" }}{% endif %}
+  {% endif %}
 
   {# Status tabs #}
   <ul class="nav state-tabs gap-1 mb-3 flex-nowrap overflow-auto">
@@ -106,12 +162,12 @@
 
   {% if page.object_list %}
   {# Desktop: a table #}
-  <div class="card shadow-sm d-none d-md-block overflow-hidden">
+  <div class="card d-none d-md-block overflow-hidden">
     <div class="table-responsive">
       <table class="table pay-table">
         <thead><tr>
           <th scope="col">{% trans "Date paid" %}</th>
-          <th scope="col">{% trans "Tenant" %}</th>
+          <th scope="col">{{ vocab.tenant }}</th>
           <th scope="col">{% trans "Method" %}</th>
           <th scope="col">{% trans "Receipt" %}</th>
           <th scope="col">{% trans "Status" %}</th>
@@ -142,7 +198,7 @@
   </div>
 
   {# Phone: a list #}
-  <div class="list-group shadow-sm d-md-none">
+  <div class="item-list d-md-none">
     {% for payment in page %}{% include "payments/_row.html" %}{% endfor %}
   </div>
 
@@ -152,8 +208,8 @@
   {% include "partials/pager.html" %}
 
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-wallet2"></i></div>
+  <div class="card"><div class="card-body text-center py-5">
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-wallet2" aria-hidden="true"></i></div>
     {% if filtered or status %}
       <h2 class="h6">{% trans "No payments match" %}</h2>
       <p class="small text-body-secondary mb-3">{% trans "Try a wider date range or a different search." %}</p>
@@ -161,9 +217,16 @@
     {% else %}
       <h2 class="h6">{% trans "No payments yet" %}</h2>
       <p class="small text-body-secondary mb-3">{% trans "Record rent as it comes in. Each confirmed payment gets a numbered receipt." %}</p>
-      {% if can_record %}<a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg"></i> {% trans "Record the first payment" %}</a>{% endif %}
+      {% if can_record %}<a class="btn btn-primary btn-sm" href="{% url 'payments:pick_lease' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Record the first payment" %}</a>{% endif %}
     {% endif %}
   </div></div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if received %}
+<script src="{% load static %}{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
 {% endblock %}

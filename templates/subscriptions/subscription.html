@@ -1,5 +1,6 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n static %}
 {% block title %}{% trans "Subscription" %}{% endblock %}
+{% block scripts %}<script src="{% static 'js/pay_status.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1 class="h4 mb-3">{% trans "Subscription" %}</h1>
 
@@ -13,33 +14,113 @@
     {% elif sub.period_end %}
       <p class="small mb-0">{% blocktrans with i=sub.get_interval_display|lower s=sub.period_start|date:"j M Y" e=sub.period_end|date:"j M Y" %}Paid {{ i }}, {{ s }} to {{ e }}.{% endblocktrans %}</p>
     {% endif %}
-    <table class="table table-sm small mt-3 mb-0">
+    <div class="table-responsive"><table class="table table-sm small mt-3 mb-0">
       <thead><tr><th></th><th class="text-end">{% trans "Using" %}</th><th class="text-end">{% trans "Plan allows" %}</th></tr></thead>
       <tbody>{% for label, used, limit in usage %}
         <tr><td>{{ label|capfirst }}</td><td class="text-end">{{ used }}</td><td class="text-end">{% if limit is None %}{% trans "No limit" %}{% else %}{{ limit }}{% endif %}</td></tr>
       {% endfor %}</tbody>
-    </table>
+    </table></div>
     <p class="small text-muted mt-2 mb-0">{% trans "Viewers do not count as team members." %}</p>
   </div></div></div>
 
-  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+  <div class="col-md-6"><div class="card shadow-sm h-100 pay-card"><div class="card-body">
     <h2 class="h6 text-muted">{% trans "To pay" %}</h2>
     {% if open_invoice %}
-      <p class="h5 mb-1">KES {{ open_invoice.outstanding|floatformat:2 }}</p>
-      <p class="small">{% blocktrans with n=open_invoice.number p=open_invoice.plan_name d=open_invoice.due_on|date:"j M Y" %}Invoice {{ n }} for {{ p }}, due {{ d }}.{% endblocktrans %}
-        <a href="{% url 'subscriptions:invoice_pdf' open_invoice.public_id %}">PDF</a></p>
-      {% if paybill %}<p class="small mb-0">{% blocktrans with n=open_invoice.number %}Pay by M-Pesa: Paybill <strong>{{ paybill }}</strong>, account <strong>{{ n }}</strong>.{% endblocktrans %}</p>
-      {% else %}<p class="small mb-0">{% trans "Contact us for payment details." %}</p>{% endif %}
-      <p class="small text-muted mt-2 mb-0">{% trans "We record your payment and send a receipt; the plan starts on the day you pay." %}</p>
+      <div class="pay-amount" aria-label="{% blocktrans with a=open_invoice.outstanding|floatformat:2 %}KES {{ a }} to pay{% endblocktrans %}"><span class="pay-cur">KES</span> {{ open_invoice.outstanding|floatformat:2 }}</div>
+      <p class="pay-meta">
+        <span>{{ open_invoice.number }}</span><span>{{ open_invoice.plan_name }}</span><span>{% blocktrans with d=open_invoice.due_on|date:"j M Y" %}Due {{ d }}{% endblocktrans %}</span>
+        <a href="{% url 'subscriptions:invoice_pdf' open_invoice.public_id %}"><i class="bi bi-file-earmark-pdf" aria-hidden="true"></i> PDF</a>
+      </p>
+
+      {% if last_checkout and last_checkout.status == "PENDING" and last_checkout.phone %}
+      <div class="pay-notice pay-notice-wait" role="status" aria-live="polite" data-pay-status="{% url 'subscriptions:pay_status' last_checkout.public_id %}" data-ok-title="{% trans 'Payment successful' %}" data-ok-text="{% trans 'Thank you. Loading your receipt...' %}" data-fail-title="{% trans 'Payment was not completed' %}">
+        <span class="spinner-border spinner-border-sm mt-1" aria-hidden="true" data-pay-spinner></span>
+        <div>
+          <strong data-pay-title>{% blocktrans with p=last_checkout.phone %}Prompt sent to {{ p }}{% endblocktrans %}</strong>
+          <div data-pay-text>{% trans "Enter your M-Pesa PIN on the phone. This page updates by itself once the payment is confirmed." %}</div>
+          <button type="button" class="btn btn-sm btn-link p-0" data-reload>{% trans "Refresh" %}</button>
+        </div>
+      </div>
+      {% elif last_checkout and last_checkout.status == "FAILED" %}
+      <div class="pay-notice pay-notice-fail" role="alert">
+        <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+        <div><strong>{% trans "Last attempt was not paid" %}</strong><div>{{ last_checkout.result }}</div></div>
+      </div>
+      {% endif %}
+
+      {% if can_manage %}
+      <ul class="nav pay-tabs" id="pay-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link{% if pay_online.mpesa or not pay_online.paystack %} active{% endif %}" id="pay-tab-mpesa" data-bs-toggle="pill" data-bs-target="#pay-pane-mpesa" type="button" role="tab" aria-controls="pay-pane-mpesa" aria-selected="{% if pay_online.mpesa or not pay_online.paystack %}true{% else %}false{% endif %}"><i class="bi bi-phone" aria-hidden="true"></i> M-Pesa</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link{% if not pay_online.mpesa and pay_online.paystack %} active{% endif %}" id="pay-tab-card" data-bs-toggle="pill" data-bs-target="#pay-pane-card" type="button" role="tab" aria-controls="pay-pane-card" aria-selected="{% if not pay_online.mpesa and pay_online.paystack %}true{% else %}false{% endif %}"><i class="bi bi-credit-card" aria-hidden="true"></i> {% trans "Card" %}</button>
+        </li>
+      </ul>
+      <div class="tab-content pay-panes">
+        <div class="tab-pane fade{% if pay_online.mpesa or not pay_online.paystack %} show active{% endif %}" id="pay-pane-mpesa" role="tabpanel" aria-labelledby="pay-tab-mpesa" tabindex="0">
+          {% if pay_online.mpesa %}
+          <form method="post" action="{% url 'subscriptions:pay_mpesa' %}">{% csrf_token %}
+            <input type="hidden" name="invoice" value="{{ open_invoice.public_id }}">
+            <label class="pay-label" for="pay-phone">{% trans "M-Pesa phone number" %}</label>
+            <div class="input-group">
+              <span class="input-group-text" aria-hidden="true"><i class="bi bi-phone"></i></span>
+              <input id="pay-phone" name="phone" type="tel" class="form-control" value="{{ phone }}" required
+                     autocomplete="tel" inputmode="tel" placeholder="07XX XXX XXX" aria-describedby="pay-phone-help">
+            </div>
+            <div id="pay-phone-help" class="form-text">{% trans "We send a payment prompt to this Safaricom number. Approve it with your M-Pesa PIN." %}</div>
+            <button class="btn btn-primary w-100 pay-go"><i class="bi bi-send" aria-hidden="true"></i> {% trans "Send M-Pesa prompt" %}</button>
+          </form>
+          {% else %}
+          <div class="pay-off"><i class="bi bi-info-circle" aria-hidden="true"></i><div>{% trans "M-Pesa prompts are not switched on yet. Pay from your M-Pesa menu below, or contact us." %}</div></div>
+          {% endif %}
+        </div>
+        <div class="tab-pane fade{% if not pay_online.mpesa and pay_online.paystack %} show active{% endif %}" id="pay-pane-card" role="tabpanel" aria-labelledby="pay-tab-card" tabindex="0">
+          {% if pay_online.paystack %}
+          <form method="post" action="{% url 'subscriptions:pay_paystack' %}">{% csrf_token %}
+            <input type="hidden" name="invoice" value="{{ open_invoice.public_id }}">
+            <ul class="pay-accepts" aria-label="{% trans 'Accepted' %}">
+              <li><i class="bi bi-credit-card-2-front" aria-hidden="true"></i> Visa</li>
+              <li><i class="bi bi-credit-card-2-back" aria-hidden="true"></i> Mastercard</li>
+              <li><i class="bi bi-phone" aria-hidden="true"></i> M-Pesa</li>
+            </ul>
+            <p class="form-text mt-0">{% trans "You will enter your details on Paystack's secure page and come back here when it is done. We never see or store your card number." %}</p>
+            <button class="btn btn-primary w-100 pay-go"><i class="bi bi-lock" aria-hidden="true"></i> {% trans "Continue to secure checkout" %}</button>
+          </form>
+          <div class="pay-or" aria-hidden="true"><span>{% trans "or" %}</span></div>
+          <form method="post" action="{% url 'subscriptions:pay_paystack_mpesa' %}">{% csrf_token %}
+            <input type="hidden" name="invoice" value="{{ open_invoice.public_id }}">
+            <label class="pay-label" for="pay-phone-ps">{% trans "M-Pesa prompt through Paystack" %}</label>
+            <div class="input-group">
+              <span class="input-group-text" aria-hidden="true"><i class="bi bi-phone"></i></span>
+              <input id="pay-phone-ps" name="phone" type="tel" class="form-control" value="{{ phone }}" required
+                     autocomplete="tel" inputmode="tel" placeholder="07XX XXX XXX" aria-describedby="pay-phone-ps-help">
+              <button class="btn btn-outline-primary text-nowrap">{% trans "Send prompt" %}</button>
+            </div>
+            <div id="pay-phone-ps-help" class="form-text">{% trans "A backup for when the M-Pesa tab does not send a prompt. Paystack sends it to this number; approve it with your M-Pesa PIN." %}</div>
+          </form>
+          {% else %}
+          <div class="pay-off"><i class="bi bi-info-circle" aria-hidden="true"></i><div>{% trans "Card payments are not switched on yet. Pay with M-Pesa instead." %}</div></div>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p class="small text-muted mb-2">{% trans "Ask the account owner to pay this invoice." %}</p>
+      {% endif %}
+
+      {% if paybill %}
+      <details class="pay-manual"{% if not pay_online.mpesa and not pay_online.paystack %} open{% endif %}>
+        <summary>{% trans "Pay from your M-Pesa menu instead" %}</summary>
+        <dl class="pay-manual-list">
+          <div><dt>{% trans "Paybill" %}</dt><dd><span id="pay-paybill">{{ paybill }}</span><button type="button" class="btn btn-sm btn-link" data-copy="#pay-paybill" aria-label="{% trans 'Copy the Paybill number' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button></dd></div>
+          <div><dt>{% trans "Account" %}</dt><dd><span id="pay-account">{{ account_number }}</span><button type="button" class="btn btn-sm btn-link" data-copy="#pay-account" aria-label="{% trans 'Copy the account number' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button></dd></div>
+        </dl>
+      </details>
+      {% elif not pay_online.mpesa and not pay_online.paystack %}<p class="small mb-0">{% trans "Contact us for payment details." %}</p>{% endif %}
+      <p class="pay-foot"><i class="bi bi-shield-check" aria-hidden="true"></i> {% trans "You get a receipt here once the payment is confirmed; the plan starts on the day you pay." %}</p>
     {% else %}
-      <p class="small mb-0">{% trans "Nothing to pay." %}</p>
+      <div class="pay-clear"><i class="bi bi-check-circle" aria-hidden="true"></i><div><strong>{% trans "Nothing to pay" %}</strong><div>{% trans "You have no open invoice. Choose a paid plan below and it will appear here." %}</div></div></div>
     {% endif %}
-    <hr>
-    <h2 class="h6 text-muted">{% trans "SMS credit" %}</h2>
-    <p class="h5 mb-1">KES {{ sms_balance|floatformat:2 }}</p>
-    <p class="small mb-0">{% blocktrans %}Each SMS part costs KES {{ sms_price }}. Login codes and invitations are free.{% endblocktrans %}
-      {% if sms_enforced and sms_balance <= 0 %}<span class="text-danger">{% trans "No credit: messages go by email where possible." %}</span>{% endif %}</p>
-    {% if paybill %}<p class="small mb-0">{% blocktrans %}To top up, pay Paybill {{ paybill }} with account SMS and send us the M-Pesa code.{% endblocktrans %}</p>{% endif %}
   </div></div></div>
 </div>
 
@@ -47,30 +128,101 @@
 <div class="card shadow-sm mb-3"><div class="card-body">
   <h2 class="h6">{% trans "Choose a plan" %}</h2>
   <p class="small text-muted">{% trans "Prices are in KES before VAT. Moving up mid-period credits the unused days of what you paid." %}</p>
-  <div class="row row-cols-1 row-cols-md-4 g-2">
-  {% for plan in plans %}
-    <div class="col"><div class="border rounded p-2 h-100 {% if plan.current %}border-success{% endif %}">
-      <div class="fw-semibold">{{ plan.name }}{% if plan.current %} <span class="badge text-bg-success">{% trans "Current" %}</span>{% endif %}</div>
-      <div class="small">{% if plan.unit_limit is None %}{% trans "Any number of units" %}{% else %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }} units{% endblocktrans %}{% endif %},
-        {% if plan.seat_limit is None %}{% trans "any team" %}{% else %}{% blocktrans with n=plan.seat_limit %}{{ n }} team members{% endblocktrans %}{% endif %}</div>
-      {% if plan.is_free %}<div class="small mb-2">{% trans "Free" %}</div>
-      {% else %}<div class="small mb-2">{% blocktrans with m=plan.monthly_price|floatformat:0 y=plan.yearly_price|floatformat:0 %}{{ m }} a month, or {{ y }} a year{% endblocktrans %}</div>{% endif %}
-      {% if plan.over %}
-        <div class="small text-muted">{% trans "Too small for you now:" %} {{ plan.over|join:"; " }}</div>
-      {% else %}
-      <form method="post" class="d-flex gap-1">{% csrf_token %}
-        <input type="hidden" name="plan" value="{{ plan.key }}">
-        {% if plan.is_free %}<input type="hidden" name="interval" value="MONTHLY">
-        {% else %}<select name="interval" class="form-select form-select-sm" aria-label="{% trans 'How often' %}">{% for value, label in intervals %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select>{% endif %}
-        <button class="btn btn-sm btn-outline-primary">{% trans "Choose" %}</button>
-      </form>
-      {% endif %}
-    </div></div>
-  {% endfor %}
+  {% include "growth/_plans.html" with choose=True %}
+  {% include "growth/_compare.html" %}
+  <div class="border rounded p-3 mt-4">
+    <div class="fw-semibold">{% trans "More than 100 units?" %}</div>
+    <p class="small mb-2">{% trans "Agencies and larger portfolios get a price that fits. Message us with how many units and team members you have, and we will agree a plan with you." %}</p>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'support:contact' %}">{% trans "Message us" %}</a>
+    {% if support_whatsapp %}<a class="btn btn-sm btn-outline-secondary" href="https://wa.me/{{ support_whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
   </div>
-  <p class="small text-muted mt-2 mb-0">{% trans "Larger portfolios: ask us about Enterprise." %}</p>
 </div></div>
 {% endif %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6 text-muted">{% trans "SMS" %}</h2>
+    <p class="h5 mb-1">{% blocktrans with n=sms.used %}{{ n }} parts sent this month{% endblocktrans %}</p>
+    {% if sms.mode == "SPONSORED" %}
+      <p class="small mb-1">{% if sms.cap is not None %}{% blocktrans with cap=sms.cap left=sms.left %}We pay for your SMS, up to {{ cap }} parts a month. {{ left }} left.{% endblocktrans %}{% else %}{% trans "We pay for your SMS." %}{% endif %}</p>
+    {% elif sms.mode == "BUNDLED" %}
+      <p class="small mb-1">{% blocktrans with cap=sms.cap|default:0 left=sms.left|default:0 price=sms.price %}Your plan includes {{ cap }} parts a month ({{ left }} left). After that each part costs KES {{ price }} from your SMS credit.{% endblocktrans %}</p>
+      <p class="small mb-1">{% trans "SMS credit" %}: KES {{ sms.balance|floatformat:2 }}</p>
+    {% else %}
+      <p class="small mb-1">{% blocktrans with price=sms.price %}Each part costs KES {{ price }}, taken from your SMS credit.{% endblocktrans %} {% trans "SMS credit" %}: <strong>KES {{ sms.balance|floatformat:2 }}</strong></p>
+    {% endif %}
+    {% if sms.cap %}<div class="progress mb-2" role="progressbar" aria-label="{% trans 'SMS used this month' %}" aria-valuenow="{{ sms.percent }}" aria-valuemin="0" aria-valuemax="100" style="height:.5rem"><div class="progress-bar" style="width:{{ sms.percent }}%"></div></div>{% endif %}
+    {% if not sms.available %}<p class="small text-danger mb-1">{% if sms.mode == "SPONSORED" %}{% trans "You have used this month's SMS. Messages go by email where possible until next month, or ask us to raise the limit." %}{% else %}{% trans "No SMS credit: messages go by email where possible." %}{% endif %}</p>{% endif %}
+    {% if sms.by_type %}<p class="small text-muted mb-1">{% for label, parts in sms.by_type %}{{ label }}: {{ parts }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    <p class="small text-muted mb-0">{% trans "Login codes and security alerts are free and never counted." %}</p>
+    {% if sms.mode != "SPONSORED" %}
+      {% if can_manage and sms_top_up.mpesa or can_manage and sms_top_up.paystack %}
+      <form method="post" action="{% url 'subscriptions:sms_top_up' %}" class="row g-2 align-items-end mt-1 mb-1">{% csrf_token %}
+        <div class="col-6 col-sm-3">
+          <label class="form-label small mb-0" for="top-up-amount">{% trans "Top up (KES)" %}</label>
+          <input id="top-up-amount" name="amount" type="number" class="form-control form-control-sm" value="500"
+                 min="{{ sms_top_up_min|floatformat:0 }}" max="{{ sms_top_up_max|floatformat:0 }}" step="1" required inputmode="numeric">
+        </div>
+        {% if sms_top_up.mpesa %}
+        <div class="col-6 col-sm-4">
+          <label class="form-label small mb-0" for="top-up-phone">{% trans "M-Pesa phone number" %}</label>
+          <input id="top-up-phone" name="phone" type="tel" class="form-control form-control-sm" value="{{ phone }}" autocomplete="tel" inputmode="tel">
+        </div>
+        <div class="col-auto"><button class="btn btn-sm btn-primary" name="method" value="mpesa">{% trans "Top up with M-Pesa" %}</button></div>
+        {% endif %}
+        {% if sms_top_up.paystack %}
+        <div class="col-auto"><button class="btn btn-sm {% if sms_top_up.mpesa %}btn-outline-primary{% else %}btn-primary{% endif %}" name="method" value="paystack" formnovalidate>{% trans "Card or M-Pesa (Paystack)" %}</button></div>
+        {% endif %}
+      </form>
+      {% endif %}
+      {% if paybill %}<p class="small text-muted mb-0">{% blocktrans %}Or pay Paybill {{ paybill }} with account SMS and send us the M-Pesa code.{% endblocktrans %}</p>{% endif %}
+    {% endif %}
+    <hr>
+    <h2 class="h6 text-muted" id="ai-use">{% trans "Photo scans and the assistant" %}</h2>
+    {% if scans.available or scans.used %}
+    <p class="h5 mb-1">{% blocktrans count n=scans.used %}{{ n }} photo scan this month{% plural %}{{ n }} photo scans this month{% endblocktrans %}</p>
+    <p class="small mb-1">{% blocktrans with cap=scans.limit left=scans.left %}Up to {{ cap }} a month are included. {{ left }} left.{% endblocktrans %}
+      {% if scans.used %}<span class="text-muted">{% blocktrans with a=scans.notebook b=scans.bill %}Meter notebooks: {{ a }} · utility bills: {{ b }}{% endblocktrans %}</span>{% endif %}</p>
+    {% if scans.limit %}<div class="progress mb-2" role="progressbar" aria-label="{% trans 'Photo scans used this month' %}" aria-valuenow="{{ scans.percent }}" aria-valuemin="0" aria-valuemax="100" style="height:.5rem"><div class="progress-bar" style="width:{{ scans.percent }}%"></div></div>{% endif %}
+    {% else %}
+    <p class="small mb-1">{% trans "Reading meter notebooks and bills from a photo is not available for your account." %}</p>
+    {% endif %}
+    <p class="small mb-0">{% if assistant.on or assistant.asked %}{% blocktrans count n=assistant.asked %}{{ n }} question asked of the assistant this month{% plural %}{{ n }} questions asked of the assistant this month{% endblocktrans %}{% if assistant.tenants %} <span class="text-muted">{% blocktrans with s=assistant.staff t=assistant.tenants %}(staff {{ s }}, tenants {{ t }}){% endblocktrans %}</span>{% endif %}.{% else %}{% trans "The assistant is off." %}{% endif %}</p>
+    <p class="small text-muted mb-0">{% trans "Photos and questions are read by OpenAI. A scan that fails is not counted." %}</p>
+    <hr>
+    <h2 class="h6 text-muted" id="sender-name">{% trans "SMS sender name" %}</h2>
+    {% with s=org %}
+    {% if s.sms_sender_status == "APPROVED" %}
+      <p class="h5 mb-1">{{ s.sms_sender_id }} <span class="badge text-bg-success">{% trans "Approved" %}</span></p>
+      <p class="small mb-0">{% trans "Tenants see this name on your SMS. Login codes still come from the platform." %}</p>
+    {% else %}
+      <p class="h5 mb-1">{{ platform_sender }}</p>
+      {% if s.sms_sender_status == "REQUESTED" %}
+        <p class="small mb-0">{% blocktrans with n=s.sms_sender_id d=s.sms_sender_requested_at|date:"j M Y" %}You asked for <strong>{{ n }}</strong> on {{ d }}. Registering it with the networks takes 1 to 3 weeks; until then SMS go under the platform name.{% endblocktrans %}</p>
+      {% elif s.sms_sender_status == "REJECTED" %}
+        <p class="small text-danger mb-0">{% blocktrans with n=s.sms_sender_id %}<strong>{{ n }}</strong> was not approved.{% endblocktrans %} {{ s.sms_sender_note }}</p>
+      {% else %}
+        <p class="small mb-0">{% trans "Your SMS go out under the platform name. You can have your own name instead, for a one-off registration fee." %}</p>
+      {% endif %}
+    {% endif %}
+    {% if s.sms_sender_status and s.sms_sender_note and s.sms_sender_status != "REJECTED" %}<p class="small text-muted mb-0">{{ s.sms_sender_note }}</p>{% endif %}
+    {% if can_manage %}
+      {% if s.sms_sender_status != "APPROVED" and s.sms_sender_status != "REQUESTED" %}
+      <form method="post" action="{% url 'subscriptions:sender_name' %}" class="d-flex gap-2 mt-2">{% csrf_token %}
+        <label class="visually-hidden" for="sender-name-input">{% trans "Sender name" %}</label>
+        <input id="sender-name-input" name="name" class="form-control form-control-sm" maxlength="11" required
+               pattern="[A-Za-z0-9]{3,11}" placeholder="{% trans 'e.g. KAMAUHOMES' %}">
+        <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Ask for this name" %}</button>
+      </form>
+      <p class="small text-muted mt-1 mb-0">{% trans "3 to 11 letters or digits. It should be your business or brand name; the networks ask for a letter on your letterhead." %}</p>
+      {% else %}
+      <form method="post" action="{% url 'subscriptions:sender_name' %}" class="mt-2">{% csrf_token %}
+        <input type="hidden" name="action" value="cancel">
+        <button class="btn btn-sm btn-link p-0">{% if s.sms_sender_status == "APPROVED" %}{% trans "Go back to the platform name" %}{% else %}{% trans "Cancel the request" %}{% endif %}</button>
+      </form>
+      {% endif %}
+    {% endif %}
+    {% endwith %}
+</div></div>
 
 <div class="card shadow-sm mb-3"><div class="card-body">
   <h2 class="h6">{% trans "Invoices" %}</h2>

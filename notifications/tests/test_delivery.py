@@ -5,7 +5,6 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import pytest
-from django.core import mail
 
 from accounts.tests.factories import add_member, make_org, make_property
 from core.sms import MemorySmsSender, SmsResult
@@ -119,10 +118,11 @@ def test_no_channel_left_records_the_first_reason(org, tenant):
 
 
 def test_channel_without_text_is_skipped(org, tenant):
-    OrganizationNotificationRule.objects.create(organization=org, type="announcement", channels=[catalog.EMAIL])
+    # The owner statement has no email wording, so EMAIL is an ordinary channel for it.
+    OrganizationNotificationRule.objects.create(organization=org, type="owner_statement", channels=[catalog.EMAIL])
     tenant.email = "w@example.com"
     tenant.save()
-    assert announce(org, tenant).skip_reason == Skip.NO_TEMPLATE
+    assert delivery.notify(org, "owner_statement", tenant=tenant, now=NOON).skip_reason == Skip.NO_TEMPLATE
 
 
 def test_staff_in_app_is_delivered_at_once(owner, org):
@@ -219,7 +219,7 @@ class _Flaky:
     name = "flaky"
     calls = 0
 
-    def send(self, to, body):
+    def send(self, to, body, sender_id=""):
         _Flaky.calls += 1
         raise ConnectionError("provider down")
 
@@ -242,7 +242,7 @@ def test_failures_retry_with_backoff_then_fail(settings, org, tenant):
 class _Priced:
     name = "priced"
 
-    def send(self, to, body):
+    def send(self, to, body, sender_id=""):
         return SmsResult(ok=True, provider="priced", provider_id="ATX-1", cost=Decimal("0.8000"))
 
 
@@ -252,17 +252,6 @@ def test_provider_id_and_cost_are_kept(settings, org, tenant):
     delivery.send_one(m.pk, NOON)
     m.refresh_from_db()
     assert (m.status, m.provider_id, m.cost, m.sent_at) == (Status.SENT, "ATX-1", Decimal("0.8000"), NOON)
-
-
-def test_email_channel_sends_mail(org, tenant):
-    OrganizationNotificationRule.objects.create(organization=org, type="announcement", channels=[catalog.EMAIL])
-    MessageTemplate.objects.create(organization=org, type="announcement", channel=catalog.EMAIL, language="en",
-                                   body="{text}")
-    tenant.email = "w@example.com"
-    tenant.save()
-    m = announce(org, tenant)
-    assert delivery.send_one(m.pk, NOON) == Status.SENT
-    assert mail.outbox[0].to == ["w@example.com"] and mail.outbox[0].body == "Water is off on Friday."
 
 
 def test_a_sent_message_is_never_sent_again(org, tenant, outbox):

@@ -176,11 +176,15 @@ def test_lease_actions_through_page(client, owner, unit, tenant):
     r = client.get(detail(lease))
     assert r.context["can_renew"] and r.context["can_transfer"] and r.context["end_form"]
 
-    client.post(detail(lease), {"action": "notice", "given_on": today.isoformat()})
+    client.post(detail(lease), {"action": "notice", "given_on": today.isoformat(), "given_by": "TENANT",
+                                "via": "PHONE", "reason": "Moving to Nakuru"})
     lease.refresh_from_db()
-    assert lease.notice_given_on == today
-    assert client.get(detail(lease)).status_code == 200
-    client.post(detail(lease), {"action": "withdraw_notice"})
+    assert lease.notice_given_on == today and lease.move_out_on == today + datetime.timedelta(days=30)
+    r = client.get(detail(lease))
+    assert r.context["open_notice"].via == "PHONE" and b"Moving to Nakuru" in r.content
+    client.post(detail(lease), {"action": "withdraw_notice", "reason": "Tenant stays"})
+    lease.refresh_from_db()
+    assert lease.notice_given_on is None and lease.notices.get().withdraw_reason == "Tenant stays"
 
     r = client.post(detail(lease), {"action": "renew", "end_date": "", "start_date": "", "rent": ""})
     renewal = Lease.objects.get(previous_lease=lease)
@@ -219,3 +223,22 @@ def test_agent_drafts_but_cannot_activate(client, owner, unit, lease):
     assert r.context["can_edit_draft"] and not r.context["can_activate"]
     assert client.post(detail(lease), {"action": "activate"}).status_code == 403
     assert Lease.objects.get(pk=lease.pk).is_draft
+
+
+def test_staff_pages_use_the_organizations_own_words(client, owner, unit, tenant, lease):
+    pages = [reverse("leases:list"), detail(lease), reverse("leases:create", args=[unit.public_id]),
+             reverse("properties:unit", args=[unit.public_id]), reverse("tenants:detail", args=[tenant.public_id]),
+             reverse("properties:detail", args=[unit.property.public_id])]
+    assert "Add property" in client.get(reverse("properties:list")).content.decode()
+    assert ">Leases<" in client.get(reverse("leases:list")).content.decode()
+
+    org = owner.organization
+    org.org_type = org.Type.ESTATE
+    org.save(update_fields=["org_type"])
+    for url in pages:
+        response = client.get(url)
+        assert response.status_code == 200, url
+    page = client.get(reverse("leases:list")).content.decode()
+    assert "Memberships" in page and ">Leases<" not in page
+    assert "Member" in client.get(reverse("tenants:detail", args=[tenant.public_id])).content.decode()
+    assert "Add house" in client.get(reverse("properties:detail", args=[unit.property.public_id])).content.decode()

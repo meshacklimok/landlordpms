@@ -1,4 +1,4 @@
-"""Metered water (D-057). Views stay thin; the rules live here."""
+"""Metered water (D-057) and electricity (D-070). Views stay thin; the rules live here."""
 
 import datetime
 from dataclasses import dataclass
@@ -15,20 +15,22 @@ from accounts.models import Membership
 from accounts.permissions import can, require, visible_properties
 from audit import services as audit
 from billing import invoicing
-from core.money import ZERO, round_money
+from core.money import ZERO
 from inspections import photos
 from leases.models import Lease
 from properties.models import Property, Unit
 
-from .models import Meter, MeterCharge, MeterReading, MeterUnit
+from . import split as splitting
+from .models import Meter, MeterCharge, MeterReading, MeterUnit, OfflineRound
 
 Flag = MeterReading.Flag
 Status = MeterReading.Status
 
 LONG_GAP_DAYS = 45
-# "Much higher than usual": over HIGH_TIMES the usual use for the days, and at least HIGH_MIN_M3 over it.
+# "Much higher than usual": over HIGH_TIMES the usual use for the days, and at least HIGH_MIN over it
+# (5 m³ of water, 50 kWh of electricity; D-070 item 4).
 HIGH_TIMES = 3
-HIGH_MIN_M3 = Decimal("5")
+HIGH_MIN = {"WATER": Decimal("5"), "ELECTRICITY": Decimal("50")}
 HISTORY = 3
 M3 = Decimal("0.001")
 MAX_VALUE = Decimal("999999999.999")
@@ -85,14 +87,22 @@ def _clean_amount(value, field) -> Decimal:
     return amount.quantize(Decimal("0.01"))
 
 
-def _clean_meter(prop: Property, *, label, serial, kind, split, rate, minimum_charge, units) -> tuple[dict, list]:
+def _clean_meter(prop: Property, *, label, serial, kind, split, rate, minimum_charge, units,
+                 utility=Meter.Utility.WATER, payer=Meter.Payer.TENANTS,
+                 vacant_share=Meter.VacantShare.OCCUPIED) -> tuple[dict, list]:
     label = (label or "").strip()[:60]
     if not label:
         raise ValidationError({"label": _("Give the meter a label, e.g. A1 water.")})
+    if utility not in Meter.Utility.values:
+        raise ValidationError({"utility": _("Choose water or electricity.")})
     if kind not in Meter.Kind.values:
         raise ValidationError({"kind": _("Choose postpaid or prepaid.")})
     if split not in Meter.Split.values:
         raise ValidationError({"split": _("Choose how a shared meter is split.")})
+    if payer not in Meter.Payer.values:
+        raise ValidationError({"payer": _("Choose who pays.")})
+    if vacant_share not in Meter.VacantShare.values:
+        raise ValidationError({"vacant_share": _("Choose who pays the empty rooms' share.")})
     served = []
     for unit, weight in units:
         if unit.property_id != prop.pk:
@@ -106,10 +116,12 @@ def _clean_meter(prop: Property, *, label, serial, kind, split, rate, minimum_ch
         served.append((unit, weight.quantize(Decimal("0.01"))))
     if not served:
         raise ValidationError({"units": _("Choose the unit or units this meter serves.")})
-    fields = {"label": label, "serial": (serial or "").strip()[:40], "kind": kind, "split": split,
+    fields = {"utility": utility, "label": label, "serial": (serial or "").strip()[:40], "kind": kind, "split": split,
+              "payer": payer, "vacant_share": vacant_share,
               "rate": _clean_amount(rate, "rate"), "minimum_charge": _clean_amount(minimum_charge, "minimum_charge")}
     if kind == Meter.Kind.POSTPAID and fields["rate"] <= 0:
-        raise ValidationError({"rate": _("Enter the price per m³.")})
+        raise ValidationError({"rate": _("Enter the price per kWh.") if utility == Meter.Utility.ELECTRICITY
+                               else _("Enter the price per m³.")})
     return fields, served
 
 
@@ -208,7 +220,7 @@ def covering_leases(units, start: datetime.date, end: datetime.date):
 
 
 def usual_daily_use(meter: Meter, up_to: datetime.date) -> Decimal | None:
-    """Average m³ a day over the last approved periods ending by `up_to`, or None without history."""
+    """Average use a day (m³ or kWh) over the last approved periods ending by `up_to`, or None without history."""
     periods = list(meter.readings.filter(status=Status.APPROVED, is_baseline=False, read_on__lte=up_to)
                    .select_related("previous").order_by("-read_on")[:HISTORY])
     used = sum((r.usage for r in periods), Decimal(0))
@@ -233,7 +245,7 @@ def flags_for(meter: Meter, previous: MeterReading | None, read_on: datetime.dat
         daily = usual_daily_use(meter, previous.read_on)
         if daily is not None:
             expected = daily * days
-            if usage > expected * HIGH_TIMES and usage - expected >= HIGH_MIN_M3:
+            if usage > expected * HIGH_TIMES and usage - expected >= HIGH_MIN[meter.utility]:
                 flags.append(Flag.HIGH)
     if days > LONG_GAP_DAYS:
         flags.append(Flag.LONG_GAP)
@@ -242,8 +254,12 @@ def flags_for(meter: Meter, previous: MeterReading | None, read_on: datetime.dat
 
 @transaction.atomic
 def record_reading(actor: Membership, meter: Meter, *, read_on: datetime.date, value, photo=None, note="",
-                   replaced: bool = False, today: datetime.date | None = None, request=None) -> MeterReading:
-    """Records a reading for approval. The photo is optional (D-057)."""
+                   replaced: bool = False, units_used=None, today: datetime.date | None = None,
+                   request=None) -> MeterReading:
+    """Records a reading for approval. The photo is optional (D-057).
+
+    `units_used` stands in for `value` when only the use was written down: the reading is the last one plus
+    the units, worked out here under the meter's lock so a reading recorded meanwhile cannot throw it off."""
     _check(actor, meter.property, "meters.record")
     today = today or timezone.localdate()
     meter = Meter.all_objects.select_for_update().get(pk=meter.pk)
@@ -253,9 +269,16 @@ def record_reading(actor: Membership, meter: Meter, *, read_on: datetime.date, v
         raise ValidationError({"read_on": _("Enter the reading date.")})
     if read_on > today:
         raise ValidationError({"read_on": _("The reading date cannot be in the future.")})
-    value = parse_value(value)
     note = (note or "").strip()[:300]
     previous = latest_reading(meter)
+    if units_used is not None:
+        if previous is None or replaced:
+            raise ValidationError({"value": _("There is no earlier reading to add the units to. "
+                                              "Type the number on the meter.")})
+        value = parse_value(previous.value + parse_value(units_used))
+        note = f"{note[:260]} · {_('Typed as units used.')}" if note else _("Typed as units used.")
+    else:
+        value = parse_value(value)
     if previous is not None and read_on <= previous.read_on:
         raise ValidationError({"read_on": _("The last reading was on %(day)s. Date this one after it.")
                                % {"day": previous.read_on.strftime("%d %b %Y")}})
@@ -287,6 +310,7 @@ class RoundEntry:
     photo: object = None
     note: str = ""
     replaced: bool = False
+    units_used: str | None = None
 
 
 def record_round(actor: Membership, read_on: datetime.date, entries: list[RoundEntry], *, today=None,
@@ -300,7 +324,7 @@ def record_round(actor: Membership, read_on: datetime.date, entries: list[RoundE
                 with transaction.atomic():
                     saved.append(record_reading(actor, entry.meter, read_on=read_on, value=entry.value,
                                                 photo=entry.photo, note=entry.note, replaced=entry.replaced,
-                                                today=today, request=request))
+                                                units_used=entry.units_used, today=today, request=request))
             except ValidationError as exc:
                 errors[entry.meter.pk] = exc.messages
         if errors:
@@ -314,11 +338,11 @@ def record_round(actor: Membership, read_on: datetime.date, entries: list[RoundE
 # ---------------------------------------------------------------------------
 
 
-def _fmt_m3(value: Decimal) -> str:
+def fmt_value(value: Decimal) -> str:
     return f"{value:,.3f}"
 
 
-def _fmt_weight(value: Decimal) -> str:
+def fmt_weight(value: Decimal) -> str:
     """2.00 -> "2", 1.50 -> "1.5"."""
     return f"{Decimal(value).normalize():f}"
 
@@ -332,59 +356,54 @@ def billing_month_for(lease: Lease, read_on: datetime.date) -> datetime.date:
     return month
 
 
-def charges_for(reading: MeterReading, *, rate: Decimal | None = None,
-                minimum: Decimal | None = None) -> list[MeterCharge]:
-    """The charges approving the reading makes, unsaved. None for a baseline or a prepaid meter."""
+def billable(reading: MeterReading) -> bool:
+    """Whether the reading measured any use to divide: not a baseline, not prepaid, and more than zero."""
+    return (not reading.is_baseline and not reading.meter.is_prepaid and reading.previous is not None
+            and (reading.usage or 0) > 0)
+
+
+def charges_for(reading: MeterReading, *, rate: Decimal | None = None, minimum: Decimal | None = None,
+                split: str | None = None, vacant_share: str | None = None, payer: str | None = None,
+                bill_total: Decimal | None = None) -> list[MeterCharge]:
+    """The charges approving the reading makes, unsaved. None for a baseline, a prepaid meter, or a meter the
+    landlord pays. The rest default to the meter's settings (D-143)."""
     meter = reading.meter
-    if reading.is_baseline or meter.is_prepaid or reading.previous is None:
-        return []
-    usage = reading.usage
-    if usage is None or usage <= 0:
+    if not billable(reading) or (payer or meter.payer) == Meter.Payer.LANDLORD:
         return []
     rate = meter.rate if rate is None else rate
-    minimum = meter.minimum_charge if minimum is None else minimum
-    start, end = reading.previous.read_on + datetime.timedelta(days=1), reading.read_on
-    days = (end - start).days + 1
-    total = usage * rate
-    served = list(meter.served.select_related("unit"))
-    shared = len(served) > 1
-    weights = {mu.unit_id: (mu.weight if meter.split == Meter.Split.WEIGHTED else Decimal(1)) for mu in served}
-    weight_sum = sum(weights.values())
-    head = _("Water %(label)s: %(prev)s → %(now)s m³ = %(use)s m³ × %(rate)s") % {
-        "label": meter.label, "prev": _fmt_m3(reading.previous.value), "now": _fmt_m3(reading.value),
-        "use": _fmt_m3(usage), "rate": f"{rate:,.2f}"}
+    division = splitting.divide(reading, split=split, vacant_share=vacant_share, rate=rate, minimum=minimum,
+                                bill_total=bill_total)
+    if not division.available:
+        raise ValidationError(division.reason)
     charges = []
-    for mu in served:
-        share = total * weights[mu.unit_id] / weight_sum
-        at_minimum = minimum > 0 and share < minimum
-        if at_minimum:
-            share = minimum
-        leases = covering_leases([mu.unit], start, end).select_related("organization").order_by("start_date")
-        for lease in leases:
-            s = max(start, lease.start_date)
-            e = min(end, lease.effective_end) if lease.effective_end else end
-            lease_days = (e - s).days + 1
-            amount = round_money(share * lease_days / days)
-            if amount <= 0:
+    for room in division.rooms:
+        for part in room.parts:
+            if part.amount <= 0:
                 continue
-            parts = [head]
-            if shared:
-                parts.append(_("unit %(code)s share %(w)s of %(total)s") % {
-                    "code": mu.unit.code, "w": _fmt_weight(weights[mu.unit_id]), "total": _fmt_weight(weight_sum)})
-            if at_minimum:
-                parts.append(_("minimum charge"))
-            if lease_days != days:
-                parts.append(_("%(n)s of %(d)s days") % {"n": lease_days, "d": days})
-            text = " · ".join(parts) + f" ({s:%d %b} – {e:%d %b %Y})"
-            charges.append(MeterCharge(organization=reading.organization, reading=reading, lease=lease, unit=mu.unit,
-                                       service_start=s, service_end=e, billing_month=billing_month_for(lease, end),
-                                       amount=amount, description=text[:200]))
+            charges.append(MeterCharge(
+                organization=reading.organization, reading=reading, lease=part.lease, unit=room.unit,
+                service_start=part.start, service_end=part.end,
+                billing_month=billing_month_for(part.lease, reading.read_on), amount=part.amount,
+                description=splitting.describe(reading, division, room, part, rate=rate, bill_total=bill_total)))
     return charges
 
 
 def estimate(reading: MeterReading) -> Decimal:
-    """What approving the reading would bill in total, at today's rate."""
-    return sum((c.amount for c in charges_for(reading)), ZERO)
+    """What approving the reading would bill in total, at today's rate and the meter's split."""
+    try:
+        return sum((c.amount for c in charges_for(reading)), ZERO)
+    except ValidationError:
+        return ZERO
+
+
+def clean_bill_total(value) -> Decimal | None:
+    """The utility company's bill typed on approval, or None when left empty."""
+    if value in (None, ""):
+        return None
+    amount = _clean_amount(value, "bill_total")
+    if amount <= 0:
+        raise ValidationError({"bill_total": _("Enter the amount on the bill, or leave it empty.")})
+    return amount
 
 
 # ---------------------------------------------------------------------------
@@ -404,8 +423,17 @@ def can_approve(membership: Membership, reading: MeterReading) -> bool:
 
 
 @transaction.atomic
-def approve(actor: Membership, reading: MeterReading, *, note="", today=None, request=None) -> list[MeterCharge]:
+def approve(actor: Membership, reading: MeterReading, *, note="", split: str | None = None,
+            vacant_share: str | None = None, bill_total=None, today=None, request=None) -> list[MeterCharge]:
+    """Approves the reading and makes its charges. A shared meter is divided the meter's way unless another
+    `split` or `vacant_share` was picked; `bill_total` divides the utility company's bill instead of use × rate.
+    The choice is kept on the reading (D-143)."""
     _check(actor, reading.meter.property, "meters.approve")
+    if split not in (None, "") and split not in Meter.Split.values:
+        raise ValidationError(_("Choose how the meter is divided."))
+    if vacant_share not in (None, "") and vacant_share not in Meter.VacantShare.values:
+        raise ValidationError(_("Choose who pays the empty rooms' share."))
+    bill_total = clean_bill_total(bill_total)
     reading = _lock(reading)
     if reading.status != Status.SUBMITTED:
         raise ValidationError(_("This reading is not waiting for approval."))
@@ -419,16 +447,28 @@ def approve(actor: Membership, reading: MeterReading, *, note="", today=None, re
     if reading.flags and not note:
         raise ValidationError({"note": _("This reading is flagged. Say why it is right before approving it.")})
     meter = reading.meter
+    if bill_total is not None and not billable(reading):
+        raise ValidationError({"bill_total": _("This reading has no use to divide a bill over.")})
     reading.rate, reading.minimum_charge = meter.rate, meter.minimum_charge
+    shared = meter.served.count() > 1
+    reading.split = (split or meter.split) if shared else ""
+    reading.vacant_share = (vacant_share or meter.vacant_share) if shared else ""
+    reading.payer = meter.payer
+    reading.bill_total = bill_total
     reading.status = Status.APPROVED
     reading.approved_at = timezone.now()
     reading.approved_by = actor.user
     reading.approval_note = note
     reading.save()
-    charges = MeterCharge.objects.bulk_create(charges_for(reading, rate=reading.rate, minimum=reading.minimum_charge))
+    charges = MeterCharge.objects.bulk_create(charges_for(
+        reading, rate=reading.rate, minimum=reading.minimum_charge, split=reading.split or None,
+        vacant_share=reading.vacant_share or None, payer=reading.payer, bill_total=bill_total))
     _audit("meters.reading_approve", actor, reading, request, {
         "status": [Status.SUBMITTED, Status.APPROVED], "rate": [None, str(reading.rate)],
         "charged": [None, str(sum((c.amount for c in charges), ZERO))],
+        **({"split": [None, reading.split], "vacant_share": [None, reading.vacant_share]} if shared else {}),
+        **({"payer": [None, reading.payer]} if meter.landlord_pays else {}),
+        **({"bill_total": [None, str(bill_total)]} if bill_total is not None else {}),
         **({"note": [None, note]} if note else {})})
     for lease_id in sorted({c.lease_id for c in charges}):
         invoicing.bill_meter_charges(reading.organization, today=today, lease=Lease.all_objects.get(pk=lease_id),
@@ -490,11 +530,11 @@ def undo_approval(actor: Membership, reading: MeterReading, *, request=None) -> 
         raise ValidationError(_("A later reading was approved after this one. Undo that one first."))
     live = reading.charges.filter(cancelled_at__isnull=True, lines__is_void=False)
     if live.exists():
-        raise ValidationError(_("Its water charge is on an invoice. Void the invoice first."))
+        raise ValidationError(_("Its charge is on an invoice. Void the invoice first."))
     cancelled = reading.charges.filter(cancelled_at__isnull=True).update(cancelled_at=timezone.now())
     reading.status = Status.SUBMITTED
-    reading.approved_at = reading.approved_by = reading.rate = reading.minimum_charge = None
-    reading.approval_note = ""
+    reading.approved_at = reading.approved_by = reading.rate = reading.minimum_charge = reading.bill_total = None
+    reading.approval_note = reading.split = reading.vacant_share = reading.payer = ""
     reading.save()
     _audit("meters.reading_unapprove", actor, reading, request,
            {"status": [Status.APPROVED, Status.SUBMITTED], "charges_cancelled": [None, cancelled]})
@@ -503,3 +543,30 @@ def undo_approval(actor: Membership, reading: MeterReading, *, request=None) -> 
 
 def units_for(prop: Property):
     return Unit.objects.filter(property=prop).order_by("code")
+
+
+# ---------------------------------------------------------------------------
+# Rounds typed offline (D-088)
+# ---------------------------------------------------------------------------
+
+
+def record_offline_round(actor: Membership, prop: Property, *, key: str, read_on: datetime.date,
+                         entries: list[RoundEntry], typed_at=None, today=None,
+                         request=None) -> tuple[list[MeterReading] | None, dict[int, list[str]]]:
+    """Records a round kept on a phone. Returns (readings, errors); readings is None when the round was
+    already recorded, so a second send does nothing (item 3)."""
+    with transaction.atomic():
+        try:
+            with transaction.atomic():
+                OfflineRound.objects.create(organization=actor.organization, user=actor.user, key=key,
+                                            property=prop, typed_at=typed_at, readings=len(entries))
+        except IntegrityError:
+            return None, {}
+        saved, errors = record_round(actor, read_on, entries, today=today, request=request)
+        if errors:
+            transaction.set_rollback(True)
+            return [], errors
+        audit.record("meters.offline_round", actor=actor.user, organization=actor.organization, obj=prop,
+                     request=request, changes={"round": [None, key], "readings": [None, len(saved)],
+                                               "typed_at": [None, typed_at.isoformat() if typed_at else None]})
+    return saved, {}

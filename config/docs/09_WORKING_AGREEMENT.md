@@ -27,6 +27,7 @@
 
 ## Testing
 - `pytest` with factories. Aim for high coverage on billing, payments, mpesa, permissions.
+- One test run per test database at a time: a second run stops with a message. `TEST_DB_SUFFIX=2 pytest` runs it against its own database (`test_landlordpms_2`).
 - Every bug fix comes with a regression test.
 - CI must be green before merging.
 

@@ -100,11 +100,12 @@ class InvoicedFilter(admin.SimpleListFilter):
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ["name", "org_type", "status", "member_count", "property_count", "time_to_first_invoice",
                     "created_at", "archived_at"]
-    list_filter = ["status", "org_type", InvoicedFilter]
-    search_fields = ["name", "kra_pin", "billing_phone", "billing_email"]
-    readonly_fields = ["public_id", "created_at", "updated_at", "created_by", "archived_at", "archived_by"]
+    list_filter = ["status", "org_type", InvoicedFilter, "sms_sender_status"]
+    search_fields = ["name", "kra_pin", "billing_phone", "billing_email", "sms_sender_id"]
+    readonly_fields = ["public_id", "created_at", "updated_at", "created_by", "archived_at", "archived_by",
+                       "sms_sender_requested_at", "sms_sender_decided_at"]
     inlines = [MembershipInline, BranchInline]
-    actions = ["freeze", "unfreeze"]
+    actions = ["freeze", "unfreeze", "approve_sender_ids", "reject_sender_ids"]
 
     def get_queryset(self, request):
         from billing.models import Invoice
@@ -141,6 +142,28 @@ class OrganizationAdmin(admin.ModelAdmin):
             org.status = Organization.Status.FROZEN
             org.save(update_fields=["status", "updated_at"])
             record("organization.freeze", organization=org, obj=org, request=request)
+
+    @admin.action(description="Approve SMS sender names (registered with the networks)")
+    def approve_sender_ids(self, request, queryset):
+        self._decide_sender_ids(request, queryset, approve=True)
+
+    @admin.action(description="Reject SMS sender names (write the reason in the note first)")
+    def reject_sender_ids(self, request, queryset):
+        self._decide_sender_ids(request, queryset, approve=False)
+
+    def _decide_sender_ids(self, request, queryset, approve: bool):
+        from django.contrib import messages
+
+        from . import sender_ids
+
+        done = 0
+        for org in queryset.exclude(sms_sender_id=""):
+            sender_ids.decide(request.user, org, approve, org.sms_sender_note, request=request)
+            done += 1
+        skipped = queryset.count() - done
+        self.message_user(request, f"{'Approved' if approve else 'Rejected'} {done}; "
+                                   f"{skipped} had not asked for a name.",
+                          messages.SUCCESS if done else messages.WARNING)
 
     @admin.action(description="Unfreeze (set active)")
     def unfreeze(self, request, queryset):

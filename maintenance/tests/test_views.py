@@ -283,3 +283,33 @@ def test_a_tenant_sees_only_their_own_repairs(client, owner, prop, lease):
 def test_staff_without_a_portal_account_get_404(client, owner, lease):
     client.force_login(owner.user)
     assert client.get(reverse("portal:repair_create", args=[lease.public_id])).status_code == 404
+
+
+def test_editing_what_is_wrong(client, owner, org, prop):
+    from audit.models import AuditEvent
+
+    req = report(owner, prop, title="Sink leaks")
+    login(client, owner)
+    assert client.get(detail(req)).context["details_form"]
+    client.post(detail(req), {"action": "details", "title": "Kitchen tap leaks", "description": "Under the sink",
+                              "kind": "PLUMBING"})
+    req.refresh_from_db()
+    assert (req.title, req.description, req.kind) == ("Kitchen tap leaks", "Under the sink", "PLUMBING")
+    assert req.updates.filter(kind="NOTE", text__startswith="Changed").exists()
+    assert AuditEvent.objects.get(action="maintenance.edit").changes["title"] == ["Sink leaks", "Kitchen tap leaks"]
+    bad = client.post(detail(req), {"action": "details", "title": " ", "kind": "PLUMBING"})
+    assert bad.status_code == 200 and bad.context["details_form"].errors["title"] and bad.context["details_open"]
+    # A closed or cancelled request is history.
+    services.act(owner, req, "cancel", note="Duplicate")
+    req.refresh_from_db()
+    assert "details_form" not in client.get(detail(req)).context
+
+
+def test_editing_needs_the_update_capability(client, org, prop):
+    caretaker = add_member(org, "caretaker", properties=[prop])
+    req = report(caretaker, prop)
+    login(client, caretaker)
+    assert "details_form" not in client.get(detail(req)).context
+    client.post(detail(req), {"action": "details", "title": "Changed", "kind": "OTHER"})
+    req.refresh_from_db()
+    assert req.title == "Kitchen sink is leaking"

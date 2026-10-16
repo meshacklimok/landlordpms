@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Settings" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4">{% trans "Settings" %}</h1>
+  <p class="small text-muted">{% trans "Your organization's details and how rent is billed. Changes apply to letters and invoices made from now on; ones already issued do not change." %}</p>
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+
+  {% if pages %}
+  <h2 class="h6">{% trans "Other settings" %}</h2>
+  <div class="list-group shadow-sm">
+    {% for page in pages %}
+    <a href="{{ page.url }}" class="list-group-item list-group-item-action">
+      <div class="fw-semibold">{{ page.label }}</div>
+      <div class="small text-muted">{{ page.hint }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

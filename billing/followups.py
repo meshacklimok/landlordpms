@@ -116,12 +116,16 @@ class CallList:
         return len(self.to_call) + len(self.promised) + len(self.done_today)
 
 
-def call_list(membership: Membership, today: datetime.date, *, property=None, grade: str = "") -> CallList:
-    """Everyone with money overdue, sorted into who to call, who promised and who was reached today."""
+def call_list(membership: Membership, today: datetime.date, *, property=None, grade: str = "",
+              arrears_rows: list | None = None) -> CallList:
+    """Everyone with money overdue, sorted into who to call, who promised and who was reached today.
+
+    `arrears_rows` is `selectors.arrears(membership, today)` when the caller already has it.
+    """
     out = CallList()
     if not can(membership, "invoices.view"):
         return out
-    rows = selectors.arrears(membership, today)
+    rows = selectors.arrears(membership, today) if arrears_rows is None else arrears_rows
     if property is not None:
         rows = [r for r in rows if r.lease.unit.property_id == property.pk]
     if not rows:

@@ -19,7 +19,7 @@ from notifications.catalog import SMS
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
-from .models import PortalInvitation, TenantAccount
+from .models import PortalInvitation, TenantAccount, UssdPin
 
 INVITATION_TTL = timedelta(days=7)
 
@@ -34,6 +34,21 @@ def _check_tenant(actor: Membership, tenant: Tenant) -> None:
         raise PermissionDenied(_("That record belongs to another organization."))
     if not visible_tenants(actor, Tenant.all_objects.filter(pk=tenant.pk)).exists():
         raise PermissionDenied(_("You cannot see this tenant."))
+
+
+def ussd_pin(tenant: Tenant) -> UssdPin | None:
+    """The USSD PIN of the tenant's main phone, if one is set (D-086)."""
+    return UssdPin.objects.filter(phone=tenant.phone).first() if tenant.phone else None
+
+
+def remove_ussd_pin(actor: Membership, tenant: Tenant, *, request=None) -> bool:
+    """For a forgotten PIN (D-086 item 6). The PIN belongs to the phone, so it goes for every organization."""
+    _check_tenant(actor, tenant)
+    deleted, _rows = UssdPin.objects.filter(phone=tenant.phone).delete() if tenant.phone else (0, {})
+    if deleted:
+        audit.record("portal.ussd_pin_remove", actor=actor.user, organization=actor.organization, obj=tenant,
+                     request=request)
+    return bool(deleted)
 
 
 def live_account(tenant: Tenant) -> TenantAccount | None:
@@ -80,7 +95,7 @@ def send_invitation(invitation: PortalInvitation, accept_url: str) -> bool:
     """Whether the SMS went out."""
     return send_sms(invitation.phone,
              _("%(org)s invites you to see your rent, statements and receipts online. Open: %(url)s")
-             % {"org": invitation.organization.name, "url": accept_url}).ok
+             % {"org": invitation.organization.name, "url": accept_url}, org=invitation.organization).ok
 
 
 def get_invitation(token: str) -> PortalInvitation | None:
@@ -95,7 +110,7 @@ def accept_invitation(token: str, user: User, *, request=None) -> TenantAccount:
     invitation = get_invitation(token)
     if invitation is None or not invitation.is_pending:
         raise ValidationError(_("This invitation is invalid or has expired. Ask your landlord for a new one."))
-    invitation = PortalInvitation.objects.select_for_update().select_related("tenant", "organization").get(
+    invitation = PortalInvitation.objects.select_for_update(of=("self",)).select_related("tenant", "organization").get(
         pk=invitation.pk)
     if not invitation.is_pending:
         raise ValidationError(_("This invitation is invalid or has expired. Ask your landlord for a new one."))

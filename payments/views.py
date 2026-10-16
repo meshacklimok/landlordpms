@@ -19,7 +19,7 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from billing.invoicing import lease_balance
-from core import ratelimit
+from core import charts, ratelimit
 from core.money import ZERO
 from core.net import client_ip
 from leases.models import Lease
@@ -64,8 +64,12 @@ class PaymentListView(CapabilityRequiredMixin, View):
         filters = form.filters()
         page = Paginator(qs.order_by("-paid_at", "-pk"), PAGE_SIZE).get_page(request.GET.get("page"))
         today = timezone.localdate()
+        currency = m.organization.currency
+        received = selectors.received(base, currency, today, date_from=filters.get("date_from"),
+                                      date_to=filters.get("date_to"), other_label=_("Other properties"))
         return render(request, self.template_name, {
-            "page": page, "form": form, "filters": filters,
+            "page": page, "form": form, "filters": filters, "received": received,
+            "specs": _received_charts(received) if received else None,
             "status": filters.get("status", ""),
             "filtered": bool(form.without_status()),
             "totals": selectors.totals_by_state(base),
@@ -77,6 +81,21 @@ class PaymentListView(CapabilityRequiredMixin, View):
             "can_export": can(m, "reports.export"),
             "show_property": form.fields["property"].queryset.count() > 1,
         })
+
+
+def _received_charts(received) -> dict:
+    """The charts above the list (D-114): money over time, by method and by property."""
+    cur = received.currency
+    return {
+        "periods": charts.chart(
+            "bar", [f"{d.day} {d:%b}" if received.daily else f"{d:%b %Y}" for d, _a, _n in received.periods],
+            [charts.series(_("Money received"), [a for _d, a, _n in received.periods], "1")], currency=cur),
+        "methods": charts.doughnut(_("Money received"), [(label, a) for label, a, _n in received.methods],
+                                   charts.SERIES, currency=cur),
+        "places": charts.chart("bar", [name for name, _a in received.places],
+                               [charts.series(_("Money received"), [a for _n, a in received.places], "1")],
+                               currency=cur, horizontal=True) if len(received.places) > 1 else None,
+    }
 
 
 class PaymentExportView(CapabilityRequiredMixin, View):
@@ -256,6 +275,8 @@ class PaymentDetailView(CapabilityRequiredMixin, View):
             "duplicates": selectors.duplicates_of(payment).filter(
                 pk__in=selectors.visible_payments(m).values("pk")).select_related("lease__unit")[:5],
             "can_confirm": can_confirm, "can_reverse": can_reverse,
+            # Send the receipt to the tenant in words staff choose (D-125).
+            "can_send": hasattr(payment, "receipt") and can(m, "messages.send", prop),
             "code_flag": code_flag(payment) if payment.method == Payment.Method.MPESA else None,
             "code_check": getattr(payment, "code_check", None),
             "can_record": can(m, "payments.record", prop) and payment.lease.status != Lease.Status.DRAFT

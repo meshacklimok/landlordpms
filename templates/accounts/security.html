@@ -11,8 +11,8 @@
   <ul class="list-unstyled font-monospace row row-cols-2 g-1 mb-2" id="recovery-codes">
     {% for c in codes %}<li class="col">{{ c }}</li>{% endfor %}
   </ul>
-  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard && navigator.clipboard.writeText(document.getElementById('recovery-codes').innerText)">{% trans "Copy" %}</button>
-  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.print()">{% trans "Print" %}</button>
+  <button type="button" class="btn btn-sm btn-outline-secondary" data-copy="#recovery-codes">{% trans "Copy" %}</button>
+  <button type="button" class="btn btn-sm btn-outline-secondary" data-print>{% trans "Print" %}</button>
 </div></div>
 {% endif %}
 
@@ -21,6 +21,7 @@
     {% if enabled %}<span class="badge text-bg-success">{% trans "On" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Off" %}</span>{% endif %}</h2>
   <p class="small text-muted">{% trans "After your password, you also enter a code from an authenticator app on your phone, such as Google Authenticator or Microsoft Authenticator. Someone who learns your password still cannot log in." %}</p>
   {% if required and not enabled %}<div class="alert alert-warning small">{% trans "Platform Admins must use two-step login to open the admin." %}</div>{% endif %}
+  {% if required_by %}<div class="alert alert-{{ enabled|yesno:'info,warning' }} small">{% blocktrans with orgs=required_by|join:", " %}{{ orgs }} requires two-step login for all staff.{% endblocktrans %}{% if enabled %} {% trans "It stays on while you are a member." %}{% else %} {% trans "Set it up to carry on working there." %}{% endif %}</div>{% endif %}
 
   {% if enabled %}
     <p class="small mb-0">{% blocktrans count n=left %}{{ n }} recovery code left.{% plural %}{{ n }} recovery codes left.{% endblocktrans %}</p>
@@ -53,6 +54,7 @@
   </form>
 </div></div>
 
+{% if not required_by %}
 <div class="card shadow-sm mb-3"><div class="card-body">
   <h2 class="h6">{% trans "Switch off two-step login" %}</h2>
   <p class="small text-muted">{% trans "Your other devices will be logged out." %}</p>
@@ -61,6 +63,7 @@
     <button class="btn btn-outline-danger">{% trans "Switch off" %}</button>
   </form>
 </div></div>
+{% endif %}
 {% endif %}
 </div>
 {% endblock %}

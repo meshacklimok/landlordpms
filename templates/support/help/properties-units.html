@@ -7,6 +7,14 @@
     M-Pesa account number so the payment is matched to them.</li>
   <li>A property can have an <strong>owner</strong> when you manage it for someone. Owners get a monthly statement
     and you can record what you pay them.</li>
+  <li><strong>Management fee.</strong> Set a percentage of rent collected, a fixed amount a month, or both, on the
+    property. The fixed amount is charged every month you manage the property, even when no rent comes in.
+    <a href="{% url 'reports:fees' %}">Management fees</a> under Reports shows what you earned over 12 months.</li>
+  <li><strong>Owner portal.</strong> Open the owner under <a href="{% url 'properties:owners' %}">Owners</a> and
+    invite them. They get an SMS (and an email if you have their address), log in with their phone, and see their
+    statements, what you paid them and their properties. Tenant names are not shown to them.</li>
+  <li><strong>Joint owners.</strong> On the property page, open <em>Owners and shares</em> and list each owner with their
+    share; the shares must add up to 100%. Each owner's statement shows the whole property and their share of what is due.</li>
   <li>Archive a property or unit you no longer let. Its history stays.</li>
   <li>Your plan sets how many units you can have; see <a href="{% url 'support:help_topic' 'subscription' %}">Subscription</a>.</li>
 </ul>

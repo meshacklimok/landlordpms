@@ -1,0 +1,143 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block title %}{% blocktrans with m=month|date:"F Y" %}Water · {{ m }}{% endblocktrans %} · {{ property.name }}{% endblock %}
+{% block content %}
+<div class="page-head align-items-end">
+  <div>
+    <div class="page-eyebrow"><a href="{% url 'meters:water' %}">{% trans "Water readings" %}</a> · {{ month|date:"F Y" }}</div>
+    <h1 class="h4">{{ property.name }}</h1>
+    <p class="lead-text">
+      {% if plan.method == "FLAT" %}{% trans "Water here is a flat amount each month, added to every invoice. No readings are needed to bill it." %}
+      {% elif plan.method == "INCLUDED" %}{% trans "Water here is included in the rent. Readings are not needed; any you take only follow the use." %}
+      {% else %}{% blocktrans with b=billed_on|date:"F Y" %}Water is billed from meter readings. Readings taken this month go on the {{ b }} invoices once approved.{% endblocktrans %}{% endif %}
+    </p>
+  </div>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    {% include "meters/_month_step.html" %}
+    {% if can_manage %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:water_plan' property.public_id %}"><i class="bi bi-gear" aria-hidden="true"></i> {% trans "Water settings" %}</a>{% endif %}
+  </div>
+</div>
+
+{% if plan.method == "METERED" %}
+<section class="card mb-4" aria-labelledby="progress-title"><div class="card-body">
+  <div class="water-summary">
+    <div>
+      <h2 class="card-title-sm mb-1" id="progress-title">{% trans "Units read this month" %}</h2>
+      {% if session.needed %}
+      <div class="water-big">{{ session.recorded }} <small>{% blocktrans with all=session.needed %}of {{ all }}{% endblocktrans %}</small></div>
+      <div class="progress water-bar" role="progressbar" aria-label="{% trans 'Units read' %}" aria-valuenow="{{ session.percent }}" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" style="width: {{ session.percent }}%"></div>
+      </div>
+      {% else %}
+      <p class="text-muted small mb-0">{% trans "No let unit needs a reading this month." %}</p>
+      {% endif %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+        {% if session.complete %}<span class="wstate wstate-approved">{% trans "All read" %}</span>
+        {% elif counts.missing %}<span class="small text-muted">{% blocktrans count n=counts.missing %}{{ n }} unit still to read{% plural %}{{ n }} units still to read{% endblocktrans %}</span>{% endif %}
+        {% if can_approve and counts.waiting|add:counts.flagged %}
+        <a class="btn btn-sm btn-primary" href="{% url 'meters:approvals' %}"><i class="bi bi-check2-square" aria-hidden="true"></i> {% blocktrans count n=counts.waiting|add:counts.flagged %}Review {{ n }} reading{% plural %}Review {{ n }} readings{% endblocktrans %}</a>
+        {% endif %}
+      </div>
+    </div>
+    <dl class="water-tallies">
+      <div class="water-tally"><dt><span class="dot dot-approved" aria-hidden="true"></span>{% trans "Approved" %}</dt><dd>{{ counts.approved }}</dd></div>
+      <div class="water-tally"><dt><span class="dot dot-waiting" aria-hidden="true"></span>{% trans "Waiting" %}</dt><dd>{{ counts.waiting }}</dd></div>
+      <div class="water-tally{% if counts.flagged %} water-tally-bad{% endif %}"><dt><span class="dot dot-flagged" aria-hidden="true"></span>{% trans "Flagged" %}</dt><dd>{{ counts.flagged }}</dd></div>
+      <div class="water-tally"><dt><span class="dot dot-missing" aria-hidden="true"></span>{% trans "Not read yet" %}</dt><dd>{{ counts.missing }}</dd></div>
+      <div class="water-tally"><dt><span class="dot" aria-hidden="true"></span>{% trans "Not billed" %}</dt><dd title="{% trans 'Vacant, landlord pays, prepaid or no meter' %}">{{ session.not_billed }}</dd></div>
+    </dl>
+  </div>
+</div></section>
+
+{% if can_record and has_meters %}
+<h2 class="h6 mb-2">{% trans "Record readings" %}</h2>
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-2 mb-4">
+  <div class="col"><a class="water-way" href="{% url 'meters:round' property.public_id %}?utility=WATER">
+    <span class="tile-icon"><i class="bi bi-phone" aria-hidden="true"></i></span>
+    <span class="flex-grow-1"><span class="water-way-title">{% trans "Enter readings" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+      <span class="water-way-text d-block">{% trans "Go room by room on the phone. Works without a connection." %}</span></span></a></div>
+  <div class="col"><a class="water-way" href="{% url 'meters:qr_labels' property.public_id %}?utility=WATER">
+    <span class="tile-icon"><i class="bi bi-qr-code-scan" aria-hidden="true"></i></span>
+    <span class="flex-grow-1"><span class="water-way-title">{% trans "Scan QR codes" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+      <span class="water-way-text d-block">{% trans "Print a code for each meter. The phone camera opens that meter’s form." %}</span></span></a></div>
+  <div class="col"><a class="water-way" href="{% url 'meters:round' property.public_id %}?utility=WATER&amp;import=1">
+    <span class="tile-icon"><i class="bi bi-file-earmark-spreadsheet" aria-hidden="true"></i></span>
+    <span class="flex-grow-1"><span class="water-way-title">{% trans "Import Excel" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+      <span class="water-way-text d-block">{% trans "Download the sheet, fill in the readings, upload it and check the rows." %}</span></span></a></div>
+  {% if scans %}
+  <div class="col"><a class="water-way" href="{% url 'meters:round' property.public_id %}?utility=WATER&amp;import=1">
+    <span class="tile-icon"><i class="bi bi-camera" aria-hidden="true"></i></span>
+    <span class="flex-grow-1"><span class="water-way-title">{% trans "Upload a photo" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+      <span class="water-way-text d-block">{% trans "Photograph the notebook. The readings are read for you to check before saving." %}</span></span></a></div>
+  {% endif %}
+</div>
+{% elif can_manage and not has_meters %}
+<div class="card mb-4"><div class="card-body d-flex flex-wrap align-items-center gap-3">
+  <span class="tile-icon"><i class="bi bi-droplet" aria-hidden="true"></i></span>
+  <div class="flex-grow-1"><div class="fw-semibold">{% trans "No water meters on this property yet" %}</div>
+    <div class="small text-muted">{% trans "Add one for each unit in one go, or one shared meter." %}</div></div>
+  <a class="btn btn-primary btn-sm" href="{% url 'meters:create' property.public_id %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Add meters" %}</a>
+</div></div>
+{% endif %}
+{% else %}
+<div class="card mb-4"><div class="card-body d-flex align-items-center gap-3">
+  <span class="tile-icon"><i class="bi {% if plan.method == 'FLAT' %}bi-receipt{% else %}bi-house-check{% endif %}" aria-hidden="true"></i></span>
+  <div class="small">
+  {% if plan.method == "FLAT" %}
+  {% blocktrans count n=counts.flat %}{{ n }} unit pays a flat amount for water.{% plural %}{{ n }} units pay a flat amount for water.{% endblocktrans %}
+  {% if counts.free %}{% blocktrans count n=counts.free %}{{ n }} unit pays nothing.{% plural %}{{ n }} units pay nothing.{% endblocktrans %}{% endif %}
+  {% else %}{% blocktrans count n=counts.included %}{{ n }} unit has water in the rent.{% plural %}{{ n }} units have water in the rent.{% endblocktrans %}{% endif %}
+  </div>
+</div></div>
+{% endif %}
+
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+  <h2 class="h6 mb-0" id="units-title">{% trans "Units this month" %}</h2>
+  {% if plan.method == "METERED" and session.rows %}
+  <div data-filter-wrap hidden><div class="chip-filter" role="group" aria-label="{% trans 'Show units' %}" data-water-filter>
+    <button type="button" aria-pressed="true" data-filter="">{% trans "All" %} <span class="chip-n">{{ session.rows|length }}</span></button>
+    {% if counts.missing %}<button type="button" aria-pressed="false" data-filter="missing">{% trans "Not read" %} <span class="chip-n">{{ counts.missing }}</span></button>{% endif %}
+    {% if counts.flagged %}<button type="button" aria-pressed="false" data-filter="flagged">{% trans "Flagged" %} <span class="chip-n">{{ counts.flagged }}</span></button>{% endif %}
+    {% if counts.waiting %}<button type="button" aria-pressed="false" data-filter="waiting">{% trans "Waiting" %} <span class="chip-n">{{ counts.waiting }}</span></button>{% endif %}
+    {% if counts.approved %}<button type="button" aria-pressed="false" data-filter="approved">{% trans "Approved" %} <span class="chip-n">{{ counts.approved }}</span></button>{% endif %}
+  </div></div>
+  {% endif %}
+</div>
+<div class="card"><div class="table-responsive">
+  <table class="table align-middle mb-0 small water-table" aria-labelledby="units-title">
+    <thead><tr>
+      <th scope="col">{% trans "Unit" %}</th><th scope="col">{% trans "Tenant" %}</th><th scope="col">{% trans "Meter" %}</th>
+      <th scope="col" class="text-end">{% trans "Last" %}</th><th scope="col" class="text-end">{% trans "This month" %}</th>
+      <th scope="col" class="text-end">{% trans "Used" %}</th><th scope="col">{% trans "State" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for row in session.rows %}
+      <tr data-status="{{ row.status }}">
+        <th scope="row" class="w-unit">{{ row.unit.code }}</th>
+        <td class="w-who">{% if row.tenant %}{{ row.tenant }}{% else %}<span class="text-muted">{% trans "No tenant" %}</span>{% endif %}{% if row.meter %}<span class="w-who-meter"> · {{ row.meter.label }}</span>{% endif %}</td>
+        <td class="w-meter">{% if row.meter %}<a href="{% url 'meters:detail' row.meter.public_id %}">{{ row.meter.label }}</a>
+          {% if row.shared %}<span class="sub">{% blocktrans count n=row.meter.n_served %}Shared by {{ n }} unit{% plural %}Shared by {{ n }} units{% endblocktrans %}</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-end num w-last" data-label="{% trans 'Last' %}">{% if row.last %}{{ row.last.value|floatformat:"-3" }}<span class="sub">{{ row.last.read_on|date:"j M" }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-end num w-now" data-label="{% trans 'This month' %}">{% if row.reading %}<strong>{{ row.reading.value|floatformat:"-3" }}</strong><span class="sub">{{ row.reading.read_on|date:"j M" }}</span>{% elif row.flat is not None %}KES {{ row.flat|floatformat:"2g" }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="text-end num w-used" data-label="{% trans 'Used' %}">{% if row.usage is not None %}{{ row.usage|floatformat:"-3" }} m³{% else %}<span class="text-muted">—</span>{% endif %}</td>
+        <td class="w-state">
+          {% if row.status == "approved" %}<span class="wstate wstate-approved">{% trans "Approved" %}</span>
+          {% elif row.status == "waiting" %}<span class="wstate wstate-waiting">{% trans "Waiting" %}</span>
+          {% elif row.status == "flagged" %}<a class="wstate wstate-flagged" href="{% url 'meters:detail' row.meter.public_id %}">{% trans "Flagged" %}: {{ row.reading.flag_labels|join:", " }}</a>
+          {% elif row.status == "missing" %}{% if can_record %}<a class="btn btn-sm btn-outline-primary py-0" href="{% url 'meters:quick' row.meter.public_id %}">{% trans "Read now" %}</a>{% else %}<span class="wstate wstate-missing">{% trans "Not read" %}</span>{% endif %}
+          {% elif row.status == "vacant" %}<span class="wstate">{% trans "Vacant" %}</span>
+          {% elif row.status == "flat" %}<span class="wstate wstate-info">{% trans "Flat rate" %}</span>
+          {% elif row.status == "free" %}<span class="wstate">{% trans "No water charge" %}</span>
+          {% elif row.status == "included" %}<span class="wstate wstate-info">{% trans "In the rent" %}</span>
+          {% elif row.status == "landlord" %}<span class="wstate">{% trans "Landlord pays" %}</span>
+          {% elif row.status == "prepaid" %}<span class="wstate">{% trans "Prepaid" %}</span>
+          {% else %}<span class="wstate wstate-missing">{% trans "No meter" %}</span>{% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="7" class="text-muted w-empty">{% trans "No units on this property." %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'js/water_session.js' %}" defer></script>{% endblock %}

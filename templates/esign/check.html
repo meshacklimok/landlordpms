@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Check a signed document" %}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    {% if req.status == "COMPLETED" %}
+    <div class="alert alert-success small">{% blocktrans with org=req.organization.name day=req.completed_at|date:"j M Y" %}Signed by everyone through the account of {{ org }} on {{ day }}.{% endblocktrans %}</div>
+    {% else %}
+    <div class="alert alert-warning small">{% blocktrans with status=req.shown_status %}Not signed by everyone ({{ status }}). Do not rely on it as a signed document.{% endblocktrans %}</div>
+    {% endif %}
+    <h1 class="h5">{{ req.title }} · {{ req.number }}</h1>
+    <p class="small text-body-secondary">{% trans "Compare the SHA-256 fingerprint of your copy with the one below. If they differ, the copy was changed." %}</p>
+    <dl class="row small">
+      <dt class="col-sm-4">{% trans "Sent for signing" %}</dt><dd class="col-sm-8">{{ req.created_at|date:"j M Y, H:i" }}</dd>
+      <dt class="col-sm-4">{% trans "Pages signed (SHA-256)" %}</dt><dd class="col-sm-8 text-break font-monospace">{{ req.original_sha256 }}</dd>
+      {% if req.signed_sha256 %}<dt class="col-sm-4">{% trans "Signed copy (SHA-256)" %}</dt><dd class="col-sm-8 text-break font-monospace">{{ req.signed_sha256 }}</dd>{% endif %}
+    </dl>
+    <h2 class="h6">{% trans "Signers" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for s in signers %}
+      <li class="mb-1"><strong>{{ s.name }}</strong> ({{ s.get_role_display }}{% if s.masked_phone %}, {{ s.masked_phone }}{% endif %}):
+        {% if s.signed_at %}{% blocktrans with when=s.signed_at|date:"j M Y, H:i" name=s.signed_name %}signed as “{{ name }}” on {{ when }}{% endblocktrans %}{% elif s.declined_at %}{% trans "declined" %}{% else %}{% trans "not signed" %}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div></div>
+</div>
+{% endblock %}

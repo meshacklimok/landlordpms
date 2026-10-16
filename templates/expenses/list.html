@@ -1,4 +1,4 @@
-{% extends "expenses/_base.html" %}{% load i18n money %}
+{% extends "expenses/_base.html" %}{% load i18n money reports %}
 {% block title %}{% trans "Expenses" %}{% endblock %}
 {% block content %}
 <div class="wide mx-auto">
@@ -6,14 +6,15 @@
     <h1 class="h3 mb-0">{% trans "Expenses" %}</h1>
     <span class="d-flex gap-2">
       {% if to_approve %}<a class="btn btn-sm btn-warning" href="?status=SUBMITTED">{% blocktrans count n=to_approve %}{{ n }} to approve{% plural %}{{ n }} to approve{% endblocktrans %}</a>{% endif %}
-      {% if can_record %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:create' %}"><i class="bi bi-plus-lg"></i> {% trans "Record an expense" %}</a>{% endif %}
+      {% if can_record %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Record an expense" %}</a>{% endif %}
     </span>
   </div>
   <p class="small text-body-secondary">{% trans "Money paid out for a property. Only approved expenses count in reports and owner statements." %}</p>
   {% include "expenses/_nav.html" with section="list" %}
 
-  <form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
     <div class="row g-2 align-items-end">
+      {% if many_properties %}
       <div class="col-6 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
         <select id="f-property" name="property" class="form-select">
@@ -21,6 +22,7 @@
           {% for p in properties %}<option value="{{ p.public_id }}" {% if p == f.property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
         </select>
       </div>
+      {% endif %}
       <div class="col-6 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-category">{% trans "Category" %}</label>
         <select id="f-category" name="category" class="form-select">
@@ -50,31 +52,43 @@
         <label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "To" %}</label>
         <input type="month" id="f-to" name="to" value="{{ f.to|date:'Y-m' }}" class="form-control">
       </div>
-      <div class="col-12 col-md-auto d-flex gap-2">
-        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+      <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+        <noscript><button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button></noscript>
         {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'expenses:list' %}">{% trans "Clear" %}</a>{% endif %}
       </div>
     </div>
   </div></form>
 
   <div class="row g-2 mb-3">
-    <div class="col-6 col-md-3"><div class="card shadow-sm h-100"><div class="card-body py-2">
-      <div class="small text-body-secondary">{% trans "Approved" %}</div>
-      <div class="h5 num mb-0">{{ totals.approved|money:currency }}</div>
-      <div class="small text-body-secondary">{% blocktrans count n=totals.approved_count %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Approved" %}</div>
+      <div class="stat-value num">{{ totals.approved|money:currency }}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.approved_count %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</div>
     </div></div></div>
-    <div class="col-6 col-md-3"><div class="card shadow-sm h-100"><div class="card-body py-2">
-      <div class="small text-body-secondary">{% trans "Waiting for approval" %}</div>
-      <div class="h5 num mb-0">{{ totals.waiting|money:currency }}</div>
-      <div class="small text-body-secondary">{% blocktrans count n=totals.waiting_count %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Waiting for approval" %}</div>
+      <div class="stat-value num">{{ totals.waiting|money:currency }}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.waiting_count %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</div>
     </div></div></div>
-    {% if totals.by_category %}
-    <div class="col-12 col-md-6"><div class="card shadow-sm h-100"><div class="card-body py-2 small">
-      <div class="text-body-secondary mb-1">{% trans "Approved, by category" %}</div>
-      {% for row in totals.by_category|slice:":5" %}<div class="d-flex justify-content-between"><span>{{ row.category__name }}</span><span class="num">{{ row.total|money:currency }}</span></div>{% endfor %}
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Average expense" %}</div>
+      <div class="stat-value num">{% if totals.average is not None %}{{ totals.average|money:currency }}{% else %}—{% endif %}</div>
+      <div class="stat-sub">{% trans "approved only" %}</div>
     </div></div></div>
-    {% endif %}
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Spent a month" %}</div>
+      <div class="stat-value num">{% if totals.monthly is not None %}{{ totals.monthly|money:currency }}{% else %}—{% endif %}</div>
+      <div class="stat-sub">{% blocktrans count n=totals.months %}over {{ n }} month with expenses{% plural %}over {{ n }} months with expenses{% endblocktrans %}</div>
+    </div></div></div>
   </div>
+
+  {% if totals.by_category %}
+  <div class="row g-2 mb-3">
+    {% include "expenses/_breakdown.html" with title=_("By category") rows=totals.by_category %}
+    {% if totals.by_property|length > 1 %}{% include "expenses/_breakdown.html" with title=_("By property") rows=totals.by_property %}{% endif %}
+    {% if totals.by_supplier %}{% include "expenses/_breakdown.html" with title=_("Top suppliers") rows=totals.by_supplier %}{% endif %}
+  </div>
+  {% endif %}
 
   {% if page.object_list %}
   <div class="card shadow-sm overflow-hidden">
@@ -92,7 +106,7 @@
           <tr data-href="{% url 'expenses:detail' expense.public_id %}">
             <td class="num text-nowrap">{{ expense.paid_on|date:"j M Y" }}</td>
             <td><a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'expenses:detail' expense.public_id %}">{{ expense.description|truncatechars:70 }}</a>
-              <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }}{% if expense.supplier %} · {{ expense.supplier.name }}{% endif %}{% if expense.receipt %} · <i class="bi bi-paperclip" title="{% trans 'Has a receipt' %}"></i>{% endif %}</div></td>
+              <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }}{% if expense.supplier %} · {{ expense.supplier.name }}{% endif %}{% if expense.receipt %} · <i class="bi bi-paperclip" role="img" title="{% trans 'Has a receipt' %}" aria-label="{% trans 'Has a receipt' %}"></i>{% endif %}</div></td>
             <td class="d-none d-lg-table-cell small">{{ expense.category.name }}</td>
             <td>{% include "expenses/_status.html" %}</td>
             <td class="text-end num fw-semibold">{{ expense.amount|money:currency }}</td>
@@ -104,16 +118,11 @@
   </div>
   <div class="d-flex flex-wrap justify-content-between small text-body-secondary mt-2">
     <span>{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span>
-    {% if can_export %}<a href="?{{ csv_query }}"><i class="bi bi-download"></i> {% trans "Download CSV" %}</a>{% endif %}
+    {% if can_export %}<a href="?{{ csv_query }}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download CSV" %}</a>{% endif %}
   </div>
   {% include "partials/pager.html" %}
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-receipt"></i></div>
-    {% if filtered %}<h2 class="h6">{% trans "No expenses match" %}</h2>
-    {% else %}<h2 class="h6">{% trans "No expenses yet" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Record repairs, security, cleaning and other money paid out for a property." %}</p>{% endif %}
-  </div></div>
+  {% if filtered %}{% include "partials/empty_state.html" with icon="bi-receipt" title=_("No expenses match") %}{% else %}{% include "partials/empty_state.html" with icon="bi-receipt" title=_("No expenses yet") text=_("Record repairs, security, cleaning and other money paid out for a property.") %}{% endif %}
   {% endif %}
 </div>
 {% endblock %}

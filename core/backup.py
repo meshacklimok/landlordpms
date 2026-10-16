@@ -32,13 +32,17 @@ def _pg_env() -> tuple[list[str], dict]:
     db = settings.DATABASES["default"]
     args = ["--host", db.get("HOST") or "localhost", "--port", str(db.get("PORT") or 5432),
             "--username", db.get("USER") or "", "--dbname", db["NAME"]]
-    env = {**os.environ, "PGPASSWORD": db.get("PASSWORD") or ""}
+    options = db.get("OPTIONS", {})
+    # The same TLS mode as the app (doc 20 §18); no statement timeout, as a dump or restore runs long.
+    env = {**os.environ, "PGPASSWORD": db.get("PASSWORD") or "", "PGSSLMODE": options.get("sslmode", "prefer"),
+           "PGAPPNAME": "landlordpms-backup"}
     return args, env
 
 
 def _run(cmd: list[str], env: dict) -> subprocess.CompletedProcess:
     try:
-        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=3600)
+        # noqa below: a fixed pg_dump/pg_restore argument list from settings, never a shell.
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=3600)  # noqa: S603
     except FileNotFoundError as e:
         raise BackupError(f"{cmd[0]} is not installed or not on PATH") from e
     if result.returncode != 0:

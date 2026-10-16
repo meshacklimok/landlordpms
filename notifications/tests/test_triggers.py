@@ -182,8 +182,8 @@ def test_no_due_soon_when_the_invoice_went_out_inside_the_window(lease):
 def test_paid_invoice_gets_no_reminders(owner, lease):
     issued(lease)
     pay(owner, lease, "15000", paid_at=D(2026, 1, 30))
-    assert triggers.send_reminders(D(2026, 2, 2)) == {"rent_due_soon": 0, "rent_overdue": 0}
-    assert triggers.send_reminders(D(2026, 2, 10)) == {"rent_due_soon": 0, "rent_overdue": 0}
+    assert triggers.send_reminders(D(2026, 2, 2)) == {"rent_due_soon": 0, "rent_overdue": 0, "move_out_soon": 0}
+    assert triggers.send_reminders(D(2026, 2, 10)) == {"rent_due_soon": 0, "rent_overdue": 0, "move_out_soon": 0}
 
 
 @pytest.mark.parametrize("today, sent", [
@@ -218,3 +218,44 @@ def test_daily_job_bills_then_reminds(org, lease):
     counts = jobs.run_daily(D(2026, 2, 2))
     assert counts["invoices"] == 1 and "rent_due_soon" in counts and "rent_overdue" in counts
     assert len(messages("invoice_issued")) == 1
+
+
+# ---------------------------------------------------------------------------
+# Notice to vacate (D-106)
+# ---------------------------------------------------------------------------
+
+
+def test_a_tenant_notice_is_confirmed_and_staff_hear_of_it(owner, org, prop, lease, django_capture_on_commit_callbacks):
+    manager = add_member(org, "manager", properties=[prop])
+    today = datetime.date.today()
+    with django_capture_on_commit_callbacks(execute=True):
+        notice = lease_services.give_notice(owner, lease, given_on=today)
+    [alert] = messages("notice_given")
+    assert alert.user == manager.user and "given by the tenant" in alert.body  # the recorder is not told
+    sent = messages("notice_received")
+    assert sent and all(m.tenant_id for m in sent)
+    assert notice.move_out_on.strftime("%d/%m/%Y") in sent[0].body
+
+
+def test_a_landlord_notice_is_not_confirmed_by_sms(owner, org, lease, django_capture_on_commit_callbacks):
+    with django_capture_on_commit_callbacks(execute=True):
+        lease_services.give_notice(owner, lease, given_on=datetime.date.today(), given_by="LANDLORD")
+    assert messages("notice_received") == []
+
+
+def test_move_out_reminder_a_week_before_once(owner, lease):
+    today = datetime.date.today()
+    notice = lease_services.give_notice(owner, lease, given_on=today)  # 30 days by default
+    week_before = notice.move_out_on - datetime.timedelta(days=7)
+    assert triggers.send_reminders(week_before - datetime.timedelta(days=1))["move_out_soon"] == 0
+    assert triggers.send_reminders(week_before)["move_out_soon"] == 1
+    assert triggers.send_reminders(week_before + datetime.timedelta(days=1))["move_out_soon"] == 0
+    [m] = messages("move_out_soon")
+    assert m.lease == lease and m.status == Status.QUEUED
+
+
+def test_no_move_out_reminder_for_a_short_notice(owner, lease):
+    today = datetime.date.today()
+    lease_services.give_notice(owner, lease, given_on=today, move_out_on=today + datetime.timedelta(days=5),
+                               shorter_agreed=True)
+    assert triggers.send_reminders(today)["move_out_soon"] == 0

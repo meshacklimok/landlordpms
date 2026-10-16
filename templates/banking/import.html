@@ -12,7 +12,7 @@
       <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
         {% include "partials/form.html" %}
         <p class="small text-body-secondary">{% trans "A bank statement needs a header row with a date, and a Credit (or Money in) or Amount column. Lines already imported from an earlier statement are skipped, so overlapping statements are fine." %}</p>
-        <button class="btn btn-dark"><i class="bi bi-eye"></i> {% trans "Check the file" %}</button>
+        <button class="btn btn-outline-secondary"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "Check the file" %}</button>
       </div></form>
       {% else %}
       <div class="card shadow-sm"><div class="card-body small">

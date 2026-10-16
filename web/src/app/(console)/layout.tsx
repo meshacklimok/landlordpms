@@ -1,0 +1,17 @@
+import type { Metadata } from "next";
+import { BrandMark } from "@/components/BrandMark";
+
+export const metadata: Metadata = { title: { default: "Console", template: "%s · Console · NyumbaPMS" } };
+
+/** The platform owner's console. Its people need no organization, so it has no organization menu (Shell would send them away). */
+export default function ConsoleLayout({ children }: LayoutProps<"/">) {
+  return (
+    <>
+      <header className="console-bar">
+        <a href="/console/" className="console-brand"><BrandMark /><span>Nyumba<span className="brand-pms">PMS</span></span> <span className="muted">Console</span></a>
+        <a href="/console/control/" className="btn btn-quiet">Control</a>
+      </header>
+      <main id="main" className="console-main" tabIndex={-1}>{children}</main>
+    </>
+  );
+}

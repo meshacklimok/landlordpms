@@ -1,0 +1,1 @@
+{% for name, spec in specs.items %}{% with id="c-"|add:name %}{{ spec|json_script:id }}{% endwith %}{% endfor %}

@@ -1,0 +1,39 @@
+{% load i18n reports %}
+<form method="get" data-autosubmit class="card shadow-sm mb-3 report-actions"><div class="card-body">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-3">
+      <label class="form-label small text-body-secondary mb-1" for="f-period">{% trans "Period" %}</label>
+      <select id="f-period" name="period" class="form-select form-select-sm">
+        {% for key, label in presets %}<option value="{{ key }}" {% if period.key == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    {% if period.key == "custom" %}
+    <div class="col-6 col-md-2">
+      <label class="form-label small text-body-secondary mb-1" for="f-from">{% trans "From" %}</label>
+      <input type="date" id="f-from" name="from" value="{{ period.start|date:'Y-m-d' }}" class="form-control form-control-sm">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "To" %}</label>
+      <input type="date" id="f-to" name="to" value="{{ period.end|date:'Y-m-d' }}" class="form-control form-control-sm">
+    </div>
+    {% endif %}
+    {% if properties and many_properties %}
+    <div class="col-12 col-md">
+      <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+      <select id="f-property" name="property" class="form-select form-select-sm">
+        <option value="">{% trans "All your properties" %}</option>
+        {% for p in properties %}<option value="{{ p.public_id }}" {% if selected and p.pk == selected.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+      <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
+      <a class="btn btn-sm btn-outline-secondary" href="?">{% trans "Reset" %}</a>
+      {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query }}">{% trans "Download CSV" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query|as_excel }}">{% trans "Download Excel" %}</a>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-print>{% trans "Print" %}</button>
+    </div>
+  </div>
+</div></form>
+<p class="d-none d-print-block small mb-2"><strong>{% trans "Period" %}:</strong> {{ period.label }} · <strong>{% trans "Scope" %}:</strong> {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %}</p>
+{% if notes %}<ul class="highlights mb-3">{% for h in notes %}<li class="hl-{{ h.tone }}"><i class="bi bi-{{ h.icon }}" aria-hidden="true"></i><span>{{ h.text }}</span></li>{% endfor %}</ul>{% endif %}

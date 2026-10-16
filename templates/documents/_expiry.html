@@ -1,0 +1,1 @@
+{% load i18n %}{% with state=doc.expiry_state %}{% if state == "expired" %}<span class="badge text-bg-danger">{% trans "Expired" %}</span>{% elif state == "expiring" %}<span class="badge text-bg-warning">{% blocktrans with day=doc.expires_on|date:"j M Y" %}Expires {{ day }}{% endblocktrans %}</span>{% endif %}{% endwith %}

@@ -75,7 +75,7 @@ class DarajaClient:
             return token
         creds = self.credentials
         basic = base64.b64encode(f"{creds.secret('consumer_key')}:{creds.secret('consumer_secret')}".encode())
-        request = urllib.request.Request(f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials",
+        request = urllib.request.Request(f"{self.base_url}/oauth/v1/generate?grant_type=client_credentials",  # noqa: S310
                                          headers={"Authorization": f"Basic {basic.decode()}"})
         data = self._open(request)
         token = data.get("access_token")
@@ -89,7 +89,7 @@ class DarajaClient:
         return token
 
     def _post(self, path: str, body: dict) -> dict:
-        request = urllib.request.Request(
+        request = urllib.request.Request(  # noqa: S310 - a fixed https URL
             f"{self.base_url}{path}", data=json.dumps(body).encode(), method="POST",
             headers={"Authorization": f"Bearer {self.token()}", "Content-Type": "application/json"})
         return self._open(request)
@@ -136,6 +136,23 @@ class DarajaClient:
         return self._post("/mpesa/stkpushquery/v1/query", {
             "BusinessShortCode": self.credentials.shortcode, "Password": password, "Timestamp": timestamp,
             "CheckoutRequestID": checkout_request_id})
+
+    def simulate_c2b(self, *, command: str, amount: int, msisdn: str, bill_ref: str) -> dict:
+        """Sandbox only: Safaricom pretends `msisdn` paid, and sends the C2B confirmation (D-104).
+        [VERIFY the simulate endpoint's version against the current Daraja docs]"""
+        if self.credentials.environment != DarajaCredentials.Environment.SANDBOX:
+            raise DarajaError("Payments can only be simulated in the sandbox.")
+        data = self._post("/mpesa/c2b/v1/simulate", {
+            "ShortCode": self.credentials.shortcode, "CommandID": command, "Amount": amount, "Msisdn": msisdn,
+            "BillRefNumber": bill_ref})
+        # Some sandbox replies carry only ResponseDescription ("Accept the service request..."), so a
+        # missing ResponseCode is fine when the description accepts; an errorCode never is.
+        accepted = (str(data.get("ResponseCode", "")) in ("0", "00000000")
+                    or "accept" in str(data.get("ResponseDescription", "")).lower())
+        if data.get("errorCode") or not accepted:
+            raise DarajaError(str(data.get("ResponseDescription") or data.get("errorMessage")
+                                  or "Daraja did not simulate the payment.")[:300])
+        return data
 
 
 class FakeDarajaClient(DarajaClient):

@@ -1,4 +1,4 @@
-# landlordpms — TODO
+# NyumbaPMS — TODO
 
 Rule: **no models or views until Phase 0 is finished and agreed.** Docs live in `config/docs/`. Review docs 10–13.
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done
@@ -7,7 +7,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 ### Environment
 - [x] Switch to PostgreSQL: database created, `.env` set
 - [x] `manage.py check` and `migrate` run against Postgres
-- [ ] Remove old `db.sqlite3` (waiting for user's go-ahead)
+- [x] Remove old `db.sqlite3` (gone from the project folder; D-103)
 - [x] Pin versions in `requirements.txt`
 - [x] `SECRET_KEY` with no insecure fallback; split settings (base/dev/prod)
 - [x] Move `static/css/js/script.js` to `static/js/`
@@ -30,31 +30,34 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [x] Third competitor pass: 21 websites and apps (doc 16 Part 3, 2026-09-29)
 - [x] **Approve or change D-046**: approved as proposed on 2026-09-29
 - [ ] Hands-on trials of 3 Kenyan competitors; Daraja sandbox test for hashed phone; accountant check on eTIMS/eRITS
-- [ ] Sketch the 10 key mobile screens (doc 14 C2)
+- [x] The 10 key mobile screens checked at phone width, design system written down, tables scroll, touch targets, number keyboards (D-096, doc 19); still to try on real phones
 - [x] Financial separation, archive matrix, numbering, money, reporting metrics, notification preferences (doc 11 §22–27)
-- [~] ER diagram drafted in `config/docs/erd.md`; awaiting review
+- [x] ER diagram in `config/docs/erd.md`, generated from the models by `python manage.py erd`; a test fails when it falls behind (D-103)
 - [ ] Decide open items below
 
 ### Open decisions (record in 08_DECISIONS_LOG.md)
 - [x] Caretaker cash payments: granted by Owner/Manager via `payments.record` (role or per person); `payments.confirm` decides review (D-025)
 - [x] Agency/client-owner mode in v1? *Recommended no, design-in only*
 - [x] Unit `payment_reference` format (e.g. `GV-A102` vs `LPM-GV-A102`)
-- [ ] Recommend Paybill (reference-based matching) over Till for auto-reconciliation? Confirm with Daraja docs
+- [x] Recommend Paybill (reference-based matching) over Till for auto-reconciliation: yes, shown on the M-Pesa pages (D-100); empty `BillRefNumber` for Tills still to confirm in the Daraja sandbox
 - [x] Invoice/receipt/lease number formats (doc 11 §24)
 - [x] Default payment allocation order (oldest first) and manager override
 - [x] Grace days default and whether late fees are in MVP (recommended off)
+- [x] Late fees: landlord's rule (fixed, or % with a maximum), daily proposal, staff charge or skip each (D-129)
+- [ ] Late fees: check with counsel whether the lease must state the fee and what is reasonable (D-129 item 4)
 - [x] Billing period rule for mid-month move-in (prorate by days?)
 - [~] Data retention period for former tenants (90 days for organizations; tenant data period needs counsel)
 - [x] Phone-only login allowed without email?
 
 ### Business preparation
 - [ ] Interview 5–10 landlords/caretakers (log in doc 02)
-- [ ] Choose pilot area and first 5 pilot landlords
+- [ ] Choose pilot area and first 5 pilot landlords; track them each month with `python manage.py pilot_report` (D-101)
+- [ ] Ask each pilot agency which accounting package it and its accountant use; build a direct sync only for one that several name (D-075 item 7)
 - [ ] Register company and domain
 - [ ] ODPC (data protection) registration
 - [ ] Daraja developer account, sandbox
 - [ ] Africa's Talking (SMS) sandbox account
-- [ ] Terms of Service and Privacy Policy drafts
+- [x] Terms of Service and Privacy Policy drafts at /terms/ and /privacy/, acceptance recorded per version (D-095); lawyer review still needed before setting LEGAL_REVIEWED
 
 ## Phase 1 — Foundation *(after Phase 0 approval)*
 _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations applied, 161 tests passing. Subscription overview in admin waits for the subscription model._
@@ -87,7 +90,7 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Lease actions: activate (LSE number), notice to vacate, end/terminate, renew, transfer; overlap uses the actual end (ended_on)
 - [x] CSV import: units, tenants and opening balances (imports app: preview via rolled-back dry run, apply, undo within 24h, templates)
 - [x] List pages: pagination, search, filters, indexes (cross-property Units list doubles as the vacancy list; property page paginates units and counts statuses in SQL)
-- [ ] Archive instead of delete (properties, buildings, units, tenants, charge types done; drafts may be deleted; ended leases archive once settled by the daily job)
+- [x] Archive instead of delete (properties, buildings, units, tenants, charge types; drafts may be deleted; ended leases archive once settled by the daily job, with an archived list, restore and automatic return when money moves: D-079)
 
 ## Phase 3 — Billing
 - [x] NumberSequence with row-locked allocation (50 parallel invoice issues test)
@@ -121,14 +124,14 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] In-app notifications
 
 ## Phase 6 — M-Pesa
-- [ ] Store msisdn_raw and msisdn_hash (done); verify hash behaviour in Daraja sandbox
+- [ ] Store msisdn_raw and msisdn_hash (done); verify hash behaviour in Daraja sandbox (`daraja_sandbox_check`, D-104)
 - [x] Unmatched-payment SMS asking for unit reference (payer, once, when the real number is known); in-app alert to `mpesa.match` holders
 - [x] MpesaTransaction, callback endpoints with per-account token
 - [x] Idempotent processing, raw payload storage
 - [x] Matching engine (account → reference → phone → amount); reference auto-confirms via `record_system_payment`
 - [x] Unallocated inbox (`/mpesa/inbox/`), transaction list, manual match / accept suggestion / ignore / restore; reversal returns it to the inbox
 - [x] STK push: request from the lease (`/mpesa/request/<lease>/`), callback confirms on that lease, status check
-- [ ] Verify in the Daraja sandbox: STK query "still processing" error code, whether a C2B confirmation also arrives for STK payments, STK amount limit
+- [ ] Verify in the Daraja sandbox: STK query "still processing" error code, whether a C2B confirmation also arrives for STK payments, STK amount limit: run `python manage.py daraja_sandbox_check` (D-104)
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
 - [x] Daily job `mpesa_daily`: retry stuck transactions, check waiting payment requests, in-app reconciliation summary
 - [x] One M-Pesa code counted once: a hand-typed code blocks automatic payment of the callback, and a code waiting in the inbox cannot be typed in (D-045 item 12)
@@ -136,18 +139,21 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 
 ## Phase 7 — Dashboards, search, tenant portal
 - [x] Collectability grade (A to E) and daily who-to-call list with calls and promises to pay (D-052)
-- [x] Property owners, management fee and the monthly owner statement with PDF (D-053); owner login = Viewer role limited to their properties
+- [x] Property owners, management fee and the monthly owner statement with PDF (D-053); owners see their own statements in the owner portal (D-128)
 - [x] Owner remittance records and sending the statement to the owner (D-058): payments to owners voided not deleted, still to pay on the statement and PDF, 12-month owner account, email with the PDF and an optional SMS summary, each send numbered and kept
 - [x] Approve analytics decisions (doc 15 §8): chart library, snapshots, historic-trend rule, first report set (D-051)
 - [~] Chart.js dashboard with drill-down and CSV export done (`/reports/`); DailySnapshot deferred by D-051 until the performance test or an arrears trend needs it
 - [x] `reports/metrics.py` with the metric definitions from doc 11 §26 (occupancy, collection rate, arrears aging); NOI is income less approved expenses (D-067)
 - [x] Portfolio and per-property dashboards (property and month filters in the URL)
 - [x] Per-role dashboards: the home page shows each member the work waiting and the figures their capabilities allow (D-056)
-- [x] Global search with suggestions as you type, scoped like the list pages (D-054); trigram indexes wait for the performance test
+- [x] Global search with suggestions as you type, scoped like the list pages (D-054); trigram indexes wait for `db_health` to show full scans (D-105)
 - [x] Arrears aged from due date plus grace, as doc 11 §26 defines (D-054 item 1)
 - [x] TenantAccount, invite by SMS, tenant dashboard (own data only) + leakage tests (D-055)
 - [x] Tenant payment link: STK push started by the tenant from the rent SMS, any amount (D-046 item 1; built early on the Phase 6 branch, mpesa 0004)
-- [ ] Payment link: try it end to end in the Daraja sandbox; check how long a rent SMS gets with the link and what it costs
+- [x] Paystack for landlords without a Paybill: set up by a Platform Admin, used only when no Paybill collects, signed webhook, verify on "Check" (D-117, mpesa 0010)
+- [ ] Paystack: try it with a Paystack Kenya test account, then one live payment (doc 17 §6)
+- [ ] Subscription payments to us (D-126): set the PLATFORM_* keys, run `platform_payments --register`, paste the Paystack webhook URL, pay one test invoice each way (doc 17 §6)
+- [ ] Payment link: try it end to end in the Daraja sandbox (SMS length answered in D-104 item 4: 2 parts each, the due-soon message goes from 1 to 2)
 - [x] Annual rental income pack; owner resident/non-resident flag for the tax estimate (D-046, D-050)
 - [x] Quarterly and yearly billing (`Lease.Frequency`) (D-046, D-049)
 
@@ -166,26 +172,65 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] `EtimsAdapter` interface stub (D-060: `subscriptions/etims.py`, null adapter by default)
 - [x] Platform billing (flow A): Plan, Subscription, SubscriptionInvoice, PlatformReceipt, SMS wallet top-up; separate from tenant billing (D-060)
 - [x] Job records and alerts, backups with pruning, optional Sentry, logging, HTTPS and prod settings review (D-062, doc 18)
-- [ ] Before launch: install pg_dump on the server, set up cron (doc 18), an uptime monitor on `/healthz`, and do the first restore test
+- [ ] Before launch: install pg_dump on the server, set up cron (doc 18), an uptime monitor on `/healthz`, and do the first restore test; the cron file, a monthly `restore_test` and `launch_check` are ready (D-098), so on the day run `crontab deploy/crontab` and `launch_check` until it passes
 - [x] Subscriptions app and entitlements service (D-060)
 - [x] Setup checklist with links, help pages, support requests with attachments (D-063)
 
 ## Phase 9 — Later
-- [ ] Prospect and Viewing (light CRM); lease PDF and move-out statement
+- [x] Prospects and viewings, light CRM: holds, vacancy-link enquiries, convert to tenant (D-072)
+- [x] Lease agreement PDF and move-out statement (D-073)
 - [x] Move-in/move-out condition reports with photos and item register (D-047)
 - [x] Tenant good-standing letter: tenancy and payment record PDF, checkable by link (D-046, D-048)
 - [x] Unverified M-Pesa code check: a typed code no callback or statement brought in within 24h, or with another amount, is flagged; "Codes to check" page, payment warning, home task, daily alert, mark checked with a note (D-066)
-- [ ] Vendor SLA on maintenance (metered water done: D-057)
+- [x] Vendor SLA on maintenance: start-by and fix-by targets per priority set by the organization, performance by supplier and staff, late alerts, times in the supplier SMS (D-074; metered water done: D-057)
 - [x] Expenses (flow C): expenses with maker/checker approval, receipts, categories and suppliers; net operating income in the P&L, money out in the cash flow, taken off the owner statement (D-067; repair costs linked to maintenance requests in D-068)
 - [x] Maintenance requests and jobs: priorities with due times, assigning staff and suppliers (SMS), statuses, notes and photos, costs as expenses, tenant reports and updates in the portal, home tasks and the unit page (D-068)
 - [x] Add a recurring charge (e.g. garbage) to every lease at a property in one go, with a preview (D-069)
-- [ ] Other metered utilities (electricity sub-meters), documents
-- [ ] MRI estimate report (configurable dated rate) and eTIMS adapter, after KRA/accountant confirmation (D-037)
-- [ ] Accounting/MRI reports, analytics, WhatsApp/email
-- [ ] Agency mode and joint ownership, custom roles per organization
-- [ ] API, mobile app, USSD, AI assistant (permission-aware tools)
+- [x] Electricity sub-meters on the same meters, billed in kWh as "Metered electricity" (D-070)
+- [x] Documents: private files on properties, units, leases and tenants, sharing with the tenant portal, expiry reminders (D-071)
+- [ ] eTIMS adapter, after KRA/accountant confirmation (D-037); the MRI estimate with dated rates is done in the income pack (D-050)
+- [x] Accounting export for the accountant: double-entry journal (QuickBooks import layout), accounts with totals, invoice, payment and expense registers, as one ZIP (D-075)
+- [x] Email to tenants: a copy of invoices (with the PDF), reminders, receipts, announcements and repair updates, stop link, reply-to address; invoice PDF for staff and the portal (D-076)
+- [x] MRI reports (D-050) and analytics (D-051); arrears over time from daily snapshots, with a backfill (D-077)
+- [x] Agency mode (owners, fees, statements and payments to owners: D-053, D-058), joint ownership with shares (D-078), custom roles per organization
+- [x] Installable app (PWA): manifest, icons, service worker caching static files only, offline page, install button (D-080)
+- [x] USSD menu for tenants on feature phones: balance, how to pay, last payment (D-081)
+- [x] Pay rent from the USSD menu with an M-Pesa prompt (D-084)
+- [x] Report a repair from the USSD menu (D-085)
+- [x] Optional PIN for the USSD menu (D-086)
+- [x] Read-only API v1 with organization API keys (D-082)
+- [x] Webhooks for payments, invoices, leases and tenants (D-083)
+- [x] API writes: record payments (with an Idempotency-Key), add and update tenants, read one item (D-087)
+- [x] Offline data entry: meter rounds typed without a connection are kept on the phone and sent later (D-088)
+- [x] Alerts on staff phones (Web Push): opt in per device, no details on the lock screen, quiet hours (D-089)
+- [x] Repair reports typed offline are kept and sent later (D-090); payments are deliberately never queued offline
+- [x] Ask the assistant: read-only, permission-aware tools, owner switch, Claude via the Anthropic API (D-091)
+- [x] Assistant actions with a confirm step: record a payment, message a tenant, assign a repair (D-092)
+- [x] Tenants ask on WhatsApp: own balance, how to pay, receipts and repairs, read-only (D-093)
+- [x] Tenant assistant actions (report a repair, M-Pesa prompt) and a portal ask page (D-094)
+- [x] Pre-launch checks over every route: visitors, another organization, staff kept to some properties, junk ids, query counts, error reports without personal data, the production deploy check (D-097); a penetration test by someone else is still to do
+- [x] Ready for the server: `deploy/crontab` and `deploy/run.sh`, a monthly automatic restore test into a scratch database, and `launch_check` listing what the server still lacks (D-098)
+- [x] Database review (D-105, doc 20): connection pool and timeouts, append-only enforced by PostgreSQL triggers, separate owner and app roles, `db_health` with alerts, `scale_test`, cached sessions
+- [x] Notices to vacate from either side with history, the tenant's notice in the portal, move-out reminder, staff alert, "moving out" filters and home task (D-106); Swahili and WhatsApp templates [VERIFY]
+- [x] Notice to vacate and demand letters: numbered, frozen, checkable PDFs with warnings before issuing and a record of how each was served, with the signed copy (D-109); wording [VERIFY with counsel]
+- [x] Advocate handover pack for a tenant in arrears or a disputed move-out: one ZIP with a brief, statement, payments, follow-ups, letters as served, move-out papers and photos, documents, record.json and an s.106B certificate; download audited with its SHA-256 (D-122); checks [VERIFY with counsel]
+- [x] E-signature of the agreement (renewals included) and the move-out statement: SMS link and code for each tenant, the landlord signs in the app, frozen PDF with SHA-256, signing record page, filed copy, public check page (D-118, esign 0001)
+- [x] E-signature legal limits: only short leases (two years or less, no option to renew), evidence pack with an Evidence Act s.106B certificate, keep copies six years after the lease ends (D-118 item 10)
+- [ ] E-signature: an advocate to confirm D-118 item 10 (s.58 over s.3(3) for short tenancies), the consent wording and the certificate wording; a licensed provider only if they require one
+- [x] Arrears load only the columns they use; call list paged; home vacant count checked (doc 20 §30)
+- [x] Message text cleared after `MESSAGE_TEXT_DAYS` by `purge_messages` (doc 20, Retention)
+- [x] Load test with Locust (doc 20 §30): fixed concurrent M-Pesa deadlocks (row locks only on their own row); home page arrears computed once
+- [x] Agencies: branches give access to every property in them, fixed monthly fees, management fee income report by branch, owner and property (D-127)
+- [x] Owner portal: owners invited by SMS and email see their statements, payments to them, statements sent and their properties; tenant names hidden (D-128)
+- [x] Tenant portal: messages with the office, lease terms and agreement PDF, renewal offers the tenant accepts or declines and staff turn into a draft (D-131)
+- [x] Growth basics: public front page, pricing, FAQ, 7 tutorials, demo booking form with admin list and email, refer-a-landlord with rewards on the first payment, campaign and referral sign-up sources, robots.txt and sitemap (D-133)
+- [ ] Growth next: testimonials once real, changelog, partner/agent commissions, sign-up sources in `pilot_report`, Swahili for the public pages
+- [ ] Repeat the load test on the production server with gunicorn before launch; record the ceiling (doc 20 §30)
+- [ ] Confirm the two-year message-text period with counsel (doc 06)
+- [ ] On the server: `shared_preload_libraries = 'pg_stat_statements'`, roles from `deploy/db_roles.sql`, `DB_SSLMODE=require` if the database is remote
+- [ ] Native mobile app: plan approved (D-099): none before the pilot; installed-app opens are counted in `pilot_report` (D-102); then a Play Store wrapper if asked for, a staff app only on evidence
 
 ## Always
 - [ ] Update docs and `08_DECISIONS_LOG.md` with each decision
 - [ ] Tests for isolation, permissions, billing, payments, M-Pesa
-- [ ] No secrets in Git
+- [ ] No secrets in Git (history checked 2026-10-01, none found; backups ignored, D-103)

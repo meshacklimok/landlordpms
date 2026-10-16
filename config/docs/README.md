@@ -1,6 +1,6 @@
-# landlordpms — Documentation Index
+# NyumbaPMS — Documentation Index
 
-landlordpms is a property-management platform for rental owners in Kenya, designed to scale nationally.
+NyumbaPMS is a property-management platform for rental owners in Kenya, designed to scale nationally.
 
 | # | Document | What it answers |
 |---|----------|-----------------|
@@ -22,11 +22,16 @@ landlordpms is a property-management platform for rental owners in Kenya, design
 | 15 | [15_ANALYTICS_AND_CHARTS.md](15_ANALYTICS_AND_CHARTS.md) | Charts, analysis, snapshots, chart libraries, report rules |
 | 16 | [16_COMPETITOR_BENCHMARK.md](16_COMPETITOR_BENCHMARK.md) | Competitor benchmark, lessons, where we can win (Part 3: 21 websites and apps, 2026-09-29) |
 | 17 | [17_MPESA_GO_LIVE.md](17_MPESA_GO_LIVE.md) | M-Pesa go-live checklist: settings, Safaricom approval, first live day |
-| – | [erd.md](erd.md) | Draft entity relationship diagrams (Mermaid) |
+| 18 | [18_OPERATIONS.md](18_OPERATIONS.md) | Running the server: cron, environment, deploying, backups, alerts |
+| 19 | [19_MOBILE_SCREENS.md](19_MOBILE_SCREENS.md) | The 10 key screens on a phone (D-096) |
+| 20 | [20_DATABASE.md](20_DATABASE.md) | The database item by item: connections, integrity, monitoring, recovery, scale (D-105) |
+| 21 | [21_HETZNER_SETUP.md](21_HETZNER_SETUP.md) | Putting the app live on a Hetzner server, step by step: setup, updates, the monthly check (D-122). Most steps also apply on DigitalOcean (doc 22) |
+| 22 | [22_DIGITALOCEAN_SETUP.md](22_DIGITALOCEAN_SETUP.md) | The pilot server on DigitalOcean as actually set up: region, sizes, card problems, upload, resize to the first client's size (D-134) |
+| – | [erd.md](erd.md) | Entity relationship diagrams (Mermaid), generated from the models by `manage.py erd` (D-103) |
 | – | [../../TODO.md](../../TODO.md) | Working checklist |
 
 ## Rules
-- The project name is **landlordpms**.
+- The product name is **NyumbaPMS** (D-121); the app lives at https://app.nyumbapms.com. The repository, database and deploy paths keep the old name `landlordpms`.
 - Any decision that changes architecture is recorded in `08_DECISIONS_LOG.md` the same day.
 - Update `04_ROADMAP.md` status boxes as work completes.
 - Statements about Kenyan law, tax rates, and Safaricom/Daraja behaviour are marked **[VERIFY]** where they must be confirmed with a lawyer, KRA, or Safaricom before launch.

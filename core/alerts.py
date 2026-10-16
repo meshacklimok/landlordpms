@@ -1,4 +1,5 @@
-"""Emails the operators when a job is late or failed or the health checks fail (D-062 item 2)."""
+"""Emails the operators when a job is late or failed, the health checks fail (D-062 item 2) or the platform looks
+under attack (D-108 item 3)."""
 
 import datetime
 import hashlib
@@ -8,7 +9,9 @@ from django.core.cache import cache
 from django.core.mail import send_mail
 from django.utils import timezone
 
-from . import health, jobs
+from core.mail import SYSTEM, mailer_for
+
+from . import dbhealth, health, jobs, watch
 
 STATE_KEY = "ops:alert"
 REPEAT = datetime.timedelta(hours=6)
@@ -22,6 +25,8 @@ def recipients() -> list[str]:
 def current_problems(now=None) -> list[str]:
     lines = jobs.problems(now)
     lines += [f"health check failed: {name}" for name, ok in health.checks().items() if not ok]
+    lines += dbhealth.problems()
+    lines += watch.problems(now)
     return lines
 
 
@@ -37,12 +42,13 @@ def check_and_alert(now: datetime.datetime | None = None) -> str:
         if state.get("digest") == digest and last and now - last < REPEAT:
             return "quiet"
         if to:
-            send_mail("[landlordpms] Problem: " + lines[0][:80], "\n".join(lines), None, to)
+            send_mail("[NyumbaPMS] Problem: " + lines[0][:80], "\n".join(lines), None, to, using=mailer_for(SYSTEM))
         cache.set(STATE_KEY, {"digest": digest, "at": now}, None)
         return "alert"
     if state:
         if to:
-            send_mail("[landlordpms] All clear", "Every job and health check is fine again.", None, to)
+            send_mail("[NyumbaPMS] All clear", "Every job and health check is fine again.", None, to,
+                      using=mailer_for(SYSTEM))
         cache.delete(STATE_KEY)
         return "all clear"
     return "ok"

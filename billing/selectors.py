@@ -5,7 +5,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from django.db.models import Prefetch, Q, Sum
+from django.db.models import Count, F, Max, Min, Prefetch, Q, Sum
 from django.utils.translation import gettext_lazy as _
 
 from accounts.permissions import accessible_property_ids, can
@@ -33,6 +33,38 @@ AGING_BUCKETS = [
 ]
 
 
+@dataclass
+class PaymentRecord:
+    """A lease's money over its life (D-110): what was billed and paid, and the payments that came in."""
+
+    invoices: int = 0
+    billed: Decimal = ZERO
+    paid: Decimal = ZERO
+    payments: int = 0
+    received: Decimal = ZERO
+    first_paid: datetime.date | None = None
+    last_paid: datetime.date | None = None
+
+    @property
+    def paid_share(self) -> Decimal | None:
+        return None if not self.billed else self.paid / self.billed
+
+    @property
+    def average_payment(self) -> Decimal | None:
+        return None if not self.payments else (self.received / self.payments).quantize(Decimal("0.01"))
+
+
+def payment_record(lease) -> PaymentRecord:
+    """Issued invoices (not drafts or void) and confirmed payments, in two queries."""
+    inv = (Invoice.objects.filter(lease=lease, status__in=(*Invoice.OPEN, Invoice.Status.PAID)).order_by()
+           .aggregate(n=Count("pk"), billed=Sum("total"), paid=Sum("amount_paid")))
+    payments = lease.payments.filter(status=lease.payments.model.Status.CONFIRMED).order_by()
+    pay = payments.aggregate(n=Count("pk"), s=Sum("amount"), first=Min("paid_at"), last=Max("paid_at"))
+    return PaymentRecord(invoices=inv["n"], billed=inv["billed"] or ZERO, paid=inv["paid"] or ZERO,
+                         payments=pay["n"], received=pay["s"] or ZERO, first_paid=pay["first"],
+                         last_paid=pay["last"])
+
+
 def _in_scope(membership, qs, path: str):
     ids = accessible_property_ids(membership)
     return qs if ids is None else qs.filter(**{f"{path}__in": ids})
@@ -56,6 +88,34 @@ def filter_invoices(invoices, *, status="", q="", overdue=False, today=None):
             Q(number__icontains=q) | Q(lease__number__icontains=q) | Q(lease__unit__code__icontains=q)
             | Q(lease_id__in=LeaseTenant.objects.filter(tenant__name__icontains=q).values("lease_id")))
     return invoices
+
+
+@dataclass
+class InvoiceTotals:
+    """What a filtered invoice list adds up to (D-110). Drafts and void invoices bill nothing and are left out."""
+
+    count: int = 0
+    billed: Decimal = ZERO
+    paid: Decimal = ZERO
+    overdue_count: int = 0
+    overdue: Decimal = ZERO
+
+    @property
+    def outstanding(self) -> Decimal:
+        return self.billed - self.paid
+
+    @property
+    def paid_share(self) -> Decimal | None:
+        return None if not self.billed else self.paid / self.billed
+
+
+def invoice_totals(invoices, today: datetime.date) -> InvoiceTotals:
+    live = invoices.exclude(status__in=(Invoice.Status.DRAFT, Invoice.Status.VOID)).order_by()
+    agg = live.aggregate(n=Count("pk"), billed=Sum("total"), paid=Sum("amount_paid"))
+    late = (live.filter(status__in=Invoice.OPEN, overdue_after__lt=today)
+            .aggregate(n=Count("pk"), owed=Sum(F("total") - F("amount_paid"))))
+    return InvoiceTotals(count=agg["n"], billed=agg["billed"] or ZERO, paid=agg["paid"] or ZERO,
+                         overdue_count=late["n"], overdue=late["owed"] or ZERO)
 
 
 # ---------------------------------------------------------------------------
@@ -193,12 +253,33 @@ def overdue_lease_count(membership, today: datetime.date) -> int:
 
 
 def _arrears(membership, today: datetime.date, *, overdue_only: bool) -> list[LeaseArrears]:
-    owing = (_in_scope(membership, LedgerEntry.objects.for_org(membership.organization), "lease__unit__property_id")
-             .values("lease_id").annotate(s=Sum("amount")).filter(s__gt=0).values("lease_id"))
+    entries = _in_scope(membership, LedgerEntry.objects.for_org(membership.organization), "lease__unit__property_id")
+    return _arrears_from(entries, today, overdue_only=overdue_only)
+
+
+def organization_arrears(org, day: datetime.date, *, as_recorded_now: bool = False) -> list[LeaseArrears]:
+    """Every lease in the organization with money overdue on `day`, for the daily snapshot (D-077).
+
+    No member and no scope: the caller is a job. With `as_recorded_now`, only ledger entries dated
+    up to `day` count, which rebuilds a past day from the ledger as it stands today.
+    """
+    entries = LedgerEntry.objects.for_org(org)
+    if as_recorded_now:
+        entries = entries.filter(entry_date__lte=day)
+    return _arrears_from(entries, day, overdue_only=True)
+
+
+def _arrears_from(entries, today: datetime.date, *, overdue_only: bool) -> list[LeaseArrears]:
+    owing = entries.values("lease_id").annotate(s=Sum("amount")).filter(s__gt=0).values("lease_id")
     leases = {lease.pk: lease for lease in Lease.all_objects.filter(pk__in=owing).select_related(
         "unit__property").prefetch_related(Prefetch("lease_tenants", LeaseTenant.objects.select_related("tenant")))}
     grouped = defaultdict(list)
-    for e in (LedgerEntry.objects.filter(lease_id__in=leases).select_related("invoice").order_by("entry_date", "pk")):
+    # Every entry of each owing lease is read, because credits pay the oldest debits across the whole history.
+    # Only the columns `unpaid_debts` uses are loaded, which keeps a long history cheap (doc 20 §30).
+    fields = ("lease_id", "kind", "amount", "entry_date", "invoice_id", "reversal_of_id",
+              "invoice__due_date", "invoice__overdue_after")
+    for e in (entries.filter(lease_id__in=leases).select_related("invoice").only(*fields)
+              .order_by("entry_date", "pk")):
         grouped[e.lease_id].append(e)
     rows = [lease_arrears(leases[pk], grouped[pk], today) for pk in leases]
     if overdue_only:
@@ -214,3 +295,63 @@ def aging_totals(rows: list[LeaseArrears]) -> dict[str, Decimal]:
             totals[key] += amount
     totals["total"] = sum((r.balance for r in rows), ZERO)
     return totals
+
+
+@dataclass
+class PropertyArrears:
+    name: str
+    leases: int = 0
+    total: Decimal = ZERO
+    over_60: Decimal = ZERO
+
+
+@dataclass
+class ArrearsSummary:
+    """What an arrears list adds up to (D-110): each age's share of the whole, per lease and per property."""
+
+    leases: int
+    totals: dict[str, Decimal]
+    by_property: list[PropertyArrears]
+    days: list[int]  # each lease's days overdue
+
+    @property
+    def total(self) -> Decimal:
+        return self.totals["total"]
+
+    @property
+    def overdue(self) -> Decimal:
+        return self.total - self.totals["current"]
+
+    @property
+    def over_60(self) -> Decimal:
+        return self.totals["d61_90"] + self.totals["d90"]
+
+    @property
+    def average(self) -> Decimal | None:
+        return None if not self.leases else (self.total / self.leases).quantize(Decimal("0.01"))
+
+    @property
+    def median_days(self) -> int | None:
+        if not self.days:
+            return None
+        ordered = sorted(self.days)
+        return ordered[len(ordered) // 2]
+
+    @property
+    def shares(self) -> list[tuple[str, str, Decimal, Decimal | None]]:
+        """(key, label, amount, share of the total) for each age."""
+        return [(key, label, self.totals[key], self.totals[key] / self.total if self.total else None)
+                for key, label, *_r in AGING_BUCKETS]
+
+
+def arrears_summary(rows: list[LeaseArrears], today: datetime.date) -> ArrearsSummary:
+    places: dict[int, PropertyArrears] = {}
+    for row in rows:
+        unit_property = row.lease.unit.property
+        place = places.setdefault(unit_property.pk, PropertyArrears(unit_property.name))
+        place.leases += 1
+        place.total += row.balance
+        place.over_60 += row.buckets.get("d61_90", ZERO) + row.buckets.get("d90", ZERO)
+    return ArrearsSummary(leases=len(rows), totals=aging_totals(rows),
+                          by_property=sorted(places.values(), key=lambda p: (-p.total, p.name.lower())),
+                          days=[row.days_overdue(today) for row in rows])

@@ -36,11 +36,13 @@ def jpeg(name="m.jpg") -> SimpleUploadedFile:
     return SimpleUploadedFile(name, out.getvalue(), content_type="image/jpeg")
 
 
-def make_meter(owner, prop, units, *, rate="100", minimum="", split="EQUAL", kind="POSTPAID", label="W1"):
+def make_meter(owner, prop, units, *, rate="100", minimum="", split="EQUAL", kind="POSTPAID", label="W1",
+               utility="WATER", payer="TENANTS", vacant="OCCUPIED"):
     """units: Unit objects, or (Unit, weight) pairs."""
     served = [u if isinstance(u, tuple) else (u, "1") for u in units]
     return services.create_meter(owner, prop, units=served, label=label, serial="", kind=kind, split=split,
-                                 rate=rate, minimum_charge=minimum)
+                                 rate=rate, minimum_charge=minimum, utility=utility, payer=payer,
+                                 vacant_share=vacant)
 
 
 def read(owner, meter, day, value, **kw):

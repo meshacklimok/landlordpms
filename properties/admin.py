@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Building, Property, PropertyOwner, Unit
+from .models import Building, Property, PropertyOwner, PropertyShare, Unit
 
 
 class NoDeleteAdmin(admin.ModelAdmin):
@@ -10,8 +10,22 @@ class NoDeleteAdmin(admin.ModelAdmin):
         return False
 
 
+class PropertyShareInline(admin.TabularInline):
+    """Read-only: shares are set through the app so they always add up to 100 (D-078)."""
+
+    model = PropertyShare
+    fields = ["owner", "percent"]
+    readonly_fields = fields
+    extra = 0
+    can_delete = False
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Property)
 class PropertyAdmin(NoDeleteAdmin):
+    inlines = [PropertyShareInline]
     list_display = ["name", "code", "organization", "category", "county", "archived_at"]
     list_filter = ["category", "county"]
     search_fields = ["name", "code", "organization__name"]

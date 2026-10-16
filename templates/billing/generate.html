@@ -10,6 +10,28 @@
     {% trans "Quarterly and yearly leases are billed for the whole period that holds the month." %}
   </p>
   {% if due_months %}<p class="small">{% trans "Billed automatically now:" %} {% for m in due_months %}{{ m|date:"F Y" }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% for c in meter_checks %}{% if c.total %}
+  <div class="card shadow-sm mb-3" id="meters-{{ c.month|date:'Y-m' }}"><div class="card-body">
+    <h2 class="h6 mb-1">{% blocktrans with m=c.month|date:"F Y" %}Meters for the {{ m }} invoices{% endblocktrans %}
+      {% if c.complete %}<span class="badge text-bg-success">{% trans "All read" %}</span>{% else %}<span class="badge text-bg-warning">{% trans "Not all read" %}</span>{% endif %}</h2>
+    <p class="small mb-2">{% blocktrans count n=c.total with r=c.ready|length from=c.since|date:"j M" %}{{ r }} of {{ n }} meter read since {{ from }} and approved.{% plural %}{{ r }} of {{ n }} meters read since {{ from }} and approved.{% endblocktrans %}
+      {% if c.complete %}{% trans "Their water and electricity goes on these invoices." %}{% endif %}</p>
+    {% if c.free %}<p class="small text-muted mb-2">{% blocktrans count n=c.free|length %}{{ n }} meter is paid by you, so it is free to the tenants and not billed.{% plural %}{{ n }} meters are paid by you, so they are free to the tenants and not billed.{% endblocktrans %}</p>{% endif %}
+    {% if not c.complete %}
+    <p class="small text-muted mb-2">{% trans "A meter that is not read, or whose reading is not approved yet, is left off these invoices. Its charge follows on a separate invoice once it is approved." %}</p>
+    <ul class="list-unstyled small mb-2">
+      {% for prop, waiting, missing in c.problems %}
+      <li class="mb-1"><strong>{{ prop.name }}</strong>
+        {% if missing %}<div>{% trans "Not read:" %} {% for m in missing %}{{ m.label }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+        {% if waiting %}<div>{% trans "Waiting for approval:" %} {% for m in waiting %}{{ m.label }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:approvals' %}">{% trans "Approve readings" %}</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:list' %}">{% trans "Take readings" %}</a>
+    {% endif %}
+  </div></div>
+  {% endif %}{% endfor %}
   <form method="post" novalidate class="mb-3">{% csrf_token %}
     {% include "partials/form.html" %}
     <button class="btn btn-primary w-100">{% trans "Issue invoices" %}</button>

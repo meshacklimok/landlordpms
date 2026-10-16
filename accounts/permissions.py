@@ -36,7 +36,7 @@ def effective_capabilities(membership: Membership) -> frozenset[str]:
 
 
 def clear_cache(membership: Membership) -> None:
-    for attr in ("_effective_caps", "_property_ids"):
+    for attr in ("_effective_caps", "_property_ids", "_branch_ids"):
         membership.__dict__.pop(attr, None)
 
 
@@ -55,17 +55,38 @@ def is_membership_usable(membership: Membership | None) -> bool:
 
 
 def accessible_property_ids(membership: Membership) -> frozenset[int] | None:
-    """None means every property in the organization."""
+    """None means every property in the organization.
+
+    Otherwise the properties listed for the member, and every property in the member's live branches,
+    archived properties included (D-127).
+    """
     if membership.all_properties:
         return None
     cached = getattr(membership, "_property_ids", None)
     if cached is None:
+        from properties.models import Property
+
         cached = frozenset(
             PropertyAccess.objects.filter(
                 membership=membership, property__organization_id=membership.organization_id
             ).values_list("property_id", flat=True)
+        ) | frozenset(
+            Property.all_objects.filter(
+                organization_id=membership.organization_id, branch__archived_at__isnull=True,
+                branch__in=branch_ids(membership),
+            ).values_list("pk", flat=True)
         )
         membership._property_ids = cached
+    return cached
+
+
+def branch_ids(membership: Membership) -> frozenset[int]:
+    """The member's live branches (D-127)."""
+    cached = getattr(membership, "_branch_ids", None)
+    if cached is None:
+        cached = frozenset(membership.branches.filter(organization_id=membership.organization_id,
+                                                       archived_at__isnull=True).values_list("pk", flat=True))
+        membership._branch_ids = cached
     return cached
 
 

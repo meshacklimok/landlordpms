@@ -1,0 +1,18 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Conversations" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4">{% trans "Conversations" %}</h1>
+  <p class="small text-muted">{% trans "Tenants write to you from their portal. Ones waiting for a reply are first." %}</p>
+  <div class="card shadow-sm"><div class="card-body">
+    <ul class="list-unstyled mb-0">
+      {% for t in threads %}
+      <li class="d-flex justify-content-between gap-2 py-2 {% if not forloop.first %}border-top{% endif %}">
+        <a href="{% url 'conversations:thread' t.lease.public_id %}">{{ t.lease.unit.property.name }} · {{ t.lease.unit.code }}{% if t.lease.primary_tenant %} · {{ t.lease.primary_tenant.name }}{% endif %}</a>
+        <span class="text-nowrap small text-muted">{{ t.last|date:"j M, H:i" }}{% if t.unread %} <span class="badge text-bg-primary">{{ t.unread }} {% trans "new" %}</span>{% endif %}</span>
+      </li>
+      {% empty %}<li class="text-muted small">{% trans "No tenant has written yet. Invite tenants to the portal from their page." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+</div>
+{% endblock %}

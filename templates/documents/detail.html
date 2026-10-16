@@ -1,0 +1,63 @@
+{% extends "documents/_base.html" %}{% load i18n %}
+{% block title %}{{ doc.title }}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <a href="{{ place_url }}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% include "documents/_place.html" %}</a>
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
+    <div>
+      <h1 class="h4 mb-0">{% include "documents/_icon.html" %} {{ doc.title }}{% if doc.is_archived %} <span class="badge text-bg-secondary">{% trans "Archived" %}</span>{% endif %}</h1>
+      <div class="small text-body-secondary">{{ doc.get_category_display }} · {% include "documents/_place.html" %}</div>
+    </div>
+    <a class="btn btn-primary" href="{% url 'documents:file' doc.public_id %}"{% if doc.is_photo %} target="_blank" rel="noopener"{% endif %}><i class="bi bi-{% if doc.is_photo %}eye{% else %}download{% endif %}" aria-hidden="true"></i> {% if doc.is_photo %}{% trans "Open" %}{% else %}{% trans "Download" %}{% endif %}</a>
+  </div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "File" %}</dt><dd class="col-sm-8">{{ doc.filename }} · {{ doc.size|filesizeformat }}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Expires on" %}</dt><dd class="col-sm-8">{% if doc.expires_on %}{{ doc.expires_on|date:"j M Y" }} {% include "documents/_expiry.html" %}{% else %}—{% endif %}</dd>
+      {% if doc.note %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Note" %}</dt><dd class="col-sm-8">{{ doc.note }}</dd>{% endif %}
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Uploaded" %}</dt><dd class="col-sm-8">{{ doc.created_at|date:"j M Y, H:i" }} · {{ doc.uploaded_by }}</dd>
+      {% if doc.shareable %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Tenant portal" %}</dt><dd class="col-sm-8">{% if doc.shared_with_tenant %}{% if doc.lease %}{% trans "Shared with the tenants of this lease" %}{% else %}{% trans "Shared with the tenants of this property while their lease is active" %}{% endif %}{% else %}{% trans "Not shared" %}{% endif %}</dd>{% endif %}
+      {% if doc.is_archived %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Archived" %}</dt><dd class="col-sm-8">{{ doc.archived_at|date:"j M Y, H:i" }} · {{ doc.archived_by }}</dd>{% endif %}
+    </dl>
+    {% if doc.tenant %}<p class="small text-body-secondary mt-2 mb-0"><i class="bi bi-shield-lock" aria-hidden="true"></i> {% trans "Only staff allowed to see ID details can open tenant documents. Each opening is recorded." %}</p>{% endif %}
+  </div></div>
+
+  {% if can_share %}
+  <form method="post" class="card shadow-sm mb-3">{% csrf_token %}<div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+    {% if doc.shared_with_tenant %}
+    <input type="hidden" name="action" value="unshare">
+    <span class="small">{% trans "The tenant can see and download this in the portal." %}</span>
+    <button class="btn btn-outline-secondary btn-sm">{% trans "Stop sharing" %}</button>
+    {% else %}
+    <input type="hidden" name="action" value="share">
+    <span class="small">{% if doc.lease %}{% trans "Let the tenants of this lease see it in the portal." %}{% else %}{% trans "Let tenants with an active lease here see it in the portal, e.g. house rules." %}{% endif %}</span>
+    <button class="btn btn-outline-primary btn-sm"><i class="bi bi-people" aria-hidden="true"></i> {% trans "Share with the tenant" %}</button>
+    {% endif %}
+  </div></form>
+  {% endif %}
+
+  {% if form %}
+  <form method="post" class="card shadow-sm mb-3" novalidate>{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="edit">
+    <h2 class="h6">{% trans "Details" %}</h2>
+    {% include "partials/form.html" %}
+    <button class="btn btn-outline-primary">{% trans "Save" %}</button>
+  </div></form>
+  {% endif %}
+
+  {% if can_manage %}
+  <form method="post" class="card shadow-sm mb-3"{% if not doc.is_archived %} data-confirm="{% trans 'Archive this document? It is hidden from lists and the portal, and can be restored.' %}"{% endif %}>{% csrf_token %}<div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+    {% if doc.is_archived %}
+    <input type="hidden" name="action" value="restore">
+    <span class="small text-body-secondary">{% trans "Archived documents are hidden from lists and the portal." %}</span>
+    <button class="btn btn-outline-secondary btn-sm">{% trans "Restore" %}</button>
+    {% else %}
+    <input type="hidden" name="action" value="archive">
+    <span class="small text-body-secondary">{% trans "Wrong file or replaced by a newer one? Archive it; it can be restored." %}</span>
+    <button class="btn btn-outline-danger btn-sm">{% trans "Archive" %}</button>
+    {% endif %}
+  </div></form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -217,16 +217,18 @@ def test_payment_with_nothing_open_is_all_credit(owner, lease):
     assert lease_balance(lease) == Decimal("-3000.00")
 
 
-def test_apply_credit_sweeps_into_later_invoices(owner, lease):
-    pay(owner, lease, "20000", paid_at=D(2026, 1, 5))
+def test_credit_is_applied_to_invoices_as_they_are_issued(owner, lease):
+    payment = pay(owner, lease, "20000", paid_at=D(2026, 1, 5))
     jan, feb = bill(lease, JAN), bill(lease, FEB)
-    made = services.apply_credit(owner, lease)
     refresh(jan, feb)
-    assert [(a.invoice, a.amount) for a in made] == [(jan, Decimal("15000.00")), (feb, Decimal("5000.00"))]
-    assert feb.status == Invoice.Status.PARTIALLY_PAID
+    assert jan.status == Invoice.Status.PAID and jan.amount_paid == Decimal("15000.00")
+    assert feb.status == Invoice.Status.PARTIALLY_PAID and feb.amount_paid == Decimal("5000.00")
+    assert [(a.invoice, a.amount) for a in payment.allocations.order_by("pk")] == [
+        (jan, Decimal("15000.00")), (feb, Decimal("5000.00"))]
     assert services.unallocated_credit(lease) == 0
     assert services.apply_credit(owner, lease) == []
-    assert AuditEvent.objects.filter(action="payment.apply_credit").count() == 1
+    events = AuditEvent.objects.filter(action="payment.apply_credit")
+    assert events.count() == 2 and all(e.actor is None for e in events)
 
 
 def test_apply_credit_merges_into_an_existing_allocation(owner, lease):

@@ -7,7 +7,7 @@
     <div class="small text-body-secondary">{{ org.display_name }}</div>
     <p class="num h4 my-2">{{ req.amount|money:currency }}</p>
     {% if req.status == "PAID" %}
-      <p class="text-success fw-semibold mb-1"><i class="bi bi-check-circle"></i> {% trans "Paid. Thank you." %}</p>
+      <p class="text-success fw-semibold mb-1"><i class="bi bi-check-circle" aria-hidden="true"></i> {% trans "Paid. Thank you." %}</p>
       {% if receipt %}<a class="btn btn-outline-primary btn-sm" href="{% url 'receipt_link' receipt.share_token %}">{% trans "View receipt" %} {{ receipt.number }}</a>
       {% else %}<p class="small text-body-secondary mb-0">{% trans "Your receipt will come by SMS." %}</p>{% endif %}
     {% elif req.status == "FAILED" %}

@@ -99,3 +99,37 @@ class OwnerStatementSend(PublicIdModel):
     @property
     def remaining(self):
         return self.due - self.remitted
+
+
+class DailySnapshot(models.Model):
+    """What was overdue on one property at the end of one day (D-077).
+
+    Arrears over time is the one trend the ledger cannot rebuild as it was known then: a payment
+    recorded late, or back-dated, changes the past. The daily job keeps the figure as it stood.
+    A row the backfill made from today's ledger is marked `rebuilt`. Rows are only written by the job.
+    """
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE, related_name="+")
+    property = models.ForeignKey("properties.Property", on_delete=models.CASCADE, related_name="+")
+    day = models.DateField()
+    # Overdue amounts by days past due plus grace (billing.selectors.AGING_BUCKETS, "not yet due" left out).
+    d1_30 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    d31_60 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    d61_90 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    d90 = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    leases = models.PositiveIntegerField(default=0)  # leases with money overdue
+    rebuilt = models.BooleanField(default=False)
+    taken_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["day", "property_id"]
+        constraints = [
+            models.UniqueConstraint("property", "day", name="reports_snapshot_property_day_unique"),
+        ]
+        indexes = [models.Index(fields=["organization", "day"])]
+
+    def __str__(self):
+        return f"{self.property_id} {self.day}"
+
+    def arrears(self):  # a method: the `property` field hides the decorator in this class body
+        return self.d1_30 + self.d31_60 + self.d61_90 + self.d90

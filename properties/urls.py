@@ -11,6 +11,7 @@ urlpatterns = [
     path("new/", views.PropertyCreateView.as_view(), name="create"),
     path("<uuid:public_id>/", views.PropertyDetailView.as_view(), name="detail"),
     path("<uuid:public_id>/edit/", views.PropertyEditView.as_view(), name="edit"),
+    path("<uuid:public_id>/owners/", views.PropertySharesView.as_view(), name="shares"),
     path("<uuid:public_id>/archive/", views.PropertyArchiveView.as_view(), name="archive"),
     path("<uuid:public_id>/charges/", views.PropertyChargeView.as_view(), name="charges"),
     path("<uuid:public_id>/buildings/new/", views.BuildingCreateView.as_view(), name="building_create"),

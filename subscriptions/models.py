@@ -1,4 +1,4 @@
-"""Platform billing: the landlord pays LandlordPMS (doc 11 §22 flow A, D-060).
+"""Platform billing: the landlord pays NyumbaPMS (doc 11 §22 flow A, D-060).
 
 Nothing here links to rent invoices, payments or ledgers, and nothing in those apps links here.
 Other apps ask `subscriptions.entitlements`, never these models, what a plan allows.
@@ -15,6 +15,11 @@ from django.utils.translation import gettext_lazy as _
 from core.models import PublicIdModel, TimeStampedModel
 
 
+# One-off plans are no longer offered (D-146). The prices stay in the data and subscriptions already on one carry on;
+# set this to True to offer them again.
+ONE_OFF_OFFERED = False
+
+
 class Plan(TimeStampedModel):
     key = models.SlugField(max_length=30, unique=True)
     name = models.CharField(max_length=60)
@@ -24,6 +29,15 @@ class Plan(TimeStampedModel):
     # Before VAT (D-060 item 4).
     monthly_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     yearly_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    # Pay once for `one_off_years` of use (D-132); zero means the plan has no one-off price. After the years
+    # it renews at the yearly price.
+    one_off_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    one_off_years = models.PositiveSmallIntegerField(default=5)
+    # A short tag on the plan's card, such as "Most popular" or "Best value"; empty for none.
+    badge = models.CharField(max_length=30, blank=True)
+    # What the card lists under "Included", one per line. Empty means the standard list of product features.
+    features = models.TextField(blank=True, help_text=_("One feature per line, shown on this plan's card. "
+                                                       "Leave empty to show the standard list."))
     # Shown on the subscription page for owners to choose; Enterprise is set up by a Platform Admin.
     self_serve = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -37,10 +51,37 @@ class Plan(TimeStampedModel):
 
     @property
     def is_free(self) -> bool:
-        return not self.monthly_price and not self.yearly_price
+        return not self.monthly_price and not self.yearly_price and not self.one_off_price
+
+    @property
+    def has_one_off(self) -> bool:
+        return ONE_OFF_OFFERED and self.one_off_price > 0 and self.one_off_years > 0
+
+    @property
+    def feature_lines(self) -> list[str]:
+        """The lines typed in admin for this plan's card; empty means the card shows the standard list."""
+        return [line.strip() for line in self.features.splitlines() if line.strip()]
+
+    @property
+    def yearly_per_month(self) -> Decimal:
+        return (self.yearly_price / 12).quantize(Decimal("1"))
 
     def price(self, interval: str) -> Decimal:
+        if interval == Subscription.Interval.ONCE:
+            return self.one_off_price
         return self.yearly_price if interval == Subscription.Interval.YEARLY else self.monthly_price
+
+    def offers(self) -> list[tuple[str, Decimal, int]]:
+        """What the page shows: (interval, price, percent saved against paying monthly for the same time)."""
+        out = []
+        for interval, months in (("MONTHLY", 1), ("YEARLY", 12), ("ONCE", 12 * self.one_off_years)):
+            price = self.price(interval)
+            if price <= 0 or (interval == "ONCE" and not self.has_one_off):
+                continue
+            saved = 0 if interval == "MONTHLY" or not self.monthly_price else int(
+                max(Decimal("0"), 1 - price / (self.monthly_price * months)) * 100)
+            out.append((interval, price, saved))
+        return out
 
 
 class Subscription(TimeStampedModel):
@@ -53,6 +94,7 @@ class Subscription(TimeStampedModel):
     class Interval(models.TextChoices):
         MONTHLY = "MONTHLY", _("Monthly")
         YEARLY = "YEARLY", _("Yearly")
+        ONCE = "ONCE", _("One-off")
 
     organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT,
                                         related_name="subscription")
@@ -134,10 +176,11 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
 
 
 class SubscriptionPayment(PublicIdModel):
-    """Money received by LandlordPMS, for an invoice or an SMS top-up. Never deleted."""
+    """Money received by NyumbaPMS, for an invoice or an SMS top-up. Never deleted."""
 
     class Method(models.TextChoices):
         MPESA = "MPESA", _("M-Pesa")
+        PAYSTACK = "PAYSTACK", _("Paystack")
         BANK = "BANK", _("Bank transfer")
         OTHER = "OTHER", _("Other")
 
@@ -146,7 +189,7 @@ class SubscriptionPayment(PublicIdModel):
     invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
                                 related_name="payments")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    method = models.CharField(max_length=5, choices=Method.choices)
+    method = models.CharField(max_length=10, choices=Method.choices)
     reference = models.CharField(max_length=60, unique=True)
     paid_on = models.DateField()
     note = models.CharField(max_length=200, blank=True)
@@ -186,10 +229,26 @@ class PlatformSequence(models.Model):
 
 
 class SmsWallet(models.Model):
-    """The balance, kept on one row so it can be locked; the entries are the record."""
+    """The balance, kept on one row so it can be locked; the entries are the record. The mode says who pays
+    for the organization's SMS and the monthly figure what it gets (D-142)."""
+
+    class Mode(models.TextChoices):
+        SPONSORED = "SPONSORED", _("Sponsored: we pay, up to the monthly cap")
+        PREPAID = "PREPAID", _("Prepaid: the organization pays from its wallet")
+        BUNDLED = "BUNDLED", _("Bundled: a monthly allowance, then the wallet")
 
     organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="sms_wallet")
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    mode = models.CharField(max_length=10, choices=Mode.choices, default=Mode.SPONSORED)
+    # SMS parts a month. Sponsored: the most we pay for (empty means no cap). Bundled: the parts included before
+    # the wallet is charged. Prepaid: not used.
+    monthly_cap = models.PositiveIntegerField(_("monthly parts"), null=True, blank=True, default=300,
+                                              help_text=_("Sponsored: the most SMS parts we pay for in a month "
+                                                          "(empty for no cap). Bundled: parts included each month."))
+    # The warning last sent this month (services.ALERT_*), so each is sent once; reset on a new month, a top-up
+    # and a change of terms.
+    alert_month = models.DateField(null=True, blank=True)
+    alert_level = models.PositiveSmallIntegerField(default=0)
 
     def __str__(self):
         return f"{self.organization} {self.balance}"
@@ -206,6 +265,8 @@ class SmsWalletEntry(models.Model):
     # Signed: a top-up adds, a message takes away.
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     balance_after = models.DecimalField(max_digits=12, decimal_places=2)
+    # SMS parts a message used, whoever paid for them; zero for money entries.
+    segments = models.PositiveIntegerField(default=0)
     payment = models.OneToOneField(SubscriptionPayment, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="sms_top_up")
     message = models.OneToOneField("notifications.Message", on_delete=models.PROTECT, null=True, blank=True,
@@ -221,3 +282,105 @@ class SmsWalletEntry(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount}"
+
+
+# ---------------------------------------------------------------------------
+# Landlords paying online (D-126): our own Paybill through Daraja, and Paystack
+# ---------------------------------------------------------------------------
+
+
+class PlatformPaySwitch(models.Model):
+    """Which ways of paying online the subscription page offers. One row, changed in Django admin.
+
+    The keys stay in the environment; a way is offered only when its keys are set and it is on here,
+    so either can be turned off for a while without touching the server."""
+
+    mpesa_on = models.BooleanField(_("M-Pesa prompt and Paybill (Daraja)"), default=True)
+    paystack_on = models.BooleanField(_("Paystack (card or M-Pesa)"), default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "online payment switch"
+        verbose_name_plural = "online payment switch"
+
+    def __str__(self):
+        return "Online payments"
+
+    @classmethod
+    def get(cls) -> "PlatformPaySwitch":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class PlatformCheckout(PublicIdModel):
+    """One attempt to pay an invoice online: an M-Pesa prompt to the landlord's phone, or a Paystack
+    checkout page. The money itself arrives as a PlatformTransaction."""
+
+    class Provider(models.TextChoices):
+        MPESA = "MPESA", _("M-Pesa prompt")
+        PAYSTACK = "PAYSTACK", _("Paystack")
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Waiting")
+        PAID = "PAID", _("Paid")
+        FAILED = "FAILED", _("Not paid")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    # Empty for an SMS top-up (D-142): the money goes to the organization's SMS wallet.
+    invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="checkouts")
+    provider = models.CharField(max_length=10, choices=Provider.choices)
+    # Daraja's CheckoutRequestID, or our Paystack reference.
+    reference = models.CharField(max_length=80, unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    result = models.CharField(max_length=300, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.get_provider_display()} {self.invoice or 'SMS credit'} {self.get_status_display()}"
+
+
+class PlatformTransaction(models.Model):
+    """Money Safaricom or Paystack told us about, kept once per code exactly as received. APPLIED ones
+    became a SubscriptionPayment; UNMATCHED ones wait for a Platform Admin, who records the payment by
+    hand with the same code (that links them)."""
+
+    class Source(models.TextChoices):
+        STK = "STK", _("M-Pesa prompt")
+        C2B = "C2B", _("Paybill")
+        PAYSTACK = "PAYSTACK", _("Paystack")
+
+    class Status(models.TextChoices):
+        APPLIED = "APPLIED", _("Applied")
+        UNMATCHED = "UNMATCHED", _("Needs a person")
+
+    source = models.CharField(max_length=10, choices=Source.choices)
+    # The M-Pesa receipt, or PS<Paystack id>.
+    code = models.CharField(max_length=30, unique=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="KES")
+    account = models.CharField(_("account typed"), max_length=60, blank=True)
+    phone = models.CharField(max_length=80, blank=True)
+    payer_name = models.CharField(max_length=150, blank=True)
+    paid_at = models.DateTimeField()
+    invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="+")
+    payment = models.OneToOneField(SubscriptionPayment, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="platform_transaction")
+    status = models.CharField(max_length=10, choices=Status.choices, db_index=True)
+    note = models.CharField(max_length=300, blank=True)
+    raw_payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.code} {self.amount}"

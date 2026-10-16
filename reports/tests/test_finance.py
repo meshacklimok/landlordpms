@@ -191,3 +191,58 @@ def test_another_organizations_property_is_not_found(client, owner, books):
     stranger_prop = make_property(make_org(name="Other").organization)
     login(client, owner)
     assert client.get(reverse("reports:cash_flow"), {"property": str(stranger_prop.public_id)}).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Comparisons and breakdowns (D-110)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(("start", "end", "expected"), [
+    (D(2026, 1, 1), D(2026, 2, 1), (D(2025, 11, 1), D(2025, 12, 1))),
+    (D(2026, 3, 1), D(2026, 3, 1), (D(2026, 2, 1), D(2026, 2, 1))),
+    (D(2025, 4, 1), D(2026, 3, 1), (D(2024, 4, 1), D(2025, 3, 1))),
+])
+def test_the_previous_period_is_as_long_and_just_before(start, end, expected):
+    assert finance.previous_period(start, end) == expected
+
+
+def test_by_property_splits_the_figures(owner, books, acacia, baobab):
+    report = finance.money_report(owner, JAN, FEB)
+    assert [p.property for p in report.by_property] == [acacia, baobab]
+    a, b = (p.figures for p in report.by_property)
+    assert (a.income, a.rent_billed, a.refunds, a.owner_payments) == (money(35000), money(30000), money(3000), 0)
+    assert (b.income, b.rent_billed, b.collection_rate) == (0, money(20000), Decimal(0))
+    assert a.income + b.income == report.total.income
+    # One property in view: nothing to split.
+    assert finance.money_report(owner, JAN, FEB, acacia).by_property == []
+
+
+def test_margin_average_and_the_previous_period(owner, books):
+    report = finance.money_report(owner, JAN, FEB, compare=True)
+    assert (report.total.margin, report.total.expense_ratio) == (Decimal(1), Decimal(0))
+    assert report.average.income == money(17500)
+    assert report.previous.label == "Nov 2025 – Dec 2025"
+    change = report.change("income")
+    assert (change.now, change.before, change.ratio) == (money(35000), 0, None)
+    assert finance.money_report(owner, JAN, FEB).previous is None
+    assert finance.money_report(owner, JAN, FEB).change("income").delta is None
+
+
+def test_receivables_summary(owner, books):
+    rows, total = finance.receivables(owner, MAR_20)
+    summary = finance.receivables_summary(rows, total)
+    assert summary.leases == 1 and summary.overdue == money(20000)
+    assert [r.lease for r in summary.largest] == [books[1]]
+    assert sum(share for _k, _l, _a, share in summary.shares) == 1
+    assert summary.over_60_share is not None
+
+
+def test_the_pages_show_the_analysis(client, owner, books):
+    login(client, owner)
+    page = client.get(reverse("reports:profit_loss"), {"from": "2026-01", "to": "2026-02"}).content.decode()
+    assert "By property" in page and "Nov 2025 – Dec 2025" in page and 'id="chart-pl-months"' in page
+    page = client.get(reverse("reports:cash_flow"), {"from": "2026-01", "to": "2026-02"}).content.decode()
+    assert "By property" in page and "Where money in came from" in page and 'data-chart="chart-cash-months"' in page
+    page = client.get(reverse("reports:receivables")).content.decode()
+    assert "Largest balances" in page and "Share of total" in page and 'id="chart-aging"' in page

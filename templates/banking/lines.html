@@ -6,7 +6,7 @@
   <p class="small text-body-secondary">{% trans "Every money-in line imported from a bank statement, and what happened to it." %}</p>
   {% include "banking/_nav.html" with section="lines" %}
 
-  <form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
     <div class="row g-2 align-items-end">
       <div class="col-12 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
@@ -19,8 +19,8 @@
           {% for value, label in statuses %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-auto d-flex gap-2">
-        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+      <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button>
         {% if q or status %}<a class="btn btn-link text-body-secondary" href="{% url 'banking:lines' %}">{% trans "Clear" %}</a>{% endif %}
       </div>
     </div>
@@ -57,12 +57,7 @@
   </div>
   {% include "partials/pager.html" %}
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-bank"></i></div>
-    {% if q or status %}<h2 class="h6">{% trans "No lines match" %}</h2>
-    {% else %}<h2 class="h6">{% trans "No bank lines yet" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Import a bank statement to see its money-in lines here." %}</p>{% endif %}
-  </div></div>
+  {% if q or status %}{% include "partials/empty_state.html" with icon="bi-bank" title=_("No lines match") %}{% else %}{% include "partials/empty_state.html" with icon="bi-bank" title=_("No bank lines yet") text=_("Import a bank statement to see its money-in lines here.") %}{% endif %}
   {% endif %}
 </div>
 {% endblock %}
