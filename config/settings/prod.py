@@ -80,7 +80,7 @@ MAILERS = {
         },
     },
 }
-# A second provider for mail to tenants and owners (core/mail.py). Optional: without it, "default" carries everything.
+# A second provider for mail to tenants and owners (notifications/providers/mail.py). Optional: without it, "default" carries everything.
 if os.getenv("EMAIL_MESSAGES_HOST"):
     MAILERS["messages"] = {
         "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
@@ -97,10 +97,10 @@ DEFAULT_FROM_EMAIL = SERVER_EMAIL = _required("DEFAULT_FROM_EMAIL")
 
 # The console adapter would print login codes to the log instead of sending them. It is allowed only
 # when explicitly asked for (a staging server without an SMS account).
-if SMS_BACKEND.startswith("core.sms.") and SMS_BACKEND != "core.sms.AfricasTalkingSmsSender" \
+if SMS_BACKEND.startswith("notifications.providers.sms.") and SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender" \
         and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
     raise ImproperlyConfigured("Set SMS_BACKEND to a real SMS adapter (or ALLOW_CONSOLE_SMS=1 on staging).")
-if SMS_BACKEND == "core.sms.AfricasTalkingSmsSender":  # noqa: F405
+if SMS_BACKEND == "notifications.providers.sms.AfricasTalkingSmsSender":  # noqa: F405
     _required("AT_USERNAME")
     _required("AT_API_KEY")
     if len(_required("AT_CALLBACK_TOKEN")) < 32:
@@ -116,14 +116,14 @@ if PLATFORM_DARAJA_CONSUMER_KEY or PLATFORM_PAYSTACK_SECRET_KEY:  # noqa: F405
         raise ImproperlyConfigured("PLATFORM_CALLBACK_TOKEN must be at least 32 random characters.")
 if PLATFORM_PAYSTACK_SECRET_KEY and not PLATFORM_PAYSTACK_SECRET_KEY.startswith(("sk_test_", "sk_live_")):  # noqa: F405
     raise ImproperlyConfigured("PLATFORM_PAYSTACK_SECRET_KEY must be a Paystack secret key (sk_live_...).")
-if WHATSAPP_BACKEND == "core.whatsapp.CloudApiWhatsAppSender":  # noqa: F405
+if WHATSAPP_BACKEND == "notifications.providers.whatsapp.CloudApiWhatsAppSender":  # noqa: F405
     _required("WA_PHONE_NUMBER_ID")
     _required("WA_ACCESS_TOKEN")
     _required("WA_APP_SECRET")
     if len(_required("WA_VERIFY_TOKEN")) < 32:
         raise ImproperlyConfigured("WA_VERIFY_TOKEN must be at least 32 random characters.")
 elif WHATSAPP_BACKEND and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
-    raise ImproperlyConfigured("Set WHATSAPP_BACKEND to core.whatsapp.CloudApiWhatsAppSender or leave it empty.")
+    raise ImproperlyConfigured("Set WHATSAPP_BACKEND to notifications.providers.whatsapp.CloudApiWhatsAppSender or leave it empty.")
 
 if WEBHOOKS_ALLOW_PRIVATE:  # noqa: F405
     raise ImproperlyConfigured("WEBHOOKS_ALLOW_PRIVATE is for development only (D-083 item 5).")

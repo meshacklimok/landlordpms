@@ -136,7 +136,7 @@ About 240 `transaction.atomic` blocks: every service that posts money, allocates
 - The app's user is not a superuser and does not own the tables (§19). `launch_check` fails if it is a superuser.
 - TLS to a remote database (§1).
 - Secrets such as Daraja keys are encrypted in their columns (`FIELD_ENCRYPTION_KEYS`, D-045).
-- Every query is parameterized by the ORM; the few raw queries (`core/dbhealth.py`, the triggers) take no user input.
+- Every query is parameterized by the ORM; the few raw queries (`ops/dbhealth.py`, the triggers) take no user input.
 - `db_health` never shows query text from `pg_stat_activity`, because it holds bound values such as phone numbers. `pg_stat_statements` stores queries with values replaced by `$1`.
 
 ## 19. User permissions
@@ -247,17 +247,17 @@ It then times every list page with its query count and database time, and rolls 
 
 ### Load test
 
-`loadtest/locustfile.py` (Locust, a development requirement) has many people use the site at once:
+`tests/loadtest/locustfile.py` (Locust, a development requirement) has many people use the site at once:
 
 - **Staff (3 in 9):** the home page, the lists and lease accounts, 2–8 s apart.
 - **Tenants (5 in 9):** their portal page and lease, 5–20 s apart.
 - **Safaricom (1 in 9):** a C2B confirmation every 1–5 s. Each one is a new receipt to a real unit's reference, so it is matched, allocated, receipted and posted to the ledger.
 
-`python manage.py loadtest_setup --leases 200 --staff 10 --tenants 50` builds the organization and writes `loadtest/setup.json`. That file holds live sessions and is git-ignored; delete it afterwards. The command refuses real SMS and WhatsApp senders, since the tenants' numbers are made up. Its rows stay and the ledger cannot be deleted from, so run it on a database you will drop:
+`python manage.py loadtest_setup --leases 200 --staff 10 --tenants 50` builds the organization and writes `tests/loadtest/setup.json`. That file holds live sessions and is git-ignored; delete it afterwards. The command refuses real SMS and WhatsApp senders, since the tenants' numbers are made up. Its rows stay and the ledger cannot be deleted from, so run it on a database you will drop:
 
 1. Create a scratch database (`createdb landlordpms_loadtest`), and with `DB_NAME=landlordpms_loadtest` run `migrate` and `loadtest_setup`.
 2. Start the site against it with `DB_POOL=1`.
-3. Run `locust -f loadtest/locustfile.py --host http://127.0.0.1:8005 --users 60 --spawn-rate 5 --run-time 5m --headless`.
+3. Run `locust -f tests/loadtest/locustfile.py --host http://127.0.0.1:8005 --users 60 --spawn-rate 5 --run-time 5m --headless`.
 4. Drop the database.
 
 **First run (2026-10-03).** Development laptop, Windows, `runserver` (one process), DEBUG on, Locust on the same machine. 200 leases with 14 months of history.

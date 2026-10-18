@@ -45,44 +45,52 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",
-    # NyumbaPMS — Core
+    # Foundations: shared code, running the platform, who is who
     "core",
-    'accounts',
-    'properties',
-    'tenants',
-    'leases',
-    'imports',
-    'billing',
-    'payments',
-    'mpesa',
-    'banking',
-    'notifications',
-    'inspections',
-    'meters',
-    'letters',
-    'esign',
-    'search',
-    'portal',
-    'owner_portal',
+    "ops",
+    "accounts",
 
-    # NyumbaPMS — Business Operations
-    'maintenance',
-    'expenses',
-    'accounting',
-    'utilities',
-    'documents',
-    'prospects',
-    'growth',
-    'reports',
-    'analytics',
+    # Property and people
+    "properties",
+    "tenants",
+    "leases",
+    "prospects",
 
-    # NyumbaPMS — Advanced
-    'ai_assistant',
-    'subscriptions',
-    'audit',
-    'support',
-    'api',
+    # Money in and out
+    "billing",
+    "payments",
+    "mpesa",
+    "banking",
+    "expenses",
 
+    # Day-to-day work on the buildings
+    "meters",
+    "maintenance",
+    "inspections",
+    "imports",
+
+    # Paperwork
+    "documents",
+    "letters",
+    "esign",
+
+    # Talking to people and the portals they use
+    "notifications",
+    "portal",
+    "owner_portal",
+    "search",
+
+    # Figures, the assistant and the developer console
+    "reports",
+    "ai_assistant",
+    "console",
+
+    # The business itself: plans, public site, support, audit and the API
+    "subscriptions",
+    "growth",
+    "support",
+    "audit",
+    "api",
 ]
 
 MIDDLEWARE = [
@@ -121,6 +129,7 @@ TEMPLATES = [
                 "owner_portal.context_processors.owner_portal",
                 "subscriptions.context_processors.banner",
                 "reports.pane.report_pane",
+                "growth.seo.context",  # title, description, canonical, Open Graph, JSON-LD or noindex (D-158)
             ],
         },
     },
@@ -299,6 +308,8 @@ CONTENT_SECURITY_POLICY = {
     "frame-ancestors": [CSP.NONE],
     "report-uri": "/csp-report/",
 }
+# The Paybill setup video (a link set in Django admin) plays in a privacy-friendly YouTube frame (D-174).
+CONTENT_SECURITY_POLICY["frame-src"] = ["https://www.youtube-nocookie.com"]
 if os.getenv("CSP_REPORT_ONLY") == "1":
     SECURE_CSP_REPORT_ONLY = CONTENT_SECURITY_POLICY
 else:
@@ -307,11 +318,13 @@ else:
 # Where the site is served, for links in messages sent outside a request (receipt links).
 SITE_URL = os.getenv("SITE_URL", "http://127.0.0.1:8005").rstrip("/")
 
-# SMS adapter (core/sms.py). The console adapter prints codes during development.
-SMS_BACKEND = os.getenv("SMS_BACKEND", "core.sms.ConsoleSmsSender")
+# SMS adapter (notifications/providers/sms.py). The console adapter prints codes during development.
+SMS_BACKEND = os.getenv("SMS_BACKEND", "notifications.providers.sms.ConsoleSmsSender")
+# These adapters used to live in core/. A server .env written then still works.
+SMS_BACKEND = SMS_BACKEND.replace("core.sms.", "notifications.providers.sms.", 1)
 # KES per SMS part, for the cost estimate shown before an announcement is sent.
 SMS_PRICE_ESTIMATE = os.getenv("SMS_PRICE_ESTIMATE", "0.80")
-# Africa's Talking (SMS_BACKEND=core.sms.AfricasTalkingSmsSender). AT_USERNAME=sandbox uses the sandbox.
+# Africa's Talking (SMS_BACKEND=notifications.providers.sms.AfricasTalkingSmsSender). AT_USERNAME=sandbox uses the sandbox.
 AT_USERNAME = os.getenv("AT_USERNAME", "")
 AT_API_KEY = os.getenv("AT_API_KEY", "")
 AT_SENDER_ID = os.getenv("AT_SENDER_ID", "")
@@ -351,9 +364,10 @@ AI_PRICE_INPUT_PER_M = os.getenv("AI_PRICE_INPUT_PER_M", "2.00")
 AI_PRICE_OUTPUT_PER_M = os.getenv("AI_PRICE_OUTPUT_PER_M", "12.00")
 USD_TO_KES = os.getenv("USD_TO_KES", "129")
 
-# WhatsApp adapter (core/whatsapp.py). Empty: WhatsApp is not offered and tenants get SMS.
+# WhatsApp adapter (notifications/providers/whatsapp.py). Empty: WhatsApp is not offered and tenants get SMS.
 WHATSAPP_BACKEND = os.getenv("WHATSAPP_BACKEND", "")
-# Meta WhatsApp Cloud API (WHATSAPP_BACKEND=core.whatsapp.CloudApiWhatsAppSender). Webhook: /hooks/whatsapp/
+WHATSAPP_BACKEND = WHATSAPP_BACKEND.replace("core.whatsapp.", "notifications.providers.whatsapp.", 1)
+# Meta WhatsApp Cloud API (WHATSAPP_BACKEND=notifications.providers.whatsapp.CloudApiWhatsAppSender). Webhook: /hooks/whatsapp/
 WA_API_VERSION = os.getenv("WA_API_VERSION", "v21.0")
 WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID", "")
 WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN", "")
@@ -394,8 +408,8 @@ FIELD_ENCRYPTION_KEYS = os.getenv("FIELD_ENCRYPTION_KEYS", "")
 MPESA_CLIENT = os.getenv("MPESA_CLIENT", "mpesa.daraja.DarajaClient")
 # Optional: only these IPs may call the M-Pesa callbacks (comma-separated). Empty allows any.
 MPESA_ALLOWED_IPS = [ip.strip() for ip in os.getenv("MPESA_ALLOWED_IPS", "").split(",") if ip.strip()]
-# Paystack, for landlords paying their subscription to us only (mpesa/paystack.py, D-126, D-140).
-PAYSTACK_CLIENT = os.getenv("PAYSTACK_CLIENT", "mpesa.paystack.PaystackClient")
+# Paystack, for landlords paying their subscription to us only (subscriptions/paystack.py, D-126, D-140).
+PAYSTACK_CLIENT = os.getenv("PAYSTACK_CLIENT", "subscriptions.paystack.PaystackClient")
 # Optional: only these IPs may call the Paystack webhook. Paystack's signature is checked either way.
 PAYSTACK_ALLOWED_IPS = [ip.strip() for ip in os.getenv("PAYSTACK_ALLOWED_IPS", "").split(",") if ip.strip()]
 # Paystack needs an email for each checkout; an organization without one gets <its id>@<this domain>.
@@ -410,6 +424,9 @@ ADMINS = [(a.split("<")[0].strip(), a.split("<")[1].rstrip(">").strip()) if "<" 
           for a in os.getenv("ADMINS", "").split(",") if a.strip()]
 # Where `backup` writes; outside the web root. Empty means <repo>/backups.
 BACKUP_DIR = os.getenv("BACKUP_DIR", "")
+# One organization's data as a ZIP (D-177): kept outside media and the backups, deleted when the link expires.
+DATA_EXPORT_DIR = os.getenv("DATA_EXPORT_DIR", "") or str(BASE_DIR / "exports")
+DATA_EXPORT_HOURS = int(os.getenv("DATA_EXPORT_HOURS", "48"))
 PG_DUMP = os.getenv("PG_DUMP", "")
 PG_RESTORE = os.getenv("PG_RESTORE", "")
 # Database alerts from `check_jobs` (doc 20 §22-24). DB_ALERT_SIZE_MB of 0 means no size limit is watched.
@@ -426,11 +443,10 @@ SECURITY_ALERT_CSP_HOUR = int(os.getenv("SECURITY_ALERT_CSP_HOUR", "500"))
 MESSAGE_TEXT_DAYS = int(os.getenv("MESSAGE_TEXT_DAYS", "730"))
 
 # Support and the public pages (D-061, D-063).
-# Refer a landlord (D-133): free days for both sides once the new one pays, and the most a referrer earns a year.
-REFERRAL_REWARD_DAYS = int(os.getenv("REFERRAL_REWARD_DAYS", "30"))
-REFERRAL_MAX_REWARDS_PER_YEAR = int(os.getenv("REFERRAL_MAX_REWARDS_PER_YEAR", "12"))
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
 SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "")
+# An https link (e.g. YouTube) to the Paybill setup video, shown on the M-Pesa setup pages. Empty hides it (D-174).
+MPESA_SETUP_VIDEO_URL = os.getenv("MPESA_SETUP_VIDEO_URL", "")
 DATA_PROTECTION_EMAIL = os.getenv("DATA_PROTECTION_EMAIL", "")
 HOSTING_LOCATION = os.getenv("HOSTING_LOCATION", "")
 # The Terms and Privacy Policy (D-095): the company's legal name, and true once a lawyer has checked the texts.

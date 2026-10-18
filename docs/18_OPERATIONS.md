@@ -22,6 +22,7 @@ All times are Africa/Nairobi: set the server's time zone to it. The file to inst
 */5  *  *  *  *  send_due_messages
 */5  *  *  *  *  send_webhooks
 */15 *  *  *  *  maintenance_alerts
+*/5  *  *  *  *  run_data_exports
 10   2  *  *  *  backup
 30   5  *  *  *  subscriptions_daily
 0    6  *  *  *  billing_daily
@@ -40,7 +41,7 @@ Each command except `check_jobs` records a `JobRun` row (in admin under Core ›
 
 | Job | Must succeed within |
 |---|---|
-| `send_due_messages`, `send_webhooks` | 30 minutes |
+| `send_due_messages`, `send_webhooks`, `run_data_exports` | 30 minutes |
 | `maintenance_alerts` | 1 hour |
 | `billing_daily`, `mpesa_daily`, `subscriptions_daily`, `reports_daily`, `backup` | 26 hours |
 | `purge_otp_codes`, `purge_import_previews`, `purge_assistant`, `purge_sessions`, `purge_messages` | 8 days |
@@ -92,7 +93,8 @@ To add a job, subclass `core.jobs.JobCommand`, then add it to `core.jobs.JOBS`, 
 | `DB_ALERT_SIZE_MB` | `0` (off) | Alert when the database grows past this; set below the provider's limit. |
 | `SECURITY_ALERT_SIGNIN_HOUR`, `SECURITY_ALERT_TWO_STEP_HOUR`, `SECURITY_ALERT_CSP_HOUR` | `300`, `100`, `500` | Alert when an hour has more failed sign-ins, wrong two-step codes or CSP reports than this, across the platform (D-108). Counted in the shared cache. |
 | `SUPPORT_EMAIL` | empty | Where support requests are emailed. |
-| `SUPPORT_WHATSAPP` | empty | A number such as `254700000000`. Shown as a wa.me link. |
+| `SUPPORT_WHATSAPP` | empty | A number such as `254700000000`. Shown as a wa.me link, and on the M-Pesa setup pages with a message already filled in (organization, Paybill, step). |
+| `MPESA_SETUP_VIDEO_URL` | empty | Fallback only. Set the Paybill setup video link in Django admin (Mpesa › Setup video); it shows on the M-Pesa setup pages when a link is set, and nothing shows when it is empty. |
 | `DATA_PROTECTION_EMAIL` | empty | Shown on `/security/` and `/privacy/`. |
 | `HOSTING_LOCATION` | empty | Shown on `/security/` and `/privacy/`, for example "Nairobi, Kenya" **[VERIFY]**. |
 | `SESSION_IDLE_MINUTES`, `SESSION_MAX_HOURS` | `60`, `12` | Staff are logged out after this long without a request, and this long after logging in (D-107). |
@@ -118,7 +120,7 @@ Platform billing settings (`PLATFORM_*`, `SMS_PRICE`, `SMS_WALLET_ENFORCED`, `ET
 
 Before the first launch, `python manage.py launch_check` lists what the server still lacks: PostgreSQL tools that match the server, a writable backup folder with a backup from the last day, a cache that answers, every job having run (including a restore test), alert recipients, and a real mail server. It fails until all are done, and reminds you of the two things it cannot see: the off-site copy and the uptime monitor (D-098).
 
-`python manage.py db_health` shows the database's connections, size, disk, slow queries and indexes, and fails when something needs attention (doc 20). `python manage.py scale_test --leases 200 --confirm` times every list page against a large organization and rolls it back: run it on staging or a restored copy, never live. For many users at once, `loadtest_setup` and `loadtest/locustfile.py` (doc 20 §30) run against a scratch database that is dropped afterwards. Set `DB_POOL_MAX` to at least gunicorn's threads per worker.
+`python manage.py db_health` shows the database's connections, size, disk, slow queries and indexes, and fails when something needs attention (doc 20). `python manage.py scale_test --leases 200 --confirm` times every list page against a large organization and rolls it back: run it on staging or a restored copy, never live. For many users at once, `loadtest_setup` and `tests/loadtest/locustfile.py` (doc 20 §30) run against a scratch database that is dropped afterwards. Set `DB_POOL_MAX` to at least gunicorn's threads per worker.
 
 Before running a migration that deletes or rewrites data, restore the latest backup into a scratch database and run it there first.
 

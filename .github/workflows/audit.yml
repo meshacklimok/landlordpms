@@ -34,6 +34,6 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       # Audits what was just installed, including packages pulled in by others. Fails on any known advisory;
-      # one that does not affect us is skipped with --ignore-vuln <ID> and a note in config/docs/08_DECISIONS_LOG.md.
+      # one that does not affect us is skipped with --ignore-vuln <ID> and a note in docs/08_DECISIONS_LOG.md.
       - name: Audit installed packages
         run: pip-audit --strict --progress-spinner off

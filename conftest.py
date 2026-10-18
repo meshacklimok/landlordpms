@@ -6,7 +6,7 @@ import pytest
 from django.conf import settings as django_settings
 from django.core.cache import cache
 
-from core.sms import MemorySmsSender
+from notifications.providers.sms import MemorySmsSender
 
 
 def pytest_configure(config):
@@ -43,10 +43,10 @@ def pytest_configure(config):
 @pytest.fixture(autouse=True)
 def _test_settings(settings):
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
-    settings.SMS_BACKEND = "core.sms.MemorySmsSender"
+    settings.SMS_BACKEND = "notifications.providers.sms.MemorySmsSender"
     # Never reach Safaricom from a test.
     settings.MPESA_CLIENT = "mpesa.daraja.FakeDarajaClient"
-    settings.PAYSTACK_CLIENT = "mpesa.paystack.FakePaystackClient"
+    settings.PAYSTACK_CLIENT = "subscriptions.paystack.FakePaystackClient"
     # Never reach a push service from a test; tests that push set the VAPID keys.
     settings.PUSH_BACKEND = "notifications.push.MemoryPushSender"
     settings.VAPID_PUBLIC_KEY = settings.VAPID_PRIVATE_KEY = ""
@@ -66,7 +66,7 @@ def _test_settings(settings):
     FakeDarajaClient.calls.clear()
     FakeDarajaClient.fail = ""
     FakeDarajaClient.replies = {}
-    from mpesa.paystack import FakePaystackClient
+    from subscriptions.paystack import FakePaystackClient
 
     FakePaystackClient.calls.clear()
     FakePaystackClient.fail = ""

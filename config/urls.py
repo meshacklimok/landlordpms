@@ -78,7 +78,7 @@ urlpatterns = [
     path("my/", include("portal.urls")),
     path("conversations/", include("portal.staff_urls")),
     path("owner/", include("owner_portal.urls")),
-    path("console/", include("analytics.urls")),
+    path("console/", include("console.urls")),
     path("subscription/", include("subscriptions.urls")),
     path("", include("growth.urls")),
     path("", include("support.urls")),

@@ -1,6 +1,6 @@
 # NyumbaPMS — TODO
 
-Rule: **no models or views until Phase 0 is finished and agreed.** Docs live in `config/docs/`. Review docs 10–13.
+Rule: **no models or views until Phase 0 is finished and agreed.** Docs live in `docs/`. Review docs 10–13.
 Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ## Phase 0 — Plan and environment
@@ -32,7 +32,7 @@ Legend: `[ ]` todo · `[~]` in progress · `[x]` done
 - [ ] Hands-on trials of 3 Kenyan competitors; Daraja sandbox test for hashed phone; accountant check on eTIMS/eRITS
 - [x] The 10 key mobile screens checked at phone width, design system written down, tables scroll, touch targets, number keyboards (D-096, doc 19); still to try on real phones
 - [x] Financial separation, archive matrix, numbering, money, reporting metrics, notification preferences (doc 11 §22–27)
-- [x] ER diagram in `config/docs/erd.md`, generated from the models by `python manage.py erd`; a test fails when it falls behind (D-103)
+- [x] ER diagram in `docs/erd.md`, generated from the models by `python manage.py erd`; a test fails when it falls behind (D-103)
 - [ ] Decide open items below
 
 ### Open decisions (record in 08_DECISIONS_LOG.md)
@@ -135,7 +135,8 @@ _Status 2026-09-26: done on `feature/phase1-foundation` (D-041): migrations appl
 - [x] Encrypted Daraja credentials (`FIELD_ENCRYPTION_KEYS`), M-Pesa settings page, C2B URL registration
 - [x] Daily job `mpesa_daily`: retry stuck transactions, check waiting payment requests, in-app reconciliation summary
 - [x] One M-Pesa code counted once: a hand-typed code blocks automatic payment of the callback, and a code waiting in the inbox cannot be typed in (D-045 item 12)
-- [ ] Safaricom go-live (checklist: config/docs/17_MPESA_GO_LIVE.md)
+- [ ] Safaricom go-live (checklist: docs/17_MPESA_GO_LIVE.md)
+- [ ] When the Droplet is switched on again: add `SUPPORT_WHATSAPP=254748578190` to `/etc/landlordpms.env`, restart, run `migrate`, and paste the setup video link in admin (Mpesa › Setup video) (D-174)
 
 ## Phase 7 — Dashboards, search, tenant portal
 - [x] Collectability grade (A to E) and daily who-to-call list with calls and promises to pay (D-052)

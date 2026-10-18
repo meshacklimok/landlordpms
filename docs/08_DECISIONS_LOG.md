@@ -609,7 +609,7 @@ Phase 8 (doc 11 §15 and §22 flow A, doc 12 Tier 1, doc 14 A12/A13, docs 05 and
    - a `SECRET_KEY` check that it is at least 50 characters and not the development key.
 
    `manage.py check --deploy` passes in production.
-8. **Doc 18 (`config/docs/18_OPERATIONS.md`)** covers:
+8. **Doc 18 (`docs/18_OPERATIONS.md`)** covers:
    - the processes;
    - the cron table;
    - environment variables;
@@ -1398,7 +1398,7 @@ Sign-up already asks "I accept the Terms of Service and Privacy Policy", but the
 
 ### D-096 — The 10 key screens on a phone, and the small design system — ACCEPTED (2026-10-01, open to change before merge)
 Doc 14 C2 asked to sketch 10 key mobile screens before writing templates. The templates exist now (Bootstrap 5, mobile first, D-010), so the useful step is to write down what each screen shows on a phone, check it, and fix what does not work at phone width. A native app would start from the same list.
-1. **The 10 screens and the record of them** go in `config/docs/19_MOBILE_SCREENS.md`: for each one, what it is for, the main action, what shows first on a 360-pixel-wide phone, and what was found. They are: home, units, unit, tenant, record a payment, invoice, arrears, add a lease, the M-Pesa inbox of unmatched payments, and the tenant portal home.
+1. **The 10 screens and the record of them** go in `docs/19_MOBILE_SCREENS.md`: for each one, what it is for, the main action, what shows first on a 360-pixel-wide phone, and what was found. They are: home, units, unit, tenant, record a payment, invoice, arrears, add a lease, the M-Pesa inbox of unmatched payments, and the tenant portal home.
 2. **The design system** is written down from what the pages already use: Bootstrap 5.3 colours and components, cards for lists on a phone instead of wide tables, and status badges with one colour meaning per state (green active or paid, blue occupied or info, yellow needs attention, red overdue or failed, grey ended). No new library and no new colours.
 3. **Tables.** Every table sits in a `table-responsive` wrapper, so a wide one scrolls inside its card instead of pushing the page sideways. A test checks every template.
 4. **Tap targets.** On touch screens, small buttons and form controls are at least 40 pixels high (doc 14 C3), through one CSS rule in the base page. Pages on a desktop look the same as before.
@@ -1514,7 +1514,7 @@ D-099 item 3: measure how much the installed web app is used before deciding on 
 Two "Always" and Phase 0 items that need no one outside the codebase: no secrets in Git, and the ER diagram awaiting review.
 1. **Secrets check.** The Git history and the uncommitted work were searched for keys, tokens, private keys, `.env` files and database dumps. None were found; the only password is the made-up one the test accounts use, and `.env.example` holds placeholders only.
 2. **Backups are ignored.** `python manage.py backup` writes to `<project>/backups/` when `BACKUP_DIR` is not set, and that folder was not in `.gitignore`, so a plain `git add .` could have committed tenants' data. `.gitignore` now has `backups/` and `*.dump`, and a test checks both with `git check-ignore`.
-3. **The ER diagram is generated.** `config/docs/erd.md` was a Phase 0 draft written before any models existed. `python manage.py erd` now writes it from the models, in six sections by area, one Mermaid diagram each. It leaves out every table's link to the organization and links to a user that only say who created, approved or was given something.
+3. **The ER diagram is generated.** `docs/erd.md` was a Phase 0 draft written before any models existed. `python manage.py erd` now writes it from the models, in six sections by area, one Mermaid diagram each. It leaves out every table's link to the organization and links to a user that only say who created, approved or was given something.
 4. **It stays current.** `python manage.py erd --check` fails when the file differs from the models, and a test runs it, so a model change without a regenerated diagram fails the suite. A new app not placed in a section also fails, with the app named.
 5. **Replaces the draft's review points.** The draft's four questions are answered by the code: tenants sign in through the portal's own accounts, rent and deposits have separate ledgers (`LEDGER_ENTRY`, `DEPOSIT_ENTRY`), an M-Pesa transaction links to at most one payment, and `PAYMENT_ALLOCATION` splits a payment across invoices.
 6. **Also:** the old `db.sqlite3` is already gone from the project folder, so that TODO item is closed.
@@ -2071,7 +2071,7 @@ Reverses D-117. Rent and other tenant payments reach a landlord only through the
 
 1. **Why.** A tenant cannot pay a Paystack account by hand from the M-Pesa menu, so with Paystack every payment has to start from our side (a staff request, a pay link, USSD or the assistant). A Paybill takes payment at any time with the unit reference, with no fee from us or Paystack. Keeping two collection routes for rent also doubled what had to be tested and supported.
 2. **Removed.** The `PaystackCredentials` model and its admin ("Paystack accounts"), the `/hooks/ps/<token>/` route and `PaystackHookView`, the Paystack branch of `stk.send`, `record_paystack` and "Check", the Paystack panel on the M-Pesa settings page, the `PAYSTACK` payment-account type and the `PSK` transaction source, `charge_mpesa` and `environment_of` in `mpesa/paystack.py`, `mpesa/tests/test_paystack.py`, the launch-check count of landlords on Paystack, and the FAQ line. The Terms and Privacy pages now name Paystack only for the subscription.
-3. **Kept.** `mpesa/paystack.py` (the client, `signature_ok`, `FakePaystackClient`), `PAYSTACK_CLIENT`, `PAYSTACK_ALLOWED_IPS`, `PAYSTACK_EMAIL_DOMAIN`, `PLATFORM_PAYSTACK_SECRET_KEY`, and the whole subscription flow in `subscriptions/` with its webhook `/hooks/plat/<token>/ps/`.
+3. **Kept.** `subscriptions/paystack.py` (the client, `signature_ok`, `FakePaystackClient`), `PAYSTACK_CLIENT`, `PAYSTACK_ALLOWED_IPS`, `PAYSTACK_EMAIL_DOMAIN`, `PLATFORM_PAYSTACK_SECRET_KEY`, and the whole subscription flow in `subscriptions/` with its webhook `/hooks/plat/<token>/ps/`.
 4. **Migrations.** `mpesa/0011_remove_landlord_paystack` deletes the table and drops `PSK` from the source choices; `payments/0004_remove_landlord_paystack` drops `PAYSTACK` from the account types. Migrations 0010 and payments 0003 stay, because they may already have run on the pilot server. Any `PAYSTACK` payment account or `PSK` transaction row would stay in the database as plain data; none are expected, since landlord Paystack was never tried live.
 5. **Still to prove.** One test and one live subscription payment through our Paystack account (doc 17 §6); the `[VERIFY]` notes on the checkout reply and webhook fields stand.
 
@@ -2204,3 +2204,122 @@ A landlord who already keeps tenants in a book or a spreadsheet no longer retype
 5. **Photo of the filled form** (`imports/scan.py`): read by the same model as meter photos (D-144), counts against the monthly scan limit as kind "Filled-in form", not kept. The rows go through the same preview, which is marked as read by a computer, and the person must tick "I checked these rows against the paper" before applying.
 6. Tenants who moved in long ago: use the first day of the month they start on NyumbaPMS (or the real date) and enter what they still owe under Opening balances.
 7. Not built: updating existing tenants from a file, several tenants per unit on one line, export of current tenants in the same layout.
+
+### D-171 — Tenants sign agreements and move-out statements inside the portal — ACCEPTED (2026-10-17, open to change before merge)
+
+Builds on D-118 (link plus SMS code). A tenant with a portal account sees "To sign" on their lease page and signs at `/my/leases/<id>/sign/<request>/`.
+1. **Who may.** The live portal account for the signer's tenant, and the account's verified phone must equal the phone on the request (`esign.services.portal_signer`). Anyone else gets a 404.
+2. **How they are checked.** Already signed in with a verified phone, plus their password typed again at signing (10 tries per 10 minutes). No SMS code, no link. The link and code still work for tenants without a portal account.
+3. **Same document, same record.** The request, frozen PDF, SHA-256, landlord signature and completion are unchanged. `Signer.signed_via` (LINK or PORTAL) is stored, shown on the signing record page, in the evidence pack's record.json and the s.106B certificate text.
+4. **Declining** works the same way from the portal; the office is told.
+5. Not built: drawn signatures, signing from the USSD menu.
+
+### D-172 — Cards renew automatically, and the owner is emailed before and after — ACCEPTED (2026-10-18, open to change before merge)
+
+Until now a landlord had to pay every renewal invoice by hand. A landlord who pays by card can now have the renewal charged to the card.
+
+1. **Opt in.** The card tab on the Subscription page has "Renew automatically with this card". When that payment succeeds at Paystack and the card is reusable, we keep Paystack's authorization code (`Subscription.card_code_encrypted`, encrypted with `core.crypto`) plus brand, last four digits and expiry for display. We never see or store the card number. The code is blanked in the stored webhook copy (`PlatformTransaction.raw_payload`).
+2. **Control.** The plan card shows "Saved card: visa ending 4081 … Renews automatically" with Turn off / Turn on and Remove card (needs `subscription.manage`, audited). Paying by card again with the box ticked replaces the saved card.
+3. **Charging.** `subscriptions_daily` calls `collect.charge_due_cards` after the renewal invoice is issued: from 2 days before the invoice is due (`AUTO_CHARGE_DAYS_BEFORE`), once per day, at most 4 tries per invoice, only renewal invoices that are not disputed. It uses Paystack `charge_authorization`; the result is settled by the same `receive_paystack` as a checkout, so the webhook and the immediate reply count once. Each try is a `PlatformCheckout` with `automatic=True`.
+4. **Emails.** The billing contact gets "renewed" (amount, card, new end date) or "could not charge" (reason, whether we try again). The reminder 7/3/1 days before the end says which card will be charged and when, instead of "pay the invoice", when automatic renewal is on. After 4 failed tries the normal overdue reminders and grace days apply.
+5. **Not built.** Warning when a saved card expires before the renewal; automatic charge for a plan the landlord just chose (they pay that one themselves) or for SMS top-ups.
+6. **[VERIFY]** against a Paystack Kenya account: that cards are enabled, the `authorization` fields on the webhook (`reusable`, `last4`, `brand`, `exp_month`, `exp_year`), and that `charge_authorization` works in KES.
+
+### D-172 — Rent outlook report looks six months ahead — ACCEPTED (2026-10-18, open to change before merge)
+
+`/reports/outlook/` (`reports/outlook.py`, financial reports right, property filter, CSV and Excel). Every other report looks back; this one reads forward from the leases and stores nothing.
+1. **Contracted rent** for a month: each lease in force on its rent due day that month, at the rent in force that day, so rent changes already recorded count. A lease is in force until the earliest of its end date, the day it was closed and the move-out day under a notice to vacate (D-106). Draft leases are left out. Monthly rent is used whatever the billing frequency.
+2. **Holding over**: an active lease past its end date is counted as staying and listed apart, with a link to the leases report.
+3. **Rent ending** in a month: rent of leases in force that month but not the next, so lost from the month after unless renewed. The last month shown has none, because it has no next month to compare with. A table lists the leases ending, with why (end date, notice, closed early).
+4. **Expected to collect**: contracted rent × the collection rate of the last six full months (collected ÷ billed). With no rent billed there is no estimate and the page says so. It is an estimate, labelled as one.
+5. **Empty units**: asking rent of units empty today (`Unit.list_rent`), with how many have none.
+6. Not built: renewal probability, forecasting of arrears, quarterly lump-sum timing, a forecast that includes late fees or utilities.
+
+
+### D-173 — App layout tidy: empty apps removed, console renamed, Paystack client moved — ACCEPTED (2026-10-18, open to change before merge)
+
+1. **`accounting` and `utilities` removed.** Both were empty stubs (no models, URLs or imports) that suggested features living elsewhere: accounting reports are in `reports/accounting.py`, water and electricity in `meters`.
+2. **`analytics` package renamed `console`**, matching `/console/` and the `console` URL namespace; templates moved to `templates/console/`. The app **label stays `analytics`** (`ConsoleConfig.label`), so tables, migration history and constraint names are untouched and no data migration is needed. Do not change the label.
+3. **`mpesa/paystack.py` moved to `subscriptions/paystack.py`.** Paystack is used only for our own subscription payments (D-126, D-140). `PAYSTACK_CLIENT` now defaults to `subscriptions.paystack.PaystackClient`; a server `.env` that sets it must use the new path.
+4. **SMS, WhatsApp and email providers moved** from `core/` to `notifications/providers/` (`sms.py`, `whatsapp.py`, `mail.py`). `settings/base.py` rewrites an old `SMS_BACKEND=core.sms.…` or `WHATSAPP_BACKEND=core.whatsapp.…` to the new path, so a server `.env` written before the move still works; `.env.example` and `deploy/setup.sh` use the new path.
+5. **`ops` app** for running the platform: `backup`, `restore`, `scale`, `dbhealth`, `health`, `launch`, `pilot` and `alerts` moved out of `core/`, with their management commands (`backup`, `check_jobs`, `db_health`, `launch_check`, `loadtest_setup`, `pilot_report`, `restore_test`, `scale_test`; names unchanged, so cron and deploy scripts need no edit) and tests. `core.watch` and `core.jobs` stay in `core`, so `ops` imports `core` and `core` never imports `ops`. Keep it that way: new low-level counters go in `core`, anything that reads many apps goes in `ops`.
+6. **Left alone.** `e2e_walkthrough/test_walkthrough.py` runs saved bytecode (its source is gone) that still imports `core.sms`, so it no longer loads; it needs rewriting from source or dropping.
+7. **`INSTALLED_APPS` regrouped** by what each app is for (foundations, property and people, money, day-to-day work, paperwork, talking to people, figures and console, the business), with comments that now match the apps.
+8. **`reports/charts.py` removed.** It duplicated `core/charts.py`, which is the one in use.
+9. **`console.Announcement` renamed `PlatformAnnouncement`** (migration `console/0006`, `RenameModel`) so it no longer shares a name with `notifications.Announcement`.
+10. **`notifications/models/` is a package:** `channels.py` (SecretsMixin, SmsAccount, EmailAccount, WhatsAppAccount, PlatformWhatsApp) and `messaging.py` (the rest). `__init__` re-exports everything, so imports and old migrations are unchanged.
+11. **`loadtest/` moved to `tests/loadtest/`.** The `e2e_walkthrough/` folder was gone from disk.
+12. **Docs moved from `config/docs/` to `docs/`.** `manage.py erd` writes `docs/erd.md`. Doc numbers 24 and 25 are not used; nothing was invented to fill them.
+
+### D-174 — Guided Paybill setup with WhatsApp help — ACCEPTED (2026-10-18, open to change before merge)
+
+**Context.** A landlord had to find their own way through Daraja (app, Go-Live, keys, passkey) with only a three-line help page. Raw Safaricom errors, a Sandbox default and a "Connected" badge that meant only "URLs registered" left people stuck or wrongly sure. For the pilot we help each landlord ourselves, and the app should make that faster and let them go alone later.
+
+1. **Setup steps** on the account page (`mpesa/setup.py`, worked out from stored data): add the number, Daraja app, Go-Live, paste live keys, connect, choose properties, KES 10 test payment. Each has a plain-language how-to; the current step is open and a progress bar shows how far along.
+2. **Keys are checked on save** (an access-token call). "Save and connect" then registers the URLs in one go; "Save only" keeps the old behaviour.
+3. **Friendly errors** (`setup.friendly_error`) for the common Safaricom failures; unknown ones keep Safaricom's text.
+4. **Live is the default** for a new account; Sandbox is labelled "testing only".
+5. **Properties** are chosen on the account page (`services.set_properties`) instead of Django admin.
+6. **WhatsApp help button** with a prefilled message (organization, name, account, step) using `SUPPORT_WHATSAPP`; without it, the contact form.
+7. **Video:** `MPESA_SETUP_VIDEO_URL` (https) shows a "Watch the video" button that opens in a new tab. Not embedded, because the CSP does not allow other sites' frames; embedding a self-hosted video is possible later.
+8. **Not done:** a "pending Safaricom" status with reminders, and an automatic check that the KES 10 payment arrived (the last step turns done when any payment is received).
+9. **Stalled-setup reminder (added).** `mpesa_daily` sends `mpesa_setup_stalled` in-app to `mpesa.settings` holders for a Paybill or Till added 3 or more days ago and not connected: once a week, for up to two months, naming the next step. It stops once the URLs are registered. (`setup.send_reminders`.) Still not built: an "I have applied, waiting for Safaricom" toggle.
+
+
+### D-175 — Referral rewards for both sides, set in the console, with in-app notices — ACCEPTED (2026-10-18, open to change before merge)
+
+Builds on D-133.
+
+1. **Two rewards.** The referrer and the invited landlord each have their own reward on `ReferralPolicy`: a percent off the next plan invoice or free days. Defaults: referrer 50% off, invited 30 days free.
+2. **Referrer must have paid.** `require_referrer_paid` (default on): the referrer's reward waits until they have paid us once, and is released by their payment or the daily job. The invited landlord is not kept waiting: `Referral.referred_rewarded_at` records their reward, given once as soon as they have met the setup rules (`referrals._settle`).
+3. **Console page** `/console/control/referrals/` (superusers) edits every field, audited as `platform.referral_policy`; the Django admin has the same fields.
+4. **Code typed on the sign-up page.** A "Have a referral code?" line, collapsed by default, takes the code when there is no link; an unknown code stops sign-up with a message.
+5. **In-app notices** to those with `subscription.manage`: `referral_rewarded`, `referral_welcome`, and `referral_waiting` (told once that the referral waits for their first payment). They never name the other business.
+6. **Not done:** a referral code surviving a change of browser, a stronger self-referral check, a Swahili share text. A policy row saved before this change keeps its old values until the console page is saved once.
+
+
+### D-176 — Issue invoices by hand: choose what, who and which dates, review on its own page — ACCEPTED (2026-10-18, open to change before merge)
+
+Changes `/billing/invoices/generate/` (D-042, D-049). The daily job is unchanged.
+
+1. **Four choices.** Month; what to bill (rent, charges and metered utilities / rent and recurring charges only / metered only); who (every lease, one property, or leases picked by property · unit · tenant); a due date that replaces each lease's own due day (never in the past) and a "tell the tenants" switch. Invoices are always issued today; there is no back-dated issue date because it would move the ledger entry.
+2. **Review is its own page**, `/billing/invoices/generate/review/` (GET, writes nothing, bookmarkable). It shows the period, scope, issue and due dates, totals by property, each invoice with exact days covered and its charges, and warnings per lease: tenant cannot be reached (with the reason), no tenant, amount more than 20% off the last invoice, prorated part month, tenant already owes. "Issue" posts back to the same URL; "Change my choices" returns to the form filled in. An old form posted to the form URL is redirected to the review and issues nothing.
+3. **The message is shown.** Each tenant's `invoice_issued` text is rendered with real figures (`triggers.invoice_message_previews`), even when it could not be sent, with the reason beside it. The invoice number reads `INV-…` until issued. When nothing is left to bill, an example from a real lease is shown with a link to the template editor.
+4. **Not billed list** gives each skipped lease its reason (already billed on INV-…, lease does not cover the month, nothing in the period, no approved meter reading).
+5. **Code:** `invoicing.preview_month`, `why_nothing`, `generate_month(leases=, include=, due_date=, notify=)`; `billing.forms.GenerateForm`; views `GenerateView`, `GenerateReviewView`.
+6. **Not done:** back-dated issue date; the email copy is not shown in the review; the 20% warning limit is fixed.
+10. **"Waiting for Safaricom" (added).** `PaymentAccount.safaricom_applied_at` (payments migration 0005) is set by an "I have applied, waiting for Safaricom" button on step 3 and cleared by "I have not applied yet" (`services.mark_applied`, audited). While set and not live, step 3 reads "Waiting for Safaricom to approve your app", the account shows a "Waiting for Safaricom" badge in the list, and the weekly reminder says to paste the live keys if Safaricom has answered, or to message us after a week.
+
+### D-177 — Download one organization's data: for the landlord and for the console owner — ACCEPTED (2026-10-18, open to change before merge)
+
+**Context.** The nightly backup (D-062) is one `pg_dump` of every organization; it cannot be split by landlord. D-038 (doc 14 Group D) says the organization owns and can export its data, and `organization.export_data` was in the catalog with no page behind it. A landlord who leaves, asks for their data or needs it for a lawyer had no way to get it, and neither did we.
+
+**Decision.**
+1. **One ZIP, built by `accounts.data_export`.** A CSV per table under `data/<app>/<table>.csv` (UTF-8 with BOM, cells made formula-safe by `core.exports`), every uploaded file under `files/`, `manifest.json` (row counts, files, missing files) and a `README.txt`. Tables are found from the models: every model with a foreign key or one-to-one to Organization, and every model one step below one of those (report lines, repair photos, meter units). A new app is included without listing it.
+2. **No secrets.** Columns ending `_encrypted`, `_hash`, `_token`, or named `token`, `secret`, `password` are dropped; login factors, one-time codes, USSD PINs, push keys and API replay records are left out whole. Users are only staff, tenant-portal and owner-portal logins of that organization, with name, phone, email, active and joined date.
+3. **Made in the background (`DataExport`, accounts migration 0031).** The button only queues a row, one waiting per person; the `run_data_exports` job (cron every 5 minutes, watched in `core.jobs.JOBS`) builds the ZIP into `DATA_EXPORT_DIR` (default `<project>/exports/`, git-ignored, outside media so the off-site copies skip it) and texts the person a link to the page it was asked from. It works only for the person who asked, while signed in, for `DATA_EXPORT_HOURS` (48); then the job deletes the file and keeps the row as the record. Each download is audited (`data_export.download`). A failure is kept on the row; a run left going more than 2 hours is started again.
+4. **For the landlord:** "Download all my data" on Settings (`POST /organization/export/`, download at `/organization/export/<id>/`, both need `organization.export_data`, which the Owner role has; allowed while read-only). Asking is audited as `organization.export_data`, and everyone with `organization.manage` gets an SMS at once (accounts.alerts), before any data has left.
+5. **For the console owner:** "Make a ZIP" under Owner controls on a console organization page (`/console/organizations/<id>/export/`, superusers only, D-137). Audited as `console.organization_export` on the organization's own log, so the landlord can see we took it; no SMS to them. The landlord cannot download the console's copy, nor the console the landlord's.
+6. **A copy, not a restore.** It is for records, moving to another system or a lawyer; the server backup stays the recovery path.
+11. **Test payment, no-Paybill path, video embed (added).** Step 7 turns done when a payment arrives on the account after its URLs were registered (not any old payment), shows the amount and code, and gives a checklist plus "Check again" if nothing has come. The M-Pesa settings page has an "I don't have a Paybill yet" card (how to get one, record by hand, import a statement). The link is set in Django admin (Mpesa › Setup video; `SetupVideo`, one row, migration 0012), with `MPESA_SETUP_VIDEO_URL` only as a fallback while it is empty. A YouTube link is embedded through `youtube-nocookie.com`, and the CSP always allows that one frame host (`frame-src`); any other https link is a "Watch the video" button; with no link nothing about the video is shown.
+
+
+### D-178 — One NyumbaPMS look for every PDF, Excel and CSV download, and a print stylesheet — ACCEPTED (2026-10-18, open to change before merge)
+
+1. **PDFs.** `core/brand.py` holds the colours (green #146C4A, ink, muted, line, tint), the mark, `letterhead()` (the organization's logo from Settings, name, contact, document kind and number, a green rule), `Doc` (a green band at the top, a footer with the document title, the NyumbaPMS mark and "Page n of N", a frame with no padding so the body, letterhead and footer share edges) and `Stub` (the A5 receipt/invoice sheet). Agreements, move-out, letters, notices, handover pack, e-sign, owner statements, income packs, import forms, invoices, receipts and subscription documents all use them.
+2. **Excel.** `reports/xlsx.py` styles the heading row (white on green), freezes it, adds a filter, sizes columns, stores dates as dates and money as `#,##0.00`, bolds total rows, and sets A4 landscape or portrait, fit to width, header repeated on every printed page, with a header and footer. Text is always stored as text, so a cell starting with `=` is never a formula.
+3. **CSV.** `core/exports.py` (`csv_response`, `writer`, `safe`): UTF-8 with a byte-order mark so Excel reads Swahili names, and text starting with `= + - @` gets a leading apostrophe (plain numbers, including negatives, are left alone). Every export view uses it, as do the handover pack CSVs and the import templates. Excel downloads strip the apostrophe again.
+4. **Fixes found on the way.** The Past payments form headed the amount column "Owes now (KES)"; it now reads "Amount paid (KES)". The owner statement showed "KES -2,000.00" after "Less…" and had empty shaded bars between blocks; the amounts are now positive and the bars are gone.
+5. **Print.** One `@media print` block in `static/css/app.css` hides the menu, back-to-top, notices, pager and footer, keeps the top bar mark over a green rule, uses A4 with 14 mm margins, black ink on white, tinted table headings and no link colours. The inline style on the inspection report was removed (it needed an inline `<style>`).
+6. **Tests.** Tests that read CSV text now expect the byte-order mark and the `text/csv; charset=utf-8` type.
+7. **Not done:** a logo preview on the Settings page; the logo is used as uploaded, and a very wide image is scaled to fit.
+
+
+### D-179 — Owners page in the console: emails, teams, units, analytics, and email to owners — ACCEPTED (2026-10-18, open to change before merge)
+
+1. **Who sees it.** Superusers only (`OwnerMixin`), because it lists owners' names, emails and phones. A console seat without superuser gets 403; a landlord gets 404. No new capability. Listed in `test_access_map` as signed-in pages.
+2. **The list (`/console/owners/`, `console/owners.py`).** One row per active member holding an organization's owner role (a person who owns two organizations shows twice). Shows name, phone, email (marked unverified), organization with status and kind, plan and subscription state, team members (active members who are not owners), units, properties, active leases, tenants, last activity in the organization. Search (name, email, phone, organization), filters (status, plan, kind, activity, has an email) and four orderings; 50 a page; CSV download (audited as `console.export`).
+3. **Analytics above the list**, for whoever matches the filters: owners, with email, new in 30 days, units served and average, team members and average, share of owners with two-step login, never-used count, unverified emails; charts of team size, ten owners with the most units, plans, and days since last activity, each with its figures in a table.
+4. **Email to owners (`/console/owners/email/`).** Written for the owners shown, or for the ones ticked. `{name}` (first name) and `{organization}` are the only placeholders and are replaced by plain text substitution. Every owner gets their own message (no shared To line), sent through the MESSAGES mail account with a footer saying why they got it, reply-to `SUPPORT_EMAIL`. "Send a test to me" sends the first recipient's version to the sender only. Sending needs a tick and is done in the request, one by one on one open connection, up to 500 owners (`MAX_RECIPIENTS`); a failure on one address is kept against it and the rest go on. The audience is re-read from the filters or ticks on the POST, never from a list the browser sent.
+5. **Record.** `OwnerEmail` and `OwnerEmailRecipient` (analytics migration 0005) keep subject, body, audience in words, who sent it, and per-owner delivered/failed with the error; pages `/console/owners/emails/` and `/emails/<id>/`. Each send is audited as `console.owner_email`.
+6. **Not done:** no unsubscribe link, because these are service notices to customers about their account; marketing mail would need an opt-out first. No scheduled sending; a very large list would need a job like `run_data_exports`.

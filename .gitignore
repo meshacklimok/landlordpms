@@ -12,8 +12,10 @@ db.sqlite3
 media/
 # Database and media backups hold tenants' data (D-103)
 backups/
+# One organization's data export ZIPs (D-177)
+exports/
 # Load test sessions (D-105)
-loadtest/setup.json
+tests/loadtest/setup.json
 *.dump
 staticfiles/
 

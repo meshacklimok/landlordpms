@@ -9,6 +9,8 @@
 set -euo pipefail
 
 DOMAIN="${DOMAIN:-app.nyumbapms.com}"
+# Other names that redirect to DOMAIN (need their own DNS A records). Set ALIASES="" to skip them.
+ALIASES="${ALIASES-nyumbapms.com www.nyumbapms.com}"
 CERT_EMAIL="${CERT_EMAIL:-}"
 CODE_TAR="${CODE_TAR:-/root/nyumbapms.tar.gz}"
 REPO_URL="${REPO_URL:-}"
@@ -188,7 +190,7 @@ OPS_ALERT_EMAILS=FILL_ME
 SUPPORT_EMAIL=support@nyumbapms.com
 
 # SMS: your live Africa's Talking account. AT_SENDER_ID stays empty until NYUMBAPMS is approved.
-SMS_BACKEND=core.sms.AfricasTalkingSmsSender
+SMS_BACKEND=notifications.providers.sms.AfricasTalkingSmsSender
 AT_USERNAME=FILL_ME
 AT_API_KEY=FILL_ME
 AT_SENDER_ID=
@@ -222,7 +224,7 @@ PLATFORM_DARAJA_PASSKEY=
 PLATFORM_PAYSTACK_SECRET_KEY=
 
 # Optional: tenants asking on WhatsApp (Meta WhatsApp Cloud API). Leave WHATSAPP_BACKEND empty to keep it off;
-# to turn it on set it to core.whatsapp.CloudApiWhatsAppSender and fill the three WA_ values from Meta.
+# to turn it on set it to notifications.providers.whatsapp.CloudApiWhatsAppSender and fill the three WA_ values from Meta.
 WHATSAPP_BACKEND=
 WA_PHONE_NUMBER_ID=
 WA_ACCESS_TOKEN=
@@ -232,7 +234,7 @@ WA_VERIFY_TOKEN=$(random)
 # Shown on the terms and privacy pages and on invoices for your subscription fees.
 LEGAL_NAME=
 DATA_PROTECTION_EMAIL=
-SUPPORT_WHATSAPP=
+SUPPORT_WHATSAPP=254748578190
 HOSTING_LOCATION="DigitalOcean, Frankfurt, Germany (EU)"
 PLATFORM_KRA_PIN=
 EOF
@@ -260,7 +262,12 @@ systemctl daemon-reload
 systemctl enable landlordpms >/dev/null
 systemctl restart landlordpms
 if [ ! -f /etc/nginx/sites-available/landlordpms ]; then
-    sed "s/DOMAIN/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/landlordpms
+    if [ -n "$ALIASES" ]; then
+        sed -e "s/ALIASES/$ALIASES/g" -e "s/DOMAIN/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/landlordpms
+    else
+        # No aliases: drop the redirect block (from its comment to the first closing brace).
+        sed -e '/^# The bare domain and www/,/^}/d' -e "s/DOMAIN/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/landlordpms
+    fi
     ln -sf /etc/nginx/sites-available/landlordpms /etc/nginx/sites-enabled/landlordpms
     rm -f /etc/nginx/sites-enabled/default
 fi
@@ -280,7 +287,10 @@ else
     [ -n "$here" ] && [ "$here" = "$there" ] || \
         stop "$DOMAIN points at '${there:-nothing}', this server is '$here'. Add the DNS A record (doc 21 step 2), wait a few minutes, run setup.sh again."
     [ -n "$CERT_EMAIL" ] || stop "Run again with your email for certificate notices: CERT_EMAIL=you@example.com bash setup.sh"
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$CERT_EMAIL" --redirect
+    names="-d $DOMAIN"
+    for a in $ALIASES; do names="$names -d $a"; done
+    # shellcheck disable=SC2086
+    certbot --nginx $names --non-interactive --agree-tos -m "$CERT_EMAIL" --redirect
 fi
 
 step "First backup and the launch check"

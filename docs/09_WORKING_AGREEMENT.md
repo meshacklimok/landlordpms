@@ -38,7 +38,7 @@
 - Name things in domain language (Lease, Unit, Invoice, Allocation).
 
 ## Documentation
-- Everything decided is written down. If it isn't in `config/docs/`, it isn't decided.
+- Everything decided is written down. If it isn't in `docs/`, it isn't decided.
 - Keep `PROJECT_CONTEXT.MD` status checklist current.
 - Each app gets a short `README` section here or in its folder once it has real logic.
 
