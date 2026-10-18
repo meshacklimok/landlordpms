@@ -3,7 +3,7 @@
 import pytest
 
 from accounts.tests.factories import make_org, make_property
-from core import scale
+from ops import scale
 
 pytestmark = pytest.mark.django_db
 
@@ -31,7 +31,7 @@ def test_no_page_asks_once_per_row(client):
 
 REPORTS = ["/reports/centre/", "/reports/maintenance/", "/reports/payments/", "/reports/arrears/",
            "/reports/utilities/", "/reports/leases/", "/reports/behaviour/", "/reports/scorecard/",
-           "/reports/deposits/", "/reports/delivery/", "/reports/income/", "/reports/profit-loss/",
+           "/reports/performance/", "/reports/deposits/", "/reports/delivery/", "/reports/income/", "/reports/profit-loss/",
            "/reports/cash-flow/", "/reports/fees/", "/reports/units/", "/reports/receivables/"]
 
 

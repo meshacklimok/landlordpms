@@ -3,8 +3,8 @@ from django.test import override_settings
 
 from accounts import mfa
 from accounts.tests.factories import make_user
-from core.mail import MESSAGES, SYSTEM, mailer_for
 from core.models import EmailRouting
+from notifications.providers.mail import MESSAGES, SYSTEM, mailer_for
 
 BOTH = {"default": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"},
         "messages": {"BACKEND": "django.core.mail.backends.locmem.EmailBackend"}}

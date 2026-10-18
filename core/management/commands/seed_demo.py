@@ -37,7 +37,7 @@ from tenants.services import create_tenant
 
 D = datetime.date
 DAY = datetime.timedelta(days=1)
-SAFE_SMS_BACKENDS = ("core.sms.ConsoleSmsSender", "core.sms.MemorySmsSender")
+SAFE_SMS_BACKENDS = ("notifications.providers.sms.ConsoleSmsSender", "notifications.providers.sms.MemorySmsSender")
 
 IND, CO = Tenant.Kind.INDIVIDUAL, Tenant.Kind.COMPANY
 NID, PASS, ALIEN, REG = (Tenant.IdType.NATIONAL_ID, Tenant.IdType.PASSPORT, Tenant.IdType.ALIEN_ID,

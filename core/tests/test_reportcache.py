@@ -4,7 +4,8 @@
 import pytest
 
 from accounts.tests.factories import make_org, make_property
-from core import reportcache, scale
+from core import reportcache
+from ops import scale
 from payments.models import Payment
 
 pytestmark = pytest.mark.django_db

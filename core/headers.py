@@ -1,4 +1,5 @@
-"""Extra response headers (D-139): what a browser may do with our pages, and not keeping signed-in pages."""
+"""Extra response headers (D-139): what a browser may do with our pages, not keeping signed-in pages, and keeping
+private pages out of search results (D-158)."""
 
 # Features no page of ours uses. Photos are taken through file inputs, which this does not affect.
 PERMISSIONS_POLICY = (
@@ -25,4 +26,10 @@ class ExtraSecurityHeadersMiddleware:
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated and "Cache-Control" not in response.headers:
             response.headers["Cache-Control"] = "private, no-store"
+        if response.get("Content-Type", "").startswith("text/html") and "X-Robots-Tag" not in response.headers:
+            from growth import seo
+
+            # Only the pages in the SEO registry may be found (D-158); a new page is private until listed there.
+            if seo.page_for(request) is None:
+                response.headers["X-Robots-Tag"] = "noindex, nofollow"
         return response

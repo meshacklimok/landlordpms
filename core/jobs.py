@@ -14,6 +14,7 @@ JOBS: dict[str, datetime.timedelta] = {
     "send_due_messages": datetime.timedelta(minutes=30),
     "send_webhooks": datetime.timedelta(minutes=30),
     "maintenance_alerts": datetime.timedelta(hours=1),
+    "run_data_exports": datetime.timedelta(minutes=30),
     "billing_daily": datetime.timedelta(hours=26),
     "mpesa_daily": datetime.timedelta(hours=26),
     "subscriptions_daily": datetime.timedelta(hours=26),

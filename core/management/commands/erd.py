@@ -1,4 +1,4 @@
-"""Write config/docs/erd.md from the models, so the diagram is always the code's (D-103)."""
+"""Write docs/erd.md from the models, so the diagram is always the code's (D-103)."""
 
 import difflib
 import re
@@ -9,7 +9,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import models
 
-DOC = Path(settings.BASE_DIR) / "config" / "docs" / "erd.md"
+DOC = Path(settings.BASE_DIR) / "docs" / "erd.md"
 
 SECTIONS = [
     ("Identity, organizations, roles, audit", ["accounts", "audit", "core"]),
@@ -79,7 +79,7 @@ def render() -> str:
 
 
 class Command(BaseCommand):
-    help = "Write config/docs/erd.md from the models (D-103); --check only reports whether it is current."
+    help = "Write docs/erd.md from the models (D-103); --check only reports whether it is current."
 
     def add_arguments(self, parser):
         parser.add_argument("--check", action="store_true", help="Fail if erd.md is not what the models give.")

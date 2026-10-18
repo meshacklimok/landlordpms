@@ -15,6 +15,7 @@ from django.db import connection, models
 
 from accounts.tests.factories import add_member, make_org, make_property
 from audit.models import AuditEvent
+from core import throttle
 from core.tests.urlsweep import routes
 
 pytestmark = pytest.mark.django_db
@@ -31,7 +32,8 @@ PUBLIC = {
     "support:manifest", "support:sw", "support:offline", "support:status", "support:security", "support:terms",
     "support:privacy", "growth:pricing", "growth:faq", "growth:tutorials", "growth:tutorial", "growth:demo",
     "growth:demo_thanks", "growth:robots", "growth:sitemap", "growth:about", "growth:how_it_works",
-    "growth:articles", "growth:article", "support:delete_account", "accounts:home", "accounts:register", "accounts:login", "accounts:logout", "accounts:password_reset",
+    "growth:articles", "growth:article", "growth:solutions", "growth:solution", "growth:llms", "growth:llms_full",
+    "growth:favicon", "growth:indexnow_key", "support:delete_account", "accounts:home", "accounts:web_csrf", "accounts:register", "accounts:login", "accounts:logout", "accounts:password_reset",
     "accounts:password_reset_confirm", "accounts:accept_invite", "esign_check", "esign_sign", "esign_sign_pdf",
 }
 # Form fields that name a record, posted once as junk and once as the other organization's id.
@@ -101,9 +103,13 @@ def _seed(owner, prop):
 
 
 @pytest.fixture
-def canary(settings, tmp_path):
+def canary(settings, tmp_path, monkeypatch):
     """Bravo is the other organization; Alpha holds the Canary records at Canary Court and a second property."""
     settings.MEDIA_ROOT = tmp_path
+    # The sweep sends thousands of requests as one user; the per-user limits (core.throttle) are tested on their own.
+    monkeypatch.setattr(throttle, "PER_MINUTE", 10**9)
+    monkeypatch.setattr(throttle, "WRITES_PER_MINUTE", 10**9)
+    monkeypatch.setattr(throttle, "COSTLY", [])
     bravo = make_org("Bravo Lettings")
     make_property(bravo.organization, "Bravo House")
     _restart_ids()
@@ -153,7 +159,7 @@ def test_visitors_reach_only_the_public_pages(client):
         for method in ("get", "post"):
             response = getattr(client, method)(path)
             to_login = response.status_code == 302 and "/login/" in response.get("Location", "")
-            if not to_login and not (name.startswith("api:") and response.status_code in (401, 405)):
+            if not to_login and not ((name.startswith("api:") or ":web_" in name) and response.status_code in (401, 403, 405)):
                 exposed.add(name)
     assert exposed - PUBLIC == set()
 
@@ -198,7 +204,7 @@ def test_the_production_settings_pass_the_deployment_check():
     env = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings.prod", "SECRET_KEY": secret,
            "DJANGO_SECRET_KEY": secret, "ALLOWED_HOSTS": "app.example.co.ke", "SITE_URL": "https://app.example.co.ke",
            "REDIS_URL": "redis://localhost:6379/0", "FIELD_ENCRYPTION_KEYS": Fernet.generate_key().decode(),
-           "SMS_BACKEND": "core.sms.AfricasTalkingSmsSender", "AT_USERNAME": "x", "AT_API_KEY": "x",
+           "SMS_BACKEND": "notifications.providers.sms.AfricasTalkingSmsSender", "AT_USERNAME": "x", "AT_API_KEY": "x",
            "AT_CALLBACK_TOKEN": secret, "PUSH_BACKEND": "notifications.push.WebPushSender",
            "ASSISTANT_BACKEND": "ai_assistant.client.OpenAIClient", "EMAIL_HOST": "smtp.example.com",
            "DEFAULT_FROM_EMAIL": "rent@example.com", "SENTRY_DSN": "", "WHATSAPP_BACKEND": "",

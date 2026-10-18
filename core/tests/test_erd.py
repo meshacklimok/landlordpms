@@ -1,4 +1,4 @@
-"""The ER diagram in config/docs/erd.md is generated from the models (D-103)."""
+"""The ER diagram in docs/erd.md is generated from the models (D-103)."""
 
 from django.core.management import call_command
 

@@ -176,3 +176,25 @@ class EmailRouting(models.Model):
 
     def alias_for(self, purpose: str) -> str:
         return self.messages_account if purpose == "messages" else self.system_account
+
+
+class SystemMessageSetting(models.Model):
+    """The owner's switch for one kind of platform message (core.system_messages). No row means on."""
+
+    kind = models.CharField(max_length=40, unique=True)
+    enabled = models.BooleanField("on", default=True)
+    sms = models.BooleanField("by SMS", default=True)
+    email = models.BooleanField("by email", default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="+")
+
+    class Meta:
+        verbose_name = "system message setting"
+        ordering = ["kind"]
+
+    def __str__(self):
+        from .system_messages import BY_KEY
+
+        kind = BY_KEY.get(self.kind)
+        return str(kind.label) if kind else self.kind

@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from core.sms import AfricasTalkingSmsSender, parse_cost
+from notifications.providers.sms import AfricasTalkingSmsSender, parse_cost
 
 
 @pytest.fixture

@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 TIMEOUT = 300  # seconds; the version bump is what keeps figures fresh, this only bounds a missed bump
 VERSIONED_APPS = {"accounts", "billing", "payments", "leases", "properties", "tenants", "expenses", "maintenance",
-                  "meters", "banking", "mpesa", "reports"}
+                  "meters", "banking", "mpesa", "reports", "inspections", "documents", "prospects"}
 
 
 def _version_key(organization_id) -> str:

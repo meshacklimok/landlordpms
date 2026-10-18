@@ -1,0 +1,45 @@
+from django.urls import path
+
+from . import views, web_api
+
+app_name = "console"
+
+urlpatterns = [
+    path("web-api/notifications/", web_api.NotificationTypesDataView.as_view(), name="web_notifications"),
+    path("web-api/notifications/<str:codename>/", web_api.NotificationTypeDataView.as_view(), name="web_notification"),
+    path("", views.OverviewView.as_view(), name="overview"),
+    path("revenue/", views.RevenueView.as_view(), name="revenue"),
+    path("payments/", views.BehaviourView.as_view(), name="behaviour"),
+    path("usage/", views.UsageView.as_view(), name="usage"),
+    path("organizations/", views.OrganizationsView.as_view(), name="organizations"),
+    path("organizations/watchlist/", views.WatchlistView.as_view(), name="watchlist"),
+    path("organizations/export/", views.OrganizationsExportView.as_view(), name="organizations_export"),
+    path("organizations/<uuid:public_id>/", views.OrganizationView.as_view(), name="organization"),
+    path("organizations/<uuid:public_id>/export/", views.OrganizationDataExportView.as_view(), name="organization_export"),
+    path("organizations/<uuid:public_id>/export/<uuid:export_id>/", views.OrganizationDataDownloadView.as_view(),
+         name="organization_export_download"),
+    path("organizations/<uuid:public_id>/control/", views.OrganizationControlView.as_view(), name="organization_control"),
+    path("owners/", views.OwnersView.as_view(), name="owners"),
+    path("owners/export/", views.OwnersExportView.as_view(), name="owners_export"),
+    path("owners/email/", views.OwnerEmailView.as_view(), name="owner_email"),
+    path("owners/emails/", views.OwnerEmailsView.as_view(), name="owner_emails"),
+    path("owners/emails/<int:pk>/", views.OwnerEmailDetailView.as_view(), name="owner_email_detail"),
+    path("control/announcements/", views.AnnouncementsView.as_view(), name="announcements"),
+    path("control/referrals/", views.ReferralPolicyView.as_view(), name="referrals"),
+    path("control/email/", views.EmailRoutingView.as_view(), name="email"),
+    path("control/email/previews/", views.EmailPreviewsView.as_view(), name="email_previews"),
+    path("control/email/previews/<slug:key>/", views.EmailPreviewView.as_view(), name="email_preview"),
+    path("control/notifications/", views.NotificationTypesView.as_view(), name="notifications"),
+    path("control/notifications/<str:codename>/", views.NotificationTypeView.as_view(), name="notification"),
+    path("control/system-messages/", views.SystemMessagesView.as_view(), name="system_messages"),
+    path("control/audit/", views.AuditLogView.as_view(), name="audit"),
+    path("growth/", views.GrowthView.as_view(), name="growth"),
+    path("channels/", views.ChannelsView.as_view(), name="channels"),
+    path("money/", views.MoneyView.as_view(), name="money"),
+    path("money/costs/", views.CostsView.as_view(), name="costs"),
+    path("money/<int:pk>/", views.ExpenseEditView.as_view(), name="expense"),
+    path("health/", views.HealthView.as_view(), name="health"),
+    path("team/", views.TeamView.as_view(), name="team"),
+    path("team/add/", views.TeamAddView.as_view(), name="team_add"),
+    path("team/<int:pk>/", views.TeamEditView.as_view(), name="team_edit"),
+]
