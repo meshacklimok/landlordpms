@@ -12,10 +12,10 @@ from accounts.models import Organization
 from accounts.tests.factories import PASSWORD, add_member, make_org, make_user
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
-from core.sms import AfricasTalkingSmsSender, MemorySmsSender, send_sms
 from core.tests.test_sms import recipient, reply
 from notifications import catalog, delivery
 from notifications.models import Message
+from notifications.providers.sms import AfricasTalkingSmsSender, MemorySmsSender, send_sms
 from portal import services as portal_services
 
 pytestmark = pytest.mark.django_db

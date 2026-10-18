@@ -8,14 +8,14 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
+from notifications.email_html import send_branded
 from django.db.models import F
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from core import ratelimit
-from core.sms import send_sms
+from notifications.providers.mail import SYSTEM, mailer_for
+from notifications.providers.sms import send_sms
 
 from .models import OTPCode
 
@@ -56,7 +56,9 @@ def issue_otp(phone: str, purpose: str, email: str = "") -> None:
     text = _("Your NyumbaPMS code is %(code)s. It expires in 10 minutes. Never share it.") % {"code": code}
     if email:
         try:
-            send_mail(_("Your NyumbaPMS code"), text, None, [email], using=mailer_for(SYSTEM))
+            send_branded(_("Your NyumbaPMS code"),
+                         _("Your NyumbaPMS code:\n\n%(code)s\n\nIt expires in 10 minutes. Never share it.")
+                         % {"code": code}, [email], using=mailer_for(SYSTEM))
         except Exception as exc:  # noqa: BLE001 - any mail failure reads the same to the user
             raise OTPError(_("We could not send the email. Check the address and try again.")) from exc
         return

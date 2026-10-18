@@ -53,7 +53,7 @@ class MemberJSONView(View):
 
 def _chrome(request, m, org, user) -> dict:
     """What `base.html` shows around every page besides the menu: the bell, the notices, the Account menu."""
-    from analytics.access import allowed as has_console
+    from console.access import allowed as has_console
     from notifications.services import unread_count
     from subscriptions.services import banner
     from support.legal import needs_acceptance

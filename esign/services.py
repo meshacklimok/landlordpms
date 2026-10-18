@@ -31,12 +31,12 @@ from audit import services as audit
 from audit.models import AuditEvent
 from core import ratelimit
 from core.numbering import next_number
-from core.sms import send_sms
 from documents.models import Document
 from leases import paperwork
 from leases import pdf as lease_pdf
 from leases.models import Lease
 from notifications import catalog
+from notifications.providers.sms import send_sms
 from notifications.services import channel_allowed
 from properties.models import Property
 
@@ -412,6 +412,58 @@ def sign_as_tenant(signer: Signer, *, typed_name: str, agreed: bool, request=Non
     return _complete_if_done(req, request)
 
 
+def portal_signer(user, req: SigningRequest) -> Signer | None:
+    """The tenant signer of this request that the signed-in portal user is: their live account is for that
+    tenant and the phone they verified at sign-in is the one on the request (the same check as the SMS code)."""
+    from portal.selectors import live_accounts
+
+    if not user.is_authenticated or not user.phone_verified or not user.phone:
+        return None
+    return (Signer.objects.select_related("request__organization", "request__lease__unit__property", "tenant")
+            .filter(request=req, role=Signer.Role.TENANT, phone=user.phone,
+                    tenant_id__in=live_accounts(user).values("tenant_id")).first())
+
+
+def portal_requests(user, lease: Lease) -> list[tuple[SigningRequest, Signer]]:
+    """Requests on this lease the portal user may open: still waiting for them, or signed by them and
+    finished. The tenant's own signer row decides; staff-only details stay out of the page."""
+    _expire_stale(lease)
+    found = []
+    for req in SigningRequest.objects.filter(lease=lease).select_related("organization")[:10]:
+        signer = portal_signer(user, req)
+        if signer is not None and (req.is_open or req.status == Status.COMPLETED):
+            found.append((req, signer))
+    return found
+
+
+@transaction.atomic
+def sign_in_portal(user, req: SigningRequest, *, typed_name: str, agreed: bool, request=None) -> SigningRequest:
+    """A tenant signs from the portal. Being signed in with the verified phone replaces the SMS code."""
+    typed_name = _clean_signature(typed_name, agreed)
+    signer = portal_signer(user, req)
+    if signer is None:
+        raise PermissionDenied
+    signer, req = _locked(signer)
+    signer.verified_at, signer.signed_via = timezone.now(), Signer.Via.PORTAL
+    signer.save(update_fields=["verified_at", "signed_via", "updated_at"])
+    _sign(signer, typed_name, request)
+    _audit("esign.sign", req, request, actor=user, changes={
+        "signer": [None, signer.name], "role": [None, signer.role], "typed_name": [None, typed_name],
+        "via": [None, signer.signed_via]})
+    return _complete_if_done(req, request)
+
+
+@transaction.atomic
+def decline_in_portal(user, req: SigningRequest, reason: str, *, request=None) -> SigningRequest:
+    signer = portal_signer(user, req)
+    if signer is None:
+        raise PermissionDenied
+    Signer.objects.filter(pk=signer.pk, verified_at__isnull=True).update(verified_at=timezone.now(),
+                                                                         signed_via=Signer.Via.PORTAL)
+    signer.refresh_from_db()
+    return decline(signer, reason, request=request)
+
+
 @transaction.atomic
 def sign_as_landlord(actor: Membership, req: SigningRequest, *, typed_name: str, agreed: bool,
                      request=None) -> SigningRequest:
@@ -498,7 +550,7 @@ def _file_copy(req: SigningRequest, content: bytes) -> Document:
 def _signer_row(s: Signer) -> dict:
     when = lambda moment: moment.isoformat() if moment else None  # noqa: E731
     return {"role": s.role, "name": s.name, "phone": s.phone, "link_sent_at": when(s.link_sent_at),
-            "code_entered_at": when(s.verified_at), "signed_at": when(s.signed_at), "signed_name": s.signed_name,
+            "checked_by": s.signed_via, "code_entered_at": when(s.verified_at), "signed_at": when(s.signed_at), "signed_name": s.signed_name,
             "signed_by": s.signed_by.get_full_name() if s.signed_by_id else None, "ip": s.signed_ip,
             "browser": s.signed_user_agent, "declined_at": when(s.declined_at), "decline_reason": s.decline_reason}
 

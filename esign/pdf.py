@@ -10,7 +10,7 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Spacer
 
 from core.phone import mask_phone
-from leases.pdf import BLANK, HEAD, SECTION, SMALL, TITLE, _doc, _facts, _p
+from leases.pdf import BLANK, SECTION, SMALL, TITLE, _doc, _facts, _head, _p
 
 
 def _when(moment) -> str:
@@ -20,7 +20,8 @@ def _when(moment) -> str:
 def render_record(req, signers, check_url: str) -> bytes:
     buf = io.BytesIO()
     doc = _doc(buf, f"{_('Signing record')} {req.number}")
-    story = [_p(req.organization.name, HEAD), Spacer(1, 6 * mm), _p(_("SIGNING RECORD"), TITLE), Spacer(1, 3 * mm),
+    story = [_head(req.organization, req.organization.name, _("Signing record"), req.number), Spacer(1, 6 * mm),
+             _p(_("SIGNING RECORD"), TITLE), Spacer(1, 3 * mm),
              _facts([
                  (_("Document"), req.title),
                  (_("Signing number"), req.number),
@@ -32,7 +33,11 @@ def render_record(req, signers, check_url: str) -> bytes:
                                     "periodic"))] if req.no_renewal_option else []))]
     for signer in signers:
         story.append(_p(f"{signer.get_role_display()}: {signer.name}", SECTION))
-        if signer.role == signer.Role.TENANT:
+        if signer.role == signer.Role.TENANT and signer.signed_via == signer.Via.PORTAL:
+            how = _("Signed in to their tenant portal account, whose phone %(phone)s was verified by an SMS code, "
+                    "and typed their password again to sign at %(when)s.") % {
+                "phone": mask_phone(signer.phone), "when": _when(signer.signed_at)}
+        elif signer.role == signer.Role.TENANT:
             how = _("Opened a private link sent to them, then entered a one-time code sent by SMS to %(phone)s "
                     "at %(when)s.") % {"phone": mask_phone(signer.phone), "when": _when(signer.verified_at)}
         else:
@@ -60,7 +65,7 @@ def render_certificate(req, record: dict, keep_until) -> bytes:
     buf = io.BytesIO()
     doc = _doc(buf, f"{_('Certificate')} {req.number}")
     story = [
-        _p(req.organization.name, HEAD), Spacer(1, 6 * mm),
+        _head(req.organization, req.organization.name, _("Certificate"), req.number), Spacer(1, 6 * mm),
         _p(_("CERTIFICATE UNDER SECTION 106B(4) OF THE EVIDENCE ACT (CAP. 80)"), TITLE), Spacer(1, 3 * mm),
         _p(_("1. The records. This certificate concerns the electronic records below, about %(title)s "
              "(signing number %(number)s), together with record.json, which lists the signers and every step "
@@ -71,7 +76,9 @@ def render_certificate(req, record: dict, keep_until) -> bytes:
         _p(_("2. How they were produced. The records were produced by NyumbaPMS, a web application run for "
              "%(org)s at %(site)s. When the document was sent for signing (%(sent)s) the system stored the PDF "
              "and its SHA-256 fingerprint, and did not change it afterwards. Each tenant opened a private link sent "
-             "by SMS and entered a one-time code sent by SMS to the phone number on file before signing. Each "
+             "by SMS and entered a one-time code sent by SMS to the phone number on file before signing, or signed from "
+             "the tenant portal, signed in to an account whose phone number, the same one, had been verified by an SMS "
+             "code, and typed their password again. Each "
              "signer typed their name and ticked that they agreed to sign electronically; the system recorded the "
              "time, IP address and browser. When everyone had signed, the system added a signing record page "
              "after the original pages and stored the fingerprint of that copy. Each step was written to an audit "

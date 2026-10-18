@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, web_api
 
 app_name = "accounts"
 
@@ -18,7 +18,14 @@ urlpatterns = [
     path("password-reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password_reset_confirm"),
     path("welcome/", views.OnboardingView.as_view(), name="onboarding"),
     path("switch/", views.SwitchOrganizationView.as_view(), name="switch_org"),
+    path("web-api/session/", web_api.SessionView.as_view(), name="web_session"),
+    path("web-api/home/", web_api.HomeDataView.as_view(), name="web_home"),
+    path("web-api/csrf/", web_api.CsrfView.as_view(), name="web_csrf"),
+    path("organization/web-api/", web_api.OrganizationSettingsDataView.as_view(), name="web_organization"),
     path("organization/", views.OrganizationSettingsView.as_view(), name="organization"),
+    path("organization/export/", views.OrganizationExportView.as_view(), name="organization_export"),
+    path("organization/export/<uuid:public_id>/", views.OrganizationExportDownloadView.as_view(),
+         name="organization_export_download"),
     path("organization/branches/", views.BranchListView.as_view(), name="branches"),
     path("organization/branches/<uuid:public_id>/", views.BranchEditView.as_view(), name="branch"),
     path("staff/",views.StaffListView.as_view(), name="staff"),

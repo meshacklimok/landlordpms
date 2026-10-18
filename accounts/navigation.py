@@ -25,6 +25,7 @@ def _items(membership, assistant_set_up):
     property_items = [
         (v["properties"], "properties:list" if can(m, "properties.view") else None, "buildings"),
         (v["units"], "properties:units" if can(m, "units.view") else None, "door-closed"),
+        (_("Water readings"), "meters:water" if can(m, "meters.view") else None, "droplet"),
         (_("Meters"), "meters:list" if can(m, "meters.view") else None, "speedometer2"),
         (_("Maintenance"), "maintenance:list"
          if can(m, "maintenance.view") or can(m, "maintenance.view_assigned") else None, "tools"),
@@ -39,7 +40,7 @@ def _items(membership, assistant_set_up):
     money_items = [
         (_("Invoices"), "billing:invoices" if can(m, "invoices.view") else None, "receipt"),
         (_("Payments"), "payments:list" if can(m, "payments.view") else None, "cash-coin"),
-        (_("M-Pesa"), _first(m, ("mpesa.match", "mpesa:inbox"), ("mpesa.view_transactions", "mpesa:transactions"),
+        (_("M-Pesa"), _first(m, ("mpesa.view_transactions", "mpesa:overview"), ("mpesa.match", "mpesa:inbox"),
                              ("mpesa.settings", "mpesa:settings")), "phone"),
         (_("Bank"), _first(m, ("mpesa.match", "banking:inbox"), ("payments.view", "banking:lines")), "bank"),
         (_("Expenses"), "expenses:list" if can(m, "expenses.view") else None, "wallet2"),
@@ -65,13 +66,24 @@ def _items(membership, assistant_set_up):
             (_("More"), more_items)]
 
 
+def _badge(membership, name) -> int:
+    """A count to show beside a menu item: the M-Pesa payments waiting for a person. Cached for half a minute."""
+    if name not in ("mpesa:overview", "mpesa:inbox") or not can(membership, "mpesa.match"):
+        return 0
+    from django.core.cache import cache
+
+    from mpesa import inbox
+    return cache.get_or_set(f"nav-mpesa-inbox:{membership.pk}", lambda: inbox.inbox(membership).count(), 30)
+
+
 def nav_groups(request, membership, assistant_set_up):
     """[{"label", "active", "items": [{"label", "url", "icon", "active"}]}] for the member, groups with no links left out."""
     if membership is None:
         return []
     groups = []
     for label, items in _items(membership, assistant_set_up):
-        links = [{"label": text, "url": reverse(name), "icon": icon, "active": False} for text, name, icon in items if name]
+        links = [{"label": text, "url": reverse(name), "icon": icon, "active": False,
+                  "badge": _badge(membership, name)} for text, name, icon in items if name]
         if links:
             groups.append({"label": label, "items": links, "active": False})
     path = request.path

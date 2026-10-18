@@ -89,6 +89,10 @@ class Signer(PublicIdModel, TimeStampedModel):
         LANDLORD = "LANDLORD", _("For the landlord")
         TENANT = "TENANT", _("Tenant")
 
+    class Via(models.TextChoices):
+        LINK = "LINK", _("Private link and SMS code")
+        PORTAL = "PORTAL", _("Signed in to the tenant portal")
+
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     request = models.ForeignKey(SigningRequest, on_delete=models.PROTECT, related_name="signers")
     role = models.CharField(max_length=10, choices=Role.choices)
@@ -107,6 +111,8 @@ class Signer(PublicIdModel, TimeStampedModel):
     code_expires_at = models.DateTimeField(null=True, blank=True)
     code_attempts = models.PositiveSmallIntegerField(default=0)
     verified_at = models.DateTimeField(null=True, blank=True)
+    # How the tenant was checked: the private link and SMS code, or their signed-in portal account.
+    signed_via = models.CharField(max_length=6, choices=Via.choices, default=Via.LINK)
 
     signed_at = models.DateTimeField(null=True, blank=True)
     signed_name = models.CharField(max_length=200, blank=True)

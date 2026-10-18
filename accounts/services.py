@@ -16,12 +16,14 @@ from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from audit import services as audit
+from core import system_messages
 from core.phone import normalize_phone
-from core.sms import send_sms
+from notifications.providers.sms import send_sms
 
 from .capabilities import CAPABILITIES, OWNER_CRITICAL, ROLE_TEMPLATES, email_required_for
 from .models import (
@@ -412,6 +414,28 @@ def set_stamp(actor: Membership, *, upload=None, remove=False, request=None) -> 
     return _set_picture(actor, "stamp", upload, remove, request)
 
 
+def _clean_picture(upload):
+    """The picture decoded and saved again as a PNG under a random name: nothing hidden in the original
+    file or its metadata is kept, and transparency stays."""
+    import io
+    import secrets
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(upload) as img:
+            if img.width * img.height > 25_000_000:
+                raise ValidationError(_("The picture is too large."))
+            img = ImageOps.exif_transpose(img).convert("RGBA")
+            img.thumbnail((1200, 1200))
+            out = io.BytesIO()
+            img.save(out, "PNG", optimize=True)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        raise ValidationError(_("That picture cannot be read. Use a PNG or JPG.")) from None
+    return ContentFile(out.getvalue(), name=f"{secrets.token_hex(16)}.png")
+
+
 def _set_picture(actor: Membership, field: str, upload, remove: bool, request) -> bool:
     require(actor, "organization.manage")
     if not upload and not remove:
@@ -419,7 +443,7 @@ def _set_picture(actor: Membership, field: str, upload, remove: bool, request) -
     org = _lock_org(actor.organization)
     if getattr(org, field):
         getattr(org, field).delete(save=False)
-    setattr(org, field, upload if upload else "")
+    setattr(org, field, _clean_picture(upload) if upload else "")
     org.save(update_fields=[field, "updated_at"])
     setattr(actor.organization, field, getattr(org, field))
     audit.record(f"organization.{field}_set" if upload else f"organization.{field}_removed", actor=actor.user,
@@ -556,6 +580,78 @@ def set_property_scope(actor: Membership, membership: Membership, *, all_propert
 
 
 # ---------------------------------------------------------------------------
+# Who looks after one property: a manager or caretaker per property, at a company as at an agency
+# ---------------------------------------------------------------------------
+
+
+def _via_branch(membership: Membership, prop) -> bool:
+    return bool(prop.branch_id and prop.branch.archived_at is None
+                and membership.branches.filter(pk=prop.branch_id).exists())
+
+
+def property_team(prop) -> dict:
+    """The staff who see this property: those given it or its branch, and those who see every property.
+
+    {"assigned": [(membership, via_branch, given_directly)], "everywhere": [membership],
+     "invited": [(invitation, via_branch)]}: active members only, and invitations not yet accepted that will
+    give this property (all properties included), so nobody waiting is missed, whatever the organization type.
+    """
+    live = Membership.objects.for_org(prop.organization).filter(is_active=True).select_related("user", "role")
+    direct = set(PropertyAccess.objects.filter(property=prop).values_list("membership_id", flat=True))
+    by_branch = set()
+    if prop.branch_id and prop.branch.archived_at is None:
+        by_branch = set(Membership.objects.filter(branches=prop.branch_id).values_list("pk", flat=True))
+    assigned = [(m, m.pk in by_branch, m.pk in direct)
+                for m in live.filter(all_properties=False, pk__in=direct | by_branch).order_by("user__full_name")]
+    live_branch = prop.branch_id if prop.branch_id and prop.branch.archived_at is None else None
+    reaches = Q(all_properties=True) | Q(properties=prop)
+    if live_branch:
+        reaches |= Q(branches=live_branch)
+    pending = (Invitation.objects.filter(reaches, organization=prop.organization_id, accepted_at__isnull=True,
+                                         revoked_at__isnull=True, expires_at__gt=timezone.now())
+               .select_related("role").distinct().order_by("created_at"))
+    by_branch_invites = set(Invitation.objects.filter(branches=live_branch).values_list("pk", flat=True))         if live_branch else set()
+    return {"assigned": assigned, "everywhere": list(live.filter(all_properties=True).order_by("user__full_name")),
+            "invited": [(i, i.pk in by_branch_invites and not i.all_properties) for i in pending]}
+
+
+def _property_access_change(actor: Membership, membership: Membership, prop, *, give: bool, request=None) -> None:
+    require(actor, "staff.manage", prop)
+    _same_org(actor, membership, prop)
+    _require_owner_for(actor, membership=membership)
+    if membership.all_properties:
+        raise ValidationError(_("%(name)s already sees every property.") % {"name": membership.user.full_name})
+    old_ids = set(membership.property_access.values_list("property_id", flat=True))
+    if give:
+        _check_scope_escalation(actor, False, {prop.pk})
+        PropertyAccess.objects.get_or_create(membership=membership, property=prop)
+        new_ids = old_ids | {prop.pk}
+    else:
+        if prop.pk not in old_ids and _via_branch(membership, prop):
+            raise ValidationError(_("%(name)s sees it through the %(branch)s branch. Change that on their page "
+                                    "under Staff.") % {"name": membership.user.full_name, "branch": prop.branch.name})
+        PropertyAccess.objects.filter(membership=membership, property=prop).delete()
+        new_ids = old_ids - {prop.pk}
+    clear_cache(membership)
+    if new_ids != old_ids:
+        audit.record("membership.scope", actor=actor.user, organization=actor.organization, obj=membership,
+                     request=request, changes={"properties": [sorted(old_ids), sorted(new_ids)]})
+
+
+@transaction.atomic
+def give_property(actor: Membership, membership: Membership, prop, request=None) -> None:
+    """Puts a staff member on one property, e.g. its manager or caretaker, keeping the rest of their access."""
+    _property_access_change(actor, membership, prop, give=True, request=request)
+
+
+@transaction.atomic
+def take_property(actor: Membership, membership: Membership, prop, request=None) -> bool:
+    """Takes one property off a staff member. True when they still see it through its branch."""
+    _property_access_change(actor, membership, prop, give=False, request=request)
+    return _via_branch(membership, prop)
+
+
+# ---------------------------------------------------------------------------
 # Invitations
 # ---------------------------------------------------------------------------
 
@@ -603,6 +699,8 @@ def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = 
 
 
 def send_invitation(invitation: Invitation, accept_url: str) -> None:
+    if not system_messages.allows("invite_staff", system_messages.SMS):
+        return  # switched off by the owner: the link on the page still works
     send_sms(
         invitation.phone,
         _("%(org)s invited you to NyumbaPMS as %(role)s. Accept: %(url)s")

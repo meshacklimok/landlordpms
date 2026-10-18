@@ -4,11 +4,10 @@ from django.contrib.auth.password_validation import password_validators_help_tex
 from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
 
+from billing.models import DepositEntry
 from core import ratelimit
 from core.net import client_ip
 from core.phone import InvalidPhoneNumber, normalize_phone
-
-from billing.models import DepositEntry
 
 from .capabilities import CAPABILITIES
 from .models import Branch, Organization, Role
@@ -150,7 +149,7 @@ class OrganizationSettingsForm(forms.Form):
     address = forms.CharField(label=_("Address"), max_length=200, required=False,
                               help_text=_("Printed under your name on invoices, e.g. Kimathi House, Nairobi."))
     logo = forms.ImageField(label=_("Logo"), required=False, widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg"}),
-                            help_text=_("PNG or JPG, up to 1 MB. Printed at the top of invoices."))
+                            help_text=_("PNG or JPG, up to 1 MB. Printed at the top of invoices, receipts, letters, agreements and statements."))
     remove_logo = forms.BooleanField(label=_("Remove the logo"), required=False)
     stamp = forms.ImageField(label=_("Signature or stamp"), required=False,
                              widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg"}),

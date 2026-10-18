@@ -9,8 +9,7 @@ import secrets
 from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.core.mail import EmailMessage
-from core.mail import MESSAGES, mailer_for
+from notifications.email_html import send_branded
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -18,7 +17,8 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership, User
 from accounts.permissions import require
 from audit import services as audit
-from core.sms import send_sms
+from notifications.providers.mail import MESSAGES, mailer_for
+from notifications.providers.sms import send_sms
 from properties.models import Property, PropertyOwner, owned_by
 from reports.statements import fully_sees
 
@@ -90,8 +90,9 @@ def send_invitation(invitation: OwnerInvitation, accept_url: str) -> bool:
             org.display_name,
         ])
         try:
-            EmailMessage(_("Your owner portal at %(org)s") % {"org": org.display_name}, body, None,
-                         [invitation.email]).send(using=mailer_for(MESSAGES))
+            send_branded(_("Your owner portal at %(org)s") % {"org": org.display_name}, body, [invitation.email],
+                         using=mailer_for(MESSAGES), org_name=org.display_name, org=org,
+                         button_label=_("Open your owner portal"))
         except Exception:  # noqa: BLE001 - a failed email must not lose the invitation
             invitation.sent_by_email = False
         else:

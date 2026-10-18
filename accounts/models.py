@@ -5,12 +5,13 @@ of platform templates and fully editable (doc 13, D-023, D-024).
 """
 
 import datetime
+import os
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
+from django.core.files.storage import FileSystemStorage
 from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
 from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower, Upper
@@ -26,6 +27,7 @@ from core.models import (
     TimeStampedModel,
 )
 from core.phone import normalize_phone
+from notifications.providers.mail import SYSTEM, mailer_for
 
 # ---------------------------------------------------------------------------
 # User
@@ -547,3 +549,63 @@ class Invitation(PublicIdModel, TimeStampedModel):
     @property
     def is_pending(self) -> bool:
         return self.accepted_at is None and self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class _ExportStorage(FileSystemStorage):
+    """Files under DATA_EXPORT_DIR, read each time so a changed setting (or a test's) is followed."""
+
+    @property
+    def base_location(self):
+        return str(settings.DATA_EXPORT_DIR)
+
+    @property
+    def location(self):
+        return os.path.abspath(self.base_location)
+
+
+def _export_storage():
+    return _ExportStorage()
+
+
+class DataExport(PublicIdModel, TimeStampedModel):
+    """One organization's data as a ZIP, built by the run_data_exports job (D-177).
+
+    The file is kept outside media, downloaded only by the person who asked while signed in, and deleted when it
+    expires. ``for_console`` marks an export the platform owner asked for from the console.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Waiting")
+        RUNNING = "RUNNING", _("Being made")
+        READY = "READY", _("Ready")
+        FAILED = "FAILED", _("Failed")
+        EXPIRED = "EXPIRED", _("Expired")
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="data_exports")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    for_console = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    file = models.FileField(storage=_export_storage, upload_to="", blank=True)
+    size = models.PositiveBigIntegerField(default=0)
+    rows = models.PositiveIntegerField(default=0)
+    files = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    downloads = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "created_at"])]
+
+    def __str__(self):
+        return f"Data export of {self.organization} ({self.get_status_display()})"
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in (self.Status.PENDING, self.Status.RUNNING)
+
+    @property
+    def can_download(self) -> bool:
+        return self.status == self.Status.READY and bool(self.file) and self.expires_at > timezone.now()

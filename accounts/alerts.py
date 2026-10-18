@@ -24,7 +24,7 @@ from django.utils.translation import gettext_lazy
 
 from audit.models import AuditEvent
 from core import watch
-from core.sms import send_sms
+from notifications.providers.sms import send_sms
 
 from .models import User
 
@@ -51,6 +51,7 @@ ORGANIZATION = {
     "api_key.create": (gettext_lazy("created the API key %(obj)s"), True),
     "webhook.create": (gettext_lazy("added a webhook to %(obj)s"), True),
     "webhook.update": (gettext_lazy("changed the webhook to %(obj)s"), True),
+    "organization.export_data": (gettext_lazy("downloaded all the organization's data"), True),
 }
 
 

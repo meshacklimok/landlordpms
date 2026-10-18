@@ -3,7 +3,6 @@
 Portal pages see only `selectors.own_*` and `live_accounts`: anything else is a 404.
 """
 
-import csv
 import datetime
 
 from django.contrib import messages
@@ -17,6 +16,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import OWNER_INVITE_KEY
+from core import exports
 from leases.services import with_occupancy
 from properties.models import PropertyOwner, Unit
 from reports import owners, statements
@@ -111,9 +111,8 @@ class PaymentsView(OwnerPortalRequiredMixin, View):
         query = request.GET.get("q", "").strip()[:60]
         found = selectors.payments(account, year, query)
         if request.GET.get("download") == "csv":
-            response = HttpResponse(content_type="text/csv; charset=utf-8")
-            response["Content-Disposition"] = f'attachment; filename="payments{f"-{year}" if year else ""}.csv"'
-            writer = csv.writer(response)
+            response = exports.csv_response(f"payments{f'-{year}' if year else ''}.csv")
+            writer = exports.writer(response)
             writer.writerow([_("Date"), _("Property"), _("Unit"), _("Method"), _("Reference"), _("Amount")])
             for payment in found:
                 unit = payment.lease.unit

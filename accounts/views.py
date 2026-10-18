@@ -17,16 +17,16 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
 from audit import services as audit
-from core import ratelimit
+from core import ratelimit, reportcache
 from core.net import client_ip
 from properties.models import Property
 from reports import home as reports_home
 
-from . import branches, forms, identity, mfa, services, setup
+from . import branches, data_export, forms, identity, mfa, services, setup
 from .capabilities import OWNER_CRITICAL, email_required_for
 from .middleware import SESSION_KEY
 from .mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin, VerifiedUserRequiredMixin
-from .models import Branch, Invitation, Membership, Role, TOTPDevice
+from .models import Branch, DataExport, Invitation, Membership, Role, TOTPDevice
 from .otp import OTPError
 from .permissions import can, effective_capabilities
 
@@ -65,11 +65,28 @@ def _apply_errors(form, exc: ValidationError) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _invited(request) -> bool:
-    """Whether a referral code is waiting in the session (D-133)."""
-    from growth import campaigns
+def _invited(request) -> str:
+    """What to tell a visitor whose referral code is waiting in the session (D-133); empty for none."""
+    from growth import referrals
 
-    return campaigns.is_valid_invite(request)
+    return referrals.invite_offer(request)
+
+
+def _typed_referral_code(request) -> tuple[str, str]:
+    """A code typed into the sign-up page's "Have a referral code?" box. A valid one is kept in the session exactly
+    like `?ref=` would be, so the organization made at the end of sign-up is attached to the referrer."""
+    from growth import campaigns
+    from growth.models import ReferralCode
+
+    code = campaigns.clean_code(request.POST.get("referral_code", ""))
+    if not code:
+        return "", ""
+    if not ReferralCode.objects.filter(code=code).exists():
+        return code, _("That referral code was not found. Check it, or clear the box.")
+    seen = dict(request.session.get(campaigns.SESSION_KEY) or {})
+    seen["ref"] = code
+    request.session[campaigns.SESSION_KEY] = seen
+    return code, ""
 
 
 def _email_optional(request) -> bool:
@@ -91,7 +108,10 @@ class RegisterView(View):
 
     def post(self, request):
         form = forms.RegisterForm(request.POST, email_optional=_email_optional(request))
-        if form.is_valid() and not _ip_allowed(request, "signup", SIGNUP_PER_IP_HOUR):
+        typed_code, code_error = _typed_referral_code(request)
+        if form.is_valid() and code_error:
+            pass  # shown beside the code box; the person fixes or clears it and continues
+        elif form.is_valid() and not _ip_allowed(request, "signup", SIGNUP_PER_IP_HOUR):
             form.add_error(None, _too_many_text())
         elif form.is_valid():
             try:
@@ -115,7 +135,8 @@ class RegisterView(View):
                 except OTPError as exc:
                     messages.warning(request, str(exc))
                 return redirect("accounts:verify_phone")
-        return render(request, self.template_name, {"form": form, "invited": _invited(request)})
+        return render(request, self.template_name, {"form": form, "invited": _invited(request),
+                                                    "typed_code": typed_code, "code_error": code_error})
 
 
 class VerifyEmailView(VerifiedUserRequiredMixin, View):
@@ -431,7 +452,8 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         hour = timezone.localtime().hour
         ctx["greeting"] = (_("Good morning") if hour < 12 else _("Good afternoon") if hour < 17
                            else _("Good evening"))
-        ctx["home"] = home = reports_home.home(m)
+        # The figures are kept for a few minutes and dropped when this organization's data changes (core/reportcache.py).
+        ctx["home"] = home = reportcache.cached(m, "home", (), lambda: reports_home.home(m))
         ctx["board"] = home.board
         return ctx
 
@@ -522,7 +544,10 @@ class OrganizationSettingsView(CapabilityRequiredMixin, View):
         m = request.membership
         pages = [{"label": label, "hint": hint, "url": reverse(name)}
                  for label, hint, capability, name in SETTINGS_PAGES if can(m, capability)]
-        return render(request, self.template_name, {"form": form, "pages": pages}, status=status)
+        return render(request, self.template_name, {"form": form, "pages": pages,
+                                                    "can_export": can(m, "organization.export_data"),
+                                                    "exports": data_export.recent(request.organization, request.user)},
+                      status=status)
 
     def get(self, request):
         org = request.organization
@@ -545,6 +570,31 @@ class OrganizationSettingsView(CapabilityRequiredMixin, View):
             return self.render(request, form, status=400)
         messages.success(request, _("Organization details saved.") if changed else _("Nothing changed."))
         return redirect("accounts:organization")
+
+
+class OrganizationExportView(CapabilityRequiredMixin, View):
+    """Asks for all the organization's data as one ZIP (D-177); the managers are told by SMS (accounts.alerts).
+
+    The run_data_exports job makes it and texts a link to the Settings page, where only the one who asked may
+    download it until it expires.
+    """
+
+    required_capability = "organization.export_data"
+
+    def post(self, request):
+        _export, queued = data_export.request_export(request.organization, request.user, request)
+        messages.success(request, _("We are putting your data together. We will text you when it is ready to download.")
+                         if queued else _("Your data is already being put together. We will text you when it is ready."))
+        return redirect(f"{reverse('accounts:organization')}#your-data")
+
+
+class OrganizationExportDownloadView(CapabilityRequiredMixin, View):
+    required_capability = "organization.export_data"
+
+    def get(self, request, public_id):
+        export = get_object_or_404(DataExport, public_id=public_id, organization=request.organization,
+                                   for_console=False)
+        return data_export.serve(export, request)
 
 
 class BranchListView(CapabilityRequiredMixin, View):

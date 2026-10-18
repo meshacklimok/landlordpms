@@ -39,13 +39,13 @@ def _announcements(user) -> list:
     from django.db.models import Q
     from django.utils import timezone
 
-    from analytics.models import Announcement
+    from console.models import PlatformAnnouncement
 
-    live = Announcement.objects.filter(Q(ends_at__isnull=True) | Q(ends_at__gt=timezone.now()), is_active=True)
+    live = PlatformAnnouncement.objects.filter(Q(ends_at__isnull=True) | Q(ends_at__gt=timezone.now()), is_active=True)
     return list(live[:3])
 
 
 def _has_console(user) -> bool:
-    from analytics.access import allowed
+    from console.access import allowed
 
     return bool(user and user.is_authenticated and allowed(user))

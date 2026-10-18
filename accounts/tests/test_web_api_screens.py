@@ -8,7 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import Organization
-from analytics.tests.test_console import signed_in
+from console.tests.test_console import signed_in
 from leases import services as lease_services
 from notifications import catalog
 from notifications.models import NotificationTypeSetting

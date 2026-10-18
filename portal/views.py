@@ -3,12 +3,11 @@
 Portal pages see only `selectors.own_*`: anything outside the user's own leases is a 404.
 """
 
-import csv
 
 from django.conf import settings
 from django.contrib import messages
-from django.db.models import Sum
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.db.models import Sum
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -20,7 +19,11 @@ from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import PORTAL_INVITE_KEY
 from ai_assistant import tenant as tenant_assistant
 from billing import deposits
+from core import exports, ratelimit
 from documents.views import file_response
+from esign import services as esign
+from esign.models import SigningRequest
+from esign.views import _pdf as pdf_response
 from leases import forms as lease_forms
 from leases import services as lease_services
 from leases.models import Lease
@@ -88,7 +91,71 @@ class LeaseView(PortalRequiredMixin, View):
             "offer": offers.open_offer(lease) if lease.status == Lease.Status.ACTIVE else None,
             "unread": conversation.unread_for_tenant(request.user).get(lease.pk, 0),
             "deposit": _deposit_statement(lease),
+            "signings": [(r, s) for r, s in esign.portal_requests(request.user, lease)
+                         if r.is_open and not s.has_signed and not s.declined_at],
         }))
+
+
+class SigningView(PortalRequiredMixin, View):
+    """Read and sign an agreement or move-out statement the office sent, without the link and SMS code (D-171).
+
+    The tenant is already signed in with their verified phone; they type their password again to sign."""
+
+    template_name = "portal/sign.html"
+
+    def load(self, request, public_id, request_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        req = SigningRequest.objects.select_related("organization").filter(lease=lease, public_id=request_id).first()
+        signer = esign.portal_signer(request.user, req) if req is not None else None
+        if signer is None:
+            raise Http404
+        esign.open_requests(lease)  # marks a request past its day as expired
+        req.refresh_from_db()
+        return lease, req, signer
+
+    def get(self, request, public_id, request_id):
+        lease, req, signer = self.load(request, public_id, request_id)
+        can_sign = req.is_open and not signer.has_signed and not signer.declined_at
+        return _no_store(render(request, self.template_name, {
+            "lease": lease, "req": req, "signer": signer, "can_sign": can_sign,
+            "others": [s for s in req.signers.all() if s.pk != signer.pk]}))
+
+    def post(self, request, public_id, request_id):
+        lease, req, signer = self.load(request, public_id, request_id)
+        action = request.POST.get("action", "")
+        try:
+            if action == "sign":
+                if not ratelimit.hit(f"esign:portal:{request.user.pk}", 10, 600):
+                    raise ValidationError(_("Too many tries. Wait 10 minutes."))
+                if not request.user.check_password(request.POST.get("password", "")):
+                    raise ValidationError(_("That password is not right."))
+                done = esign.sign_in_portal(request.user, req, typed_name=request.POST.get("typed_name", ""),
+                                            agreed=request.POST.get("agree") == "on", request=request)
+                messages.success(request, _("Thank you. You have signed.") if done.status != done.Status.COMPLETED
+                                 else _("Thank you. Everyone has signed; the signed copy is below."))
+            elif action == "decline":
+                esign.decline_in_portal(request.user, req, request.POST.get("reason", ""), request=request)
+                messages.success(request, _("You have declined to sign. The office has been told."))
+            else:
+                raise ValidationError(_("Something went wrong. Try again."))
+        except ValidationError as exc:
+            messages.error(request, _error_text(exc))
+        except PermissionDenied:
+            raise Http404 from None
+        return redirect("portal:signing", public_id=public_id, request_id=request_id)
+
+
+class SigningPdfView(SigningView):
+    def get(self, request, public_id, request_id):
+        lease, req, signer = self.load(request, public_id, request_id)
+        download = request.GET.get("download") == "1"
+        if req.signed_pdf:
+            return pdf_response(req.signed_pdf, f"{req.number}-signed.pdf", download=download)
+        if not req.is_open:
+            raise Http404
+        return pdf_response(req.original_pdf, f"{req.number}.pdf", download=download)
 
 
 def _deposit_statement(lease):
@@ -131,10 +198,9 @@ class PaymentsView(PortalRequiredMixin, View):
         }))
 
     def _csv(self, lease, found, year):
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
         suffix = f"-{year}" if year else ""
-        response["Content-Disposition"] = f'attachment; filename="payments-{lease.number or "lease"}{suffix}.csv"'
-        writer = csv.writer(response)
+        response = exports.csv_response(f"payments-{lease.number or 'lease'}{suffix}.csv")
+        writer = exports.writer(response)
         writer.writerow([_("Date"), _("Method"), _("Reference"), _("Amount"), _("Receipt")])
         for payment in found:
             receipt = getattr(payment, "receipt", None)

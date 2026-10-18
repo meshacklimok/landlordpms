@@ -8,7 +8,7 @@ from django.utils.translation import gettext as _
 
 from audit import services as audit
 from core.phone import normalize_phone
-from core.sms import send_sms
+from notifications.providers.sms import send_sms
 from support import legal
 
 from .models import OTPCode, User

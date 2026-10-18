@@ -13,9 +13,9 @@ from accounts.tests.factories import PASSWORD, add_member, make_org, role
 from accounts.tests.test_mfa import code, enable
 from api import services as api_services
 from audit import services as audit
-from core import alerts as ops_alerts
 from core import watch
 from notifications.models import Message
+from ops import alerts as ops_alerts
 
 pytestmark = pytest.mark.django_db
 

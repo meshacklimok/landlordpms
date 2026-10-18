@@ -12,11 +12,11 @@ import re
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from audit import services as audit
+from notifications.providers.mail import SYSTEM, mailer_for
 
 from .models import Membership, Organization
 from .permissions import require
@@ -91,7 +91,7 @@ def decide(admin, org: Organization, approve: bool, note: str = "", request=None
 
 
 def _tell_operators(org: Organization, actor: Membership) -> None:
-    from core.alerts import recipients
+    from ops.alerts import recipients
 
     to = recipients()
     if not to:

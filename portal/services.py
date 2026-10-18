@@ -12,10 +12,10 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership, User
 from accounts.permissions import require
 from audit import services as audit
-from core.sms import send_sms
 from leases.models import Lease, LeaseTenant
 from notifications import services as notifications
 from notifications.catalog import SMS
+from notifications.providers.sms import send_sms
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
