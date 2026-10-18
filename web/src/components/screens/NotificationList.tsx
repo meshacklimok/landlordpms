@@ -18,7 +18,7 @@ export async function NotificationList() {
       <div className="page-head">
         <div>
           <p className="crumbs">
-            <a href="/console/control/">Control</a> / Notifications
+            <a href="/console/">Console</a> / Notifications
           </p>
           <h1>Notification settings</h1>
           <p className="lead-text">

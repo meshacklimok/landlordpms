@@ -1,10 +1,18 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { djangoPostForm } from "@/lib/csrf";
 import type { FormField, OrganizationSettings } from "@/lib/types";
 
 type Value = string | boolean | string[] | null;
+
+/** The picture just chosen, shown before it is saved so a wrong file is noticed early. */
+function PickedPreview({ file, label }: { file: File; label: string }) {
+  const [url] = useState(() => URL.createObjectURL(file));
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // eslint-disable-next-line @next/next/no-img-element -- a local preview of the chosen file
+  return <img className="settings-picture" src={url} alt={`New ${label.toLowerCase()}: ${file.name}`} />;
+}
 
 /** Which fields sit together. A field the server does not send (it does not apply to this kind of business) is skipped. */
 const SECTIONS: { id: string; title: string; hint?: string; names: string[] }[] = [
@@ -233,6 +241,7 @@ export function SettingsForm({ initial }: { initial: OrganizationSettings }) {
             // eslint-disable-next-line @next/next/no-img-element -- an uploaded picture from Django's media, not a build asset
             <img className="settings-picture" src={current} alt={`Current ${f.label.toLowerCase()}`} />
           )}
+          {picked && <PickedPreview key={`${picked.name}-${picked.lastModified}`} file={picked} label={f.label} />}
           <input
             id={f.name}
             type="file"

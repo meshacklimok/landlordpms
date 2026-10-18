@@ -66,7 +66,7 @@ export function NotificationTypeForm({ detail }: { detail: NotificationTypeDetai
       <div className="page-head">
         <div>
           <p className="crumbs">
-            <a href="/console/control/">Control</a> / <Link href="/console/control/notifications/">Notifications</Link>
+            <a href="/console/">Console</a> / <Link href="/console/control/notifications/">Notifications</Link>
           </p>
           <h1>{detail.type.label}</h1>
           <p className="lead-text">

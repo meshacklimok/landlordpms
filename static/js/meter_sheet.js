@@ -1,6 +1,7 @@
 /* The reading sheet (D-143). One row per meter: type the reading now or the units used and the other fills in,
    with the amount it would bill. The figures here are a preview; the server works them out again on save.
-   Enter goes to the next row. Pasted lines are matched on the server and only fill the rows in. */
+   Enter goes to the next row not read yet. A reading far above the usual use, or with an extra digit, is
+   questioned as it is typed (the server flags it again on save). Pasted lines only fill the rows in. */
 (function () {
   "use strict";
   var form = document.querySelector("form[data-reading-sheet]");
@@ -10,6 +11,9 @@
   var money = new Intl.NumberFormat(lang, { style: "currency", currency: "KES", minimumFractionDigits: 0,
                                              maximumFractionDigits: 2 });
   var NUMBER = /^\d+(\.\d+)?$/;
+  // The same rule as meters/services.py flags_for: over HIGH_TIMES the usual use, and at least HIGH_MIN over it.
+  var HIGH_TIMES = 3, HIGH_MIN = { WATER: 5, ELECTRICITY: 50 };
+  var DAY = 86400000;
 
   function num(text) {
     text = String(text == null ? "" : text).replace(/,/g, "").trim();
@@ -65,7 +69,8 @@
       if (!units.disabled) units.value = isFinite(used) && used >= 0 ? show(used) : "";
       if (units.disabled) units.value = "";
     }
-    var hint = "", bad = false, amount = NaN, atMinimum = false, parts = [];
+    var hint = "", bad = false, warn = false, amount = NaN, atMinimum = false, parts = [];
+    var daily = num(d.usualDaily);
     if (value.value.trim() && !isFinite(prev)) hint = t.noPrevious;
     else if (isFinite(used) && used < 0) { hint = t.lower; bad = true; }
     else if (isFinite(used) && used > 0 && !d.prepaid) {
@@ -76,6 +81,22 @@
         var r = divide(d, used * num(d.rate), num(d.minimum) || 0);
         amount = r.amount; atMinimum = r.atMinimum; parts = r.parts;
         if (!r.anyLet) hint = t.vacantRoom;
+      }
+    }
+    if (!hint && isFinite(daily) && daily > 0 && !d.prepaid) {
+      var readOn = form.querySelector("[name=read_on]");
+      var days = d.prevOn && readOn && readOn.value ? Math.round((new Date(readOn.value) - new Date(d.prevOn)) / DAY) : NaN;
+      if (isFinite(used) && used > 0 && days > 0 && !isNew) {
+        var expected = daily * days;
+        if (used > expected * HIGH_TIMES && used - expected >= (HIGH_MIN[d.utility] || 0)) {
+          hint = t.high.replace("{n}", show(Math.round(expected * 10) / 10) + " " + d.unit);
+          warn = true;
+        } else if (isFinite(prev) && prev >= 10 && String(Math.floor(reading)).length > String(Math.floor(prev)).length
+                   && used > prev / 2) {
+          hint = t.digit; warn = true;
+        }
+      } else if (!value.value.trim()) {
+        hint = t.usual.replace("{n}", show(Math.round(daily * 30 * 10) / 10) + " " + d.unit);
       }
     }
     body.querySelectorAll("[data-share-amount]").forEach(function (span, i) {
@@ -90,7 +111,8 @@
     el(body, "amount-sm").textContent = text;
     var hintEl = el(body, "hint");
     hintEl.textContent = hint || (atMinimum ? "(" + t.minimum + ")" : "");
-    hintEl.className = bad ? "text-danger" : "text-muted";
+    hintEl.className = bad ? "text-danger" : warn ? "text-warning-emphasis fw-semibold" : "text-muted";
+    body.classList.toggle("sheet-warn", warn);
     return { read: !!value.value.trim(), amount: isFinite(amount) ? amount : 0 };
   }
 
@@ -135,7 +157,7 @@
     totals();
   });
   form.addEventListener("change", function (event) {
-    if (event.target.matches("[data-sheet-replaced]")) totals();
+    if (event.target.matches("[data-sheet-replaced], [name=read_on]")) totals();
   });
   // Enter goes to the same box on the next row shown, instead of sending the form half filled.
   form.addEventListener("keydown", function (event) {
@@ -143,10 +165,21 @@
     event.preventDefault();
     var kind = event.target.matches("[data-sheet-units]") ? "units" : "value";
     var shown = rows().filter(function (b) { return !b.hidden; });
-    var next = shown[shown.indexOf(event.target.closest("tbody")) + 1];
+    var after = shown.slice(shown.indexOf(event.target.closest("tbody")) + 1);
+    var next = after.filter(waiting)[0] || after[0];
     if (!next) { form.querySelector("button:not([type=button])").focus(); return; }
     var target = el(next, kind);
     (target.disabled ? el(next, "value") : target).focus();
+  });
+  // A row is still waiting when nothing is typed and it was not read earlier this month.
+  function waiting(body) { return !body.hidden && !body.dataset.done && !el(body, "value").value.trim(); }
+  var nextButton = form.querySelector("[data-sheet-next]");
+  if (nextButton) nextButton.addEventListener("click", function () {
+    var next = rows().filter(waiting)[0];
+    if (!next) { form.querySelector("button:not([type=button])").focus(); return; }
+    var box = el(next, "value");
+    box.scrollIntoView({ block: "center", behavior: "smooth" });
+    box.focus({ preventScroll: true });
   });
   form.addEventListener("click", function (event) {
     var button = event.target.closest("[data-sheet-more]");

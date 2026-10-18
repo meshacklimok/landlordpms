@@ -6,7 +6,8 @@
 //                             pause, clears on Escape, and the filters in use show as removable chips
 //   data-print                on a button: prints the page
 //   data-reload               on a button: reloads the page
-//   data-copy="#id"           on a button: copies that element's value or text
+//   data-copy="#id"           on a button: copies that element's value or text and shows "Copied"
+//                             (data-copied="..." sets the word; a <span data-copy-label> inside is the part that changes)
 //   data-select-on-focus      on an input: selects its text when focused
 //   data-filter="#id"         on an input: hides children of #id whose data-text does not contain what is typed
 // Every page also gets (D-141): the Back to top button, a loading bar while the next page opens, keyboard scrolling for
@@ -35,12 +36,50 @@
     } else if (el.hasAttribute("data-reload")) {
       window.location.reload();
     } else {
-      var source = document.querySelector(el.dataset.copy);
-      if (source && navigator.clipboard) {
-        navigator.clipboard.writeText(source.matches("input, textarea") ? source.value : source.innerText);
-      }
+      copy(el);
     }
   });
+
+  // Copies the element named by data-copy, then shows "Copied" on the button for a moment. A button with a
+  // clipboard icon gets the ticked icon; a text button shows data-copied (default "Copied"). Plain-HTTP pages and
+  // older browsers have no navigator.clipboard, so they fall back to selecting the text and copying it.
+  function copy(button) {
+    var source = document.querySelector(button.dataset.copy);
+    if (!source) return;
+    var text = source.matches("input, textarea") ? source.value : source.innerText;
+    var done = function () { flash(button); };
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(done, function () { if (legacyCopy(source)) done(); });
+    } else if (legacyCopy(source)) {
+      done();
+    }
+  }
+
+  function legacyCopy(source) {
+    try {
+      if (source.matches("input, textarea")) source.select();
+      else window.getSelection().selectAllChildren(source);
+      return document.execCommand("copy");
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function flash(button) {
+    if (button._copyTimer) return;
+    var icon = button.querySelector(".bi-clipboard");
+    var label = button.querySelector("[data-copy-label]") || (icon ? null : button);
+    var oldText = label ? label.textContent : "";
+    if (icon) { icon.classList.replace("bi-clipboard", "bi-clipboard-check"); }
+    if (label) { label.textContent = button.dataset.copied || "Copied"; }
+    button.classList.add("is-copied");
+    button._copyTimer = window.setTimeout(function () {
+      if (icon) icon.classList.replace("bi-clipboard-check", "bi-clipboard");
+      if (label) label.textContent = oldText;
+      button.classList.remove("is-copied");
+      button._copyTimer = null;
+    }, 1800);
+  }
 
   // A date or month typed by keyboard changes once per part, so wait for a whole year before reloading.
   function readyToSubmit(el) {
@@ -309,6 +348,21 @@
     try { box.setSelectionRange(end, end); } catch (e) { /* search inputs allow it; ignore if not */ }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", setUpFilters); else setUpFilters();
+
+  // Eye button beside a password field: show or hide what was typed.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest && e.target.closest("[data-toggle-password]");
+    if (!btn) return;
+    var input = document.getElementById(btn.getAttribute("aria-controls"));
+    if (!input) return;
+    var show = input.type === "password";
+    input.type = show ? "text" : "password";
+    btn.setAttribute("aria-pressed", show ? "true" : "false");
+    var label = btn.getAttribute(show ? "data-hide-text" : "data-show-text");
+    if (label) btn.setAttribute("aria-label", label);
+    var icon = btn.querySelector("i");
+    if (icon) icon.className = show ? "bi bi-eye-slash" : "bi bi-eye";
+  });
 
   // D-141. A form that came back with errors: move focus to its summary so a screen reader reads what to fix.
   var summary = document.querySelector("[data-error-summary]");

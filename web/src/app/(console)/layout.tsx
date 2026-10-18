@@ -9,7 +9,7 @@ export default function ConsoleLayout({ children }: LayoutProps<"/">) {
     <>
       <header className="console-bar">
         <a href="/console/" className="console-brand"><BrandMark /><span>Nyumba<span className="brand-pms">PMS</span></span> <span className="muted">Console</span></a>
-        <a href="/console/control/" className="btn btn-quiet">Control</a>
+        <a href="/console/control/notifications/" className="btn btn-quiet">Control</a>
       </header>
       <main id="main" className="console-main" tabIndex={-1}>{children}</main>
     </>
