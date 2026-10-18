@@ -7,7 +7,8 @@ from django.core.cache import cache
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
-from core import health, jobs
+from core import jobs
+from ops import health
 
 from .models import Incident
 

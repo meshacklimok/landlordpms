@@ -13,11 +13,11 @@ from django.core import signing
 from django.core.mail import EmailMultiAlternatives
 from django.urls import reverse
 
-from core.mail import MESSAGES, mailer_for
-from core.sms import SmsResult
+from notifications.providers.mail import MESSAGES, mailer_for
+from notifications.providers.sms import SmsResult
 
 from . import catalog
-from .email_html import render_html
+from .email_html import LOGO_CID, inline_logo, render_html
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,10 @@ def send(message) -> SmsResult:
     email = EmailMultiAlternatives(message.subject or str(catalog.get(message.type).label), message.body,
                                    from_address(org, own), [message.to], headers=headers,
                                    reply_to=[org.reply_email] if org.reply_email else None)
-    email.attach_alternative(render_html(org.display_name, message.body), "text/html")
+    logo = inline_logo(org)
+    email.attach_alternative(render_html(org.display_name, message.body, logo_cid=LOGO_CID if logo else ""), "text/html")
+    if logo is not None:
+        email.attach(logo)
     for name, content, mimetype in attachments(message):
         email.attach(name, content, mimetype)
     try:

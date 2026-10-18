@@ -12,7 +12,7 @@ from accounts.tests.factories import PASSWORD, add_member, make_org, make_user
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
 from growth import content, referrals
-from growth.models import DemoRequest, Referral, ReferralCode, SignupSource
+from growth.models import DemoRequest, Referral, ReferralCode, ReferralCredit, ReferralPolicy, SignupSource
 from subscriptions import services as subscription_services
 from subscriptions.models import Plan, Subscription
 
@@ -174,6 +174,53 @@ def test_a_valid_code_shows_the_invitation_on_the_sign_up_page(client):
     assert "data-referral-applied" not in client.get("/register/?ref=NOSUCHCODE").content.decode()
 
 
+def _register_post(code, phone="0733111222"):
+    return {"full_name": "New Landlord", "phone": phone, "email": f"n{phone}@example.com",
+            "password": "Zx9!kQ-long-pass-47", "accept_terms": "on", "referral_code": code}
+
+
+def test_the_sign_up_page_has_a_hidden_referral_code_box(client):
+    page = client.get("/register/").content.decode()
+    assert "data-referral-box" in page and "Have a referral code?" in page
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    assert "data-referral-box" not in client.get(f"/register/?ref={code}").content.decode()  # already applied
+
+
+def test_a_typed_code_attaches_the_referral_like_the_link_does(client):
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    response = client.post("/register/", _register_post(code.lower()))
+    assert response.status_code == 302
+    from accounts.models import User
+    User.objects.filter(phone="+254733111222").update(phone_verified_at=timezone.now())
+    client.post(reverse("accounts:onboarding"), {"name": "Typed Co", "org_type": Organization.Type.INDIVIDUAL})
+    assert Referral.objects.get(referred=Organization.objects.get(name="Typed Co")).referrer == referrer.organization
+
+
+def test_a_wrong_typed_code_stops_sign_up_with_a_message(client):
+    response = client.post("/register/", _register_post("NOSUCHCD"))
+    assert response.status_code == 200 and "referral code was not found" in response.content.decode()
+    assert client.post("/register/", _register_post("")).status_code == 302  # empty box: nothing to check
+
+
+@pytest.fixture
+def days_policy(db):
+    """The first rule (D-133): free days for both sides when the new workspace first pays, nothing to set up."""
+    ReferralPolicy.objects.update_or_create(pk=1, defaults={
+        "reward_kind": ReferralPolicy.RewardKind.DAYS, "reward_days": 30, "require_payment": True,
+        "reward_referred_too": True, "referred_reward_kind": ReferralPolicy.RewardKind.DAYS,
+        "referred_reward_days": 30, "require_referrer_paid": False, "min_properties": 0, "min_units": 0,
+        "min_tenants": 0})
+
+
+@pytest.fixture
+def classic_policy(db):
+    """Before D-133 grew a second reward: only the referrer is rewarded, and need not have paid."""
+    ReferralPolicy.objects.update_or_create(pk=1, defaults={"reward_referred_too": False,
+                                                            "require_referrer_paid": False})
+
+
 def pay_first_invoice(org):
     from accounts.tests.factories import make_user as _mk
 
@@ -185,7 +232,7 @@ def pay_first_invoice(org):
         admin, invoice, amount=invoice.total, method="MPESA", reference="QRF1234567", paid_on=timezone.localdate())
 
 
-def test_both_sides_are_rewarded_when_the_new_workspace_first_pays(client):
+def test_both_sides_are_rewarded_when_the_new_workspace_first_pays(client, days_policy):
     referrer = make_org()
     subscription_services.subscription_for(referrer.organization)
     before = Subscription.objects.get(organization=referrer.organization).trial_ends_on
@@ -204,7 +251,7 @@ def test_both_sides_are_rewarded_when_the_new_workspace_first_pays(client):
     assert AuditEvent.objects.filter(action="referral.reward", organization=referrer.organization).exists()
 
 
-def test_a_second_payment_does_not_reward_again(client):
+def test_a_second_payment_does_not_reward_again(client, days_policy):
     referrer = make_org()
     code = referrals.code_for(referrer.organization)
     new_org = signed_up(client, f"?ref={code}")
@@ -223,7 +270,7 @@ def test_nobody_refers_themselves(client):
     assert not Referral.objects.exists()
 
 
-def test_a_lapsed_referrer_is_marked_and_the_new_customer_is_still_rewarded(client):
+def test_a_lapsed_referrer_is_marked_and_the_new_customer_is_still_rewarded(client, days_policy):
     referrer = make_org()
     code = referrals.code_for(referrer.organization)
     Subscription.objects.filter(organization=referrer.organization).update(status="LAPSED", trial_ends_on=None)
@@ -234,8 +281,8 @@ def test_a_lapsed_referrer_is_marked_and_the_new_customer_is_still_rewarded(clie
     assert referral.status == Referral.Status.REFERRER_LAPSED and referral.reward_days == 0
 
 
-def test_the_yearly_cap_stops_rewards(client, settings):
-    settings.REFERRAL_MAX_REWARDS_PER_YEAR = 0
+def test_the_yearly_cap_stops_rewards(client, days_policy):
+    ReferralPolicy.objects.update(max_rewards_per_year=0)
     referrer = make_org()
     code = referrals.code_for(referrer.organization)
     before = Subscription.objects.get(organization=referrer.organization).trial_ends_on
@@ -243,6 +290,114 @@ def test_the_yearly_cap_stops_rewards(client, settings):
     pay_first_invoice(new_org)
     assert Referral.objects.get(referred=new_org).status == Referral.Status.REFERRER_LAPSED
     assert Subscription.objects.get(organization=referrer.organization).trial_ends_on == before
+
+
+def set_up(org, units=11, tenants=11):
+    from properties import services as property_services
+    from tenants.models import Tenant
+
+    owner = org.memberships.first()
+    n = Tenant.objects.filter(organization=org).count() + org.properties.count()
+    prop = property_services.create_property(owner, name=f"Block {n}", code=f"B{n}", area="Kilimani",
+                                             county="NAIROBI")
+    for i in range(units):
+        property_services.create_unit(owner, prop, code=f"A{i}", list_rent=10000)
+    for i in range(tenants):
+        Tenant.objects.create(organization=org, name=f"T{n}-{i}", phone=f"+2547110{n:02d}{i:03d}")
+
+
+def test_the_referrer_gets_a_discount_once_the_new_workspace_is_set_up(client, classic_policy):
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    new_org = signed_up(client, f"?ref={code}")
+    assert referrals.check_pending() == 0  # signed up, nothing added yet
+    set_up(new_org, units=10)
+    assert referrals.check_pending() == 0  # one unit short of the default 11
+    set_up(new_org, units=1, tenants=0)
+    assert referrals.check_pending() == 1
+    referral = Referral.objects.get(referred=new_org)
+    assert referral.status == Referral.Status.REWARDED and referral.reward_percent == 50
+    assert list(ReferralCredit.objects.values_list("organization", "percent")) == [(referrer.organization.pk, 50)]
+    assert referrals.check_pending() == 0  # once only
+
+
+def test_a_referral_credit_comes_off_the_next_plan_invoice_once(client, classic_policy):
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    new_org = signed_up(client, f"?ref={code}")
+    set_up(new_org)
+    referrals.check_pending()
+    membership = referrer.organization.memberships.first()
+    lite = Plan.objects.get(key="lite")
+    invoice = subscription_services.choose_plan(membership, lite, "MONTHLY")
+    assert invoice.discount == invoice.price / 2 and invoice.net_amount == invoice.price - invoice.discount
+    assert ReferralCredit.objects.get().invoice == invoice
+    admin = make_user(is_staff=True, is_superuser=True)
+    subscription_services.void_invoice(admin, invoice, "Wrong plan")
+    assert ReferralCredit.objects.get().used_at is None  # given back
+    again = subscription_services.choose_plan(membership, lite, "MONTHLY")
+    assert again.discount == again.price / 2
+    later = subscription_services.issue_invoice(again.subscription, lite, "MONTHLY", reason="RENEWAL",
+                                                today=timezone.localdate())
+    assert later.discount == 0
+
+
+def test_a_policy_that_needs_payment_waits_for_it_and_can_reward_both(client):
+    ReferralPolicy.objects.update_or_create(pk=1, defaults={
+        "require_payment": True, "reward_referred_too": True, "require_referrer_paid": False,
+        "referred_reward_kind": ReferralPolicy.RewardKind.DISCOUNT, "min_units": 0, "min_tenants": 0})
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    new_org = signed_up(client, f"?ref={code}")
+    set_up(new_org, units=0, tenants=0)
+    assert referrals.check_pending() == 0
+    pay_first_invoice(new_org)
+    assert Referral.objects.get(referred=new_org).status == Referral.Status.REWARDED
+    assert set(ReferralCredit.objects.values_list("organization", flat=True)) == {referrer.organization.pk,
+                                                                                 new_org.pk}
+
+
+def test_the_invite_banner_follows_the_policy(client, classic_policy):
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    page = client.get(f"/register/?ref={code}").content.decode()
+    assert "You were invited by a NyumbaPMS customer." in page and "% off" not in page
+    ReferralPolicy.objects.update(reward_referred_too=True)
+    assert "30 free days" in client.get("/register/").content.decode()
+    ReferralPolicy.objects.update(referred_reward_kind=ReferralPolicy.RewardKind.DISCOUNT)
+    assert "50% off a plan invoice" in client.get("/register/").content.decode()
+
+
+def test_by_default_the_referrer_must_have_paid_and_the_invited_get_a_month(client):
+    referrer = make_org()
+    code = referrals.code_for(referrer.organization)
+    new_org = signed_up(client, f"?ref={code}")
+    set_up(new_org)
+    trial_before = Subscription.objects.get(organization=new_org).trial_ends_on
+    assert referrals.check_pending() == 0  # set up, but the referrer has never paid: no referrer reward yet
+    trial_before += datetime.timedelta(days=30)  # the invited landlord was not kept waiting
+    assert Subscription.objects.get(organization=new_org).trial_ends_on == trial_before
+    assert referrals.check_pending() == 0
+    assert Subscription.objects.get(organization=new_org).trial_ends_on == trial_before  # and only once
+    from notifications.models import Message as _Message
+
+    waiting = _Message.objects.filter(type="referral_waiting", organization=referrer.organization)
+    assert waiting.count() == 1 and "50% off your next plan invoice" in waiting.get().body  # told once, not daily
+    login(client, referrer)
+    assert "Waiting for you to pay for a plan" in client.get(reverse("growth:refer")).content.decode()
+
+    pay_first_invoice(referrer.organization)  # the referrer's first payment releases the waiting referral
+    referral = Referral.objects.get(referred=new_org)
+    assert referral.status == Referral.Status.REWARDED and referral.reward_percent == 50
+    assert list(ReferralCredit.objects.values_list("organization", "percent")) == [(referrer.organization.pk, 50)]
+    assert Subscription.objects.get(organization=new_org).trial_ends_on == trial_before  # not given twice
+    from notifications.models import Message
+
+    mine = Message.objects.filter(type="referral_rewarded", organization=referrer.organization)
+    assert mine.count() == 1 and "50% off your next plan invoice" in mine.get().body
+    assert new_org.name not in mine.get().body
+    welcome = Message.objects.filter(type="referral_welcome", organization=new_org)
+    assert welcome.count() == 1 and "30 free days" in welcome.get().body
 
 
 def test_the_referrer_never_sees_the_referred_business_name(client):

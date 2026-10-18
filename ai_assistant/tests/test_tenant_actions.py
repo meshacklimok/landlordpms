@@ -13,10 +13,10 @@ from ai_assistant.models import Question
 from ai_assistant.portal_views import CARDS_KEY
 from ai_assistant.tests.test_tenant import ask, phone_of, texts
 from audit.models import AuditEvent
-from core.whatsapp import MemoryWhatsAppSender
 from maintenance.models import MaintenanceRequest
 from mpesa.daraja import FakeDarajaClient
 from mpesa.models import StkRequest
+from notifications.providers.whatsapp import MemoryWhatsAppSender
 from portal.models import UssdPin
 from portal.tests.test_portal import join
 from portal.tests.test_ussd import make_paybill

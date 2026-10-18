@@ -1,11 +1,10 @@
-"""Notifications and the message log (doc 11 §27, D-032, D-044).
+"""The message log: rules, preferences, consent, templates, announcements and every message sent (doc 11 §27, D-032, D-044).
 
 Who receives what is decided by the catalog (code), the organization's rules, the
 recipient's opt-outs and consent. Every send, skip and failure is a ``Message`` row,
 which is never deleted.
 """
 
-import secrets
 
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
@@ -13,10 +12,8 @@ from django.db import models
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from core import crypto
 from core.models import AllObjectsManager, ArchivableModel, LiveManager, PublicIdModel, ScopedQuerySet, TimeStampedModel
-
-from . import catalog
+from notifications import catalog
 
 # Exactly one of tenant or user is set on recipient-bound rows.
 _ONE_RECIPIENT = (Q(tenant__isnull=False) & Q(user__isnull=True)) | (Q(tenant__isnull=True) & Q(user__isnull=False))
@@ -47,6 +44,45 @@ class OrganizationNotificationRule(TimeStampedModel):
 
     def __str__(self):
         return f"{self.organization} · {self.type}"
+
+
+class NotificationTypeSetting(TimeStampedModel):
+    """The platform owner's change to one catalog type, for every organization (set in Django admin).
+
+    No row means the code default. Organizations still adjust on top through ``OrganizationNotificationRule``."""
+
+    type = models.CharField(_("notification"), max_length=50, choices=catalog.CHOICES, unique=True)
+    enabled = models.BooleanField(_("on by default"), default=True)
+    channels = ArrayField(models.CharField(max_length=10, choices=catalog.CHANNEL_CHOICES), default=list,
+                          help_text=_("In order of preference, e.g. WHATSAPP, SMS. Only channels the notification "
+                                      "has wording for work; leave empty for the code default."))
+    offsets = ArrayField(models.SmallIntegerField(), default=list, blank=True,
+                         help_text=_("Default reminder days, for notifications that are sent relative to a date."))
+    mandatory = models.BooleanField(_("required"), default=False,
+                                    help_text=_("Organizations cannot switch it off and recipients cannot opt out."))
+    urgent = models.BooleanField(_("urgent"), default=False, help_text=_("Sent during quiet hours instead of waiting."))
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+
+    class Meta:
+        ordering = ["type"]
+        verbose_name = "notification setting"
+
+    def __str__(self):
+        return str(dict(catalog.CHOICES).get(self.type, self.type))
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        base = catalog.BY_CODENAME.get(self.type)
+        if base is None:
+            return
+        bad = [c for c in self.channels if c not in base.channels]
+        if bad:
+            raise ValidationError({"channels": _("%(type)s has no wording for: %(bad)s. Available: %(ok)s.") % {
+                "type": base.label, "bad": ", ".join(bad), "ok": ", ".join(base.channels)}})
+        if self.offsets and not base.offsets:
+            raise ValidationError({"offsets": _("This notification is not sent relative to a date.")})
 
 
 class NotificationPreference(TimeStampedModel):
@@ -256,152 +292,3 @@ class PushSubscription(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} · {self.user_agent[:40] or self.endpoint[:40]}"
-
-
-def new_webhook_token() -> str:
-    return secrets.token_urlsafe(24)
-
-
-def new_verify_token() -> str:
-    return secrets.token_urlsafe(18)
-
-
-class SecretsMixin(models.Model):
-    """Provider secrets kept encrypted in `<name>_encrypted` columns. Never shown back to anyone."""
-
-    SECRETS: tuple[str, ...] = ()
-
-    class Meta:
-        abstract = True
-
-    def secret(self, name: str) -> str:
-        return crypto.decrypt(getattr(self, f"{name}_encrypted"))
-
-    def set_secret(self, name: str, value: str) -> None:
-        setattr(self, f"{name}_encrypted", crypto.encrypt(value))
-
-    def has(self, name: str) -> bool:
-        return bool(getattr(self, f"{name}_encrypted"))
-
-
-class WhatsAppAccount(SecretsMixin, TimeStampedModel):
-    """An organization's own WhatsApp Business number on Meta's Cloud API.
-
-    The access token and app secret are encrypted at rest and never shown back. The two random values belong to
-    the organization's own webhook in Meta: the token in its URL, and the verify token Meta asks for once.
-    """
-
-    SECRETS = ("access_token", "app_secret")
-
-    organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="+")
-    phone_number_id = models.CharField(_("phone number ID"), max_length=30, unique=True)
-    display_number = models.CharField(max_length=40, blank=True)
-    verified_name = models.CharField(max_length=120, blank=True)
-    access_token_encrypted = models.TextField(blank=True)
-    app_secret_encrypted = models.TextField(blank=True)
-    enabled = models.BooleanField(_("use this number"), default=True)
-    webhook_token = models.CharField(max_length=64, unique=True, default=new_webhook_token,
-                                     editable=False)
-    verify_token = models.CharField(max_length=64, default=new_verify_token, editable=False)
-    checked_at = models.DateTimeField(null=True, blank=True)
-    check_error = models.CharField(max_length=300, blank=True)
-    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
-                                   related_name="+")
-
-    objects = ScopedQuerySet.as_manager()
-
-    def __str__(self):
-        return f"{self.organization} · {self.phone_number_id}"
-
-    @property
-    def usable(self) -> bool:
-        """It can send: switched on, with a number and a token."""
-        return self.enabled and bool(self.phone_number_id) and self.has("access_token")
-
-
-class PlatformWhatsApp(SecretsMixin, TimeStampedModel):
-    """The platform owner's own WhatsApp number, set in Django admin. One row.
-
-    It serves every organization that has no number of its own, and replaces the WA_* settings when it is
-    switched on and complete."""
-
-    SECRETS = ("access_token", "app_secret")
-
-    phone_number_id = models.CharField(_("phone number ID"), max_length=30, blank=True)
-    access_token_encrypted = models.TextField(blank=True)
-    app_secret_encrypted = models.TextField(blank=True)
-    verify_token = models.CharField(max_length=64, default=new_verify_token)
-    enabled = models.BooleanField(_("use this number"), default=False)
-
-    class Meta:
-        verbose_name = "platform WhatsApp number"
-        verbose_name_plural = "platform WhatsApp number"
-
-    def __str__(self):
-        return f"Platform WhatsApp {self.phone_number_id}".strip()
-
-    @classmethod
-    def get(cls) -> "PlatformWhatsApp":
-        return cls.objects.get_or_create(pk=1)[0]
-
-    @property
-    def usable(self) -> bool:
-        return self.enabled and bool(self.phone_number_id) and self.has("access_token")
-
-
-class EmailAccount(SecretsMixin, TimeStampedModel):
-    """An organization's own outgoing mail server, so tenant mail comes from its own address.
-
-    Optional: without one, mail goes through the platform's account under the organization's name."""
-
-    SECRETS = ("password",)
-
-    organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="+")
-    host = models.CharField(_("mail server"), max_length=200)
-    port = models.PositiveIntegerField(_("port"), default=587)
-    username = models.CharField(_("username"), max_length=200, blank=True)
-    password_encrypted = models.TextField(blank=True)
-    use_tls = models.BooleanField(_("use TLS"), default=True)
-    from_email = models.EmailField(_("send from"))
-    from_name = models.CharField(_("sender name"), max_length=100, blank=True)
-    enabled = models.BooleanField(_("use this mail server"), default=True)
-    checked_at = models.DateTimeField(null=True, blank=True)
-    check_error = models.CharField(max_length=300, blank=True)
-    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
-                                   related_name="+")
-
-    objects = ScopedQuerySet.as_manager()
-
-    def __str__(self):
-        return f"{self.organization} · {self.from_email}"
-
-    @property
-    def usable(self) -> bool:
-        return self.enabled and bool(self.host) and bool(self.from_email)
-
-
-class SmsAccount(SecretsMixin, TimeStampedModel):
-    """An organization's own Africa's Talking account, so its SMS are paid for and sent by it, under its own name.
-
-    Optional: without one, SMS go through the platform's account and the organization's SMS wallet."""
-
-    SECRETS = ("api_key",)
-
-    organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="+")
-    username = models.CharField(_("Africa's Talking username"), max_length=60)
-    api_key_encrypted = models.TextField(blank=True)
-    sender_id = models.CharField(_("sender name"), max_length=11, blank=True)
-    enabled = models.BooleanField(_("use this account"), default=True)
-    checked_at = models.DateTimeField(null=True, blank=True)
-    check_error = models.CharField(max_length=300, blank=True)
-    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
-                                   related_name="+")
-
-    objects = ScopedQuerySet.as_manager()
-
-    def __str__(self):
-        return f"{self.organization} · {self.username}"
-
-    @property
-    def usable(self) -> bool:
-        return self.enabled and bool(self.username) and self.has("api_key")

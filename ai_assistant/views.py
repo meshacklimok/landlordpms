@@ -38,6 +38,69 @@ def _with_cards(request) -> list[dict]:
     return out
 
 
+def new_conversation(request) -> None:
+    request.session.pop(SESSION_KEY, None)
+    request.session.pop(PROPOSALS_KEY, None)
+
+
+def ask_question(request, question) -> None:
+    """Put one question to the assistant and keep the turn. ValidationError carries what to tell the member."""
+    m = request.membership
+    if not services.is_on(m.organization):
+        raise PermissionDenied("The assistant is off.")
+    past = turns(request)
+    result = services.ask(m, question, history=[{"q": t["q"], "a": t["a"]} for t in past if t.get("ok")])
+    past.append({"q": result.question.question, "a": result.text, "ok": result.answered,
+                 "links": [list(link) for link in result.links],
+                 "proposals": [p["id"] for p in result.proposals]})
+    past = past[-services.HISTORY_TURNS:]
+    kept = {pid for t in past for pid in t.get("proposals") or []}
+    stored = {pid: p for pid, p in proposals(request).items() if pid in kept}
+    stored.update({p["id"]: p for p in result.proposals})
+    request.session[SESSION_KEY] = past
+    request.session[PROPOSALS_KEY] = stored
+
+
+def settle_proposal(request, proposal_id, action, text=None) -> str:
+    """Confirm or dismiss one proposal (D-092 items 2-4); returns what to tell the member.
+
+    LookupError when the proposal is gone, ValidationError or PermissionDenied when it cannot be done.
+    """
+    m = request.membership
+    if not services.is_on(m.organization):
+        raise PermissionDenied("The assistant is off.")
+    stored = proposals(request)
+    proposal = stored.get(str(proposal_id or ""))
+    if proposal is None:
+        raise LookupError(_("That proposal is no longer available. Ask again."))
+    message = ""
+    if action == "dismiss":
+        if proposal.get("state") == "open":
+            proposal["state"] = "dismissed"
+    else:
+        text = text if proposal.get("kind") == actions.MESSAGE else None
+        done, url = actions.confirm(m, proposal, text=text, request=request)
+        proposal.update(state="done", result=done, url=url)
+        if text is not None:
+            proposal["text"] = text.strip()
+        message = done
+    request.session[PROPOSALS_KEY] = stored
+    return message
+
+
+def switch_assistant(request, which: str, on: bool) -> str:
+    """Turn the assistant for staff, or for tenants, on or off; returns what to tell the member."""
+    if which == "tenants":
+        if on and not services.tenants_available():
+            raise ValidationError(_("Answering tenants is not set up on this service yet."))
+        services.set_tenant_enabled(request.membership, on, request=request)
+        return _("The assistant now answers tenants.") if on else _("The assistant no longer answers tenants.")
+    if on and not client.enabled():
+        raise ValidationError(_("The assistant is not set up on this service yet."))
+    services.set_enabled(request.membership, on, request=request)
+    return _("The assistant is on.") if on else _("The assistant is off.")
+
+
 class AskView(OrgMemberRequiredMixin, View):
     template_name = "ai_assistant/ask.html"
 
@@ -55,28 +118,12 @@ class AskView(OrgMemberRequiredMixin, View):
 
     def post(self, request):
         if request.POST.get("action") == "new":
-            request.session.pop(SESSION_KEY, None)
-            request.session.pop(PROPOSALS_KEY, None)
+            new_conversation(request)
             return redirect("ai_assistant:ask")
-        m = request.membership
-        if not services.is_on(m.organization):
-            raise PermissionDenied("The assistant is off.")
-        past = turns(request)
         try:
-            result = services.ask(m, request.POST.get("question"),
-                                  history=[{"q": t["q"], "a": t["a"]} for t in past if t.get("ok")])
+            ask_question(request, request.POST.get("question"))
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
-            return redirect("ai_assistant:ask")
-        past.append({"q": result.question.question, "a": result.text, "ok": result.answered,
-                     "links": [list(link) for link in result.links],
-                     "proposals": [p["id"] for p in result.proposals]})
-        past = past[-services.HISTORY_TURNS:]
-        kept = {pid for t in past for pid in t.get("proposals") or []}
-        stored = {pid: p for pid, p in proposals(request).items() if pid in kept}
-        stored.update({p["id"]: p for p in result.proposals})
-        request.session[SESSION_KEY] = past
-        request.session[PROPOSALS_KEY] = stored
         return redirect("ai_assistant:ask")
 
 
@@ -84,32 +131,20 @@ class ConfirmView(OrgMemberRequiredMixin, View):
     """Confirm or dismiss one proposal (D-092 items 2-4)."""
 
     def post(self, request):
-        m = request.membership
-        if not services.is_on(m.organization):
-            raise PermissionDenied("The assistant is off.")
-        stored = proposals(request)
-        proposal = stored.get(str(request.POST.get("id", "")))
-        if proposal is None:
-            messages.error(request, _("That proposal is no longer available. Ask again."))
-            return redirect("ai_assistant:ask")
-        if request.POST.get("action") == "dismiss":
-            if proposal.get("state") == "open":
-                proposal["state"] = "dismissed"
+        try:
+            done = settle_proposal(request, request.POST.get("id"), request.POST.get("action"),
+                                   request.POST.get("text"))
+        except LookupError as exc:
+            messages.error(request, str(exc))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        except PermissionDenied as exc:
+            if str(exc) == "The assistant is off.":
+                raise
+            messages.error(request, _("Your role cannot do that."))
         else:
-            text = request.POST.get("text") if proposal.get("kind") == actions.MESSAGE else None
-            try:
-                done, url = actions.confirm(m, proposal, text=text, request=request)
-            except ValidationError as exc:
-                messages.error(request, " ".join(exc.messages))
-                return redirect("ai_assistant:ask")
-            except PermissionDenied:
-                messages.error(request, _("Your role cannot do that."))
-                return redirect("ai_assistant:ask")
-            proposal.update(state="done", result=done, url=url)
-            if text is not None:
-                proposal["text"] = text.strip()
-            messages.success(request, done)
-        request.session[PROPOSALS_KEY] = stored
+            if done:
+                messages.success(request, done)
         return redirect("ai_assistant:ask")
 
 
@@ -117,20 +152,11 @@ class SwitchView(CapabilityRequiredMixin, View):
     required_capability = "organization.manage"
 
     def post(self, request):
-        on = request.POST.get("on") == "1"
-        if request.POST.get("which") == "tenants":
-            if on and not services.tenants_available():
-                messages.error(request, _("Answering tenants is not set up on this service yet."))
-                return redirect("ai_assistant:ask")
-            services.set_tenant_enabled(request.membership, on, request=request)
-            messages.success(request, _("The assistant now answers tenants.") if on
-                             else _("The assistant no longer answers tenants."))
-            return redirect("ai_assistant:ask")
-        if on and not client.enabled():
-            messages.error(request, _("The assistant is not set up on this service yet."))
-            return redirect("ai_assistant:ask")
-        services.set_enabled(request.membership, on, request=request)
-        messages.success(request, _("The assistant is on.") if on else _("The assistant is off."))
+        which = "tenants" if request.POST.get("which") == "tenants" else "staff"
+        try:
+            messages.success(request, switch_assistant(request, which, request.POST.get("on") == "1"))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
         return redirect("ai_assistant:ask")
 
 

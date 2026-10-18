@@ -8,7 +8,7 @@ from django.core.management import call_command
 from django.db import DatabaseError
 
 from accounts.tests.factories import make_org
-from core import pilot
+from ops import pilot
 from support import app_opens
 from support.models import AppOpen
 

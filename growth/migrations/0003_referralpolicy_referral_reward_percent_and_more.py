@@ -62,7 +62,7 @@ class Migration(migrations.Migration):
                     "require_payment",
                     models.BooleanField(
                         default=False,
-                        help_text="Tick to reward as soon as they have set up, before their first payment.",
+                        help_text="Untick to reward as soon as they have set up, before their first payment.",
                         verbose_name="invited landlord must have paid first",
                     ),
                 ),

@@ -271,7 +271,7 @@ def all_pages():
 def page_for(request):
     """The registered page this request is showing, or None when it is private (the default)."""
     match = getattr(request, "resolver_match", None)
-    if match is None or request.method not in ("GET", "HEAD"):
+    if match is None or request.method not in ("GET", "HEAD") or request.path.startswith(tuple(PRIVATE_PREFIXES)):
         return None
     name = match.view_name
     if name == "accounts:home":

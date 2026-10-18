@@ -11,10 +11,10 @@ from django.urls import reverse
 from accounts.tests.factories import add_member, make_org
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
-from core.sms import AfricasTalkingSmsSender, SmsResult
-from core.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender, get_whatsapp_sender
 from notifications import catalog, delivery, emails, own_accounts, whatsapp_account
 from notifications.models import EmailAccount, Message, PlatformWhatsApp, SmsAccount
+from notifications.providers.sms import AfricasTalkingSmsSender, SmsResult
+from notifications.providers.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender, get_whatsapp_sender
 from notifications.tests.test_whatsapp import NOON
 from subscriptions.models import SmsWallet
 from tenants import services as tenant_services
@@ -211,7 +211,7 @@ def test_platform_number_from_admin_serves_organizations_without_their_own(setti
 
 
 def test_switched_off_platform_number_falls_back_to_settings(settings, org):
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     platform(enabled=False)
     assert isinstance(get_whatsapp_sender(org), MemoryWhatsAppSender)
 

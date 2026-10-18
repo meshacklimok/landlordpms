@@ -11,9 +11,9 @@ from django.urls import reverse
 from accounts.tests.factories import add_member, make_org
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
-from core.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender, get_whatsapp_sender
 from notifications import catalog, delivery, whatsapp_account
 from notifications.models import ConsentRecord, Message, WhatsAppAccount
+from notifications.providers.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender, get_whatsapp_sender
 from notifications.tests.test_whatsapp import NOON, announce, change, grant
 from tenants import services as tenant_services
 
@@ -126,7 +126,7 @@ def test_a_switched_off_number_is_not_used(settings, owner, org, tenant, account
 
 
 def test_messages_go_out_from_the_landlords_number(settings, monkeypatch, org, tenant, account):
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     MemoryWhatsAppSender.outbox.clear()
     seen = []
 
@@ -145,7 +145,7 @@ def test_messages_go_out_from_the_landlords_number(settings, monkeypatch, org, t
 
 
 def test_another_organization_still_uses_the_platform_number(settings, account):
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     other = make_org(name="Other").organization
     assert isinstance(get_whatsapp_sender(other), MemoryWhatsAppSender)
     assert isinstance(get_whatsapp_sender(account.organization), CloudApiWhatsAppSender)

@@ -24,12 +24,12 @@ from audit import services as audit
 from billing.invoicing import lease_balance
 from billing.models import Invoice
 from core.money import ZERO, format_money
-from core.whatsapp import get_whatsapp_sender
 from leases.models import Lease
 from maintenance import services as maintenance
 from maintenance.models import MaintenanceRequest
 from mpesa import stk
 from mpesa.models import StkRequest
+from notifications.providers.whatsapp import get_whatsapp_sender
 from notifications.sms_hooks import keyword
 from payments.forms import accounts_for
 from payments.models import Payment, PaymentAccount

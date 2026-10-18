@@ -1,10 +1,9 @@
 """Public pages that help a landlord decide (landing, pricing, FAQ, tutorials, demo) and the Refer page (D-133)."""
 
 from django.conf import settings
-from django.contrib import messages
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect, render
-from django.urls import reverse
+from django.templatetags.static import static
 from django.utils.translation import gettext as _
 from django.views import View
 
@@ -12,7 +11,7 @@ from accounts.mixins import CapabilityRequiredMixin
 from core import ratelimit
 from subscriptions import services as subscription_services
 
-from . import campaigns, content, pages, referrals, services
+from . import ads, content, pages, referrals, seo, services, solutions
 from .forms import DemoRequestForm
 
 DEMO_DONE_KEY = "demo_done"
@@ -33,17 +32,17 @@ def _plan_context():
 def landing(request):
     """What a visitor sees at "/" before signing in."""
     return render(request, "growth/landing.html", {
-        **_plan_context(), "trial_days": subscription_services.TRIAL_DAYS, "features": content.FEATURES,
+        **_plan_context(), "trial_days": subscription_services.trial_days(), "features": content.FEATURES,
         "facts": content.LANDING_FACTS, "audiences": content.LANDING_AUDIENCES, "blocks": content.LANDING_BLOCKS,
         "more": content.LANDING_MORE, "faq": content.faq_pairs()[:6], "swaps": content.LANDING_SWAPS,
-        "works_with": content.LANDING_WORKS_WITH,
-        "invited": campaigns.is_valid_invite(request)})
+        "works_with": content.LANDING_WORKS_WITH, "solutions": solutions.SOLUTIONS,
+        "invited": referrals.invite_offer(request)})
 
 
 class PricingView(View):
     def get(self, request):
         return render(request, "growth/pricing.html", {
-            **_plan_context(), "trial_days": subscription_services.TRIAL_DAYS, "features": content.FEATURES,
+            **_plan_context(), "trial_days": subscription_services.trial_days(), "features": content.FEATURES,
             "sms_price": subscription_services.sms_price(),
             "vat_registered": getattr(settings, "PLATFORM_VAT_REGISTERED", False)})
 
@@ -107,6 +106,7 @@ class DemoView(View):
                 return redirect("growth:demo_thanks")
             item, _created = services.book_demo(form.cleaned_data, request)
             request.session[DEMO_DONE_KEY] = item.full_name.split()[0][:40]
+            ads.remember_event(request, ads.LEAD)
             return redirect("growth:demo_thanks")
         return render(request, self.template_name, {"form": form})
 
@@ -124,23 +124,53 @@ class ReferralsView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, referrals.summary(request.organization))
 
 
+class SolutionListView(View):
+    def get(self, request):
+        return render(request, "growth/solutions.html", {"solutions": solutions.SOLUTIONS})
+
+
+class SolutionView(View):
+    def get(self, request, slug):
+        item = solutions.solution(slug)
+        if item is None:
+            raise Http404
+        return render(request, "growth/solution.html", {
+            "s": item, "related": [solutions.solution(r) for r in item["related"]],
+            "tutorial": content.tutorial(item["tutorial"]), "article": pages.article(item.get("article", ""))})
+
+
 class RobotsView(View):
     def get(self, request):
-        lines = ["User-agent: *", "Disallow: /ok-ml-staff/", "Disallow: /my/", "Disallow: /owner/",
-                 "Disallow: /hooks/", "Disallow: /api/", "Disallow: /p/", "Disallow: /r/", "Disallow: /sign/",
-                 f"Sitemap: {settings.SITE_URL}/sitemap.xml", ""]
-        return HttpResponse("\n".join(lines), content_type="text/plain")
+        return HttpResponse(seo.robots_txt(), content_type="text/plain; charset=utf-8")
 
 
 class SitemapView(View):
     def get(self, request):
-        paths = [reverse(n) for n in ("growth:pricing", "growth:faq", "growth:tutorials", "growth:demo",
-                                      "accounts:register", "support:security", "support:terms", "support:privacy")]
-        paths += [reverse(n) for n in ("growth:about", "growth:how_it_works", "growth:articles",
-                                       "support:delete_account")]
-        paths = ["/"] + paths + [reverse("growth:tutorial", args=[t["slug"]]) for t in content.TUTORIALS]
-        paths += [reverse("growth:article", args=[a["slug"]]) for a in pages.ARTICLES]
-        rows = "".join(f"<url><loc>{settings.SITE_URL}{p}</loc></url>" for p in paths)
-        xml = ('<?xml version="1.0" encoding="UTF-8"?>'
-               f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{rows}</urlset>')
-        return HttpResponse(xml, content_type="application/xml")
+        return HttpResponse(seo.sitemap_xml(), content_type="application/xml")
+
+
+class LlmsView(View):
+    """/llms.txt and /llms-full.txt: a plain-text summary of the public site for AI assistants (llmstxt.org)."""
+
+    full = False
+
+    def get(self, request):
+        body = seo.llms_full_txt() if self.full else seo.llms_txt()
+        return HttpResponse(body, content_type="text/plain; charset=utf-8")
+
+
+class FaviconView(View):
+    """Crawlers and old browsers ask for /favicon.ico whatever the page head says."""
+
+    def get(self, request):
+        return HttpResponsePermanentRedirect(static("icons/favicon-32.png"))
+
+
+class IndexNowKeyView(View):
+    """Proves to Bing and Yandex (IndexNow) that this site owns the key set in INDEXNOW_KEY."""
+
+    def get(self, request, key):
+        wanted = getattr(settings, "INDEXNOW_KEY", "")
+        if not wanted or key != wanted:
+            raise Http404
+        return HttpResponse(wanted, content_type="text/plain; charset=utf-8")

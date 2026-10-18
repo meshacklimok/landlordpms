@@ -14,10 +14,10 @@ from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
 from billing.models import Invoice
 from billing.tests.test_invoicing import FEB, bill, make_lease
-from core.sms import MemorySmsSender
-from core.whatsapp import MemoryWhatsAppSender
 from notifications import catalog, compose, delivery
 from notifications.models import ConsentRecord, Message, MessageTemplate
+from notifications.providers.sms import MemorySmsSender
+from notifications.providers.whatsapp import MemoryWhatsAppSender
 from payments.tests.test_services import pay
 
 pytestmark = pytest.mark.django_db
@@ -35,7 +35,7 @@ def _media(settings, tmp_path):
 
 @pytest.fixture
 def wa(settings):
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     MemoryWhatsAppSender.outbox.clear()
     yield MemoryWhatsAppSender.outbox
     MemoryWhatsAppSender.outbox.clear()

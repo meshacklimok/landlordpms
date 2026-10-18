@@ -7,7 +7,6 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from accounts.tests.factories import add_member, make_org, make_property
-from core.sms import MemorySmsSender, SmsResult
 from notifications import catalog, delivery
 from notifications.models import (
     ConsentRecord,
@@ -16,6 +15,7 @@ from notifications.models import (
     NotificationPreference,
     OrganizationNotificationRule,
 )
+from notifications.providers.sms import MemorySmsSender, SmsResult
 from tenants import services as tenant_services
 
 pytestmark = pytest.mark.django_db

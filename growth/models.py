@@ -1,5 +1,6 @@
 """Demo requests, referrals and where sign-ups came from (D-133)."""
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -54,6 +55,9 @@ class DemoRequest(PublicIdModel, TimeStampedModel):
     # Where the visitor came from, from the campaign captured in the session (see growth.campaigns).
     source = models.CharField(max_length=60, blank=True)
     campaign = models.CharField(max_length=60, blank=True)
+    # Ad click ids, for importing conversions back into Google Ads or Meta (D-167).
+    gclid = models.CharField(max_length=200, blank=True)
+    fbclid = models.CharField(max_length=200, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -88,13 +92,96 @@ class Referral(TimeStampedModel):
     code = models.CharField(max_length=12)
     status = models.CharField(max_length=16, choices=Status.choices, default=Status.SIGNED_UP, db_index=True)
     reward_days = models.PositiveSmallIntegerField(default=0)
+    reward_percent = models.PositiveSmallIntegerField(default=0)
     rewarded_at = models.DateTimeField(null=True, blank=True)
+    # The invited organization is rewarded when it has set up, without waiting for the referrer to have paid.
+    referred_rewarded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.referrer} -> {self.referred}"
+
+
+class ReferralPolicy(models.Model):
+    """What a referral earns and when it counts. One row, edited by a Platform Admin."""
+
+    class RewardKind(models.TextChoices):
+        DISCOUNT = "DISCOUNT", _("Percent off the next plan invoice")
+        DAYS = "DAYS", _("Free days added to the plan")
+
+    reward_kind = models.CharField(_("referrer's reward"), max_length=10, choices=RewardKind.choices,
+                                   default=RewardKind.DISCOUNT)
+    discount_percent = models.PositiveSmallIntegerField(
+        _("referrer's discount percent"), default=50, validators=[MinValueValidator(1), MaxValueValidator(90)],
+        help_text=_("Taken off the referrer's next plan invoice (one invoice per referral). Used when the "
+                    "referrer's reward is a discount."))
+    reward_days = models.PositiveSmallIntegerField(_("referrer's free days"), default=30,
+                                                   help_text=_("Used when the referrer's reward is free days."))
+    reward_referred_too = models.BooleanField(
+        _("reward the invited landlord too"), default=True,
+        help_text=_("Off: only the referrer is rewarded; the invited landlord keeps the normal trial."))
+    referred_reward_kind = models.CharField(_("invited landlord's reward"), max_length=10, choices=RewardKind.choices,
+                                            default=RewardKind.DAYS)
+    referred_discount_percent = models.PositiveSmallIntegerField(
+        _("invited landlord's discount percent"), default=50,
+        validators=[MinValueValidator(1), MaxValueValidator(90)],
+        help_text=_("Used when the invited landlord's reward is a discount."))
+    referred_reward_days = models.PositiveSmallIntegerField(
+        _("invited landlord's free days"), default=30,
+        help_text=_("Added to their trial or paid period. Used when their reward is free days."))
+    require_referrer_paid = models.BooleanField(
+        _("referrer must have paid first"), default=True,
+        help_text=_("On: the referrer is rewarded only once they have paid us at least once; a referral waiting on "
+                    "this is rewarded when they pay. The invited landlord is not kept waiting."))
+    require_payment = models.BooleanField(
+        _("invited landlord must have paid first"), default=False,
+        help_text=_("Untick to reward as soon as they have set up, before their first payment."))
+    max_rewards_per_year = models.PositiveSmallIntegerField(_("rewards per referrer a year"), default=12)
+    min_properties = models.PositiveSmallIntegerField(_("properties added"), default=1)
+    min_units = models.PositiveSmallIntegerField(_("units added"), default=11)
+    min_tenants = models.PositiveSmallIntegerField(_("tenants added"), default=11)
+    min_leases = models.PositiveSmallIntegerField(_("leases created"), default=0)
+    min_invoices = models.PositiveSmallIntegerField(_("rent invoices issued"), default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _("referral policy")
+        verbose_name_plural = _("referral policy")
+
+    def __str__(self):
+        return "Referral policy"
+
+    @classmethod
+    def get(cls) -> "ReferralPolicy":
+        return cls.objects.get_or_create(pk=1)[0]
+
+    @property
+    def is_discount(self) -> bool:
+        return self.reward_kind == self.RewardKind.DISCOUNT
+
+    @property
+    def referred_is_discount(self) -> bool:
+        return self.referred_reward_kind == self.RewardKind.DISCOUNT
+
+
+class ReferralCredit(TimeStampedModel):
+    """A percent off one plan invoice, earned by a referral and used on the organization's next invoice."""
+
+    referral = models.ForeignKey(Referral, on_delete=models.PROTECT, related_name="credits")
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT,
+                                     related_name="referral_credits")
+    percent = models.PositiveSmallIntegerField()
+    invoice = models.ForeignKey("subscriptions.SubscriptionInvoice", on_delete=models.SET_NULL, null=True,
+                                blank=True, related_name="referral_credits")
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.percent}% for {self.organization}"
 
 
 class SignupSource(TimeStampedModel):
@@ -107,6 +194,8 @@ class SignupSource(TimeStampedModel):
     campaign = models.CharField(max_length=60, blank=True)
     referrer_host = models.CharField(max_length=100, blank=True)
     landing_path = models.CharField(max_length=100, blank=True)
+    gclid = models.CharField(max_length=200, blank=True)
+    fbclid = models.CharField(max_length=200, blank=True)
 
     def __str__(self):
         return f"{self.organization}: {self.source or self.referrer_host or 'direct'}"

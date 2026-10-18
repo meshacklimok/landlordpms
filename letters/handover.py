@@ -14,7 +14,6 @@ What each member sees follows their permissions: ID numbers, payments, photos an
 brief says so, when they could not open them in the app. The wording is [VERIFY with counsel].
 """
 
-import csv
 import datetime
 import hashlib
 import io
@@ -36,6 +35,7 @@ from audit import services as audit
 from audit.models import AuditEvent
 from billing.models import DepositEntry, FollowUp, LedgerEntry
 from billing.selectors import AGING_BUCKETS, lease_arrears
+from core import exports
 from core.money import ZERO, format_money
 from documents.models import Document
 from leases import paperwork
@@ -246,19 +246,12 @@ def statement_rows(entries: list[LedgerEntry]) -> list[dict]:
     return rows
 
 
-def _cell(value) -> str:
-    """Text a spreadsheet will not run as a formula."""
-    text = "" if value is None else str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
-
-
 def _csv(header: list[str], rows) -> bytes:
     buf = io.StringIO()
-    writer = csv.writer(buf)
+    writer = exports.writer(buf)
     writer.writerow(header)
-    for row in rows:
-        writer.writerow([v if isinstance(v, Decimal | int) else _cell(v) for v in row])
-    return ("﻿" + buf.getvalue()).encode("utf-8")
+    writer.writerows(rows)
+    return (exports.BOM + buf.getvalue()).encode("utf-8")
 
 
 def _statement_csv(data: dict) -> bytes:

@@ -11,10 +11,11 @@ from django.utils.translation import gettext as _
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Spacer, Table, TableStyle
 
+from core import brand
 from core.money import format_money
-from leases.pdf import BLANK, HEAD, LABEL, LINE, RIGHT, RIGHT_BOLD, SECTION, SMALL, TITLE, _doc, _facts, _p
+from leases.pdf import BLANK, LABEL, LINE, RIGHT, RIGHT_BOLD, SECTION, SMALL, TITLE, _doc, _facts, _head, _p
 
 from .handover import statement_rows
 
@@ -37,7 +38,8 @@ def _grid(head: list[str], rows: list[list], widths: list, *, right: tuple = (),
         return _p(value, style) if style else _p(value)
 
     body = [[cell(v, c, bold_last and i == len(rows) - 1) for c, v in enumerate(row)] for i, row in enumerate(rows)]
-    table = Table([[_p(h, LABEL) for h in head], *body], colWidths=widths, repeatRows=1)
+    heading = [_p(h, RIGHT_BOLD if c in right else LABEL) for c, h in enumerate(head)]
+    table = Table([heading, *body], colWidths=widths, repeatRows=1)
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
         ("LINEBELOW", (0, 0), (-1, -1), 0.4, LINE),
@@ -64,7 +66,8 @@ def _fingerprints(fingerprints: dict) -> Table:
 
 
 def _header(data: dict, title: str) -> list:
-    return [_p(data["organization"].display_name, HEAD), Spacer(1, 2 * mm),
+    org = data["organization"]
+    return [_head(org, org.display_name, _("Handover pack"), data["lease"].number or ""), Spacer(1, 2 * mm),
             _p(_("Prepared %(when)s by %(who)s") % {"when": _when(data["prepared_at"]), "who": data["prepared_by"]},
                SMALL),
             Spacer(1, 5 * mm), _p(title, TITLE), Spacer(1, 3 * mm)]
@@ -219,7 +222,7 @@ def render_brief(data: dict) -> bytes:
 
 
 def render_statement(data: dict) -> bytes:
-    money = lambda v: format_money(v, data["currency"]) if v is not None else ""  # noqa: E731
+    money = lambda v: f"{v:,.2f}" if v is not None else ""  # noqa: E731
     head = data["lease"]
     numbers = {lease.pk: lease.number for lease in data["chain"]}
     buf = io.BytesIO()
@@ -235,8 +238,9 @@ def render_statement(data: dict) -> bytes:
              money(r["debit"]), money(r["credit"]), money(r["balance"])] for r in statement_rows(data["entries"])]
     rows.append([_day(data["today"]), _("Balance"), "", "", money(data["balance"])])
     story += [Spacer(1, 4 * mm),
-              _grid([_("Date"), _("Details"), _("Debit"), _("Credit"), _("Balance")], rows,
-                    [22 * mm, None, 27 * mm, 27 * mm, 29 * mm], right=(2, 3, 4), bold_last=True),
+              _grid([_("Date"), _("Details"), *(f"{label} ({data['currency']})" for label in
+                                                (_("Debit"), _("Credit"), _("Balance")))], rows,
+                    [23 * mm, None, 28 * mm, 28 * mm, 30 * mm], right=(2, 3, 4), bold_last=True),
               Spacer(1, 3 * mm),
               _p(_("A debit is an amount billed to the tenant; a credit is a payment or other amount in their "
                    "favour. Every row comes from the lease's ledger, which is never edited: a mistake is cancelled "
@@ -254,8 +258,8 @@ def render_condition(data: dict) -> bytes:
     from inspections import services as inspections
 
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm,
-                            topMargin=15 * mm, bottomMargin=15 * mm,
+    doc = brand.Doc(buf, pagesize=landscape(A4), leftMargin=15 * mm, rightMargin=15 * mm,
+                    topMargin=15 * mm, bottomMargin=16 * mm,
                             title=f"{_('Condition reports')} {data['lease'].number}")
     story = _header(data, _("CONDITION REPORTS"))
     for report in data["reports"]:
@@ -296,7 +300,7 @@ def render_certificate(data: dict, fingerprints: dict) -> bytes:
     buf = io.BytesIO()
     doc = _doc(buf, f"{_('Certificate')} {head.number}")
     story = [
-        _p(org, HEAD), Spacer(1, 6 * mm),
+        _head(data["organization"], org, _("Certificate"), head.number or ""), Spacer(1, 6 * mm),
         _p(_("CERTIFICATE UNDER SECTION 106B(4) OF THE EVIDENCE ACT (CAP. 80)"), TITLE), Spacer(1, 3 * mm),
         _p(_("1. The records. This certificate concerns the electronic records below, about the tenancy of "
              "%(premises)s under lease %(lease)s, prepared on %(when)s.")

@@ -8,13 +8,13 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.files import File
 from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from audit import services as audit
 from inspections import photos
+from notifications.providers.mail import SYSTEM, mailer_for
 from subscriptions.services import next_platform_number
 
 from .models import SupportRequest

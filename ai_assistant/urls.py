@@ -1,10 +1,11 @@
 from django.urls import path
 
-from . import views
+from . import views, web_api
 
 app_name = "ai_assistant"
 
 urlpatterns = [
+    path("web-api/", web_api.AskDataView.as_view(), name="web_ask"),
     path("", views.AskView.as_view(), name="ask"),
     path("confirm/", views.ConfirmView.as_view(), name="confirm"),
     path("switch/", views.SwitchView.as_view(), name="switch"),

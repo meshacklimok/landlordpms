@@ -11,7 +11,7 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership
 from accounts.permissions import require
 from audit import services as audit
-from core.whatsapp import CloudApiWhatsAppSender
+from notifications.providers.whatsapp import CloudApiWhatsAppSender
 
 from .models import PlatformWhatsApp, WhatsAppAccount, new_verify_token, new_webhook_token
 

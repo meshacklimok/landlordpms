@@ -7,9 +7,9 @@ from django.urls import reverse
 
 from accounts.tests.factories import make_org
 from audit.models import AuditEvent
-from core.sms import SmsResult
 from notifications import catalog, delivery, sms_hooks
 from notifications.models import ConsentRecord, Message
+from notifications.providers.sms import SmsResult
 from notifications.services import channel_allowed
 from tenants import services as tenant_services
 

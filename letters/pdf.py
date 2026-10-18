@@ -5,43 +5,29 @@ so the check page shows exactly the same wording.
 """
 
 import io
-from xml.sax.saxutils import escape
-
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Spacer, Table, TableStyle
+
+from core import brand
+from leases.pdf import BODY, HEAD, LABEL, SMALL, TITLE, _head, _p  # noqa: F401
 
 from .models import TenancyLetter
 from .services import statements, verify_url
-
-BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=10, leading=14)
-SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=11, textColor=colors.HexColor("#555555"))
-LABEL = ParagraphStyle("label", parent=BODY, fontName="Helvetica-Bold")
-HEAD = ParagraphStyle("head", parent=BODY, fontName="Helvetica-Bold", fontSize=15, leading=19)
-TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=12, leading=16)
-
-
-def _p(text, style=BODY):
-    return Paragraph(escape(str(text)), style)
-
 
 def render_pdf(letter: TenancyLetter) -> bytes:
     data = letter.facts
     org = letter.organization
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm,
+    doc = brand.Doc(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm,
                             bottomMargin=18 * mm, title=f"{_('Tenancy letter')} {letter.number}")
     issued = timezone.localtime(letter.issued_at)
     issuer = letter.issued_by.get_full_name() or letter.issued_by.get_username()
 
     story = [
-        _p(data["organization"], HEAD),
-        Spacer(1, 2 * mm),
-        _p(f"{letter.number} · {issued:%d %b %Y}", SMALL),
+        _head(org, data["organization"], _("Tenancy letter"), f"{letter.number} · {issued:%d %b %Y}"),
         Spacer(1, 8 * mm),
         _p(_("TENANCY AND PAYMENT RECORD"), TITLE),
         Spacer(1, 4 * mm),
@@ -54,7 +40,7 @@ def render_pdf(letter: TenancyLetter) -> bytes:
     table = Table(rows, colWidths=[42 * mm, None])
     table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.4, colors.HexColor("#DDDDDD")),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.4, brand.LINE),
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),

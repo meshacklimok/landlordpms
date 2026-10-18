@@ -16,12 +16,12 @@ from django.urls import reverse
 
 from accounts.tests.factories import make_org, make_property
 from accounts.tests.test_isolation import login
-from core.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender
 from leases import services as lease_services
 from notifications import announcements, catalog, delivery, services, whatsapp_hooks
 from notifications.announcements import Audience
 from notifications.management.commands.whatsapp_templates import meta_body, templates
 from notifications.models import ConsentRecord, Message, NotificationPreference
+from notifications.providers.whatsapp import CloudApiWhatsAppSender, MemoryWhatsAppSender
 from properties import services as property_services
 from tenants import services as tenant_services
 
@@ -32,7 +32,7 @@ NOON = datetime.datetime(2026, 2, 3, 12, 0, tzinfo=EAT)
 LATE = datetime.datetime(2026, 2, 3, 22, 30, tzinfo=EAT)
 Status = Message.Status
 Skip = Message.SkipReason
-MEMORY = "core.whatsapp.MemoryWhatsAppSender"
+MEMORY = "notifications.providers.whatsapp.MemoryWhatsAppSender"
 
 
 @pytest.fixture
@@ -164,7 +164,7 @@ def test_whatsapp_org_wording_is_ignored(org, tenant, wa, owner):
 
 
 def test_failed_send_retries_the_same_template(monkeypatch, org, tenant, wa):
-    from core.sms import SmsResult
+    from notifications.providers.sms import SmsResult
     grant(org, tenant)
     m = announce(org, tenant)
     failed = SmsResult(ok=False, provider="memory", error="boom")

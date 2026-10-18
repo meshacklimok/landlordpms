@@ -114,6 +114,39 @@ def invoice_issued(invoice: Invoice, *, send_now: bool = False) -> int:
     return sent
 
 
+def invoice_message_previews(lease: Lease, *, total, due_date: datetime.date) -> list[dict]:
+    """The invoice message each tenant would get, for an invoice not issued yet. Writes nothing.
+
+    The invoice number is only given at issue, so the text shows a placeholder for it.
+    Each row: tenant, channel, text (None when nothing would be sent) and why.
+    """
+    from .delivery import Skip, preview
+    from .rendering import render, template_for
+
+    lease = _lease(lease)
+    org = lease.organization
+    ntype = catalog.get("invoice_issued")
+    rule = effective_rule(org, ntype)
+    fields = {"invoice_number": "INV-…", "amount": format_money(total, lease.currency), "due_date": _date(due_date),
+              "balance": format_money(max(lease_balance(lease) + total, ZERO), lease.currency),
+              "pay_link": _pay_link(lease)}
+    rows = []
+    for tenant in lease_recipients(lease, include_co_tenants=rule.include_co_tenants):
+        chosen, reason = preview(org, ntype.codename, tenant=tenant, rule=rule)
+        language = getattr(tenant, "language", "") or catalog.EN
+        channel, body = chosen if chosen else (None, None)
+        if body is None:  # cannot be sent, but the wording is still shown
+            for ch in rule.channels:
+                body = template_for(org, ntype, ch, language)
+                if body:
+                    channel = ch
+                    break
+        text = render(body, {"org_name": org.display_name, **_tenancy(lease, tenant), **fields}) if body else ""
+        rows.append({"tenant": tenant, "channel": channel, "text": text, "sendable": chosen is not None,
+                     "reason": Skip(reason).label if reason else ""})
+    return rows
+
+
 def payment_received(payment) -> int:
     """A confirmed payment, to the payer first, with a link to the receipt. Runs in the confirming transaction."""
     lease = _lease(payment.lease)

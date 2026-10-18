@@ -280,8 +280,10 @@ def test_email_does_not_wait_for_quiet_hours(org, tenant):
 
 def test_invoice_pdf_with_logo_and_extra_details(client, owner, org, lease, tmp_path, settings):
     import io
-    from PIL import Image as PILImage
+
     from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image as PILImage
+
     from accounts import services as account_services
 
     buf = io.BytesIO()
@@ -301,8 +303,10 @@ def test_invoice_pdf_with_logo_and_extra_details(client, owner, org, lease, tmp_
 
 def test_invoice_pdf_shows_earlier_unpaid_and_stamp(client, owner, org, lease):
     import io
-    from PIL import Image as PILImage
+
     from django.core.files.uploadedfile import SimpleUploadedFile
+    from PIL import Image as PILImage
+
     from accounts import services as account_services
     from billing.pdf import _earlier_unpaid
 

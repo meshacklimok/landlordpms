@@ -2,6 +2,7 @@ from django.contrib import admin
 
 from billing.admin import ReadOnlyAdmin
 
+from . import catalog
 from .models import (
     Announcement,
     ConsentRecord,
@@ -9,6 +10,7 @@ from .models import (
     Message,
     MessageTemplate,
     NotificationPreference,
+    NotificationTypeSetting,
     OrganizationNotificationRule,
     PlatformWhatsApp,
     SmsAccount,
@@ -43,6 +45,52 @@ class ConsentRecordAdmin(ReadOnlyAdmin):
 class OrganizationNotificationRuleAdmin(admin.ModelAdmin):
     list_display = ["organization", "type", "enabled", "channels", "offsets", "include_co_tenants"]
     list_filter = ["type", "enabled"]
+
+
+@admin.register(NotificationTypeSetting)
+class NotificationTypeSettingAdmin(admin.ModelAdmin):
+    """What each SMS, WhatsApp and email notification is for, who gets it, how and when, for every organization.
+
+    The same settings are on the superuser console (Notifications)."""
+
+    list_display = ["__str__", "type", "audience", "enabled", "mandatory", "urgent", "channels", "offsets"]
+    list_filter = ["enabled", "mandatory", "urgent"]
+    search_fields = ["type"]
+    readonly_fields = ["audience", "available_channels", "placeholders"]
+    fields = ["type", "audience", "available_channels", "placeholders", "enabled", "channels", "offsets",
+              "mandatory", "urgent"]
+
+    @admin.display(description="Sent to")
+    def audience(self, obj):
+        base = catalog.BY_CODENAME.get(obj.type) if obj else None
+        return base.audience if base else "-"
+
+    @admin.display(description="Channels this notification has wording for")
+    def available_channels(self, obj):
+        base = catalog.BY_CODENAME.get(obj.type) if obj else None
+        return ", ".join(base.channels) if base else "-"
+
+    @admin.display(description="Fields its wording may use")
+    def placeholders(self, obj):
+        base = catalog.BY_CODENAME.get(obj.type) if obj else None
+        return ", ".join(base.placeholders) if base else "-"
+
+    def save_model(self, request, obj, form, change):
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+        catalog.clear_platform_settings()
+        from audit import services as audit
+
+        audit.record("platform.notification_type", actor=request.user, obj=obj,
+                     changes={"by": "platform admin", "type": obj.type, "fields": sorted(form.changed_data)})
+
+    def delete_model(self, request, obj):
+        super().delete_model(request, obj)
+        catalog.clear_platform_settings()
+
+    def delete_queryset(self, request, queryset):
+        super().delete_queryset(request, queryset)
+        catalog.clear_platform_settings()
 
 
 @admin.register(NotificationPreference)

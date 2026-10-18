@@ -15,8 +15,8 @@ from django.utils import timezone
 
 from accounts.models import Membership, Organization
 from accounts.permissions import can
-from core.sms import SmsResult, get_sms_sender, sender_id_for
-from core.whatsapp import get_whatsapp_sender
+from notifications.providers.sms import SmsResult, get_sms_sender, sender_id_for
+from notifications.providers.whatsapp import get_whatsapp_sender
 
 from . import catalog, emails, push
 from .models import ConsentRecord, Message, NotificationPreference, OrganizationNotificationRule

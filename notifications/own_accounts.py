@@ -15,7 +15,7 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership
 from accounts.permissions import require
 from audit import services as audit
-from core.sms import AfricasTalkingSmsSender
+from notifications.providers.sms import AfricasTalkingSmsSender
 
 from .models import EmailAccount, SmsAccount
 

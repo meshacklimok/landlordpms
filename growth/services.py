@@ -5,12 +5,14 @@ import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
+
+from notifications.email_html import send_branded
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
-from core import alerts
 from core.net import client_ip
+from notifications.providers.mail import SYSTEM, mailer_for
+from ops import alerts
 
 from . import campaigns
 from .models import DemoRequest
@@ -36,7 +38,8 @@ def book_demo(data: dict, request=None) -> tuple[DemoRequest, bool]:
         existing.save()
         return existing, False
     item = DemoRequest.objects.create(phone=data["phone"], source=tags.get("source", "")[:60],
-                                      campaign=tags.get("campaign", "")[:60], **fields)
+                                      campaign=tags.get("campaign", "")[:60], gclid=tags.get("gclid", ""),
+                                      fbclid=tags.get("fbclid", ""), **fields)
     notify_team(item)
     send_confirmation(item)
     return item, True
@@ -56,7 +59,9 @@ def notify_team(item: DemoRequest) -> None:
         + (f"; {item.organization_name}" if item.organization_name else ""),
         f"Wants: {item.get_channel_display()}, {_when(item)}",
         f"Email: {item.email or 'none'}",
-        f"Came from: {item.source or 'direct'}",
+        f"Came from: {item.source or 'direct'}"
+        + (f", campaign {item.campaign}" if item.campaign else "")
+        + (" (Google ad click)" if item.gclid else "") + (" (Meta ad click)" if item.fbclid else ""),
         f"Note: {item.message or 'none'}",
         "",
         f"{settings.SITE_URL}/ok-ml-staff/growth/demorequest/",
@@ -75,7 +80,8 @@ def send_confirmation(item: DemoRequest) -> None:
              "agree a time. You asked for %(when)s.\n\nUntil then you can read the tutorials at %(site)s/tutorials/.\n") % {
         "name": item.full_name, "phone": item.phone, "when": _when(item), "site": settings.SITE_URL}
     try:
-        send_mail(_("We received your demo request"), body, settings.DEFAULT_FROM_EMAIL, [item.email], using=mailer_for(SYSTEM))
+        send_branded(_("We received your demo request"), body, [item.email], using=mailer_for(SYSTEM),
+                     from_email=settings.DEFAULT_FROM_EMAIL, button_label=_("Read the tutorials"))
     except Exception:
         logger.exception("Could not email the confirmation for demo request %s", item.pk)
 

@@ -14,7 +14,7 @@ from django.views.decorators.cache import never_cache
 
 from accounts import identity
 from accounts.mixins import VerifiedUserRequiredMixin, no_seat_home
-from core import health
+from ops import health
 
 from . import help as help_topics
 from . import legal, services, status

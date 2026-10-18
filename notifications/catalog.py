@@ -129,7 +129,7 @@ _TYPES: tuple[NotificationType, ...] = (
     ),
     NotificationType(
         "announcement", _("Announcement"), TENANT, (WHATSAPP, SMS),
-        (*_TENANCY, "text"),
+        (*_TENANCY, "text", "pay_ref"),
         bodies={(SMS, EN): "{text} {org_name}", (SMS, SW): "{text} {org_name}"},
     ),
     # One message a staff member wrote for one tenant, on the channel they chose (D-125). WhatsApp goes
@@ -312,6 +312,13 @@ _TYPES: tuple[NotificationType, ...] = (
         bodies={(IN_APP, EN): "{count} M-Pesa payment(s) typed in by hand were not found in what Safaricom "
                               "sent, or the amount differs. Check them under M-Pesa, Codes to check."},
     ),
+    # Sent by `mpesa_daily` to `mpesa.settings` holders whose Paybill or Till setup has stalled (D-174).
+    NotificationType(
+        "mpesa_setup_stalled", _("Paybill setup not finished"), STAFF, (IN_APP,),
+        ("org_name", "account", "step"),
+        bodies={(IN_APP, EN): "{account} is not connected yet. Next step: {step}. Open M-Pesa settings to "
+                              "carry on, or message us on WhatsApp and we will help."},
+    ),
     # Sent from the daily job in the last days of the month to `meters.record` holders (D-155).
     NotificationType(
         "meters_unread", _("Meters not read yet"), STAFF, (IN_APP,),
@@ -339,6 +346,24 @@ _TYPES: tuple[NotificationType, ...] = (
         bodies={(IN_APP, EN): "Security: {actor} {what} on {when}. If you did not expect this, check Staff and "
                               "Settings now."},
         mandatory=True, urgent=True,
+    ),
+    # To whoever manages the plan, when a referral pays off (D-133). Never names the other business.
+    NotificationType(
+        "referral_rewarded", _("Referral reward earned"), STAFF, (IN_APP,),
+        ("org_name", "reward"),
+        bodies={(IN_APP, EN): "A landlord you referred is set up, so you earned {reward}. See Refer a landlord for "
+                              "your referrals."},
+    ),
+    NotificationType(
+        "referral_waiting", _("Referral waiting for your first payment"), STAFF, (IN_APP,),
+        ("org_name", "reward"),
+        bodies={(IN_APP, EN): "A landlord you referred is set up. Pay for a plan once and you earn {reward}."},
+    ),
+    NotificationType(
+        "referral_welcome", _("Referral reward for joining"), STAFF, (IN_APP,),
+        ("org_name", "reward"),
+        bodies={(IN_APP, EN): "Because you joined with a referral, you got {reward}. Thank you for trying "
+                              "NyumbaPMS."},
     ),
 )
 
@@ -435,8 +460,53 @@ CHANNEL_CHOICES = [(SMS, _("SMS")), (WHATSAPP, _("WhatsApp")), (EMAIL, _("Email"
 LANGUAGE_CHOICES = [(EN, _("English")), (SW, _("Swahili"))]
 
 
+_CACHE_KEY = "notifications.type_settings"
+_CACHE_SECONDS = 60
+
+
+def _platform_settings() -> dict:
+    """The owner's changes to the code defaults, set in Django admin: {codename: setting}. Cached briefly."""
+    from django.core.cache import cache
+
+    found = cache.get(_CACHE_KEY)
+    if found is None:
+        from django.db import DatabaseError
+
+        from .models import NotificationTypeSetting
+
+        try:
+            found = {row.type: row for row in NotificationTypeSetting.objects.all()}
+        except (DatabaseError, RuntimeError):
+            return {}  # no database yet (before migrating) or none allowed: the code defaults, not cached
+        cache.set(_CACHE_KEY, found, _CACHE_SECONDS)
+    return found
+
+
+def clear_platform_settings() -> None:
+    from django.core.cache import cache
+
+    cache.delete(_CACHE_KEY)
+
+
+def _apply(ntype: NotificationType, setting) -> NotificationType:
+    """The code type with the platform owner's changes on top. Channels the type has no wording for are ignored."""
+    if setting is None:
+        return ntype
+    channels = tuple(c for c in setting.channels if c in ntype.channels) or ntype.channels
+    return replace(
+        ntype, enabled=setting.enabled or setting.mandatory, channels=channels, mandatory=setting.mandatory,
+        urgent=setting.urgent, offsets=tuple(setting.offsets) if setting.offsets and ntype.offsets else ntype.offsets)
+
+
 def get(codename: str) -> NotificationType:
     try:
-        return BY_CODENAME[codename]
+        base = BY_CODENAME[codename]
     except KeyError:
         raise ValueError(f"Unknown notification type {codename!r}") from None
+    return _apply(base, _platform_settings().get(codename))
+
+
+def types() -> tuple[NotificationType, ...]:
+    """Every type as it works now: the code defaults with the platform owner's changes."""
+    settings = _platform_settings()
+    return tuple(_apply(t, settings.get(t.codename)) for t in TYPES)

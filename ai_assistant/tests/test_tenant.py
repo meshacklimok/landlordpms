@@ -15,8 +15,8 @@ from ai_assistant.client import FakeClient
 from ai_assistant.models import Question
 from audit.models import AuditEvent
 from core.phone import normalize_phone
-from core.whatsapp import MemoryWhatsAppSender
 from maintenance import services as maintenance_services
+from notifications.providers.whatsapp import MemoryWhatsAppSender
 from portal.models import UssdPin
 from reports.tests.test_income import bill, make_lease, pay
 
@@ -26,7 +26,7 @@ SECRET = "app-secret"
 
 @pytest.fixture(autouse=True)
 def wa(settings):
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     settings.WA_APP_SECRET = SECRET
     MemoryWhatsAppSender.outbox.clear()
 
@@ -101,7 +101,7 @@ def test_no_reply_when_the_switch_is_off_or_the_number_is_unknown(owner, lease, 
     assert tenant.receive("+254799999999", "What do I owe?", "wamid.2") is None
     settings.WHATSAPP_BACKEND = ""
     assert ask(lease, wamid="wamid.3") is None
-    settings.WHATSAPP_BACKEND = "core.whatsapp.MemoryWhatsAppSender"
+    settings.WHATSAPP_BACKEND = "notifications.providers.whatsapp.MemoryWhatsAppSender"
     settings.OPENAI_API_KEY = ""
     assert ask(lease, wamid="wamid.4") is None
     assert texts() == [] and not Question.objects.exists()
