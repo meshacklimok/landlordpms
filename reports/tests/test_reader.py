@@ -67,7 +67,7 @@ def test_every_report_in_the_centre_may_be_framed(client, owner):
 def test_a_report_page_steps_to_the_report_before_and_after(client, owner):
     page = client.get(reverse("reports:receivables")).content.decode()
     assert 'class="report-steps' in page
-    assert f'href="{reverse("reports:units")}" rel="prev"' in page
+    assert f'href="{reverse("reports:outlook")}" rel="prev"' in page
     assert f'href="{reverse("reports:arrears")}" rel="next"' in page
     assert f'{reverse("reports:centre")}?r=receivables' in page
     # Not inside the reader's frame, which has its own Previous and Next.

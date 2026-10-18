@@ -13,6 +13,7 @@ urlpatterns = [
     path("<uuid:public_id>/edit/", views.PropertyEditView.as_view(), name="edit"),
     path("<uuid:public_id>/owners/", views.PropertySharesView.as_view(), name="shares"),
     path("<uuid:public_id>/archive/", views.PropertyArchiveView.as_view(), name="archive"),
+    path("<uuid:public_id>/team/", views.PropertyTeamView.as_view(), name="team"),
     path("<uuid:public_id>/charges/", views.PropertyChargeView.as_view(), name="charges"),
     path("<uuid:public_id>/buildings/new/", views.BuildingCreateView.as_view(), name="building_create"),
     path("<uuid:public_id>/units/new/", views.UnitCreateView.as_view(), name="unit_create"),

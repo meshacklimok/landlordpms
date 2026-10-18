@@ -11,7 +11,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
-from django.core.mail import EmailMessage
+from notifications.email_html import send_branded
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -22,10 +22,10 @@ from accounts.permissions import accessible_property_ids, can, require
 from audit.services import record
 from core import charts
 from core.ids import uuid_or_none
-from core.mail import MESSAGES, mailer_for
 from core.money import ZERO, format_money, round_money
 from core.numbering import next_number
 from notifications.delivery import notify
+from notifications.providers.mail import MESSAGES, mailer_for
 from properties.models import Property, PropertyOwner, owner_ids_of
 
 from . import statements
@@ -269,11 +269,10 @@ def _email(send: OwnerStatementSend, st: statements.Statement, pdf: bytes) -> No
         "",
         org.display_name,
     ]
-    message = EmailMessage(_("Owner statement for %(month)s") % {"month": st.label}, "\n".join(lines), None,
-                           [send.email_to])
-    message.attach(statement_filename(st), pdf, "application/pdf")
     try:
-        message.send(using=mailer_for(MESSAGES))
+        send_branded(_("Owner statement for %(month)s") % {"month": st.label}, "\n".join(lines), [send.email_to],
+                     using=mailer_for(MESSAGES), org_name=org.display_name, org=org,
+                     attachments=[(statement_filename(st), pdf, "application/pdf")])
     except Exception as exc:  # the provider's error, whatever it is, is shown on the page
         logger.warning("Owner statement %s: email failed: %s", send.number, exc)
         send.email_status, send.email_error = OwnerStatementSend.EmailStatus.FAILED, str(exc)[:300]

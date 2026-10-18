@@ -71,7 +71,7 @@ def scorecard(membership, start: datetime.date, end: datetime.date, prop: Proper
               today: datetime.date | None = None, now: datetime.datetime | None = None) -> Scorecard:
     require(membership, "reports.view_financial")
     today = today or timezone.localdate()
-    sc = metrics.scope(membership, prop)
+    sc = metrics.scope(membership, prop, capability="reports.view_financial")
     money = finance.money_report(membership, month_start(start), month_start(end), prop)
     figures = {m.property.pk: m.figures for m in money.by_property}
     properties = {p.pk: p for p in sc.properties(include_archived=False)}

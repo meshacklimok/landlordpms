@@ -11,22 +11,24 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 
+from core import brand
 from core.money import format_money
 
-BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=10, leading=14)
-SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=11, textColor=colors.HexColor("#555555"))
+BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=10, leading=14, textColor=brand.INK)
+SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=11, textColor=brand.MUTED)
 LABEL = ParagraphStyle("label", parent=BODY, fontName="Helvetica-Bold")
 RIGHT = ParagraphStyle("right", parent=BODY, alignment=2)
 RIGHT_BOLD = ParagraphStyle("right_bold", parent=RIGHT, fontName="Helvetica-Bold")
 HEAD = ParagraphStyle("head", parent=BODY, fontName="Helvetica-Bold", fontSize=15, leading=19)
-TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=12, leading=16)
+TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=12, leading=16, textColor=brand.PRIMARY,
+                       keepWithNext=1)
 SECTION = ParagraphStyle("section", parent=BODY, fontName="Helvetica-Bold", fontSize=11, leading=15,
-                         spaceBefore=6, spaceAfter=2)
-DRAFT = ParagraphStyle("draft", parent=TITLE, textColor=colors.HexColor("#B02A37"))
+                         spaceBefore=8, spaceAfter=3, textColor=brand.PRIMARY, keepWithNext=1)
+DRAFT = ParagraphStyle("draft", parent=TITLE, textColor=brand.WARN)
 
-LINE = colors.HexColor("#DDDDDD")
+LINE = brand.LINE
 BLANK = "_" * 28
 
 
@@ -39,7 +41,7 @@ def _day(day) -> str:
 
 
 def _doc(buf, title):
-    return SimpleDocTemplate(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm,
+    return brand.Doc(buf, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=18 * mm,
                              bottomMargin=18 * mm, title=title)
 
 
@@ -109,6 +111,11 @@ def _signature_block(data, heading, parties):
     return _signatures(heading, parties)
 
 
+def _head(org, name, kind, number=""):
+    """The letterhead every document starts with: logo, name and contact on the left, what it is on the right."""
+    return brand.letterhead(name, org=org, kind=kind, number=number, lines=brand.org_lines(org))
+
+
 def _footer(story, org):
     if org.document_footer:
         story += [Spacer(1, 6 * mm), _p(org.document_footer, SMALL)]
@@ -123,13 +130,12 @@ def render_agreement(data: dict) -> bytes:
     lease, money = data["lease"], (lambda v: format_money(v, data["currency"]))
     buf = io.BytesIO()
     doc = _doc(buf, f"{_('Tenancy agreement')} {lease.number or _('draft')}")
-    story = [_p(data["organization"], HEAD), Spacer(1, 2 * mm)]
+    org = lease.organization
+    story = [_head(org, data["organization"], _("Tenancy agreement"), lease.number or "")]
     if data["draft"] and data.get("for_signing"):
-        story += [_p(_("For signing – in force from the start date once signed by all parties"), SMALL)]
+        story += [Spacer(1, 2 * mm), _p(_("For signing – in force from the start date once signed by all parties"), SMALL)]
     elif data["draft"]:
-        story += [_p(_("DRAFT – not yet in force"), DRAFT)]
-    else:
-        story += [_p(_("Lease %(number)s") % {"number": lease.number}, SMALL)]
+        story += [Spacer(1, 2 * mm), _p(_("DRAFT – not yet in force"), DRAFT)]
     story += [Spacer(1, 6 * mm), _p(_("TENANCY AGREEMENT"), TITLE), Spacer(1, 3 * mm),
               _p(_("This agreement is made between the landlord and the tenant(s) named below, "
                    "for the premises and on the terms set out here.")), Spacer(1, 4 * mm)]
@@ -224,8 +230,8 @@ def render_move_out(data: dict) -> bytes:
     lease, money = data["lease"], (lambda v: format_money(v, data["currency"]))
     buf = io.BytesIO()
     doc = _doc(buf, f"{_('Move-out statement')} {lease.number}")
-    story = [_p(data["organization"], HEAD), Spacer(1, 2 * mm),
-             _p(_("As at %(day)s") % {"day": _day(data["today"])}, SMALL), Spacer(1, 6 * mm),
+    story = [_head(lease.organization, data["organization"], _("Move-out statement"), lease.number or ""),
+             Spacer(1, 2 * mm), _p(_("As at %(day)s") % {"day": _day(data["today"])}, SMALL), Spacer(1, 6 * mm),
              _p(_("MOVE-OUT STATEMENT"), TITLE), Spacer(1, 3 * mm)]
     moved = _day(data["moved_out"])
     rows = [

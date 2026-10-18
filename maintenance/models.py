@@ -46,6 +46,8 @@ class MaintenanceRequest(PublicIdModel, TimeStampedModel):
         PESTS = "PESTS", _("Pests")
         SECURITY = "SECURITY", _("Security")
         CLEANING = "CLEANING", _("Cleaning and garbage")
+        METER = "METER", _("Meter problem")
+        MISSED_PICKUP = "PICKUP", _("Missed pickup")
         OTHER = "OTHER", _("Other")
 
     class Source(models.TextChoices):
@@ -101,6 +103,10 @@ class MaintenanceRequest(PublicIdModel, TimeStampedModel):
                                     related_name="maintenance_jobs", editable=False)
     supplier = models.ForeignKey("expenses.Supplier", on_delete=models.PROTECT, null=True, blank=True,
                                  related_name="maintenance_requests", editable=False)
+    # What the supplier quoted before the work, to set against what was spent (D-160). Not an expense.
+    quote_amount = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True, editable=False)
+    quote_note = models.CharField(max_length=200, blank=True, editable=False)
+    quote_at = models.DateTimeField(null=True, blank=True, editable=False)
     # D-068 item 3: when each step first happened (reopening clears done and closed).
     assigned_at = models.DateTimeField(null=True, blank=True, editable=False)
     started_at = models.DateTimeField(null=True, blank=True, editable=False)
@@ -116,6 +122,8 @@ class MaintenanceRequest(PublicIdModel, TimeStampedModel):
     class Meta:
         ordering = ["-created_at", "-pk"]
         constraints = [
+            models.CheckConstraint(condition=Q(quote_amount__isnull=True) | Q(quote_amount__gt=0),
+                                   name="maintenance_request_quote_positive"),
             models.UniqueConstraint("organization", "number", name="maintenance_request_number_unique"),
             models.CheckConstraint(condition=Q(reported_by__isnull=False) | Q(source__in=["USSD", "ASSISTANT"]),
                                    name="maintenance_request_has_reporter"),
@@ -194,7 +202,12 @@ class MaintenanceUpdate(models.Model):
 
 
 class MaintenancePhoto(PublicIdModel):
-    request = models.ForeignKey(MaintenanceRequest, on_delete=models.PROTECT, related_name="photos")
+    class Stage(models.TextChoices):
+        REPORTED = "", _("Photo")
+        BEFORE = "BEFORE", _("Before the work")
+        AFTER = "AFTER", _("After the work")
+
+    request =models.ForeignKey(MaintenanceRequest, on_delete=models.PROTECT, related_name="photos")
     # Private: a re-encoded JPEG, served only through a view that checks scope.
     image = models.ImageField(upload_to="maintenance/%Y/", editable=False)
     width = models.PositiveIntegerField(editable=False)
@@ -203,6 +216,8 @@ class MaintenancePhoto(PublicIdModel):
     uploaded_at = models.DateTimeField(default=timezone.now)
     # Photos from the tenant, or that staff chose to show them.
     shared_with_tenant = models.BooleanField(default=False)
+    # Before and after the work (D-160); empty for a photo of the report.
+    stage = models.CharField(max_length=6, choices=Stage.choices, blank=True, default="", editable=False)
 
     class Meta:
         ordering = ["uploaded_at", "pk"]

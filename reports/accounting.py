@@ -22,6 +22,7 @@ from django.utils import timezone
 from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require
 from billing.models import ChargeType, DepositEntry, Invoice, InvoiceLine, LedgerEntry
+from core import exports
 from core.money import ZERO
 from expenses.models import Expense
 from leases.models import Lease, LeaseTenant
@@ -388,7 +389,7 @@ def _write(archive: zipfile.ZipFile, name: str, rows) -> None:
     buffer.write("﻿")  # BOM so Excel reads UTF-8
     writer = csv.writer(buffer)
     for row in rows:
-        writer.writerow(row)
+        writer.writerow([exports.safe(v) for v in row])
     archive.writestr(name, buffer.getvalue())
 
 

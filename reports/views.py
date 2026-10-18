@@ -4,7 +4,6 @@ and payments to owners (D-058).
 Thin views; reports.metrics and reports.income do the work.
 """
 
-import csv
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -19,7 +18,7 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from audit import services as audit
 from billing import selectors as billing_selectors
-from core import charts, reportcache
+from core import charts, exports, reportcache
 from properties.models import Property
 
 from . import (
@@ -43,10 +42,7 @@ CSV_KINDS = ("months", "properties", "receipts")
 
 
 def _csv_response(filename: str) -> HttpResponse:
-    response = HttpResponse(content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
-    response.write("﻿")  # BOM so Excel reads UTF-8
-    return response
+    return exports.csv_response(filename)
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +187,7 @@ class DashboardExportView(CapabilityRequiredMixin, View):
             raise PermissionDenied("dashboard.view_financial")
         _form, board = _dashboard(request)
         response = _csv_response(f"dashboard-{board.month:%Y-%m}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         scope = board.scope.selected_property.name if board.scope.selected_property else _("All your properties")
         writer.writerow([_("Scope"), scope])
         writer.writerow([_("Figures as recorded on"), timezone.localdate().isoformat()])
@@ -291,6 +287,11 @@ def _income_charts(pack) -> dict | None:
 class TaxResidenceView(CapabilityRequiredMixin, View):
     required_capability = "organization.manage"
 
+    def get(self, request):
+        org = request.membership.organization
+        return render(request, "reports/tax_residence.html", {
+            "form": forms.TaxResidenceForm(initial={"landlord_tax_residence": org.landlord_tax_residence})})
+
     def post(self, request):
         form = forms.TaxResidenceForm(request.POST)
         if form.is_valid():
@@ -303,8 +304,10 @@ class TaxResidenceView(CapabilityRequiredMixin, View):
                 messages.success(request, _("Tax residence saved."))
         else:
             messages.error(request, _("Choose resident or non-resident."))
-        url = reverse("reports:income")
         year = request.POST.get("year", "")
+        if not year:  # saved from the settings page
+            return redirect("reports:tax_residence")
+        url = reverse("reports:income")
         return redirect(f"{url}?year={year}" if year.isdigit() else url)
 
 
@@ -323,7 +326,7 @@ class IncomeExportView(CapabilityRequiredMixin, View):
             response["Content-Disposition"] = f'attachment; filename="rental-income-{year}.pdf"'
             return response
         response = _csv_response(f"rental-income-{year}-{kind}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         for row in getattr(self, f"_{kind}")(pack):
             writer.writerow(row)
         writer.writerow([])
@@ -554,7 +557,7 @@ class FeesView(CapabilityRequiredMixin, View):
             if not can(m, "reports.export"):
                 raise PermissionDenied("reports.export")
             response = _csv_response(f"management-fees-{rep.months[0]:%Y-%m}-to-{rep.months[-1]:%Y-%m}.csv")
-            csv.writer(response).writerows(fees.csv_rows(rep))
+            exports.writer(response).writerows(fees.csv_rows(rep))
             return response
         cur = m.organization.currency
         specs = None
@@ -623,7 +626,7 @@ class _FinanceView(CapabilityRequiredMixin, View):
             if not can(m, "reports.export"):
                 raise PermissionDenied("reports.export")
             response = _csv_response(self.filename(report))
-            writer = csv.writer(response)
+            writer = exports.writer(response)
             writer.writerow([_("Scope"), prop.name if prop else _("All your properties")])
             for row in self.csv_rows(report):
                 writer.writerow(row)
@@ -735,7 +738,7 @@ class ReceivablesView(CapabilityRequiredMixin, View):
             if not can(m, "reports.export"):
                 raise PermissionDenied("reports.export")
             response = _csv_response(f"aged-receivables-{today.isoformat()}.csv")
-            writer = csv.writer(response)
+            writer = exports.writer(response)
             writer.writerow([_("Scope"), prop.name if prop else _("All your properties")])
             writer.writerow([_("As of"), today.isoformat()])
             writer.writerow(["Property", "Lease", "Tenant", *[str(label) for _k, label, *_r in buckets], "Total"])
@@ -820,7 +823,7 @@ class UnitsView(CapabilityRequiredMixin, View):
     @staticmethod
     def csv(report, names: bool) -> HttpResponse:
         response = _csv_response(f"unit-by-unit-{report.day.isoformat()}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         sel = report.scope.selected_property
         writer.writerow([_("Scope"), sel.name if sel else _("All your properties")])
         writer.writerow([_("As of"), report.day.isoformat()])

@@ -3,8 +3,8 @@ from decimal import Decimal
 from django import forms
 from django.utils.translation import gettext_lazy as _
 
-from accounts.models import Branch
 from accounts import portfolio
+from accounts.models import Branch
 from accounts.permissions import can
 
 from .models import Building, Property, PropertyOwner, Unit, clean_code
@@ -21,7 +21,8 @@ class PropertyForm(forms.ModelForm):
     class Meta:
         model = Property
         fields = ["name", "code", "category", "county", "sub_county", "area", "street", "latitude", "longitude",
-                  "branch", "owner", "management_fee_percent", "management_fee_fixed"]
+                  "service_days", "branch", "owner", "management_fee_percent", "management_fee_fixed",
+                  "market_value"]
         field_classes = {"code": CodeField}
         help_texts = {
             "code": _("Short letters or digits used in payment references, e.g. GV gives GV-A102. "
@@ -55,6 +56,14 @@ class PropertyForm(forms.ModelForm):
         else:
             for name in ("owner", "management_fee_percent", "management_fee_fixed"):
                 del self.fields[name]
+        if organization is not None and organization.org_type in ("WATER", "WASTE"):
+            self.fields["service_days"].label = organization.vocab["service_days"]
+            del self.fields["market_value"]
+        else:
+            del self.fields["service_days"]
+            self.fields["market_value"].label = _("Estimated value (%(c)s)") % {
+                "c": organization.currency if organization is not None else "KES"}
+            self.fields["market_value"].widget.attrs.update({"step": "1", "inputmode": "decimal"})
         self.fields["county"].choices = [("", _("Choose county"))] + list(self.fields["county"].choices)[1:]
         if self.instance.pk:
             del self.fields["code"]

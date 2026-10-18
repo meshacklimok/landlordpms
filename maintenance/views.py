@@ -3,7 +3,6 @@
 Anything outside what the member may see is a 404, never a 403.
 """
 
-import csv
 import datetime
 import json
 import uuid
@@ -23,7 +22,7 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin
 from accounts.models import Membership
 from accounts.permissions import can, visible_properties
-from core import charts
+from core import charts, exports
 from expenses import services as expense_services
 from expenses.models import Expense, Supplier
 from properties.models import Property, Unit
@@ -168,7 +167,7 @@ class RequestListView(MaintenanceAccessMixin, View):
     def csv(self, request, qs):
         m = request.membership
         response = _csv_response(f"maintenance-{timezone.localdate():%Y-%m-%d}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         show_costs = can(m, "maintenance.costs") or can(m, "expenses.view")
         cost = services.cost_totals(qs) if show_costs else {}
         writer.writerow(["Number", "Reported", "Property", "Unit", "Title", "Kind", "Priority", "Status",
@@ -523,7 +522,7 @@ class PerformanceView(CapabilityRequiredMixin, View):
 
     def csv(self, days, groups, with_costs):
         response = _csv_response(f"maintenance-performance-{days}d-{timezone.localdate():%Y-%m-%d}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         writer.writerow(["Type", "Name", "Jobs", "Finished", "Responded on time %", "Fixed on time %",
                          "Average hours to respond", "Average days to fix", "Open", "Overdue", "Reopened",
                          "Due time moved", *(["Approved cost", "Cost per job"] if with_costs else [])])

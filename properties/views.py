@@ -5,6 +5,7 @@ the member may see. Anything outside that is a 404, never a 403, so other
 organizations' records cannot be probed.
 """
 
+import uuid
 from collections import defaultdict
 
 from django.contrib import messages
@@ -18,8 +19,9 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
+from accounts import services as access
 from accounts.mixins import CapabilityRequiredMixin
-from accounts.models import Branch
+from accounts.models import Branch, Membership
 from accounts.permissions import can, visible_properties
 from billing.invoicing import month_start, next_month
 from billing.models import ChargeType
@@ -209,6 +211,7 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             "owners": services.shares_of(prop),
             "can_manage": can(m, "properties.manage", prop),
             "can_manage_units": can(m, "units.manage", prop),
+            "can_record_pickups": prop.organization.org_type == "WASTE" and can(m, "meters.record", prop),
             "show_units": can(m, "units.view", prop),
             "can_add_charges": (not prop.is_archived and can(m, "charges.manage", prop)
                                 and Lease.objects.filter(
@@ -216,6 +219,7 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             "building_form": forms.BuildingForm(),
             "doc_panel": documents.panel(m, prop),
         }
+        ctx.update(self.team(m, prop))
         if ctx["show_units"]:
             search = forms.UnitSearchForm(request.GET)
             search.is_valid()
@@ -232,6 +236,22 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
         )
         ctx.update(self.glance(m, prop))
         return render(request, self.template_name, ctx)
+
+    @staticmethod
+    def team(m, prop) -> dict:
+        """Who looks after the property: its manager, caretaker or agent, at a company as at an agency."""
+        if not can(m, "staff.view"):
+            return {}
+        team = access.property_team(prop)
+        out = {"team": team, "can_manage_team": not prop.is_archived and can(m, "staff.manage", prop)}
+        if out["can_manage_team"]:
+            given = {member.pk for member, _branch, direct in team["assigned"] if direct}
+            addable = (Membership.objects.for_org(m.organization).filter(is_active=True, all_properties=False)
+                       .exclude(pk__in=given).select_related("user", "role").order_by("user__full_name"))
+            if not m.role.is_owner_role:
+                addable = addable.exclude(role__is_owner_role=True)
+            out["team_addable"] = list(addable)
+        return out
 
     @staticmethod
     def glance(m, prop) -> dict:
@@ -252,6 +272,38 @@ class PropertyDetailView(CapabilityRequiredMixin, View):
             month = month_start(today)
             out["year"] = finance.money_report(m, metrics.add_months(month, -11), month, prop)
         return out
+
+
+class PropertyTeamView(CapabilityRequiredMixin, View):
+    """Puts a staff member on this property, or takes them off it, from the property page."""
+
+    required_capability = "staff.manage"
+
+    def post(self, request, public_id):
+        prop = _get_property(request, public_id)
+        try:
+            member_id = uuid.UUID(request.POST.get("member", ""))
+        except ValueError:
+            messages.error(request, _("Choose someone from the list."))
+            return redirect(reverse("properties:detail", args=[prop.public_id]) + "#team")
+        member = get_object_or_404(Membership.objects.for_org(request.organization).select_related("user", "role"),
+                                   public_id=member_id)
+        name = member.user.full_name
+        try:
+            if request.POST.get("action") == "take":
+                if access.take_property(request.membership, member, prop, request=request):
+                    messages.info(request, _("%(name)s still sees it through the %(branch)s branch.")
+                                  % {"name": name, "branch": prop.branch.name})
+                else:
+                    messages.success(request, _("%(name)s no longer looks after %(p)s.") % {"name": name, "p": prop.name})
+            else:
+                access.give_property(request.membership, member, prop, request=request)
+                messages.success(request, _("%(name)s now looks after %(p)s.") % {"name": name, "p": prop.name})
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        except PermissionDenied as exc:
+            messages.error(request, str(exc) or _("You are not allowed to do that."))
+        return redirect(reverse("properties:detail", args=[prop.public_id]) + "#team")
 
 
 class PropertyChargeView(CapabilityRequiredMixin, View):

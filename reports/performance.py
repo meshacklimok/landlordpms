@@ -216,7 +216,7 @@ def performance(membership, start: datetime.date, end: datetime.date, prop: Prop
     days = max((min(today, month_end(last)) - first).days + 1, 0)
 
     card = scorecard.scorecard(membership, start, end, today=today, now=now)
-    sc = metrics.scope(membership)
+    sc = metrics.scope(membership, capability="reports.view_financial")
     bridges: dict[int, Bridge] = defaultdict(Bridge)
     for (pk, _month), (expected, collected) in metrics._rent(sc, first, last).items():
         bridges[pk].billed += expected
@@ -250,7 +250,7 @@ def performance(membership, start: datetime.date, end: datetime.date, prop: Prop
             focus = Row(property=prop, score=scorecard.Score(prop), bridge=Bridge(), days=days,
                         value=prop.market_value or None, unvalued=0 if prop.market_value else 1)
 
-    focus_scope = metrics.scope(membership, prop)
+    focus_scope = metrics.scope(membership, prop, capability="reports.view_financial")
     shown_last = min(last, month_start(today))
     report = Performance(
         start=first, end=last, today=today, currency=membership.organization.currency, rows=rows, total=total,

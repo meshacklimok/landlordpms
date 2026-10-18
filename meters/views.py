@@ -3,9 +3,9 @@
 Anything outside the member's properties is a 404, never a 403.
 """
 
-import csv
 import datetime
 import json
+from decimal import Decimal
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -16,17 +16,19 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils.http import urlencode
+from django.utils.text import slugify
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
 from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core import exports
 from core.ids import uuid_or_none
 from properties.models import Property
 from properties.views import _apply_errors
 
-from . import forms, ocr, services, sheet, usage
+from . import forms, ocr, plans, qr, services, sheet, usage, water
 from . import split as splitting
 from .models import Meter, MeterReading, MeterUnit
 
@@ -79,8 +81,18 @@ class MeterListView(CapabilityRequiredMixin, View):
                  "to_read": sum(1 for g in groups.get(p, []) if not g["read_this_month"] and not g["meter"].is_prepaid),
                  "can_record": can(m, "meters.record", p), "can_manage": can(m, "meters.manage", p)}
                 for p in props if p in groups or can(m, "meters.manage", p)]
+        for r in rows:
+            billed_here = [g for g in r["meters"] if not g["meter"].is_prepaid]
+            r["percent"] = round(100 * (len(billed_here) - r["to_read"]) / len(billed_here)) if billed_here else 0
+            r["has_billed"] = bool(billed_here)
+        rows.sort(key=lambda r: not (r["to_read"] or r["waiting"]))  # work left first; stable, so still by name
+        billed = [g for p in groups.values() for g in p if not g["meter"].is_prepaid]
+        totals = {"meters": sum(len(p) for p in groups.values()), "to_read": sum(r["to_read"] for r in rows),
+                  "read": sum(1 for g in billed if g["read_this_month"]), "billed": len(billed),
+                  "waiting": sum(r["waiting"] for r in rows),
+                  "never": sum(1 for p in groups.values() for g in p if g["last"] is None)}
         return render(request, self.template_name, {
-            "rows": rows, "utility": utility, "utilities": Meter.Utility.choices,
+            "rows": rows, "utility": utility, "utilities": Meter.Utility.choices, "totals": totals, "month": today,
             "to_approve": services.to_approve(m).count() if can(m, "meters.approve") else 0})
 
 
@@ -274,8 +286,16 @@ class RoundView(CapabilityRequiredMixin, View):
 
     def _meters(self, prop):
         return list(Meter.objects.filter(property=prop).prefetch_related(
-            Prefetch("readings", queryset=MeterReading.objects.order_by("-read_on", "-pk")),
+            Prefetch("readings", queryset=MeterReading.objects.select_related("previous").order_by("-read_on", "-pk")),
             Prefetch("served", queryset=MeterUnit.objects.select_related("unit"))).order_by("label"))
+
+    @staticmethod
+    def _usual_daily(meter):
+        """Average use a day over the last approved periods, from the prefetched readings (no query per meter)."""
+        periods = [r for r in meter.readings.all() if r.status == MeterReading.Status.APPROVED and not r.is_baseline
+                   and r.previous is not None][:services.HISTORY]
+        days = sum(r.days for r in periods)
+        return sum((r.usage for r in periods), Decimal(0)) / days if periods and days > 0 else None
 
     def _rows(self, meters, post=None, errors=None):
         today = timezone.localdate()
@@ -285,7 +305,9 @@ class RoundView(CapabilityRequiredMixin, View):
             last = _last(row["meter"])
             # Read earlier this month: shown so the same meter is not read twice (the sheet can still be filled in).
             done = last if last and (last.read_on.year, last.read_on.month) == (today.year, today.month) else None
-            row.update(last=last, done=done, errors=(errors or {}).get(pk, []))
+            daily = self._usual_daily(row["meter"])
+            row.update(last=last, done=done, errors=(errors or {}).get(pk, []),
+                       usual_daily=f"{daily:.4f}" if daily is not None else "")
             if post is not None:
                 row.update(value=post.get(f"value-{pk}", ""), units=post.get(f"units-{pk}", ""),
                            by_units=post.get(f"byunits-{pk}") == "1", note=post.get(f"note-{pk}", ""),
@@ -563,12 +585,6 @@ class PhotoView(CapabilityRequiredMixin, View):
         return response
 
 
-def _cell(value) -> str:
-    """A CSV cell that a spreadsheet will not run as a formula."""
-    text = str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
-
-
 class UsageView(CapabilityRequiredMixin, View):
     """Each room's water and electricity in a month, from the approved readings (D-145): the units each tenant
     used, what they were charged, and what fell on the landlord. ?format=csv downloads it."""
@@ -597,10 +613,8 @@ class UsageView(CapabilityRequiredMixin, View):
             "properties": props, "property": prop, "sections": sections, "totals": usage.totals(sections)})
 
     def csv(self, month, sections):
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = f'attachment; filename="meter-usage-{month:%Y-%m}.csv"'
-        response.write("\ufeff")
-        out = csv.writer(response)
+        response = exports.csv_response(f"meter-usage-{month:%Y-%m}.csv")
+        out = exports.writer(response)
         out.writerow(["Property", "Room", "Tenant", "Water m3", "Water KES", "Electricity kWh", "Electricity KES",
                       "Total KES"])
         def figures(use):
@@ -609,7 +623,232 @@ class UsageView(CapabilityRequiredMixin, View):
 
         for s in sections:
             for row in s.rows:
-                out.writerow([_cell(s.property.name), _cell(row.unit.code), _cell(row.tenant), *figures(row.use)])
-            out.writerow([_cell(s.property.name), "", "Landlord (empty rooms, meters the landlord pays)",
+                out.writerow([exports.safe(s.property.name), exports.safe(row.unit.code), exports.safe(row.tenant), *figures(row.use)])
+            out.writerow([exports.safe(s.property.name), "", "Landlord (empty rooms, meters the landlord pays)",
                           *figures(s.landlord)])
         return response
+
+
+def _month(request, today) -> datetime.date:
+    """?month=2026-10, or this month. A month after this one is this month."""
+    try:
+        month = datetime.datetime.strptime(request.GET.get("month", ""), "%Y-%m").date()
+    except ValueError:
+        return today.replace(day=1)
+    return min(month, today.replace(day=1))
+
+
+def _months_around(month, today) -> dict:
+    previous = (month - datetime.timedelta(days=1)).replace(day=1)
+    following = (month + datetime.timedelta(days=32)).replace(day=1)
+    return {"previous": previous, "next": following if following <= today else None,
+            "billed_on": following, "is_current": month == today.replace(day=1)}
+
+
+class WaterOverviewView(CapabilityRequiredMixin, View):
+    """Every property's water for the month at a glance. With one property, straight to its month."""
+
+    template_name = "meters/water_overview.html"
+    required_capability = "meters.view"
+
+    def get(self, request):
+        today = timezone.localdate()
+        month = _month(request, today)
+        sessions = water.overview(request.membership, month, today=today)
+        if len(sessions) == 1:
+            url = reverse("meters:water_session", args=[sessions[0].property.public_id])
+            return redirect(f"{url}?{urlencode({'month': f'{month:%Y-%m}'})}" if request.GET.get("month") else url)
+        return render(request, self.template_name, {
+            "month": month, "sessions": sessions, **_months_around(month, today),
+            "totals": {"needed": sum(s.needed for s in sessions), "recorded": sum(s.recorded for s in sessions),
+                       "flagged": sum(s.count(water.FLAGGED) for s in sessions),
+                       "waiting": sum(s.count(water.WAITING) for s in sessions),
+                       "missing": sum(s.count(water.MISSING) for s in sessions),
+                       "approved": sum(s.count(water.APPROVED) for s in sessions)}})
+
+
+class WaterSessionView(CapabilityRequiredMixin, View):
+    """One property's water readings for a month: how far the round has got, and every unit's state.
+
+    The four ways in all lead to the same sheet and the same checks: type them in, scan the QR code on the meter,
+    upload the Excel sheet, or photograph the notebook. Nothing here records a reading.
+    """
+
+    template_name = "meters/water_session.html"
+    required_capability = "meters.view"
+
+    def get(self, request, property_id):
+        m = request.membership
+        prop = _get_property(request, property_id)
+        today = timezone.localdate()
+        month = _month(request, today)
+        current = water.session(prop, month, today=today)
+        org = prop.organization
+        return render(request, self.template_name, {
+            "property": prop, "session": current, "plan": current.plan, "month": month,
+            "counts": current.counts, **_months_around(month, today),
+            "can_record": can(m, "meters.record", prop), "can_manage": can(m, "meters.manage", prop),
+            "can_approve": can(m, "meters.approve", prop),
+            "scans": ocr.available(org) and can(m, "meters.record", prop),
+            "has_meters": Meter.objects.filter(property=prop, utility=Meter.Utility.WATER).exists()})
+
+
+class WaterPlanView(CapabilityRequiredMixin, View):
+    """How the property charges for water: meter readings, a flat amount, or included in the rent (D-157)."""
+
+    template_name = "meters/water_plan.html"
+    required_capability = "meters.manage"
+
+    def _prop(self, request, property_id):
+        prop = _get_property(request, property_id)
+        if not can(request.membership, "meters.manage", prop):
+            raise Http404
+        return prop
+
+    def _units(self, prop, plan, post=None):
+        own = {pu.unit_id: pu.amount for pu in plan.units.all()} if plan.pk else {}
+        units = sorted(services.units_for(prop), key=lambda u: sheet.natural_key(u.code))
+        rows = []
+        for unit in units:
+            if post is not None:
+                amount = post.get(f"amount-{unit.pk}", "")
+            else:
+                amount = f"{own[unit.pk]:g}" if unit.pk in own else ""
+            rows.append({"unit": unit, "amount": amount, "error": None})
+        return rows
+
+    def _render(self, request, prop, plan, form, units, method):
+        return render(request, self.template_name, {
+            "property": prop, "plan": plan, "form": form, "units": units,
+            "ignored": water.meters_ignored(prop, method)})
+
+    def get(self, request, property_id):
+        prop = self._prop(request, property_id)
+        plan = plans.plan_for(prop)
+        form = forms.WaterPlanForm(initial={"method": plan.method, "approve_clean": plan.approve_clean,
+                                            "flat_amount": f"{plan.flat_amount:g}" if plan.flat_amount else ""})
+        return self._render(request, prop, plan, form, self._units(prop, plan), plan.method)
+
+    def post(self, request, property_id):
+        prop = self._prop(request, property_id)
+        plan = plans.plan_for(prop)
+        form = forms.WaterPlanForm(request.POST)
+        units = self._units(prop, plan, request.POST)
+        if not form.is_valid():
+            return self._render(request, prop, plan, form, units, request.POST.get("method", plan.method))
+        data = form.cleaned_data
+        try:
+            water.save_plan(request.membership, prop, method=data["method"], flat_amount=data["flat_amount"],
+                            unit_amounts={row["unit"].pk: row["amount"] for row in units},
+                            approve_clean=data["approve_clean"], request=request)
+        except ValidationError as exc:
+            by_field = exc.message_dict if hasattr(exc, "error_dict") else {}
+            for row in units:
+                row["error"] = " ".join(by_field.get(f"unit-{row['unit'].pk}", [])) or None
+            others = {k: v for k, v in by_field.items() if not k.startswith("unit-")}
+            if others:
+                _apply_errors(form, ValidationError(others))
+            elif by_field:
+                form.add_error(None, _("Fix the amounts marked below."))
+            else:
+                form.add_error(None, exc.messages)
+            return self._render(request, prop, plan, form, units, data["method"])
+        messages.success(request, _("Water plan saved."))
+        return redirect("meters:water_session", property_id=prop.public_id)
+
+
+class QRLabelsView(RoundView):
+    """A printable page of QR codes, one per meter, to stick on the meters (D-157). Scanned with the phone's
+    camera, a code opens that meter's reading form."""
+
+    template_name = "meters/qr_labels.html"
+
+    def get(self, request, property_id):
+        prop = self._prop(request, property_id)
+        picked = self._picked(request.GET)
+        rows = [r for r in sheet.sheet_meters([m for m in self._meters(prop) if not m.is_prepaid
+                                               and (not picked or m.utility == picked)], timezone.localdate())]
+        labels = [{"meter": r["meter"], "rooms": ", ".join(s["code"] for s in r["served"]) or r["meter"].label,
+                   "svg": qr.svg(r["meter"], scale=4)} for r in rows]
+        return render(request, self.template_name, {"property": prop, "labels": labels, "picked": picked})
+
+    def post(self, request, property_id):
+        return HttpResponse(status=405)
+
+
+class MeterQRView(CapabilityRequiredMixin, View):
+    """One meter's QR code as an SVG file, to print larger or send to a sticker printer."""
+
+    required_capability = "meters.record"
+
+    def get(self, request, public_id):
+        meter = _get_meter(request, public_id)
+        if not can(request.membership, "meters.record", meter.property):
+            raise Http404
+        response = HttpResponse(qr.svg_file(meter), content_type="image/svg+xml")
+        response["Content-Disposition"] = f'attachment; filename="meter-{slugify(meter.label) or "qr"}.svg"'
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class QuickReadView(CapabilityRequiredMixin, View):
+    """One meter's reading form, small enough for a phone held at the meter: what a QR code opens (D-157).
+
+    The reading goes through record_reading like any other, so it is checked, flagged and approved the same way.
+    After saving, the page says how it went and points to the next meter on the property still to be read.
+    """
+
+    template_name = "meters/quick_read.html"
+    required_capability = "meters.record"
+
+    def _meter(self, request, public_id):
+        meter = _get_meter(request, public_id)
+        if not can(request.membership, "meters.record", meter.property):
+            raise Http404
+        return meter
+
+    def _context(self, request, meter, form, done=None):
+        today = timezone.localdate()
+        served = sorted(meter.served.select_related("unit"), key=lambda mu: sheet.natural_key(mu.unit.code))
+        names = sheet.tenants_on([mu.unit for mu in served], today) if served else {}
+        ctx = {"meter": meter, "property": meter.property, "form": form, "done": done,
+               "served": [{"code": mu.unit.code, "tenant": names.get(mu.unit_id)} for mu in served],
+               "latest": services.latest_reading(meter),
+               "billed": plans.billed_from_readings(meter)}
+        if form is not None:
+            # The reading and the photo are drawn large; the rest sits under "Date, note or a new meter".
+            ctx["extra_fields"] = [form["read_on"], form["note"], form["replaced"]]
+        if done is not None and meter.utility == Meter.Utility.WATER:
+            left = [m for m in water.session(meter.property, today, today=today).to_read if m.pk != meter.pk]
+            ctx.update(next_meter=left[0] if left else None, left=len(left))
+        return ctx
+
+    def _form(self, meter, data=None, files=None):
+        form = forms.ReadingForm(data, files, initial={"read_on": timezone.localdate().isoformat()})
+        form.fields["value"].label = _("Reading now (%(unit)s)") % {"unit": meter.unit_label}
+        return form
+
+    def get(self, request, public_id):
+        meter = self._meter(request, public_id)
+        done = None
+        if request.GET.get("done"):
+            done = meter.readings.filter(public_id=uuid_or_none(request.GET["done"])).first()
+        return render(request, self.template_name,
+                      self._context(request, meter, None if done else self._form(meter), done))
+
+    def post(self, request, public_id):
+        meter = self._meter(request, public_id)
+        if meter.is_archived:
+            raise Http404
+        form = self._form(meter, request.POST, request.FILES)
+        if form.is_valid():
+            try:
+                reading = services.record_reading(request.membership, meter, request=request, **form.cleaned_data)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                url = reverse("meters:quick", args=[meter.public_id])
+                return redirect(f"{url}?{urlencode({'done': reading.public_id})}")
+        return render(request, self.template_name, self._context(request, meter, form))

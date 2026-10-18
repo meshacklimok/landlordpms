@@ -3,6 +3,8 @@
 - A meter belongs to a property and serves one unit (its own meter) or several (shared).
 - Readings wait for approval. Approving one works out what each lease owes (MeterCharge).
 - Billing puts each charge on an invoice line that points back at it, so it is billed once.
+- A property's water plan (D-157) says whether water is billed from its meters, as a flat monthly amount, or not
+  at all (included in the rent).
 """
 
 import builtins
@@ -35,6 +37,8 @@ class Meter(PublicIdModel, TimeStampedModel, ArchivableModel):
     class Split(models.TextChoices):
         EQUAL = "EQUAL", _("Equally")
         WEIGHTED = "WEIGHTED", _("By weight")
+        # Each room's fixed share of the bill; the shares add up to 100 (D-157).
+        PERCENT = "PERCENT", _("By percentage")
         # Each room's own meter (a sub-meter) over the same dates decides its share of this one (D-143).
         USAGE = "USAGE", _("By each room's own meter")
 
@@ -229,6 +233,52 @@ class MeterCharge(models.Model):
 
     def __str__(self):
         return self.description
+
+
+class WaterPlan(TimeStampedModel):
+    """How a property charges its tenants for water (D-157). A property without one is metered."""
+
+    class Method(models.TextChoices):
+        METERED = "METERED", _("From meter readings")
+        FLAT = "FLAT", _("A flat amount every month")
+        INCLUDED = "INCLUDED", _("Included in the rent")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    property = models.OneToOneField("properties.Property", on_delete=models.CASCADE, related_name="water_plan")
+    method = models.CharField(_("water is charged"), max_length=10, choices=Method.choices, default=Method.METERED)
+    # KES a month for each let unit, when the method is FLAT. A unit can have its own amount (WaterPlanUnit).
+    flat_amount = models.DecimalField(_("flat amount a month"), max_digits=10, decimal_places=2,
+                                      default=Decimal("0.00"))
+    # Unflagged water readings recorded by someone who may approve are approved as they are saved.
+    approve_clean = models.BooleanField(_("approve clean readings at once"), default=False)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(flat_amount__gte=0), name="meters_waterplan_flat_not_negative"),
+        ]
+
+    def __str__(self):
+        return f"{self.property} · {self.get_method_display()}"
+
+
+class WaterPlanUnit(models.Model):
+    """A unit's own flat amount on a FLAT plan, e.g. more for a two-bedroom. Zero: no water charge."""
+
+    plan = models.ForeignKey(WaterPlan, on_delete=models.CASCADE, related_name="units")
+    unit = models.ForeignKey("properties.Unit", on_delete=models.CASCADE, related_name="+")
+    amount = models.DecimalField(_("amount a month"), max_digits=10, decimal_places=2)
+
+    class Meta:
+        ordering = ["unit__code"]
+        constraints = [
+            models.UniqueConstraint("plan", "unit", name="meters_waterplanunit_once"),
+            models.CheckConstraint(condition=Q(amount__gte=0), name="meters_waterplanunit_not_negative"),
+        ]
+
+    def __str__(self):
+        return f"{self.unit.code} · {self.amount}"
 
 
 class OfflineRound(TimeStampedModel):

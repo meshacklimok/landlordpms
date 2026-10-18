@@ -33,7 +33,7 @@ from .models import (
 )
 
 PROPERTY_FIELDS = ("name", "category", "county", "sub_county", "area", "street", "latitude", "longitude", "owner",
-                   "management_fee_percent", "management_fee_fixed", "branch")
+                   "management_fee_percent", "management_fee_fixed", "branch", "service_days", "market_value")
 OWNER_FIELDS = ("name", "phone", "email", "note")
 UNIT_FIELDS = ("code", "building", "unit_type", "type_label", "list_rent")
 

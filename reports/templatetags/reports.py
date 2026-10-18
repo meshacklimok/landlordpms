@@ -16,6 +16,14 @@ def percent(value) -> str:
 
 
 @register.filter
+def percent1(value) -> str:
+    """A fraction as a percent with one decimal, 0.0845 → 8.5%; no rate → a dash."""
+    if value is None:
+        return "—"
+    return f"{value * 100:.1f}%"
+
+
+@register.filter
 def signed_percent(value) -> str:
     """A change as a signed whole percent, 0.125 → +13%; no change to show → an empty string."""
     if value is None:

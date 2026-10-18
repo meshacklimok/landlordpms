@@ -83,6 +83,8 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
     activated_at = models.DateTimeField(null=True, blank=True, editable=False)
     # The open notice to vacate (D-106), copied from LeaseNotice so lists can filter on it.
     notice_given_on = models.DateField(null=True, blank=True, editable=False)
+    # Water vendors cut supply to an account that is behind; the day it was cut (D-159). Billing carries on.
+    supply_suspended_on = models.DateField(null=True, blank=True, editable=False)
     move_out_on = models.DateField(null=True, blank=True, editable=False)
     ended_on = models.DateField(null=True, blank=True, editable=False)
     end_reason = models.TextField(blank=True, editable=False)
@@ -231,6 +233,8 @@ class LeaseCharge(TimeStampedModel):
                                  default=Lease.Frequency.MONTHLY)
     active_from = models.DateField(_("from"))
     active_to = models.DateField(_("until"), null=True, blank=True)
+    # Garbage collectors: the amount is the price of one pickup, billed in arrears on the pickups made (D-161).
+    per_pickup = models.BooleanField(_("charged per pickup"), default=False)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
 
@@ -247,6 +251,29 @@ class LeaseCharge(TimeStampedModel):
 
     def is_active_on(self, day: datetime.date) -> bool:
         return self.active_from <= day and (self.active_to is None or day <= self.active_to)
+
+
+class Pickup(TimeStampedModel):
+    """One day's rubbish collection at a contract's pickup point: done, or missed (D-161)."""
+
+    class Outcome(models.TextChoices):
+        DONE = "DONE", _("Collected")
+        MISSED = "MISSED", _("Missed")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey(Lease, on_delete=models.PROTECT, related_name="pickups")
+    day = models.DateField(_("day"))
+    outcome = models.CharField(_("outcome"), max_length=6, choices=Outcome.choices)
+    note = models.CharField(_("note"), max_length=200, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+")
+
+    class Meta:
+        ordering = ["-day", "pk"]
+        constraints = [models.UniqueConstraint("lease", "day", name="leases_pickup_one_a_day")]
+
+    def __str__(self):
+        return f"{self.lease_id} {self.day} {self.outcome}"
 
 
 class LeaseNotice(TimeStampedModel):

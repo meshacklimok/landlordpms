@@ -1,6 +1,5 @@
 """The report centre, maintenance and message delivery pages (D-132). Thin views; reports.operations does the work."""
 
-import csv
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -16,9 +15,20 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from accounts.portfolio import agency_tools
 from audit import services as audit
-from core import charts
+from core import charts, exports
 
-from . import behaviour, deposit_report, metrics, operations, periods, report_notes, scorecard, xlsx
+from . import (
+    behaviour,
+    deposit_report,
+    metrics,
+    operations,
+    outlook,
+    performance,
+    periods,
+    report_notes,
+    scorecard,
+    xlsx,
+)
 from .views import _csv_response, _finance_filters, _pct
 
 
@@ -49,6 +59,9 @@ def report_groups(m) -> list:
             ("reports:income", _("Rental income pack"), _("Rent received by month and property, for tax."),
              financial),
             ("reports:units", _("Unit by unit"), _("Which units pay in time, and which stand empty."), financial),
+            ("reports:outlook", _("Rent outlook"),
+             _("Rent the leases say is due over the next six months, what ends, and what to expect to collect."),
+             financial),
         ]),
         (_("Arrears and debt"), [
             ("reports:receivables", _("Aged receivables"), _("Everything owed, by property and by how late."),
@@ -61,6 +74,8 @@ def report_groups(m) -> list:
             ("reports:scorecard", _("Property scorecard"),
              _("Each property ranked: occupancy, collection, net income per unit, costs and turnover."),
              financial),
+            ("reports:performance", _("Property performance"),
+             _("Potential rent to collected, yield on value, trends and a ranking of the properties."), financial),
             ("reports:deposits", _("Deposits"),
              _("Held, taken, returned and deducted, and deposits to settle on ended leases."), financial),
         ]),
@@ -189,7 +204,7 @@ class _OperationsView(CapabilityRequiredMixin, View):
             if fmt == "xlsx":
                 return xlsx.response(f"{name}.xlsx", self.slug, rows)
             response = _csv_response(f"{name}.csv")
-            csv.writer(response).writerows(rows)
+            exports.writer(response).writerows(rows)
             return response
         query = request.GET.copy()
         query["format"] = "csv"
@@ -356,6 +371,38 @@ class LeasesReportView(_OperationsView):
         return rows
 
 
+class OutlookView(_OperationsView):
+    """What the leases say is coming (D-172): contracted rent, rent ending and expected collection, six months on."""
+
+    template_name = "reports/outlook.html"
+    required_capability = "reports.view_financial"
+    slug = "outlook"
+
+    def build(self, request, period, prop):
+        return outlook.outlook(request.membership, prop)
+
+    def context(self, request, report, prop):
+        cur = report.currency
+        specs = {}
+        if report.contracted_total:
+            sets = [charts.series(_("Contracted rent"), [m.contracted for m in report.months], "1")]
+            if report.collection_rate is not None:
+                sets.append(charts.series(_("Expected to collect"), [m.expected for m in report.months], "2"))
+            sets.append(charts.series(_("Rent ending"), [m.ending for m in report.months], "late-3"))
+            specs["months"] = charts.chart("bar", [m.label for m in report.months], sets, currency=cur)
+        return {"specs": specs, "headline": outlook.headline(report)}
+
+    def csv_rows(self, report):
+        rows = [["Month", "Leases in force", "Contracted rent", "Expected to collect", "Rent ending", "Leases ending"]]
+        rows += [[m.label, m.leases, m.contracted, "" if m.expected is None else m.expected, m.ending,
+                  m.ending_leases] for m in report.months]
+        rows += [[], ["Collection rate used %", _pct(report.collection_rate)], [],
+                 ["Lease", "Property", "Unit", "Tenant", "Last day", "Why", "Monthly rent"]]
+        rows += [[x.lease.number, x.lease.unit.property.name, x.lease.unit.code, x.tenant.name if x.tenant else "",
+                  x.ends.isoformat(), x.why, x.rent] for x in report.ending]
+        return rows
+
+
 class PaymentBehaviourView(_OperationsView):
     template_name = "reports/behaviour.html"
     required_capability = "reports.view_financial"
@@ -423,6 +470,59 @@ class ScorecardView(_OperationsView):
             rows.append([r.property.name if r.property else "Total", r.units, r.occupied, _pct(r.occupancy),
                          r.income, r.expenses, r.noi, r.noi_per_unit or "", _pct(r.expense_ratio),
                          _pct(r.collection), r.move_outs, _pct(r.turnover)])
+        return rows
+
+
+class PerformanceView(_OperationsView):
+    """How the properties performed (D-164): potential rent to collected, profit, trends and a ranking."""
+
+    template_name = "reports/performance.html"
+    required_capability = "reports.view_financial"
+    slug = "performance"
+
+    def build(self, request, period, prop):
+        return performance.performance(request.membership, period.start, period.end, prop)
+
+    def context(self, request, report, prop):
+        m = request.membership
+        cur = m.organization.currency
+        pct = lambda v: None if v is None else round(float(v) * 100, 1)  # noqa: E731
+        specs, b = {}, report.focus.bridge
+        if b.potential:
+            specs["bridge"] = charts.chart("bar", [_("Potential rent"), _("Empty units"), _("Not collected"),
+                                                   _("Collected")], [
+                charts.series(_("Rent"), [b.potential, b.vacancy, b.uncollected, b.collected], "1",
+                              colors=["1-soft", "late-2", "late-3", "1"])], currency=cur)
+        months = report.months_shown
+        if len(months) > 1:
+            specs["trend"] = charts.chart("bar", [r.label for r in months], [
+                charts.series(_("Income"), [r.income for r in months], "1"),
+                charts.series(_("Expenses"), [r.expenses for r in months], "2"),
+                charts.series(_("Net operating income"), [r.noi for r in months], "3", type="line")], currency=cur)
+        slices = charts.fold(report.money.expense_categories, _("Other"))
+        costs = list(zip(slices, charts.SERIES, strict=False))
+        if slices:
+            specs["costs"] = charts.doughnut(_("Expenses"), slices, charts.SERIES, currency=cur)
+        occupancy = {o.key: o for o in report.occupancy_months}
+        if len(report.rent_months) > 1:
+            specs["rates"] = charts.chart("line", [r.label for r in report.rent_months], [
+                charts.series(_("Collection rate"), [pct(r.rate) for r in report.rent_months], "1"),
+                charts.series(_("Occupancy"), [pct(occupancy[r.month].rate) if r.month in occupancy else None
+                                               for r in report.rent_months], "2")], axis="pct")
+        ranked = [r for r in report.rows if r.noi_per_unit_month is not None]
+        if len(report.rows) > 1 and ranked:
+            specs["compare"] = charts.chart("bar", [r.name for r in ranked], [
+                charts.series(_("Net income per unit a month"), [r.noi_per_unit_month for r in ranked], "1",
+                              negative="late-4")], currency=cur, horizontal=True)
+        return {"specs": specs, "costs": costs, "cur": cur, "can_edit_property": can(m, "properties.manage")}
+
+    def csv_rows(self, report):
+        rows = [["Property", "Units", "Rent earned of potential %", "Lost to empty units", "Not collected",
+                 "Net operating income", "Net per unit a month", "Expenses % of income", "Net yield %"]]
+        for r in (*report.rows, report.total):
+            rows.append([r.name if r.property else "All", r.score.units, _pct(r.bridge.economic_occupancy),
+                         r.bridge.vacancy, r.bridge.uncollected, r.score.noi, r.noi_per_unit_month or "",
+                         _pct(r.score.expense_ratio), _pct(r.net_yield)])
         return rows
 
 

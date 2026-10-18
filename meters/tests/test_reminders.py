@@ -4,7 +4,7 @@ import datetime
 
 import pytest
 
-from meters import reminders, services
+from meters import reminders
 from notifications.models import Message
 
 from .conftest import let, make_meter, read

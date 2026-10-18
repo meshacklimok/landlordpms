@@ -80,6 +80,10 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     branch = models.ForeignKey("accounts.Branch", on_delete=models.PROTECT, null=True, blank=True,
                                related_name="properties")
 
+    # When water is supplied or rubbish is collected, for water vendors and garbage collectors (D-159).
+    service_days = models.CharField(_("service days"), max_length=120, blank=True,
+                                    help_text=_("e.g. Mon, Wed, Fri or Tuesdays 6am-10am. Customers see it in their portal."))
+
     # Who owns it and the agency's fee on rent collected (D-053).
     owner = models.ForeignKey(PropertyOwner, on_delete=models.PROTECT, null=True, blank=True,
                               related_name="properties", verbose_name=_("owner"))
@@ -92,6 +96,12 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         _("fixed monthly fee"), max_digits=12, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0)],
         help_text=_("Taken every month the property is managed, whatever is collected. Leave empty for none."))
+    # What the property would sell for today, so the performance report can show its yield (D-164).
+    market_value = models.DecimalField(
+        _("estimated value"), max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=_("What it would sell for today. Used only to work out its yield on the performance report; "
+                    "leave empty if you do not know."))
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -192,17 +202,23 @@ class Building(PublicIdModel, TimeStampedModel, ArchivableModel):
 
 class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
     class Type(models.TextChoices):
-        APARTMENT = "APARTMENT", _("Apartment")
-        HOUSE = "HOUSE", _("House")
         BEDSITTER = "BEDSITTER", _("Bedsitter")
         STUDIO = "STUDIO", _("Studio")
+        APARTMENT = "APARTMENT", _("Apartment")
+        ONE_BEDROOM = "ONE_BEDROOM", _("1 bedroom")
+        TWO_BEDROOM = "TWO_BEDROOM", _("2 bedroom")
+        THREE_BEDROOM = "THREE_BEDROOM", _("3 bedroom")
+        FOUR_BEDROOM = "FOUR_BEDROOM", _("4 bedroom")
+        SINGLE = "SINGLE", _("Single room")
+        MAISONETTE = "MAISONETTE", _("Maisonette")
         SHOP = "SHOP", _("Shop")
         OFFICE = "OFFICE", _("Office")
+        OTHER = "OTHER", _("Other")
+        HOUSE = "HOUSE", _("House")
         WAREHOUSE = "WAREHOUSE", _("Warehouse")
         PARKING = "PARKING", _("Parking")
         # Hostels: design-in only (D-040). Room/bed assignment and semester billing come later.
         BED_SPACE = "BED_SPACE", _("Bed space")
-        OTHER = "OTHER", _("Other")
 
     class ManualStatus(models.TextChoices):
         NORMAL = "NORMAL", _("Normal")

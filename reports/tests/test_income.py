@@ -200,6 +200,15 @@ def test_the_owner_changes_residence_from_the_page(client, owner):
     assert owner.organization.landlord_tax_residence == NON_RESIDENT
 
 
+def test_the_owner_changes_residence_from_the_settings_page(client, owner):
+    client.force_login(owner.user)
+    assert client.get("/reports/income/tax-residence/").status_code == 200
+    response = client.post("/reports/income/tax-residence/", {"landlord_tax_residence": NON_RESIDENT})
+    assert response.status_code == 302 and response.url == "/reports/income/tax-residence/"
+    owner.organization.refresh_from_db()
+    assert owner.organization.landlord_tax_residence == NON_RESIDENT
+
+
 def test_csv_and_pdf_exports(client, owner, year_2025):
     client.force_login(owner.user)
     months = client.get("/reports/income/2025/months/").content.decode("utf-8-sig")
