@@ -16,7 +16,6 @@ from accounts.tests.factories import add_member, make_org, make_user
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
 from mpesa.daraja import FakeDarajaClient
-from mpesa.paystack import FakePaystackClient
 from subscriptions import collect, services
 from subscriptions.models import (
     Plan,
@@ -27,6 +26,7 @@ from subscriptions.models import (
     SubscriptionInvoice,
     SubscriptionPayment,
 )
+from subscriptions.paystack import FakePaystackClient
 
 pytestmark = pytest.mark.django_db
 
@@ -453,3 +453,152 @@ def test_sms_top_up_page(client, owner):
     assert PlatformCheckout.objects.get().amount == 300
     response = client.post(reverse("subscriptions:sms_top_up"), {"amount": "300", "method": "paystack"})
     assert response.status_code == 302 and response.url.startswith("https://")
+
+
+# ---------------------------------------------------------------------------
+# Renewing by a saved card
+# ---------------------------------------------------------------------------
+
+CARD = {"authorization_code": "AUTH_secret1", "reusable": True, "channel": "card", "last4": "4081",
+        "brand": "visa", "exp_month": "12", "exp_year": "2030"}
+
+
+def saved_card_sub(owner, invoice):
+    """Pays the first invoice by card with 'renew automatically' ticked, so a card is saved."""
+    owner.organization.billing_email = "billing@acme.example"
+    owner.organization.save()
+    collect.start_paystack(owner, invoice, save_card=True)
+    checkout = PlatformCheckout.objects.get(provider=PlatformCheckout.Provider.PAYSTACK)
+    collect.receive_paystack(ps_event(checkout, authorization=CARD)["data"], ps_event(checkout, authorization=CARD))
+    return Subscription.objects.get(organization=invoice.organization)
+
+
+def renewal_due(sub, today):
+    """Moves the paid period so the renewal invoice is issued by the daily job on `today`."""
+    sub.period_end = today + datetime.timedelta(days=1)
+    sub.save()
+    services.daily(today)
+    return services.open_invoice(sub)
+
+
+def test_paying_by_card_with_the_box_ticked_saves_the_card(owner, invoice):
+    sub = saved_card_sub(owner, invoice)
+    assert sub.has_card and sub.auto_renew and (sub.card_last4, sub.card_brand) == ("4081", "visa")
+    assert "AUTH_secret1" not in sub.card_code_encrypted
+    assert "AUTH_secret1" not in json.dumps(PlatformTransaction.objects.get().raw_payload)
+
+
+def test_a_card_is_not_saved_unless_asked_or_when_not_reusable(owner, invoice):
+    checkout = paystack_checkout(owner, invoice)  # box not ticked
+    collect.receive_paystack(ps_event(checkout, authorization=CARD)["data"], {})
+    assert not Subscription.objects.get(organization=owner.organization).has_card
+    collect.start_paystack(owner, services.choose_plan(owner, Plan.objects.get(key="business"), "MONTHLY"),
+                           save_card=True)
+    ticked = PlatformCheckout.objects.filter(save_card=True).get()
+    collect.receive_paystack(ps_event(ticked, authorization={**CARD, "reusable": False})["data"], {})
+    assert not Subscription.objects.get(organization=owner.organization).has_card
+
+
+def test_the_daily_job_charges_the_saved_card_and_renews(owner, invoice, django_capture_on_commit_callbacks):
+    sub = saved_card_sub(owner, invoice)
+    today = timezone.localdate()
+    renewal = renewal_due(sub, today)
+    assert renewal.reason == SubscriptionInvoice.Reason.RENEWAL
+    FakePaystackClient.calls.clear()
+    with django_capture_on_commit_callbacks(execute=True):
+        assert collect.charge_due_cards(today) == {"card_charged": 1, "card_failed": 0}
+    _pk, _method, path, body = FakePaystackClient.calls[-1]
+    assert path == "/transaction/charge_authorization" and body["authorization_code"] == "AUTH_secret1"
+    assert body["amount"] == int(renewal.total * 100)
+    renewal.refresh_from_db()
+    assert renewal.status == SubscriptionInvoice.Status.PAID
+    assert SubscriptionPayment.objects.filter(invoice=renewal, method=SubscriptionPayment.Method.PAYSTACK).exists()
+    assert "renewed" in mail.outbox[-1].subject
+    assert collect.charge_due_cards(today) == {"card_charged": 0, "card_failed": 0}  # nothing left to charge
+
+
+def test_a_refused_card_emails_the_owner_and_retries_once_a_day(owner, invoice, django_capture_on_commit_callbacks):
+    sub = saved_card_sub(owner, invoice)
+    today = timezone.localdate()
+    renewal = renewal_due(sub, today)
+    FakePaystackClient.replies = {"/transaction/charge_authorization": {
+        "id": 7002, "reference": "x", "status": "failed", "gateway_response": "Insufficient funds"}}
+    # The fake echoes whatever reply it holds; make it carry the reference of the checkout being charged.
+    original = FakePaystackClient._request
+
+    def reply(self, method, path, body=None):
+        if path == "/transaction/charge_authorization":
+            FakePaystackClient.replies[path]["reference"] = body["reference"]
+        return original(self, method, path, body)
+
+    FakePaystackClient._request = reply
+    try:
+        with django_capture_on_commit_callbacks(execute=True):
+            assert collect.charge_due_cards(today) == {"card_charged": 0, "card_failed": 1}
+        assert collect.charge_due_cards(today) == {"card_charged": 0, "card_failed": 0}  # one try a day
+        with django_capture_on_commit_callbacks(execute=True):
+            assert collect.charge_due_cards(today + datetime.timedelta(days=1))["card_failed"] == 1
+    finally:
+        FakePaystackClient._request = original
+    renewal.refresh_from_db()
+    assert renewal.status == SubscriptionInvoice.Status.OPEN
+    assert "could not charge" in mail.outbox[-1].subject and "Insufficient funds" in mail.outbox[-1].body
+
+
+def test_paystack_down_counts_as_a_failed_charge(owner, invoice):
+    sub = saved_card_sub(owner, invoice)
+    today = timezone.localdate()
+    renewal_due(sub, today)
+    FakePaystackClient.fail = "Could not reach Paystack"
+    assert collect.charge_due_cards(today)["card_failed"] == 1
+    assert PlatformCheckout.objects.filter(automatic=True, status=CStatus.FAILED).count() == 1
+
+
+def test_no_charge_when_off_early_or_for_a_chosen_plan(owner, invoice):
+    sub = saved_card_sub(owner, invoice)
+    today = timezone.localdate()
+    sub.period_end = today + datetime.timedelta(days=6)
+    sub.save()
+    services.daily(today)
+    FakePaystackClient.calls.clear()
+    assert collect.charge_due_cards(today) == {"card_charged": 0, "card_failed": 0}  # not yet near the end
+    sub.period_end = today + datetime.timedelta(days=1)
+    sub.auto_renew = False
+    sub.save()
+    assert collect.charge_due_cards(today) == {"card_charged": 0, "card_failed": 0}  # switched off
+    assert not [c for c in FakePaystackClient.calls if c[2] == "/transaction/charge_authorization"]
+
+
+def test_turning_it_off_and_removing_the_card(client, owner, invoice):
+    sub = saved_card_sub(owner, invoice)
+    login(client, owner)
+    client.post(reverse("subscriptions:page"), {"action": "auto_renew_off"})
+    sub.refresh_from_db()
+    assert sub.has_card and not sub.auto_renew
+    client.post(reverse("subscriptions:page"), {"action": "auto_renew_on"})
+    sub.refresh_from_db()
+    assert sub.auto_renew
+    assert "Renews automatically" in client.get(reverse("subscriptions:page")).content.decode()
+    client.post(reverse("subscriptions:page"), {"action": "remove_card"})
+    sub.refresh_from_db()
+    assert not sub.has_card and not sub.auto_renew and sub.card_last4 == ""
+    client.post(reverse("subscriptions:page"), {"action": "auto_renew_on"})  # nothing to charge
+    sub.refresh_from_db()
+    assert not sub.auto_renew
+
+
+def test_the_renewal_reminder_says_the_card_will_be_charged(owner, invoice):
+    sub = saved_card_sub(owner, invoice)
+    today = timezone.localdate()
+    sub.period_end = today + datetime.timedelta(days=7)
+    sub.save()
+    mail.outbox.clear()
+    assert services.send_reminders(today) == 1
+    assert "4081" in mail.outbox[0].body and "charged automatically" in mail.outbox[0].body
+    sub.auto_renew = False
+    sub.save()
+    mail.outbox.clear()
+    SubscriptionReminderModel = type(sub.reminders.first())
+    SubscriptionReminderModel.objects.all().delete()
+    services.send_reminders(today)
+    assert "renewal invoice is on the Subscription page" in mail.outbox[0].body

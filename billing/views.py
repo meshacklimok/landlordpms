@@ -3,10 +3,14 @@
 Anything outside the member's properties is a 404, never a 403.
 """
 
+import datetime
+from decimal import Decimal
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
+from django.db.models.functions import Coalesce
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -18,10 +22,12 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from core.ids import uuid_or_none
+from core.money import format_money
 from leases import paperwork
 from leases.models import Lease, LeaseTenant
 from leases.services import visible_leases
 from meters import readiness
+from notifications import triggers
 from payments import selectors as payment_selectors
 from payments import services as payment_services
 from properties.views import _apply_errors
@@ -166,36 +172,169 @@ class InvoiceDetailView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, self.context(request, invoice, void_form=form))
 
 
-class GenerateView(CapabilityRequiredMixin, View):
+class GenerateBase(CapabilityRequiredMixin, View):
     """Bills a month by hand. The daily job does this on its own; this is for catching up or checking."""
 
-    template_name = "billing/generate.html"
     required_capability = "invoices.generate"
 
-    def context(self, request, form=None, result=None, month=None):
+    def form_for(self, request, data=None):
+        m = request.membership
+        props = visible_properties(m).order_by("name")
+        recent = timezone.localdate() - datetime.timedelta(days=366)
+        leases = (visible_leases(m, Lease.objects.exclude(status=Lease.Status.DRAFT).filter(archived_at__isnull=True)
+                                 .annotate(last_day=Coalesce("ended_on", "end_date"))
+                                 .filter(Q(last_day__isnull=True) | Q(last_day__gte=recent)))
+                  .select_related("unit__property")
+                  .prefetch_related(Prefetch("lease_tenants", LeaseTenant.objects.select_related("tenant")))
+                  .order_by("unit__property__name", "unit__code"))
+        leases = [ls for ls in leases if can(m, "invoices.generate", ls.unit.property)]
+        initial = {"month": timezone.localdate().strftime("%Y-%m")}
+        if data is None and request.GET.get("month"):
+            initial = {k: request.GET.getlist(k) if k == "leases" else request.GET.get(k)
+                       for k in ("month", "include", "scope", "property", "leases", "due_date")
+                       if request.GET.get(k)}
+            initial["notify"] = "notify" in request.GET
+        return forms.GenerateForm(data, properties=props, leases=leases, initial=initial)
+
+    def example_message(self, request, form, month, include):
+        """One tenant's message with real figures, so the wording is visible before anything can be billed."""
         today = timezone.localdate()
+        org = request.organization
+        chosen = form.chosen_leases() if form.is_bound and form.is_valid() else None
+        leases = chosen if chosen is not None else list(form._leases.values())
+        for lease in leases:
+            lines = invoicing.lines_for_month(lease, month) if include != "meters" else []
+            total = sum((ln.amount for ln in lines), 0) or None
+            if total is None:
+                continue
+            start = min(ln.service_start for ln in lines)
+            due = invoicing._due_date(lease, month, start, today)
+            rows = [r for r in triggers.invoice_message_previews(lease, total=total, due_date=due) if r["text"]]
+            if rows:
+                edit = None
+                if can(request.membership, "templates.manage"):
+                    edit = reverse("notifications:template_edit", args=["invoice_issued", rows[0]["channel"],
+                                                                        rows[0]["tenant"].language or "en"])
+                return {"lease": lease, "row": rows[0], "edit_url": edit, "total": total}
+        return None
+
+    def context(self, request, form, month=None, example_wanted=True):
+        today = timezone.localdate()
+        example = None
+        if example_wanted:
+            ex_month = month or invoicing.month_start(today)
+            include = form.cleaned_data["include"] if form.is_bound and form.is_valid() else "all"
+            example = self.example_message(request, form, ex_month, include)
         due = invoicing.months_to_bill(request.organization, today)
         shown = due + [month] if month and month not in due else due
         return {
-            "form": form or forms.GenerateForm(initial={"month": today.strftime("%Y-%m")}),
-            "result": result, "month": month, "due_months": due,
+            "form": form, "month": month, "due_months": due, "today": today, "example": example,
             "meter_checks": ([readiness.check(request.membership, m) for m in shown]
                              if can(request.membership, "meters.view") else []),
         }
 
+
+class GenerateView(GenerateBase):
+    template_name = "billing/generate.html"
+
     def get(self, request):
-        return render(request, self.template_name, self.context(request))
+        return render(request, self.template_name, self.context(request, self.form_for(request)))
 
     def post(self, request):
-        form = forms.GenerateForm(request.POST)
+        # A form left open from before the review had its own page: show the review, and issue nothing.
+        data = request.POST.copy()
+        for key in ("csrfmiddlewaretoken", "action"):
+            data.pop(key, None)
+        return redirect(f"{reverse('billing:generate_review')}?{data.urlencode()}")
+
+
+def _flags(preview, month, include, notify):
+    """Things to look at before issuing: (level, text) for one lease's invoice."""
+    lease = preview.lease
+    flags = []
+    if notify and preview.total > 0:
+        if not preview.messages:
+            flags.append(("warning", _("No tenant on this lease to tell.")))
+        elif not all(m["sendable"] for m in preview.messages):
+            why = next(m["reason"] for m in preview.messages if not m["sendable"])
+            flags.append(("warning", _("The tenant won't get the message: %(why)s") % {"why": why}))
+    if include != invoicing.INCLUDE_METERS:
+        last = (Invoice.objects.filter(lease=lease, total__gt=0)
+                .exclude(status__in=(Invoice.Status.DRAFT, Invoice.Status.VOID)).order_by("-period_start", "-pk").first())
+        if last and last.total and abs(preview.total - last.total) / last.total > Decimal("0.2"):
+            flags.append(("warning", _("%(word)s than the last invoice (%(last)s).") % {
+                "word": _("Higher") if preview.total > last.total else _("Lower"),
+                "last": format_money(last.total, last.currency)}))
+        if lease.months_per_period == 1 and (preview.start, preview.end) != (
+                invoicing.month_start(month), invoicing.month_end(month)):
+            flags.append(("info", _("Part of the month only, so the rent is prorated.")))
+    owed = invoicing.lease_balance(lease)
+    if owed > 0:
+        flags.append(("info", _("Already owes %(amount)s.") % {"amount": format_money(owed, lease.currency)}))
+    return flags
+
+
+class GenerateReviewView(GenerateBase):
+    """The review of what would be issued, on its own page. The form sends its choices here (GET) and
+    "Issue" posts them back (POST). A review writes nothing, so it can be reloaded and bookmarked."""
+
+    template_name = "billing/generate_review.html"
+
+    def checked(self, request, data):
+        """(form, month, scope) when the choices are good, else (form, None, None) with the errors on it."""
+        form = self.form_for(request, data)
         if not form.is_valid():
-            return render(request, self.template_name, self.context(request, form))
-        month = form.cleaned_data["month"]
-        if month > invoicing.next_month(timezone.localdate()):
+            return form, None, None
+        d = form.cleaned_data
+        if d["month"] > invoicing.next_month(timezone.localdate()):
             form.add_error("month", _("You can bill up to next month."))
-            return render(request, self.template_name, self.context(request, form))
-        result = invoicing.generate_month(request.organization, month, actor=request.membership, request=request)
-        return render(request, self.template_name, self.context(request, form, result=result, month=month))
+            return form, None, None
+        return form, d["month"], dict(leases=form.chosen_leases(), include=d["include"], due_date=d["due_date"])
+
+    def invalid(self, request, form):
+        return render(request, "billing/generate.html", self.context(request, form))
+
+    def get(self, request):
+        if not request.GET:
+            return redirect("billing:generate")
+        form, month, scope = self.checked(request, request.GET)
+        if scope is None:
+            return self.invalid(request, form)
+        previews, nothing = invoicing.preview_month(request.organization, month, actor=request.membership, **scope)
+        if form.cleaned_data["notify"]:
+            for p in previews:
+                p.messages = (triggers.invoice_message_previews(p.lease, total=p.total, due_date=p.due)
+                              if p.total > 0 else [])
+        d = form.cleaned_data
+        for p in previews:
+            p.flags = _flags(p, month, d["include"], d["notify"])
+        by_property = {}
+        for p in previews:
+            row = by_property.setdefault(p.lease.unit.property.name, {"count": 0, "total": 0})
+            row["count"] += 1
+            row["total"] += p.total
+        scope = {"all": _("Every lease you manage"), "leases": _("%(n)s picked leases") % {"n": len(previews) + len(nothing)},
+                 "property": _("All leases in %(name)s") % {
+                     "name": next((n for v, n in form.fields["property"].choices if v == d["property"]), "")}}[d["scope"]]
+        ctx = self.context(request, form, month=month)
+        ctx.update(
+            previews=previews, nothing=nothing, preview_total=sum((p.total for p in previews), 0),
+            by_property=sorted(by_property.items()), scope_label=scope,
+            include_label=dict(form.fields["include"].choices)[d["include"]],
+            flagged=sum(1 for p in previews if any(f[0] == "warning" for f in p.flags)),
+            told=sum(1 for p in previews if p.messages and all(m["sendable"] for m in p.messages)) if d["notify"] else 0,
+            change_url=f"{reverse('billing:generate')}?{request.GET.urlencode()}")
+        return render(request, self.template_name, ctx)
+
+    def post(self, request):
+        form, month, scope = self.checked(request, request.POST)
+        if scope is None:
+            return self.invalid(request, form)
+        result = invoicing.generate_month(request.organization, month, actor=request.membership, request=request,
+                                          notify=form.cleaned_data["notify"], **scope)
+        ctx = self.context(request, form, month=month, example_wanted=False)
+        ctx["result"] = result
+        return render(request, self.template_name, ctx)
 
 
 class ArrearsView(CapabilityRequiredMixin, View):
@@ -268,7 +407,19 @@ class CallListView(CapabilityRequiredMixin, View):
         board = followups.call_list(m, today, property=filters.value("property"), grade=filters.value("grade") or "")
         # Only "to call" can run long; promises and today's calls stay whole.
         to_call = Paginator(board.to_call, PAGE_SIZE).get_page(request.GET.get("page"))
+        everyone = board.to_call + board.promised + board.done_today
+        summary = {
+            "overdue": sum((r.overdue for r in everyone), Decimal("0")),
+            "to_call": len(board.to_call),
+            "broken": sum(1 for r in board.to_call if r.promise == "broken"),
+            "promised": len(board.promised),
+            "promised_amount": sum((r.overdue for r in board.promised), Decimal("0")),
+            "done": len(board.done_today),
+            "total": len(everyone),
+            "currency": everyone[0].lease.currency if everyone else "",
+        }
         return render(request, self.template_name, {
+            "summary": summary,
             "board": board, "to_call": to_call, "page": to_call, "filters": filters, "today": today,
             "form": form or forms.FollowUpForm(),
             "follow_up_lease": follow_up_lease, "can_follow_up": can(m, "arrears.follow_up"),

@@ -19,6 +19,7 @@ from audit import services as audit
 from payments.models import PaymentAccount
 
 from .daraja import DarajaError, get_client
+from .setup import friendly_error
 from .models import FORBIDDEN_URL_WORDS, DarajaCredentials, new_callback_token
 
 MPESA_TYPES = (PaymentAccount.Type.PAYBILL, PaymentAccount.Type.TILL)
@@ -160,10 +161,63 @@ def register_urls(actor: Membership, creds: DarajaCredentials, *, request=None) 
     except DarajaError as e:
         creds.registration_error = str(e)[:300]
         creds.save(update_fields=["registration_error", "updated_at"])
-        raise ValidationError(_("Safaricom did not accept the addresses: %(error)s") % {"error": e}) from None
+        raise ValidationError(friendly_error(str(e))) from None
     creds.urls_registered_at = timezone.now()
     creds.registration_error = ""
     creds.save(update_fields=["urls_registered_at", "registration_error", "updated_at"])
     audit.record("mpesa.register_urls", actor=actor.user, organization=creds.organization,
                  obj=creds.payment_account, request=request, changes={"shortcode": [None, creds.shortcode]})
     return creds
+
+
+def check_keys(actor: Membership, creds: DarajaCredentials) -> None:
+    """Asks Safaricom for an access token, which proves the consumer key and secret work."""
+    require(actor, "mpesa.settings")
+    _same_org(actor, creds)
+    if not creds.can_connect:
+        raise ValidationError(_("Save the consumer key and secret first."))
+    try:
+        get_client(creds).token()
+    except DarajaError as e:
+        raise ValidationError(friendly_error(str(e))) from None
+
+
+@transaction.atomic
+def set_properties(actor: Membership, account: PaymentAccount, property_ids, *, request=None) -> int:
+    """Makes `account` collect for exactly these properties. A property's first account becomes its default."""
+    from payments.models import PropertyPaymentAccount
+    from properties.models import Property
+
+    require(actor, "payment_accounts.manage")
+    _account(actor, account)
+    chosen = list(Property.objects.filter(organization=actor.organization, public_id__in=property_ids))
+    chosen_ids = {p.pk for p in chosen}
+    links = PropertyPaymentAccount.objects.filter(organization=actor.organization, payment_account=account)
+    for link in links.exclude(property_id__in=chosen_ids):
+        was_default, prop = link.is_default, link.property_id
+        link.delete()
+        if was_default:
+            nxt = PropertyPaymentAccount.objects.filter(property_id=prop).first()
+            if nxt:
+                nxt.is_default = True
+                nxt.save(update_fields=["is_default", "updated_at"])
+    have = set(links.values_list("property_id", flat=True))
+    for prop in chosen:
+        if prop.pk not in have:
+            first = not PropertyPaymentAccount.objects.filter(property=prop).exists()
+            PropertyPaymentAccount.objects.create(organization=actor.organization, property=prop,
+                                                  payment_account=account, is_default=first)
+    audit.record("mpesa.properties", actor=actor.user, organization=actor.organization, obj=account,
+                 request=request, changes={"properties": [None, len(chosen)]})
+    return len(chosen)
+
+
+def mark_applied(actor: Membership, account: PaymentAccount, applied: bool, *, request=None) -> PaymentAccount:
+    """Records that the owner has applied to Safaricom for Go-Live and is waiting (or takes it back)."""
+    require(actor, "mpesa.settings")
+    _account(actor, account)
+    account.safaricom_applied_at = timezone.now() if applied else None
+    account.save(update_fields=["safaricom_applied_at", "updated_at"])
+    audit.record("mpesa.applied", actor=actor.user, organization=actor.organization, obj=account,
+                 request=request, changes={"applied": [None, applied]})
+    return account

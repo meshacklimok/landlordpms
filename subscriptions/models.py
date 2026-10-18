@@ -14,7 +14,6 @@ from django.utils.translation import gettext_lazy as _
 
 from core.models import PublicIdModel, TimeStampedModel
 
-
 # One-off plans are no longer offered (D-146). The prices stay in the data and subscriptions already on one carry on;
 # set this to True to offer them again.
 ONE_OFF_OFFERED = False
@@ -105,11 +104,92 @@ class Subscription(TimeStampedModel):
     # The paid period; empty on a trial and on Free.
     period_start = models.DateField(null=True, blank=True)
     period_end = models.DateField(null=True, blank=True)
-    # When PAST_DUE started, for the 14 days of grace.
+    # When PAST_DUE started, for the days of grace (BillingPolicy.grace_days).
     past_due_since = models.DateField(null=True, blank=True)
+    # A Platform Admin's extension of the grace (a dispute, a promise to pay): no lapse until after this day.
+    grace_until = models.DateField(null=True, blank=True)
+    # A change the landlord asked for that starts when the paid period ends (a cheaper plan, or Free = stop
+    # renewing). Empty for none.
+    next_plan = models.ForeignKey(Plan, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    next_interval = models.CharField(max_length=10, choices=Interval.choices, blank=True)
+    # A card saved at Paystack for renewals. We keep Paystack's reusable code (encrypted), never the card
+    # number; the last four digits, brand and expiry are only for showing which card it is.
+    card_code_encrypted = models.TextField(blank=True)
+    card_last4 = models.CharField(max_length=4, blank=True)
+    card_brand = models.CharField(max_length=30, blank=True)
+    card_expiry = models.CharField(max_length=7, blank=True)
+    # The landlord's choice: charge the saved card when a renewal invoice falls due.
+    auto_renew = models.BooleanField(default=False)
 
     def __str__(self):
         return f"{self.organization} · {self.plan} · {self.get_status_display()}"
+
+    @property
+    def has_card(self) -> bool:
+        return bool(self.card_code_encrypted)
+
+
+class BillingPolicy(models.Model):
+    """The rules for trials, renewals and what happens when payment is late. One row, changed in Django admin.
+
+    A lapsed organization is never locked out of its records: it becomes read-only, so everything can still be
+    seen and downloaded, and paying (and only creating) is what is blocked (D-060, accounts.permissions)."""
+
+    trial_days = models.PositiveSmallIntegerField(_("trial days"), default=30)
+    invoice_lead_days = models.PositiveSmallIntegerField(
+        _("renewal invoice days ahead"), default=7, help_text=_("The renewal invoice is issued this many days "
+                                                                "before the paid period ends."))
+    grace_days = models.PositiveSmallIntegerField(
+        _("grace days"), default=14, help_text=_("Days after a payment is due before the account becomes "
+                                                 "read-only."))
+    reminder_days = models.CharField(
+        _("reminders before the end"), max_length=40, default="7,3,1", blank=True,
+        help_text=_("Days before a trial or paid period ends when the billing contact is emailed, e.g. 7,3,1."))
+    grace_reminder_days = models.CharField(
+        _("reminders while overdue"), max_length=40, default="1,7,12", blank=True,
+        help_text=_("Days after the due date when the billing contact is emailed, e.g. 1,7,12."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "billing policy"
+        verbose_name_plural = "billing policy"
+
+    def __str__(self):
+        return "Billing policy"
+
+    @classmethod
+    def get(cls) -> "BillingPolicy":
+        return cls.objects.get_or_create(pk=1)[0]
+
+    @staticmethod
+    def _days(text: str) -> list[int]:
+        return sorted({int(x) for x in (text or "").replace(" ", "").split(",") if x.isdigit()}, reverse=True)
+
+    @property
+    def reminder_list(self) -> list[int]:
+        return self._days(self.reminder_days)
+
+    @property
+    def grace_reminder_list(self) -> list[int]:
+        return self._days(self.grace_reminder_days)
+
+
+class SubscriptionReminder(models.Model):
+    """One reminder email sent, so each is sent once."""
+
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=20)
+    # The day the reminder is about (trial end, period end or the day payment fell due).
+    for_date = models.DateField()
+    days = models.SmallIntegerField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint("subscription", "kind", "for_date", "days",
+                                               name="subscriptions_reminder_once")]
+
+    def __str__(self):
+        return f"{self.kind} {self.days}"
 
 
 class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
@@ -143,6 +223,8 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
     price = models.DecimalField(max_digits=12, decimal_places=2)
     # Unused days of the previous paid period (D-060 item 5), a positive amount taken off.
     credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    # A discount agreed with the customer, taken off like the credit (migration 0010).
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     net_amount = models.DecimalField(max_digits=12, decimal_places=2)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     vat_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
@@ -154,6 +236,9 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
     etims_reference = models.CharField(max_length=100, blank=True)
     void_reason = models.CharField(max_length=200, blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
+    # The landlord disputes this invoice: the account is not lapsed while it is open (set in admin).
+    disputed_at = models.DateTimeField(null=True, blank=True)
+    dispute_note = models.CharField(max_length=300, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
 
@@ -335,6 +420,10 @@ class PlatformCheckout(PublicIdModel):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
     result = models.CharField(max_length=300, blank=True)
+    # The landlord ticked "renew automatically with this card": a successful card payment saves the card.
+    save_card = models.BooleanField(default=False)
+    # Charged by the daily job to the saved card, not started by a person.
+    automatic = models.BooleanField(default=False)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)

@@ -19,6 +19,7 @@ from notifications import catalog
 
 from . import entitlements, etims
 from .models import (
+    BillingPolicy,
     Plan,
     PlatformReceipt,
     PlatformSequence,
@@ -28,6 +29,7 @@ from .models import (
     Subscription,
     SubscriptionInvoice,
     SubscriptionPayment,
+    SubscriptionReminder,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,11 +37,25 @@ logger = logging.getLogger(__name__)
 Status = Subscription.Status
 Interval = Subscription.Interval
 CENT = Decimal("0.01")
+# The figures in force are the ones in BillingPolicy (Django admin), read with the functions below; these are
+# the defaults it starts with.
 TRIAL_DAYS = 30
 TRIAL_PLAN = "business"
 FREE_PLAN = "free"
 RENEW_BEFORE_DAYS = 7
 GRACE_DAYS = 14
+
+
+def policy() -> BillingPolicy:
+    return BillingPolicy.get()
+
+
+def trial_days() -> int:
+    return policy().trial_days
+
+
+def grace_days() -> int:
+    return policy().grace_days
 
 
 def _money(value) -> Decimal:
@@ -93,7 +109,7 @@ def subscription_for(org: Organization) -> Subscription:
         with transaction.atomic():
             return Subscription.objects.create(
                 organization=org, plan=plan(TRIAL_PLAN), status=Status.TRIAL,
-                trial_ends_on=timezone.localdate() + datetime.timedelta(days=TRIAL_DAYS))
+                trial_ends_on=timezone.localdate() + datetime.timedelta(days=trial_days()))
     except IntegrityError:
         return Subscription.objects.select_related("plan").get(organization=org)
 
@@ -138,11 +154,16 @@ def unused_credit(sub: Subscription, today: datetime.date) -> Decimal:
 def issue_invoice(sub: Subscription, new_plan: Plan, interval: str, *, reason: str, today: datetime.date,
                   period_start=None, credit=Decimal("0"), actor=None) -> SubscriptionInvoice:
     org = sub.organization
+    from growth import referrals
+
     price = _money(new_plan.price(interval))
     credit = min(_money(credit), price)
-    net = price - credit
-    rate, vat = _vat(net)
     with transaction.atomic():
+        # A referral credit (D-133) is a percent off what is left after the unused days; one per invoice.
+        percent = referrals.next_credit_percent(org) if price > credit else 0
+        discount = _money((price - credit) * percent / 100)
+        net = price - credit - discount
+        rate, vat = _vat(net)
         invoice = SubscriptionInvoice.objects.create(
             organization=org, subscription=sub, reason=reason,
             number=next_platform_number("invoice", "LPM-INV", today.year),
@@ -150,9 +171,12 @@ def issue_invoice(sub: Subscription, new_plan: Plan, interval: str, *, reason: s
             period_start=period_start,
             period_end=period_end(period_start, interval, new_plan.one_off_years) if period_start else None,
             customer_name=org.name, customer_kra_pin=org.kra_pin, customer_email=org.billing_email,
-            price=price, credit=credit, net_amount=net, vat_rate=rate, vat_amount=vat, total=net + vat,
+            price=price, credit=credit, discount=discount, net_amount=net, vat_rate=rate, vat_amount=vat,
+            total=net + vat,
             issued_on=today, due_on=(period_start - datetime.timedelta(days=1)) if period_start else today,
             created_by=actor)
+        if discount:
+            referrals.take_credit(org, invoice)
         reference = etims.get_adapter().submit(invoice)
         if reference:
             invoice.etims_reference = reference
@@ -162,12 +186,20 @@ def issue_invoice(sub: Subscription, new_plan: Plan, interval: str, *, reason: s
     return invoice
 
 
+def _release_credit(invoice: SubscriptionInvoice) -> None:
+    """A voided invoice gives its referral credit back for the next one."""
+    from growth.models import ReferralCredit
+
+    ReferralCredit.objects.filter(invoice=invoice).update(invoice=None, used_at=None, updated_at=timezone.now())
+
+
 def _void_open(sub: Subscription, reason: str, actor=None) -> None:
     for invoice in sub.invoices.filter(status=SubscriptionInvoice.Status.OPEN, payments__isnull=True):
         invoice.status = SubscriptionInvoice.Status.VOID
         invoice.void_reason = reason
         invoice.voided_at = timezone.now()
         invoice.save(update_fields=["status", "void_reason", "voided_at", "updated_at"])
+        _release_credit(invoice)
         audit.record("subscription_invoice.void", actor=actor, organization=sub.organization, obj=invoice,
                      changes={"reason": reason})
 
@@ -191,6 +223,8 @@ def choose_plan(actor: Membership, new_plan: Plan, interval: str, *, request=Non
     if over:
         raise ValidationError(_("You use more than %(plan)s allows: %(over)s. Remove some first, or choose a "
                                 "bigger plan.") % {"plan": new_plan.name, "over": "; ".join(over)})
+    if _is_downgrade(sub, new_plan, today):
+        return _schedule_change(sub, new_plan, interval, actor, request)
     if new_plan.is_free:
         _void_open(sub, _("Free plan chosen"), actor.user)
         before = sub.plan.name
@@ -202,10 +236,53 @@ def choose_plan(actor: Membership, new_plan: Plan, interval: str, *, request=Non
                      changes={"plan": [before, new_plan.name]})
         return None
     if sub.status == Status.ACTIVE and sub.plan_id == new_plan.pk and sub.interval == interval:
+        if sub.next_plan_id:
+            cancel_scheduled_change(actor, request=request)
+            return None
         raise ValidationError(_("You are already on this plan."))
+    sub.next_plan, sub.next_interval = None, ""
+    sub.save(update_fields=["next_plan", "next_interval", "updated_at"])
     _void_open(sub, _("Another plan chosen"), actor.user)
     return issue_invoice(sub, new_plan, interval, reason=SubscriptionInvoice.Reason.NEW_PLAN, today=today,
                          credit=unused_credit(sub, today), actor=actor.user)
+
+
+def _is_downgrade(sub: Subscription, new_plan: Plan, today: datetime.date) -> bool:
+    """A cheaper plan, or Free, chosen while a paid period is running waits for the period's end, so what was
+    paid for is used (D-165). An upgrade, a trial or a late account starts at once."""
+    return bool(sub.status == Status.ACTIVE and sub.period_end and sub.period_end >= today and not sub.plan.is_free
+                and (new_plan.is_free or new_plan.monthly_price < sub.plan.monthly_price))
+
+
+def _schedule_change(sub: Subscription, new_plan: Plan, interval: str, actor: Membership, request=None) -> None:
+    before = sub.next_plan.name if sub.next_plan_id else None
+    sub.next_plan, sub.next_interval = new_plan, Interval.MONTHLY if new_plan.is_free else interval
+    sub.save(update_fields=["next_plan", "next_interval", "updated_at"])
+    audit.record("subscription.change_scheduled", actor=actor.user, organization=sub.organization, obj=sub,
+                 request=request, changes={"next_plan": [before, new_plan.name],
+                                           "starts_on": str(sub.period_end + datetime.timedelta(days=1))})
+
+
+@transaction.atomic
+def cancel_scheduled_change(actor: Membership, request=None) -> None:
+    """Drops a downgrade or "stop renewing" that was waiting for the end of the period."""
+    require(actor, "subscription.manage")
+    sub = Subscription.objects.select_for_update().get(pk=subscription_for(actor.organization).pk)
+    if not sub.next_plan_id:
+        return
+    name = sub.next_plan.name
+    sub.next_plan, sub.next_interval = None, ""
+    sub.save(update_fields=["next_plan", "next_interval", "updated_at"])
+    audit.record("subscription.change_cancelled", actor=actor.user, organization=sub.organization, obj=sub,
+                 request=request, changes={"next_plan": [name, None]})
+
+
+def scheduled_change(sub: Subscription) -> dict | None:
+    """What the page shows about a change waiting for the period's end."""
+    if not sub.next_plan_id or not sub.period_end:
+        return None
+    return {"plan": sub.next_plan, "interval": sub.next_interval, "on": sub.period_end + datetime.timedelta(days=1),
+            "stops": sub.next_plan.is_free}
 
 
 def _set_org_active(org: Organization, actor=None) -> None:
@@ -293,7 +370,8 @@ def _settle(invoice: SubscriptionInvoice, paid_on: datetime.date, actor) -> None
     sub.plan_id, sub.interval, sub.status = invoice.plan_id, invoice.interval, Status.ACTIVE
     # A renewal keeps its own dates, even when paid late or early.
     sub.period_start, sub.period_end = invoice.period_start, invoice.period_end
-    sub.trial_ends_on = sub.past_due_since = None
+    sub.trial_ends_on = sub.past_due_since = sub.grace_until = None
+    sub.next_plan, sub.next_interval = None, ""
     sub.save()
     _set_org_active(sub.organization, actor)
     if invoice.total > 0:
@@ -318,6 +396,7 @@ def void_invoice(admin, invoice: SubscriptionInvoice, reason: str, request=None)
     invoice.void_reason = reason
     invoice.voided_at = timezone.now()
     invoice.save(update_fields=["status", "void_reason", "voided_at", "updated_at"])
+    _release_credit(invoice)
     audit.record("subscription_invoice.void", actor=admin, organization=invoice.organization, obj=invoice,
                  request=request, changes={"reason": reason})
 
@@ -476,8 +555,8 @@ def notify_sms_level(org_pk: int, level: int, mode: str) -> None:
     """Emails the organization's billing contacts, and us when a sponsored cap is reached. Never raises."""
     from django.core.mail import send_mail
 
-    from core.alerts import recipients
-    from core.mail import SYSTEM, mailer_for
+    from ops.alerts import recipients
+    from notifications.providers.mail import SYSTEM, mailer_for
 
     try:
         org = Organization.objects.get(pk=org_pk)
@@ -585,24 +664,199 @@ def _daily_one(sub: Subscription, today: datetime.date, free: Plan | None) -> st
         renewal_start = sub.period_end + datetime.timedelta(days=1)
         renewed = sub.invoices.filter(reason=SubscriptionInvoice.Reason.RENEWAL, period_start=renewal_start).exclude(
             status=SubscriptionInvoice.Status.VOID).exists()
-        if not renewed and (sub.period_end - today).days < RENEW_BEFORE_DAYS:
-            # A one-off period that has run its years carries on at the yearly price.
-            interval = Interval.YEARLY if sub.interval == Interval.ONCE else sub.interval
-            issue_invoice(sub, sub.plan, interval, reason=SubscriptionInvoice.Reason.RENEWAL, today=today,
+        target, interval = _renewal_target(sub)
+        if target is None:
+            # The landlord asked not to renew: the paid period runs out, then they are on Free.
+            return _stop_renewing(sub, free) if sub.period_end < today and free is not None else None
+        lead = policy().invoice_lead_days
+        if not renewed and (sub.period_end - today).days < lead:
+            issue_invoice(sub, target, interval, reason=SubscriptionInvoice.Reason.RENEWAL, today=today,
                           period_start=renewal_start)
         if sub.period_end < today:
             sub.status, sub.past_due_since = Status.PAST_DUE, today
             sub.save()
             audit.record("subscription.past_due", organization=org, obj=sub, changes={"reason": "not renewed"})
             return "past_due"
-        return None if renewed or (sub.period_end - today).days >= RENEW_BEFORE_DAYS else "renewals"
-    if sub.status == Status.PAST_DUE and sub.past_due_since and (today - sub.past_due_since).days >= GRACE_DAYS:
+        return None if renewed or (sub.period_end - today).days >= lead else "renewals"
+    if sub.status == Status.PAST_DUE and sub.past_due_since and _grace_over(sub, today):
         sub.status = Status.LAPSED
         sub.save()
         _set_org_read_only(org)
         audit.record("subscription.lapse", organization=org, obj=sub)
         return "lapsed"
     return None
+
+
+def _renewal_target(sub: Subscription) -> tuple[Plan | None, str]:
+    """The plan and interval the next period is for: the scheduled one while it still holds what the
+    organization uses, else the current one. None means "stop renewing" (a scheduled move to Free)."""
+    nxt = sub.next_plan
+    if nxt is not None and not entitlements.over_limits(sub.organization, nxt):
+        if nxt.is_free:
+            return None, Interval.MONTHLY
+        return nxt, sub.next_interval or Interval.MONTHLY
+    # A one-off period that has run its years carries on at the yearly price.
+    return sub.plan, Interval.YEARLY if sub.interval == Interval.ONCE else sub.interval
+
+
+def _stop_renewing(sub: Subscription, free: Plan) -> str:
+    before = sub.plan.name
+    sub.plan, sub.interval, sub.status = free, Interval.MONTHLY, Status.ACTIVE
+    sub.period_start = sub.period_end = sub.past_due_since = sub.grace_until = None
+    sub.next_plan, sub.next_interval = None, ""
+    sub.save()
+    _void_open(sub, _("Not renewed"))
+    audit.record("subscription.not_renewed", organization=sub.organization, obj=sub,
+                 changes={"plan": [before, free.name]})
+    return "renewals"
+
+
+def _grace_over(sub: Subscription, today: datetime.date) -> bool:
+    """Whether the grace is used up: the policy's days, any extension a Platform Admin gave, and no open
+    dispute on an invoice."""
+    if sub.grace_until and sub.grace_until >= today:
+        return False
+    if sub.invoices.filter(status=SubscriptionInvoice.Status.OPEN, disputed_at__isnull=False).exists():
+        return False
+    return (today - sub.past_due_since).days >= grace_days()
+
+
+# ---------------------------------------------------------------------------
+# Reminders and Platform Admin tools for disputes (D-165)
+# ---------------------------------------------------------------------------
+
+
+# The saved card is charged this many days before the paid period ends, so a refusal leaves time to fix it.
+AUTO_CHARGE_DAYS_BEFORE = 2
+
+
+@transaction.atomic
+def set_auto_renew(actor: Membership, on: bool, request=None) -> None:
+    require(actor, "subscription.manage")
+    sub = Subscription.objects.select_for_update().get(organization=actor.organization)
+    if on and not sub.has_card:
+        raise ValidationError(_("Pay an invoice by card and tick “Renew automatically” first."))
+    sub.auto_renew = on
+    sub.save(update_fields=["auto_renew", "updated_at"])
+    audit.record("subscription.auto_renew", actor=actor.user, organization=actor.organization, obj=sub,
+                 request=request, changes={"auto_renew": on})
+
+
+@transaction.atomic
+def remove_card(actor: Membership, request=None) -> None:
+    """Forgets the saved card; automatic renewal goes off with it."""
+    require(actor, "subscription.manage")
+    sub = Subscription.objects.select_for_update().get(organization=actor.organization)
+    sub.card_code_encrypted = sub.card_last4 = sub.card_brand = sub.card_expiry = ""
+    sub.auto_renew = False
+    sub.save(update_fields=["card_code_encrypted", "card_last4", "card_brand", "card_expiry", "auto_renew",
+                            "updated_at"])
+    audit.record("subscription.card_removed", actor=actor.user, organization=actor.organization, obj=sub,
+                 request=request)
+
+
+def billing_contacts(org: Organization) -> list[str]:
+    if org.billing_email:
+        return [org.billing_email]
+    return sorted({m.user.email for m in Membership.objects.filter(organization=org, is_active=True,
+                                                                  user__is_active=True).select_related("user", "role")
+                   if m.user.email and can(m, "subscription.manage")})
+
+
+def _reminder_text(sub: Subscription, kind: str, days: int) -> tuple[str, str]:
+    if kind == "TRIAL":
+        return (_("Your NyumbaPMS trial ends in %(n)s days") % {"n": days},
+                _("Your free trial ends on %(d)s. Choose a plan on the Subscription page to keep going. Your "
+                  "records stay yours either way.") % {"d": sub.trial_ends_on})
+    if kind == "RENEWAL" and sub.auto_renew and sub.has_card:
+        charge_on = sub.period_end - datetime.timedelta(days=AUTO_CHARGE_DAYS_BEFORE)
+        return (_("Your NyumbaPMS %(plan)s plan renews in %(n)s days") % {"plan": sub.plan.name, "n": days},
+                _("Your paid period ends on %(d)s. Your card (%(card)s) will be charged automatically from %(c)s "
+                  "for the renewal; you do not need to do anything. To change the card or stop automatic renewal, "
+                  "open the Subscription page.") % {
+                    "d": sub.period_end, "c": max(charge_on, timezone.localdate()),
+                    "card": f"{sub.card_brand} ending {sub.card_last4}".strip()})
+    if kind == "RENEWAL":
+        return (_("Your NyumbaPMS %(plan)s plan renews in %(n)s days") % {"plan": sub.plan.name, "n": days},
+                _("Your paid period ends on %(d)s. The renewal invoice is on the Subscription page; paying it "
+                  "keeps your plan going without a break.") % {"d": sub.period_end})
+    return (_("Your NyumbaPMS payment is overdue"),
+            _("Your subscription payment fell due %(n)s days ago. %(left)s days remain before the account "
+              "becomes read-only: you could still see and download everything, but not add or change records. "
+              "Pay on the Subscription page, or reply if you are disputing the invoice.")
+            % {"n": days, "left": max(grace_days() - days, 0)})
+
+
+def send_reminders(today: datetime.date | None = None) -> int:
+    """Emails each organization's billing contact on the days set in BillingPolicy, once per reminder.
+    Returns how many went out."""
+    from django.core.mail import send_mail
+
+    from notifications.providers.mail import SYSTEM, mailer_for
+
+    today = today or timezone.localdate()
+    pol, sent = policy(), 0
+    for sub in Subscription.objects.select_related("organization", "plan", "next_plan"):
+        due = None
+        if sub.status == Status.TRIAL and sub.trial_ends_on and sub.trial_ends_on >= today:
+            due = ("TRIAL", sub.trial_ends_on, (sub.trial_ends_on - today).days, pol.reminder_list)
+        elif sub.status == Status.ACTIVE and sub.period_end and not sub.plan.is_free and sub.period_end >= today:
+            if _renewal_target(sub)[0] is not None:
+                due = ("RENEWAL", sub.period_end, (sub.period_end - today).days, pol.reminder_list)
+        elif sub.status == Status.PAST_DUE and sub.past_due_since:
+            due = ("OVERDUE", sub.past_due_since, (today - sub.past_due_since).days, pol.grace_reminder_list)
+        if due is None or due[2] not in due[3]:
+            continue
+        kind, for_date, days, _wanted = due
+        if SubscriptionReminder.objects.filter(subscription=sub, kind=kind, for_date=for_date, days=days).exists():
+            continue
+        to = billing_contacts(sub.organization)
+        if not to:
+            continue
+        subject, body = _reminder_text(sub, kind, days)
+        try:
+            send_mail(f"[NyumbaPMS] {subject}", body, None, to, using=mailer_for(SYSTEM))
+        except Exception:
+            logger.exception("Subscription reminder for organization %s failed", sub.organization_id)
+            continue
+        SubscriptionReminder.objects.create(subscription=sub, kind=kind, for_date=for_date, days=days)
+        sent += 1
+    return sent
+
+
+@transaction.atomic
+def extend_grace(admin, sub: Subscription, days: int, reason: str, request=None) -> datetime.date:
+    """Holds off the lapse for `days` more days, counted from today or from the current extension if later."""
+    _require_platform_admin(admin)
+    if days < 1 or days > 90:
+        raise ValidationError(_("Choose between 1 and 90 days."))
+    if not (reason or "").strip():
+        raise ValidationError(_("Give a reason."))
+    sub = Subscription.objects.select_for_update().get(pk=sub.pk)
+    start = max(timezone.localdate(), sub.grace_until or timezone.localdate())
+    sub.grace_until = start + datetime.timedelta(days=days)
+    sub.save(update_fields=["grace_until", "updated_at"])
+    audit.record("subscription.grace_extended", actor=admin, organization=sub.organization, obj=sub, request=request,
+                 changes={"grace_until": str(sub.grace_until), "reason": reason.strip()})
+    return sub.grace_until
+
+
+@transaction.atomic
+def set_dispute(admin, invoice: SubscriptionInvoice, note: str = "", *, resolved: bool = False, request=None) -> None:
+    """Marks an open invoice as disputed (the account is not lapsed while it is), or clears that."""
+    _require_platform_admin(admin)
+    invoice = SubscriptionInvoice.objects.select_for_update().get(pk=invoice.pk)
+    if resolved:
+        invoice.disputed_at = None
+    else:
+        if invoice.status != SubscriptionInvoice.Status.OPEN:
+            raise ValidationError(_("Only an open invoice can be disputed."))
+        invoice.disputed_at = timezone.now()
+        invoice.dispute_note = (note or invoice.dispute_note or "Marked disputed").strip()[:300]
+    invoice.save(update_fields=["disputed_at", "dispute_note", "updated_at"])
+    audit.record("subscription_invoice.dispute_cleared" if resolved else "subscription_invoice.disputed",
+                 actor=admin, organization=invoice.organization, obj=invoice, request=request,
+                 changes={"note": invoice.dispute_note})
 
 
 # ---------------------------------------------------------------------------
@@ -621,11 +875,27 @@ def banner(org: Organization, today: datetime.date | None = None) -> dict | None
         return {"level": "info", "text": _("Your free trial ends in %(n)s days. Choose a plan to keep going.")
                 % {"n": days}}
     if sub.status == Status.PAST_DUE:
-        left = GRACE_DAYS - (today - (sub.past_due_since or today)).days
+        left = grace_days() - (today - (sub.past_due_since or today)).days
+        if sub.grace_until and sub.grace_until >= today:
+            left = max(left, (sub.grace_until - today).days)
         return {"level": "warning", "text": _("Your subscription payment is due. In %(n)s days the account "
-                                              "becomes read-only.") % {"n": max(left, 0)}}
+                                              "becomes read-only; you will still see and download everything.")
+                % {"n": max(left, 0)}}
     if sub.status == Status.LAPSED:
-        return {"level": "danger", "text": _("Your subscription has lapsed. Pay to start creating again.")}
+        return {"level": "danger", "text": _("Your subscription has lapsed. Your records are safe and can be "
+                                             "viewed and downloaded; pay to start creating again.")}
+    if sub.status == Status.ACTIVE and sub.period_end and not sub.plan.is_free:
+        days = (sub.period_end - today).days
+        if 0 <= days < policy().invoice_lead_days:
+            change = scheduled_change(sub)
+            if change and change["stops"]:
+                text = _("Your plan ends in %(n)s days and will not renew.") % {"n": days}
+            elif change:
+                text = _("Your plan ends in %(n)s days and you move to %(plan)s.") % {"n": days,
+                                                                                    "plan": change["plan"].name}
+            else:
+                text = _("Your plan renews in %(n)s days. The renewal invoice is ready to pay.") % {"n": days}
+            return {"level": "info", "text": text}
     return None
 
 

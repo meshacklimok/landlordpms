@@ -26,7 +26,6 @@ from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
-from core.mail import SYSTEM, mailer_for
 from django.db import IntegrityError, transaction
 from django.urls import reverse
 from django.utils import dateparse, timezone
@@ -35,11 +34,14 @@ from django.utils.translation import gettext as _
 from accounts.models import Membership
 from accounts.permissions import require
 from audit import services as audit
+from core.crypto import decrypt, encrypt
 from core.phone import InvalidPhoneNumber, normalize_phone
 from mpesa import c2b as mpesa_c2b
-from mpesa import daraja, paystack
+from mpesa import daraja
 from mpesa import stk as mpesa_stk
 from mpesa.models import FORBIDDEN_URL_WORDS
+from notifications.providers.mail import SYSTEM, mailer_for
+from subscriptions import paystack
 
 from . import services
 from .models import PlatformCheckout, PlatformPaySwitch, PlatformTransaction, SubscriptionInvoice, SubscriptionPayment
@@ -224,13 +226,14 @@ def _prompt(actor: Membership, invoice: SubscriptionInvoice | None, amount: Deci
     return checkout
 
 
-def _paystack_page(actor: Membership, invoice: SubscriptionInvoice | None, amount: Decimal, request) -> str:
+def _paystack_page(actor: Membership, invoice: SubscriptionInvoice | None, amount: Decimal, request,
+                   save_card: bool = False) -> str:
     """Opens a Paystack checkout and returns the page to send the landlord to; `invoice` None is a top-up."""
     if not methods()["paystack"]:
         raise ValidationError(_("Paying by Paystack is not available right now."))
     org = actor.organization
     checkout = PlatformCheckout.objects.create(
-        organization=org, invoice=invoice, provider=Provider.PAYSTACK,
+        organization=org, invoice=invoice, provider=Provider.PAYSTACK, save_card=save_card,
         reference=f"nps-{uuid.uuid4().hex}", amount=amount, created_by=actor.user)
     email = ((invoice.customer_email if invoice else org.billing_email) or actor.user.email
              or f"billing-{org.pk}@{settings.PAYSTACK_EMAIL_DOMAIN}")
@@ -302,10 +305,12 @@ def start_mpesa(actor: Membership, invoice: SubscriptionInvoice, phone: str, *, 
 
 
 @transaction.atomic
-def start_paystack(actor: Membership, invoice: SubscriptionInvoice, *, request=None) -> str:
-    """Opens a Paystack checkout for what is left on the invoice. Returns the page to send the landlord to."""
+def start_paystack(actor: Membership, invoice: SubscriptionInvoice, *, save_card: bool = False,
+                   request=None) -> str:
+    """Opens a Paystack checkout for what is left on the invoice. Returns the page to send the landlord to.
+    With `save_card`, a card paid with is kept for automatic renewal."""
     invoice = SubscriptionInvoice.objects.select_for_update().get(pk=invoice.pk)
-    return _paystack_page(actor, invoice, _payable(actor, invoice), request)
+    return _paystack_page(actor, invoice, _payable(actor, invoice), request, save_card)
 
 
 @transaction.atomic
@@ -327,7 +332,7 @@ def start_sms_paystack(actor: Membership, amount, *, request=None) -> str:
 
 def _alert(tx: PlatformTransaction) -> None:
     """Tells the people who run the platform about money that needs a person. Never fails the callback."""
-    from core.alerts import recipients
+    from ops.alerts import recipients
 
     to = recipients()
     if not to:
@@ -479,6 +484,12 @@ def receive_paystack(data: dict, payload: dict) -> PlatformTransaction | None:
         paid_at = dateparse.parse_datetime(str(data.get("paid_at") or data.get("paidAt") or "")) or timezone.now()
         customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
         name = " ".join(str(customer.get(k) or "").strip() for k in ("first_name", "last_name")).strip()
+        card = data.get("authorization") if isinstance(data.get("authorization"), dict) else {}
+        if checkout.save_card and card:
+            _save_card(checkout.organization, card)
+        if card.get("authorization_code"):
+            # The stored copy of the event never carries the code that can charge the card.
+            payload = {**payload, "data": {**data, "authorization": {**card, "authorization_code": "***"}}}
         tx, _created = _record(
             source=Source.PAYSTACK, code=f"PS{data['id']}"[:30], amount=amount, paid_at=paid_at, payload=payload,
             invoice=checkout.invoice, top_up_org=None if checkout.invoice_id else checkout.organization,
@@ -507,6 +518,120 @@ def verify_paystack(checkout: PlatformCheckout) -> PlatformCheckout:
 def _close(checkout: PlatformCheckout, status: str, result: str) -> None:
     checkout.status, checkout.result, checkout.completed_at = status, str(result)[:300], timezone.now()
     checkout.save(update_fields=["status", "result", "completed_at"])
+    if checkout.automatic:
+        transaction.on_commit(lambda: _tell_owner(checkout))
+
+
+# ---------------------------------------------------------------------------
+# Renewing by the saved card
+# ---------------------------------------------------------------------------
+
+MAX_CARD_ATTEMPTS = 4  # one a day; after that the normal overdue reminders and grace take over
+
+
+def _save_card(org, card: dict) -> None:
+    """Keeps the reusable card a successful payment came with, and turns automatic renewal on."""
+    code = str(card.get("authorization_code") or "")
+    if not code or not card.get("reusable") or str(card.get("channel") or "card") != "card":
+        return
+    sub = services.subscription_for(org)
+    sub.card_code_encrypted = encrypt(code)
+    sub.card_last4 = str(card.get("last4") or "")[-4:]
+    sub.card_brand = str(card.get("brand") or card.get("card_type") or "").strip()[:30]
+    sub.card_expiry = f"{card.get('exp_month') or ''}/{card.get('exp_year') or ''}".strip("/")[:7]
+    sub.auto_renew = True
+    sub.save(update_fields=["card_code_encrypted", "card_last4", "card_brand", "card_expiry", "auto_renew",
+                            "updated_at"])
+    audit.record("subscription.card_saved", organization=org, obj=sub, changes={"last4": sub.card_last4})
+
+
+def _tell_owner(checkout: PlatformCheckout) -> None:
+    """Emails the billing contact how a charge to the saved card went. Never fails the callback."""
+    invoice, status = checkout.invoice, checkout.status
+    if invoice is None or status == PlatformCheckout.Status.PENDING:
+        return
+    to = services.billing_contacts(checkout.organization)
+    sub = services.subscription_for(checkout.organization)
+    card = f"{sub.card_brand} ending {sub.card_last4}".strip()
+    if status == PlatformCheckout.Status.PAID:
+        subject = _("We renewed your NyumbaPMS plan")
+        body = _("We charged KES %(a)s to your card (%(card)s) for invoice %(n)s. Your plan runs to %(d)s. The "
+                 "receipt is on the Subscription page. To stop automatic renewal, turn it off there.") % {
+            "a": f"{checkout.amount:,.2f}", "card": card, "n": invoice.number,
+            "d": invoice.period_end or sub.period_end}
+    else:
+        left = max(MAX_CARD_ATTEMPTS - PlatformCheckout.objects.filter(invoice=invoice, automatic=True).count(), 0)
+        subject = _("We could not charge your card for NyumbaPMS")
+        body = _("We tried to charge KES %(a)s to your card (%(card)s) for invoice %(n)s and it did not go "
+                 "through: %(why)s. %(again)s Pay on the Subscription page with a card or M-Pesa to keep your plan "
+                 "going; paying by card there can also replace the saved card.") % {
+            "a": f"{checkout.amount:,.2f}", "card": card, "n": invoice.number,
+            "why": checkout.result or _("no reason given"),
+            "again": _("We will try again tomorrow.") if left else _("We will not try again.")}
+    if not to:
+        return
+    try:
+        send_mail(f"[NyumbaPMS] {subject}", body, None, to, using=mailer_for(SYSTEM))
+    except Exception:
+        logger.exception("Card renewal email for invoice %s failed", invoice.number)
+
+
+def charge_card(sub, invoice: SubscriptionInvoice) -> PlatformCheckout | None:
+    """Charges the saved card for what is left on the invoice. The result comes back at once, and again by
+    webhook; either way it is settled once. Returns the checkout, or None if the card cannot be used."""
+    if not (sub.has_card and sub.auto_renew and methods()["paystack"]):
+        return None
+    org = sub.organization
+    amount = invoice.outstanding
+    if amount <= 0:
+        return None
+    checkout = PlatformCheckout.objects.create(
+        organization=org, invoice=invoice, provider=Provider.PAYSTACK, reference=f"nps-{uuid.uuid4().hex}",
+        amount=amount, automatic=True)
+    email = invoice.customer_email or org.billing_email or f"billing-{org.pk}@{settings.PAYSTACK_EMAIL_DOMAIN}"
+    try:
+        data = paystack.get_client(PlatformPaystack()).charge_authorization(
+            email=email, amount_cents=int(amount * 100), reference=checkout.reference,
+            authorization_code=decrypt(sub.card_code_encrypted),
+            metadata={"kind": "subscription", "invoice": invoice.number, "automatic": True})
+    except paystack.PaystackError as e:
+        logger.warning("Card renewal for %s refused: %s", invoice.number, e)
+        with transaction.atomic():
+            _close(checkout, PlatformCheckout.Status.FAILED, str(e))
+        return checkout
+    receive_paystack(data, {"event": "charge_authorization", "data": data})
+    checkout.refresh_from_db()
+    return checkout
+
+
+def charge_due_cards(today: datetime.date | None = None) -> dict[str, int]:
+    """Daily job: charges the saved card of each organization that turned automatic renewal on, once its
+    renewal invoice is within `AUTO_CHARGE_DAYS_BEFORE` days of falling due (and every day after, up to
+    MAX_CARD_ATTEMPTS, while it stays unpaid)."""
+    from .models import Subscription
+
+    today = today or timezone.localdate()
+    counts = {"card_charged": 0, "card_failed": 0}
+    subs = Subscription.objects.filter(auto_renew=True, status__in=[Subscription.Status.ACTIVE,
+                                                                    Subscription.Status.PAST_DUE]
+                                       ).exclude(card_code_encrypted="").select_related("organization")
+    for sub in subs:
+        invoice = services.open_invoice(sub)
+        if (invoice is None or invoice.reason != SubscriptionInvoice.Reason.RENEWAL or invoice.disputed_at
+                or today < invoice.due_on - datetime.timedelta(days=services.AUTO_CHARGE_DAYS_BEFORE)):
+            continue
+        tries = PlatformCheckout.objects.filter(invoice=invoice, automatic=True)
+        if tries.count() >= MAX_CARD_ATTEMPTS or tries.filter(created_at__date=today).exists() or tries.filter(
+                status=PlatformCheckout.Status.PENDING, created_at__gte=timezone.now() - GIVE_UP_AFTER).exists():
+            continue
+        try:
+            checkout = charge_card(sub, invoice)
+        except Exception:
+            logger.exception("Card renewal for organization %s failed", sub.organization_id)
+            continue
+        if checkout is not None:
+            counts["card_charged" if checkout.status == PlatformCheckout.Status.PAID else "card_failed"] += 1
+    return counts
 
 
 def give_up_waiting(now: datetime.datetime | None = None) -> int:

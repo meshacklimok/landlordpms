@@ -16,8 +16,8 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from core.net import client_ip
-from mpesa import paystack
 from mpesa.c2b import BadCallback as MpesaBadCallback
+from subscriptions import paystack
 
 from . import collect
 

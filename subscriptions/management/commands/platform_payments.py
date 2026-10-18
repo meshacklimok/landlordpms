@@ -7,8 +7,8 @@
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
-from mpesa import daraja, paystack
-from subscriptions import collect
+from mpesa import daraja
+from subscriptions import collect, paystack
 
 
 class Command(BaseCommand):

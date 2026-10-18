@@ -37,6 +37,7 @@ from accounts.permissions import can, require, visible_properties
 from audit import services as audit
 from billing import invoicing
 from billing.models import LedgerEntry
+from core import uploads
 from core.money import parse_money
 from core.phone import InvalidPhoneNumber, normalize_phone
 from leases import services as lease_services
@@ -62,14 +63,16 @@ COLUMNS = {
                    "kra_pin", "emergency_contact_name", "emergency_contact_phone", "notes"),
     Kind.BALANCES: ("property_code", "unit_code", "lease_number", "amount", "as_of", "reason"),
     Kind.LEASES: ("property_code", "unit_code", "name", "phone", "email", "rent", "deposit", "start_date", "due_day"),
+    Kind.PAYMENTS: ("property_code", "unit_code", "lease_number", "amount", "paid_at", "method", "reference"),
 }
 REQUIRED = {
     Kind.UNITS: ("property_code", "unit_code"), Kind.TENANTS: ("name", "phone"),
     Kind.BALANCES: ("property_code", "unit_code", "amount", "as_of"),
     Kind.LEASES: ("property_code", "unit_code", "name", "phone", "rent", "start_date"),
+    Kind.PAYMENTS: ("property_code", "unit_code", "amount", "paid_at"),
 }
 # A row where all of these are empty is a unit or lease the person left alone on a sheet we pre-filled.
-SKIP_IF_EMPTY = {Kind.LEASES: ("name", "phone"), Kind.BALANCES: ("amount",)}
+SKIP_IF_EMPTY = {Kind.LEASES: ("name", "phone"), Kind.BALANCES: ("amount",), Kind.PAYMENTS: ("amount",)}
 PHONE_COLUMNS = ("phone", "alt_phone", "emergency_contact_phone")
 EXAMPLES = {
     Kind.UNITS: ("GV", "A1", "Block A", "APARTMENT", "2 bedroom", "15000"),
@@ -78,6 +81,7 @@ EXAMPLES = {
     Kind.BALANCES: ("GV", "A1", "", "12500", "2026-01-31", "Arrears from the old spreadsheet"),
     Kind.LEASES: ("GV", "A1", "Wanjiku Kamau", "0712345678", "wanjiku@example.com", "15000", "15000", "2026-01-01",
                   "5"),
+    Kind.PAYMENTS: ("GV", "A1", "", "15000", "2026-03-05", "MPESA", "SGH4K2L9QX"),
 }
 ALIASES = {
     "property": "property_code", "unit": "unit_code", "code": "unit_code", "type": "unit_type",
@@ -88,9 +92,22 @@ ALIASES = {
     "monthly_rent": "rent", "deposit_amount": "deposit", "move_in": "start_date", "move_in_date": "start_date",
     "moved_in": "start_date", "start": "start_date", "tenant_phone": "phone", "tenant_email": "email",
     "rent_due_day": "due_day", "due": "due_day",
+    # Names other systems and landlords' own sheets commonly use.
+    "house": "unit_code", "house_no": "unit_code", "house_number": "unit_code", "unit_no": "unit_code",
+    "unit_number": "unit_code", "room": "unit_code", "plot": "property_code", "building_name": "property_code",
+    "tenant_no": "phone", "telephone": "phone", "tel": "phone", "cell": "phone",
+    "phone_no": "phone", "mobile_number": "phone", "e_mail": "email", "email_address": "email",
+    "monthly_rent_amount": "rent", "rent_amount": "rent", "rent_kes": "rent", "security_deposit": "deposit",
+    "arrears": "amount", "balance_due": "amount", "outstanding": "amount", "amount_owed": "amount",
+    "date_moved_in": "start_date", "lease_start": "start_date", "occupation_date": "start_date",
+    "national_id": "id_number", "pin": "kra_pin",
+    "paid_on": "paid_at", "date_paid": "paid_at", "payment_date": "paid_at", "paid_date": "paid_at",
+    "amount_paid": "amount", "paid": "amount", "payment": "amount", "payment_method": "method", "mode": "method",
+    "payment_mode": "method", "ref": "reference", "receipt_no": "reference", "receipt_number": "reference",
+    "mpesa_code": "reference", "transaction_code": "reference", "transaction_id": "reference",
 }
 CAPABILITY = {Kind.UNITS: "units.manage", Kind.TENANTS: "tenants.manage", Kind.BALANCES: "invoices.adjust",
-              Kind.LEASES: "leases.draft"}
+              Kind.LEASES: "leases.draft", Kind.PAYMENTS: "payments.confirm"}
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y")
 SENSITIVE = set(Tenant.SENSITIVE_FIELDS)
 
@@ -136,6 +153,8 @@ def template_csv(kind: str) -> str:
 
 def _header(name, kind: str) -> str:
     key = re.sub(r"[\s\-/]+", "_", str(name or "").strip().lower())
+    if kind == Kind.PAYMENTS and key in ("date", "as_of"):
+        return "paid_at"
     return key if key in COLUMNS[kind] else ALIASES.get(key, key)
 
 
@@ -177,6 +196,8 @@ def _read_xlsx(upload):
     raw = upload.read(MAX_XLSX_BYTES + 1)
     if len(raw) > MAX_XLSX_BYTES:
         raise ValidationError(_("The file is too big. Split it into files under 3 MB."))
+    if uploads.zip_is_unsafe(io.BytesIO(raw)):
+        raise ValidationError(_("This does not look like an Excel (.xlsx) file. Save it as .xlsx or as CSV."))
     try:
         book = load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
         sheet = book.worksheets[0]
@@ -321,9 +342,8 @@ def _unit(actor: Membership, data: dict) -> Unit:
     return unit
 
 
-def _create_balance(actor: Membership, data: dict, request, ctx):
-    """A balance brought forward for the unit's active lease, or for the lease named in lease_number."""
-    unit = _unit(actor, data)
+def _lease_of(unit: Unit, data: dict) -> Lease:
+    """The unit's active lease, or the one named in lease_number (needed for a lease that has ended)."""
     leases = Lease.all_objects.filter(unit=unit).exclude(status=Lease.Status.DRAFT)
     number = data.get("lease_number", "")
     lease = (leases.filter(number__iexact=number) if number
@@ -332,6 +352,37 @@ def _create_balance(actor: Membership, data: dict, request, ctx):
         message = (_("%(unit)s has no lease %(number)s.") if number
                    else _("%(unit)s has no active lease. Add lease_number for an ended one."))
         raise ValidationError(message % {"unit": unit.payment_reference, "number": number})
+    return lease
+
+
+def _create_payment(actor: Membership, data: dict, request, ctx):
+    """A payment received before NyumbaPMS: confirmed, allocated to invoices, receipted; nobody is messaged."""
+    from payments import services as payment_services
+    from payments.models import Payment
+
+    unit = _unit(actor, data)
+    lease = _lease_of(unit, data)
+    method = _choice(Payment.Method, data.get("method", ""), Payment.Method.CASH)
+    paid_at, amount = _date(data["paid_at"]), _money(data["amount"])
+    reference = data.get("reference", "")[:60]
+    twins = Payment.objects.for_org(actor.organization).exclude(status=Payment.Status.REVERSED)
+    same = twins.filter(lease=lease, paid_at=paid_at, amount=amount, method=method, reference__iexact=reference)
+    if same.exists() or (reference and method == Payment.Method.MPESA
+                         and twins.filter(method=method, reference__iexact=reference).exists()):
+        raise ValidationError(_("This payment is already recorded (same date, amount and reference). Give it a "
+                                "different reference if it is a second payment."))
+    try:
+        payment = payment_services.record_payment(actor, lease, amount=amount, method=method, paid_at=paid_at,
+                                                  reference=reference, request=request, notify=False)
+    except PermissionDenied:
+        raise ValidationError(_("You cannot enter payments for %(name)s.") % {"name": unit.property.name}) from None
+    return payment, f"{unit.payment_reference} · {paid_at:%d %b %Y}"
+
+
+def _create_balance(actor: Membership, data: dict, request, ctx):
+    """A balance brought forward for the unit's active lease, or for the lease named in lease_number."""
+    unit = _unit(actor, data)
+    lease = _lease_of(unit, data)
     if invoicing.opening_balance(lease) is not None:
         raise ValidationError(_("Lease %(number)s already has a balance brought forward. Change it on its account "
                                 "page.") % {"number": lease.number})
@@ -383,7 +434,7 @@ def _create_lease(actor: Membership, data: dict, request, ctx):
 
 
 CREATE = {Kind.UNITS: _create_unit, Kind.TENANTS: _create_tenant, Kind.BALANCES: _create_balance,
-          Kind.LEASES: _create_lease}
+          Kind.LEASES: _create_lease, Kind.PAYMENTS: _create_payment}
 MODEL = {Kind.UNITS: Unit, Kind.TENANTS: Tenant}
 
 
@@ -519,6 +570,25 @@ def _undo_balances(actor: Membership, batch: ImportBatch, request) -> tuple[list
     return removed, kept
 
 
+def _undo_payments(actor: Membership, batch: ImportBatch, request) -> tuple[list[str], list[str]]:
+    """Reverses each imported payment still confirmed. The payments stay in history, marked reversed."""
+    from payments import services as payment_services
+    from payments.models import Payment
+
+    removed, kept = [], []
+    for payment in (Payment.objects.for_org(actor.organization).filter(pk__in=batch.created_ids)
+                    .select_related("lease__unit__property")):
+        label = f"{payment.lease.unit.payment_reference} · {payment.paid_at:%d %b %Y}"
+        try:
+            with transaction.atomic():
+                payment_services.reverse_payment(actor, payment, reason=_("Import undone"), request=request)
+        except (PermissionDenied, ValidationError):
+            kept.append(label)  # already reversed by hand, or you may not reverse it
+        else:
+            removed.append(label)
+    return removed, kept
+
+
 def _undo_leases(actor: Membership, batch: ImportBatch, request) -> tuple[list[str], list[str]]:
     """Deletes the draft leases the batch made, then the tenants it made that no lease uses. Issued leases stay."""
     removed, kept = [], []
@@ -559,6 +629,9 @@ def undo_import(actor: Membership, batch: ImportBatch, request=None) -> tuple[li
         raise ValidationError(_("An import can only be undone within 24 hours of applying it."))
     if locked.kind == Kind.BALANCES:
         removed, kept = _undo_balances(actor, locked, request)
+        return _finish_undo(actor, locked, removed, kept, request)
+    if locked.kind == Kind.PAYMENTS:
+        removed, kept = _undo_payments(actor, locked, request)
         return _finish_undo(actor, locked, removed, kept, request)
     if locked.kind == Kind.LEASES:
         removed, kept = _undo_leases(actor, locked, request)

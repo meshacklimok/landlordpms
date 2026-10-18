@@ -13,9 +13,9 @@ from accounts.models import Organization
 from accounts.tests.factories import PASSWORD, add_member, fresh, make_org, make_property, make_user, role
 from accounts.tests.test_isolation import login
 from audit.models import AuditEvent
-from core.sms import SmsResult
 from notifications import catalog, delivery
 from notifications.models import Message
+from notifications.providers.sms import SmsResult
 from properties import services as property_services
 from subscriptions import entitlements, services
 from subscriptions.models import (

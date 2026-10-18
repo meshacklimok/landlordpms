@@ -37,7 +37,70 @@ class MonthField(forms.CharField):
 
 
 class GenerateForm(forms.Form):
-    month = MonthField(label=_("Month to bill"))
+    """Which invoices to issue: for what, for whom and with which dates (D-176)."""
+
+    SCOPE_ALL, SCOPE_PROPERTY, SCOPE_LEASES = "all", "property", "leases"
+
+    month = MonthField(label=_("Month to bill"), help_text=_("The rent period that holds this month. "
+                       "Quarterly and yearly leases are billed for their whole period."))
+    include = forms.ChoiceField(
+        label=_("What to bill"), initial="all", widget=forms.RadioSelect,
+        choices=[("all", _("Rent, charges and metered utilities")),
+                 ("charges", _("Rent and recurring charges only")),
+                 ("meters", _("Metered water and electricity only"))])
+    scope = forms.ChoiceField(
+        label=_("Who to bill"), initial="all", widget=forms.RadioSelect,
+        choices=[("all", _("Every lease I manage")), ("property", _("All leases in one property")),
+                 ("leases", _("Only the leases I pick"))])
+    property = forms.ChoiceField(label=_("Property"), required=False)
+    leases = forms.MultipleChoiceField(label=_("Leases"), required=False)
+    due_date = forms.DateField(
+        label=_("Due date"), required=False, widget=DateInput,
+        help_text=_("Leave empty to use each lease's own due day. A date before today is not allowed."))
+    notify = forms.BooleanField(label=_("Tell the tenants now (SMS, email or WhatsApp as they prefer)"),
+                                required=False, initial=True)
+
+    def __init__(self, *args, properties=(), leases=(), **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ("month", "due_date", "property"):
+            self.fields[name].widget.attrs["class"] = "form-control" if name != "property" else "form-select"
+        self.fields["leases"].widget.attrs.update({"class": "form-select", "size": 8})
+        for name in ("include", "scope"):
+            self.fields[name].widget.attrs["class"] = "form-check-input"
+        self.fields["notify"].widget.attrs["class"] = "form-check-input"
+        self._leases = {str(ls.public_id): ls for ls in leases}
+        self.fields["property"].choices = [("", "---------")] + [(str(p.public_id), p.name) for p in properties]
+        self.fields["leases"].choices = [(k, self.lease_label(ls)) for k, ls in self._leases.items()]
+
+    @staticmethod
+    def lease_label(lease):
+        tenant = lease.primary_tenant
+        return f"{lease.unit.property.name} · {lease.unit.code} · {tenant.name if tenant else lease.number}"
+
+    def clean_due_date(self):
+        due = self.cleaned_data.get("due_date")
+        if due and due < datetime.date.today():
+            raise forms.ValidationError(_("The due date can't be in the past."))
+        return due
+
+    def clean(self):
+        data = super().clean()
+        scope = data.get("scope")
+        if scope == self.SCOPE_PROPERTY and not data.get("property"):
+            self.add_error("property", _("Choose a property."))
+        if scope == self.SCOPE_LEASES and not data.get("leases"):
+            self.add_error("leases", _("Pick at least one lease."))
+        return data
+
+    def chosen_leases(self):
+        """The leases in scope, or None for every lease."""
+        scope = self.cleaned_data["scope"]
+        if scope == self.SCOPE_LEASES:
+            return [self._leases[k] for k in self.cleaned_data["leases"] if k in self._leases]
+        if scope == self.SCOPE_PROPERTY:
+            return [ls for ls in self._leases.values()
+                    if str(ls.unit.property.public_id) == self.cleaned_data["property"]]
+        return None
 
 
 class VoidForm(forms.Form):

@@ -8,6 +8,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.formats import date_format
 from django.utils.translation import gettext as _
 from django.views import View
 
@@ -57,7 +58,12 @@ class SubscriptionView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, {
             "sub": sub,
             "usage": [(entitlements.LABELS[k], used[k], allowed[k]) for k in ("units", "seats")],
+            "meters": [{"label": entitlements.LABELS[k], "used": used[k], "limit": allowed[k],
+                        "percent": min(100, round(used[k] * 100 / allowed[k])) if allowed[k] else 0}
+                       for k in ("units", "seats")],
             "open_invoice": open_invoice,
+            "change": services.scheduled_change(sub),
+            "grace_days": services.grace_days(),
             "account_number": collect.account_number(open_invoice) if open_invoice else "",
             "pay_online": collect.methods() if open_invoice and open_invoice.outstanding > 0 else {},
             "last_checkout": last_checkout,
@@ -85,6 +91,23 @@ class SubscriptionView(CapabilityRequiredMixin, View):
     def post(self, request):
         if not can(request.membership, "subscription.manage"):
             raise PermissionDenied("subscription.manage")
+        if request.POST.get("action") in ("auto_renew_on", "auto_renew_off", "remove_card"):
+            try:
+                if request.POST["action"] == "remove_card":
+                    services.remove_card(request.membership, request=request)
+                    messages.success(request, _("The saved card is removed and automatic renewal is off."))
+                else:
+                    on = request.POST["action"] == "auto_renew_on"
+                    services.set_auto_renew(request.membership, on, request=request)
+                    messages.success(request, _("Automatic renewal is on.") if on
+                                     else _("Automatic renewal is off. You will get an invoice to pay each time."))
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+            return redirect("subscriptions:page")
+        if request.POST.get("action") == "cancel_change":
+            services.cancel_scheduled_change(request.membership, request=request)
+            messages.success(request, _("The scheduled change is cancelled. Your plan renews as it is."))
+            return redirect("subscriptions:page")
         plan = Plan.objects.filter(key=request.POST.get("plan", "")).first()
         if plan is None:
             messages.error(request, _("Choose a plan."))
@@ -95,7 +118,16 @@ class SubscriptionView(CapabilityRequiredMixin, View):
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         else:
-            if invoice is None:
+            sub = services.subscription_for(request.organization)
+            change = services.scheduled_change(sub)
+            if change:
+                what = (_("it does not renew and you move to Free") if change["stops"]
+                        else _("you move to %(plan)s") % {"plan": change["plan"].name})
+                messages.success(request, _("Done. You keep your current plan until %(d)s, then %(what)s.")
+                                 % {"d": date_format(sub.period_end, "j M Y"), "what": what})
+            elif invoice is None and sub.plan_id != plan.pk:
+                messages.success(request, _("The scheduled change is cancelled. Your plan renews as it is."))
+            elif invoice is None:
                 messages.success(request, _("You are now on the %(plan)s plan.") % {"plan": plan.name})
             else:
                 messages.success(request, _("Invoice %(number)s issued. Your %(plan)s plan starts when it is paid.")
@@ -182,7 +214,8 @@ class PayPaystackView(CapabilityRequiredMixin, View):
     def post(self, request):
         invoice = _invoice(request)
         try:
-            page = collect.start_paystack(request.membership, invoice, request=request)
+            page = collect.start_paystack(request.membership, invoice, save_card=bool(request.POST.get("save_card")),
+                                          request=request)
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
             return redirect("subscriptions:page")

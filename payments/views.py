@@ -19,7 +19,7 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from billing.invoicing import lease_balance
-from core import charts, ratelimit
+from core import charts, exports, ratelimit
 from core.money import ZERO
 from core.net import client_ip
 from leases.models import Lease
@@ -112,7 +112,7 @@ class PaymentExportView(CapabilityRequiredMixin, View):
         _form, _base, qs = _filtered(request)
         qs = qs.select_related("recorded_by").order_by("-paid_at", "-pk")
         writer = csv.writer(_Echo())
-        rows = (writer.writerow([_cell(v) for v in row]) for row in self._rows(qs))
+        rows = (writer.writerow([exports.safe(v) for v in row]) for row in self._rows(qs))
         response = StreamingHttpResponse(rows, content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="payments-{timezone.localdate():%Y-%m-%d}.csv"'
         return response
@@ -131,11 +131,6 @@ class PaymentExportView(CapabilityRequiredMixin, View):
 class _Echo:
     def write(self, value):
         return value
-
-
-def _cell(value) -> str:
-    text = str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def _is_uuid(value: str) -> bool:

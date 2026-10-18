@@ -3,7 +3,6 @@
 Anything outside the member's properties is a 404, never a 403.
 """
 
-import csv
 import datetime
 
 from django.contrib import messages
@@ -18,6 +17,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core import exports
 from core.ids import uuid_or_none
 from maintenance import services as maintenance
 from properties.models import Property
@@ -109,7 +109,7 @@ class ExpenseListView(CapabilityRequiredMixin, View):
 
     def csv(self, qs):
         response = _csv_response(f"expenses-{timezone.localdate():%Y-%m-%d}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         writer.writerow(["Number", "Date paid", "Property", "Category", "Description", "Supplier", "Amount",
                          "Paid by", "Reference", "Status", "Receipt"])
         for e in qs.order_by("paid_on", "pk"):

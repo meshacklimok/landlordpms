@@ -16,15 +16,16 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 from accounts.models import Membership
 from accounts.permissions import visible_properties
+from core import brand
 from leases.models import Lease
+from payments.models import Payment
 from properties.models import Property, Unit
 from tenants.models import Tenant
 
@@ -40,6 +41,7 @@ PRINT_COLUMNS = {
     Kind.TENANTS: ("name", "phone", "alt_phone", "email", "emergency_contact_name", "emergency_contact_phone"),
     Kind.LEASES: ("property_code", "unit_code", "name", "phone", "rent", "deposit", "start_date"),
     Kind.BALANCES: ("property_code", "unit_code", "amount", "as_of"),
+    Kind.PAYMENTS: ("property_code", "unit_code", "amount", "paid_at", "method", "reference"),
 }
 LABELS = {
     "property_code": _("Property code"), "unit_code": _("Unit"), "building": _("Building"), "unit_type": _("Type"),
@@ -47,13 +49,16 @@ LABELS = {
     "email": _("Email"), "emergency_contact_name": _("Emergency contact"),
     "emergency_contact_phone": _("Emergency phone"), "rent": _("Monthly rent"), "deposit": _("Deposit paid"),
     "start_date": _("Moved in (date)"), "amount": _("Owes now (KES)"), "as_of": _("As at (date)"),
+    "paid_at": _("Date paid"), "method": _("Cash, M-Pesa, Bank"), "reference": _("M-Pesa code / reference"),
 }
 WIDTHS = {"property_code": 1.0, "unit_code": 1.0, "building": 1.3, "unit_type": 1.3, "list_rent": 1.1,
           "name": 2.6, "phone": 1.7, "alt_phone": 1.7, "email": 2.2, "emergency_contact_name": 2.2,
-          "emergency_contact_phone": 1.7, "rent": 1.2, "deposit": 1.2, "start_date": 1.5, "amount": 1.4, "as_of": 1.5}
+          "emergency_contact_phone": 1.7, "rent": 1.2, "deposit": 1.2, "start_date": 1.5, "amount": 1.4, "as_of": 1.5,
+          "paid_at": 1.5, "method": 1.5, "reference": 2.0}
+PAYMENT_LABELS = {"amount": _("Amount paid (KES)")}
 TITLES = {
     Kind.UNITS: _("Units"), Kind.TENANTS: _("Tenants"), Kind.LEASES: _("Tenants moving in"),
-    Kind.BALANCES: _("Opening balances"),
+    Kind.BALANCES: _("Opening balances"), Kind.PAYMENTS: _("Past payments"),
 }
 HINTS = {
     Kind.UNITS: _("One unit per line. Unit type: Apartment, House, Bedsitter, Studio, Shop, Office..."),
@@ -62,10 +67,13 @@ HINTS = {
                    "vacant. Dates like 31/01/2026."),
     Kind.BALANCES: _("What each tenant owed us when they started on NyumbaPMS. Put a minus sign if they paid "
                      "ahead."),
+    Kind.PAYMENTS: _("One payment per line: what each tenant paid before you started on NyumbaPMS. Method is Cash, "
+                     "M-Pesa, Bank or Cheque (Cash if left empty). Nobody is sent a message about these. If you "
+                     "also enter an opening balance, only list payments made AFTER the balance date."),
 }
-CHOICES = {"unit_type": Unit.Type, "kind": Tenant.Kind, "id_type": Tenant.IdType}
+CHOICES = {"unit_type": Unit.Type, "kind": Tenant.Kind, "id_type": Tenant.IdType, "method": Payment.Method}
 TEXT_COLUMNS = {"property_code", "unit_code", "phone", "alt_phone", "emergency_contact_phone", "lease_number",
-                "id_number", "kra_pin"}
+                "id_number", "kra_pin", "reference"}
 
 
 def _units(actor: Membership, vacant_only: bool):
@@ -81,7 +89,7 @@ def prefill(actor: Membership, kind: str) -> list[dict]:
     if kind == Kind.LEASES:
         return [{"property_code": u.property.code, "unit_code": u.code,
                  "rent": f"{u.list_rent:f}" if u.list_rent else ""} for u in _units(actor, vacant_only=True)]
-    if kind == Kind.BALANCES:
+    if kind in (Kind.BALANCES, Kind.PAYMENTS):
         leases = (Lease.objects.filter(status=Lease.Status.ACTIVE, unit__property__in=visible_properties(
             actor, Property.objects.all())).select_related("unit__property").order_by("unit__property__code",
                                                                                    "unit__code"))[:MAX_PREFILL]
@@ -109,7 +117,7 @@ def template_xlsx(actor: Membership, kind: str) -> bytes:
     sheet.title = str(TITLES[kind])[:31]
     columns = services.COLUMNS[kind]
     head = Font(bold=True, color="FFFFFF")
-    fill = PatternFill("solid", fgColor="1F5F4A")
+    fill = PatternFill("solid", fgColor="146C4A")
     for i, column in enumerate(columns, start=1):
         cell = sheet.cell(row=1, column=i, value=column)
         cell.font, cell.fill = head, fill
@@ -137,15 +145,8 @@ def template_xlsx(actor: Membership, kind: str) -> bytes:
     return out.getvalue()
 
 
-def _footer(kind: str, org_name: str):
-    def draw(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillGray(0.4)
-        canvas.drawString(12 * mm, 8 * mm, f"NyumbaPMS - {org_name} - {TITLES[kind]}")
-        canvas.drawRightString(landscape(A4)[0] - 12 * mm, 8 * mm, _("Page %(n)s") % {"n": doc.page})
-        canvas.restoreState()
-    return draw
+def _label(kind: str, column: str):
+    return PAYMENT_LABELS.get(column, LABELS[column]) if kind == Kind.PAYMENTS else LABELS[column]
 
 
 def template_pdf(actor: Membership, kind: str, today: datetime.date | None = None) -> bytes:
@@ -161,19 +162,23 @@ def template_pdf(actor: Membership, kind: str, today: datetime.date | None = Non
     known = prefill(actor, kind)
     body = [[Paragraph(str(r.get(c) or ""), cell_style) for c in columns] for r in known]
     body += [[""] * len(columns) for _line in range(5 if known else 20)]
-    rows = [[Paragraph(str(LABELS[c]), head_style) for c in columns]] + body
+    rows = [[Paragraph(str(_label(kind, c)), head_style) for c in columns]] + body
     table = Table(rows, colWidths=widths, rowHeights=[10 * mm] + [9 * mm] * len(body), repeatRows=1)
     table.setStyle(TableStyle([
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.Color(0.55, 0.55, 0.55)),
-        ("BACKGROUND", (0, 0), (-1, 0), colors.Color(0.92, 0.95, 0.93)),
+        ("GRID", (0, 0), (-1, -1), 0.5, brand.MUTED),
+        ("BACKGROUND", (0, 0), (-1, 0), brand.TINT),
+        ("LINEBELOW", (0, 0), (-1, 0), 1.2, brand.PRIMARY),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
     ]))
     org_name = actor.organization.name
     doc_buffer = io.BytesIO()
-    doc = SimpleDocTemplate(doc_buffer, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
-                            topMargin=12 * mm, bottomMargin=16 * mm, title=str(TITLES[kind]), author="NyumbaPMS")
+    doc = brand.Doc(doc_buffer, pagesize=landscape(A4), leftMargin=12 * mm, rightMargin=12 * mm,
+                    topMargin=12 * mm, bottomMargin=16 * mm, title=f"{org_name} · {TITLES[kind]}", author="NyumbaPMS")
+    org = actor.organization
     intro = [
-        Paragraph(f"<b>{TITLES[kind]}</b> - {org_name} - {today:%d/%m/%Y}", styles["Title"]),
+        brand.letterhead(org.display_name, org=org, kind=str(TITLES[kind]), number=f"{today:%d/%m/%Y}",
+                         lines=brand.org_lines(org), width=landscape(A4)[0] - 24 * mm),
+        Spacer(1, 4 * mm),
         Paragraph(str(HINTS[kind]), styles["BodyText"]),
         Paragraph(_("Write clearly in CAPITAL LETTERS and one line per entry. When it is filled in, take a photo of "
                     "each page (flat, close up, in good light) and upload it on NyumbaPMS under Import, or type it "
@@ -181,5 +186,5 @@ def template_pdf(actor: Membership, kind: str, today: datetime.date | None = Non
                   styles["BodyText"]),
         Spacer(1, 4 * mm),
     ]
-    doc.build(intro + [table], onFirstPage=_footer(kind, org_name), onLaterPages=_footer(kind, org_name))
+    doc.build(intro + [table])
     return doc_buffer.getvalue()

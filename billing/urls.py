@@ -8,6 +8,7 @@ urlpatterns = [
     path("charge-types/", views.ChargeTypeListView.as_view(), name="charge_types"),
     path("invoices/", views.InvoiceListView.as_view(), name="invoices"),
     path("invoices/generate/", views.GenerateView.as_view(), name="generate"),
+    path("invoices/generate/review/", views.GenerateReviewView.as_view(), name="generate_review"),
     path("invoices/<uuid:public_id>/", views.InvoiceDetailView.as_view(), name="invoice"),
     path("invoices/<uuid:public_id>/pdf/", views.InvoicePdfView.as_view(), name="invoice_pdf"),
     path("call-list/", views.CallListView.as_view(), name="call_list"),

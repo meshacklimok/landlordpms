@@ -91,6 +91,14 @@ class PaystackClient:
             "email": email, "amount": amount_cents, "currency": "KES", "reference": reference,
             "mobile_money": {"phone": phone, "provider": "mpesa"}, "metadata": metadata})
 
+    def charge_authorization(self, *, email: str, amount_cents: int, reference: str, authorization_code: str,
+                             metadata: dict) -> dict:
+        """Charges a card the payer saved earlier, with no checkout page. The reply carries the final `status`
+        (success or failed); the webhook repeats it under the same `reference`."""
+        return self._request("POST", "/transaction/charge_authorization", {
+            "email": email, "amount": amount_cents, "currency": "KES", "reference": reference,
+            "authorization_code": authorization_code, "metadata": metadata})
+
     def verify(self, reference: str) -> dict:
         """The transaction behind a reference: `status` is success, failed, abandoned, ongoing or pending."""
         return self._request("GET", f"/transaction/verify/{urllib.parse.quote(reference, safe='')}")
@@ -120,6 +128,10 @@ class FakePaystackClient(PaystackClient):
                     "authorization_url": f"https://checkout.paystack.com/fake-{body['reference']}"}
         if path == "/charge":
             return {"reference": body["reference"], "status": "pay_offline"}
+        if path == "/transaction/charge_authorization":
+            return {"id": 7001, "reference": body["reference"], "status": "success", "amount": body["amount"],
+                    "currency": "KES", "paid_at": "2026-03-10T07:15:00.000Z", "gateway_response": "Approved",
+                    "customer": {"email": body["email"]}}
         return {}
 
 

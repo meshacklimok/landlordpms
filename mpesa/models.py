@@ -253,3 +253,30 @@ class CodeCheck(models.Model):
 
     def __str__(self):
         return f"{self.payment_id} checked"
+
+
+class SetupVideo(models.Model):
+    """The Paybill setup video shown on the M-Pesa setup pages. One row, changed in Django admin (D-174).
+
+    Empty means no video is shown anywhere. `MPESA_SETUP_VIDEO_URL` in the environment is used only while this is empty."""
+
+    url = models.URLField(_("video link"), blank=True, max_length=300,
+                          help_text=_("An https link, e.g. a YouTube link. Leave empty to hide the video."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "setup video"
+        verbose_name_plural = "setup video"
+
+    def __str__(self):
+        return "Paybill setup video"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.url and not self.url.startswith("https://"):
+            raise ValidationError({"url": _("The link must start with https://")})
+
+    @classmethod
+    def get(cls) -> "SetupVideo":
+        return cls.objects.get_or_create(pk=1)[0]

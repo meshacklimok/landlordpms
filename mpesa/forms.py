@@ -25,12 +25,14 @@ def _secret(label, help_text=""):
 
 
 class CredentialsForm(forms.Form):
-    environment = forms.ChoiceField(label=_("Environment"), choices=DarajaCredentials.Environment.choices)
+    environment = forms.ChoiceField(label=_("Keys from"), choices=[
+        (DarajaCredentials.Environment.PRODUCTION, _("Live (real money): use this once Safaricom approved you")),
+        (DarajaCredentials.Environment.SANDBOX, _("Sandbox (testing only, no real money)"))])
     shortcode = forms.CharField(label=_("Shortcode"), max_length=7, required=False,
-                                help_text=_("Leave blank to use the account number. A Till uses its store number."))
-    consumer_key = _secret(_("Consumer key"))
-    consumer_secret = _secret(_("Consumer secret"))
-    passkey = _secret(_("Passkey"), _("Only needed to request payments from a tenant's phone (Paybill)."))
+                                help_text=_("Leave blank to use your Paybill number. A Till uses its store number."))
+    consumer_key = _secret(_("Consumer key"), _("A long code on your app's page in Daraja."))
+    consumer_secret = _secret(_("Consumer secret"), _("Next to the consumer key. Keep it private."))
+    passkey = _secret(_("Passkey"), _("Safaricom sends it after Go-Live. Needed to request payments from a tenant's phone (Paybill)."))
 
 
 class StkRequestForm(forms.Form):

@@ -5,30 +5,29 @@ Nothing is stored: the PDF shows the invoice as it stands, with what is paid on 
 """
 
 import io
+from xml.sax.saxutils import escape
 
 from django.utils import timezone
 from django.utils.translation import gettext as _
-from xml.sax.saxutils import escape
-
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Image, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
+from core import brand
 from core.money import format_money
 from leases.pdf import BODY, HEAD, LABEL, LINE, RIGHT, RIGHT_BOLD, SMALL, _day, _doc, _footer, _p
 
 from .models import Invoice
 
-ACCENT = colors.HexColor("#1D4E89")
-TINT = colors.HexColor("#F1F4F8")
+ACCENT = brand.PRIMARY
+TINT = brand.TINT
 _CAPTION = ParagraphStyle("inv_caption", parent=SMALL, fontName="Helvetica-Bold", fontSize=7.5,
-                          textColor=colors.HexColor("#6B7280"))
+                          textColor=brand.MUTED)
 _CAPTION_RIGHT = ParagraphStyle("inv_caption_right", parent=_CAPTION, alignment=2)
 _TITLE_RIGHT = ParagraphStyle("inv_title", parent=BODY, fontName="Helvetica-Bold", fontSize=18, leading=22,
                               alignment=2, textColor=ACCENT)
-_NUMBER_RIGHT = ParagraphStyle("inv_number", parent=RIGHT, textColor=colors.HexColor("#4B5563"))
+_NUMBER_RIGHT = ParagraphStyle("inv_number", parent=RIGHT, textColor=brand.MUTED)
 _DUE_LABEL = ParagraphStyle("inv_due_label", parent=BODY, fontName="Helvetica-Bold", fontSize=9,
                             alignment=2, textColor=colors.white)
 _DUE_AMOUNT = ParagraphStyle("inv_due_amount", parent=_DUE_LABEL, fontSize=11)
@@ -39,23 +38,8 @@ def _lines(text):
     return "<br/>".join(escape(line) for line in text.splitlines())
 
 
-def _accent(org):
-    try:
-        return colors.HexColor(org.brand_color) if org.brand_color else ACCENT
-    except ValueError:
-        return ACCENT
-
-
-def _picture(field, high):
-    """An uploaded picture scaled to `high` tall (at most 50 mm wide), or None if there is none or it is unreadable."""
-    if not field:
-        return None
-    try:
-        width, height = ImageReader(field.path).getSize()
-        wide = min(high * width / height, 50 * mm)
-        return Image(field.path, width=wide, height=wide * height / width)
-    except Exception:  # missing file or an unreadable picture: print the invoice without it
-        return None
+_accent = brand.accent
+_picture = brand.picture
 
 
 def _logo(org):

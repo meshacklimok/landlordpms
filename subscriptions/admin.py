@@ -1,6 +1,5 @@
 """Platform billing in admin (D-060 item 7): Platform Admins record payments and SMS top-ups here."""
 
-import csv
 
 from django import forms
 from django.contrib import admin, messages
@@ -15,9 +14,11 @@ from django.utils.translation import gettext_lazy as _
 
 from accounts.models import Organization
 from audit import services as audit
+from core import exports
 
 from . import documents, services
 from .models import (
+    BillingPolicy,
     Plan,
     PlatformCheckout,
     PlatformPaySwitch,
@@ -75,11 +76,29 @@ class SubscriptionAdmin(admin.ModelAdmin):
     search_fields = ["organization__name"]
     raw_id_fields = ["organization"]
     fields = ["organization", "plan", "status", "interval", "trial_ends_on", "period_start", "period_end",
-              "past_due_since"]
+              "past_due_since", "grace_until", "next_plan", "next_interval"]
     watched = fields[1:]
+    actions = ["extend_grace_7", "extend_grace_30"]
 
     def get_readonly_fields(self, request, obj=None):
         return ["organization"] if obj else []
+
+    def _extend(self, request, queryset, days):
+        for sub in queryset:
+            try:
+                until = services.extend_grace(request.user, sub, days, "Extended by a Platform Admin (dispute)",
+                                              request=request)
+                self.message_user(request, f"{sub.organization}: no lapse until {until}.")
+            except ValidationError as exc:
+                self.message_user(request, f"{sub.organization}: {' '.join(exc.messages)}", messages.ERROR)
+
+    @admin.action(description="Hold off the lapse for 7 more days")
+    def extend_grace_7(self, request, queryset):
+        self._extend(request, queryset, 7)
+
+    @admin.action(description="Hold off the lapse for 30 more days")
+    def extend_grace_30(self, request, queryset):
+        self._extend(request, queryset, 30)
 
     def save_model(self, request, obj, form, change):
         before = Subscription.objects.filter(pk=obj.pk).first() if change else None
@@ -108,11 +127,11 @@ class PaymentInline(admin.TabularInline):
 class SubscriptionInvoiceAdmin(admin.ModelAdmin):
     list_display = ["number", "organization", "plan_name", "interval", "reason", "total", "status", "issued_on",
                     "due_on", "pdf_link"]
-    list_filter = ["status", "reason", "interval"]
+    list_filter = ["status", "reason", "interval", ("disputed_at", admin.EmptyFieldListFilter)]
     search_fields = ["number", "organization__name", "customer_name"]
     date_hierarchy = "issued_on"
     inlines = [PaymentInline]
-    actions = ["void"]
+    actions = ["void", "mark_disputed", "clear_dispute"]
 
     def get_urls(self):
         return [path("<int:pk>/pdf/", self.admin_site.admin_view(self.pdf), name="subscriptions_invoice_pdf"),
@@ -129,7 +148,32 @@ class SubscriptionInvoiceAdmin(admin.ModelAdmin):
         return format_html('<a href="{}">PDF</a>', reverse("admin:subscriptions_invoice_pdf", args=[obj.pk]))
 
     def get_readonly_fields(self, request, obj=None):
-        return [f.name for f in self.model._meta.fields]
+        return [f.name for f in self.model._meta.fields if f.name != "dispute_note"]
+
+    def save_model(self, request, obj, form, change):
+        # Only the dispute note can be edited here.
+        SubscriptionInvoice.objects.filter(pk=obj.pk).update(dispute_note=obj.dispute_note)
+        audit.record("subscription_invoice.dispute_note", actor=request.user, organization=obj.organization, obj=obj,
+                     request=request, changes={"note": obj.dispute_note})
+
+    def _dispute(self, request, queryset, resolved):
+        done = 0
+        for invoice in queryset:
+            try:
+                services.set_dispute(request.user, invoice, resolved=resolved, request=request)
+                done += 1
+            except ValidationError as exc:
+                self.message_user(request, f"{invoice.number}: {' '.join(exc.messages)}", messages.ERROR)
+        if done:
+            self.message_user(request, f"{done} invoice(s) updated. Write the reason in each invoice's dispute note.")
+
+    @admin.action(description="Mark as disputed (no lapse while open)")
+    def mark_disputed(self, request, queryset):
+        self._dispute(request, queryset, False)
+
+    @admin.action(description="Clear the dispute")
+    def clear_dispute(self, request, queryset):
+        self._dispute(request, queryset, True)
 
     @admin.action(description="Void selected open invoices with no payments")
     def void(self, request, queryset):
@@ -301,9 +345,8 @@ class SmsWalletAdmin(admin.ModelAdmin):
 
     @admin.action(description="Export selected to CSV")
     def export_csv(self, request, queryset):
-        response = HttpResponse(content_type="text/csv")
-        response["Content-Disposition"] = 'attachment; filename="sms-usage.csv"'
-        writer = csv.writer(response)
+        response = exports.csv_response("sms-usage.csv")
+        writer = exports.writer(response)
         writer.writerow(["Organization", "Mode", "Monthly parts", "Parts this month", "Our cost KES",
                          "Billed KES", "Balance KES"])
         for w in queryset:
@@ -329,6 +372,31 @@ class SmsWalletEntryAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BillingPolicy)
+class BillingPolicyAdmin(admin.ModelAdmin):
+    """Trial length, renewal invoice lead time, grace days and reminder days (D-165). One row. A lapsed account
+    is read-only, never locked out of its records."""
+
+    list_display = ["__str__", "trial_days", "invoice_lead_days", "grace_days", "reminder_days",
+                    "grace_reminder_days", "updated_at"]
+    fields = ["trial_days", "invoice_lead_days", "grace_days", "reminder_days", "grace_reminder_days"]
+
+    def changelist_view(self, request, extra_context=None):
+        BillingPolicy.get()
+        return super().changelist_view(request, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        audit.record("platform.billing_policy", actor=request.user, obj=obj,
+                     changes={f: str(getattr(obj, f)) for f in self.fields})
+
+    def has_add_permission(self, request):
+        return not BillingPolicy.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

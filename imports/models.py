@@ -18,6 +18,7 @@ class ImportBatch(PublicIdModel, TimeStampedModel):
         TENANTS = "TENANTS", _("Tenants")
         BALANCES = "BALANCES", _("Opening balances")
         LEASES = "LEASES", _("Tenants moving in (with leases)")
+        PAYMENTS = "PAYMENTS", _("Past payments")
 
     class Source(models.TextChoices):
         FILE = "FILE", _("Spreadsheet")

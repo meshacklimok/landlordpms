@@ -5,6 +5,7 @@ from . import views
 app_name = "mpesa"
 
 urlpatterns = [
+    path("", views.OverviewView.as_view(), name="overview"),
     path("settings/", views.SettingsView.as_view(), name="settings"),
     path("settings/<uuid:public_id>/", views.AccountSettingsView.as_view(), name="account"),
     path("inbox/", views.InboxView.as_view(), name="inbox"),

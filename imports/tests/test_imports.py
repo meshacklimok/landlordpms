@@ -216,7 +216,7 @@ def test_import_pages(client, owner, prop):
     login(client, owner)
     assert client.get(reverse("imports:list")).status_code == 200
     r = client.get(reverse("imports:template", args=["units"]))
-    assert r.status_code == 200 and r["Content-Type"] == "text/csv"
+    assert r.status_code == 200 and r["Content-Type"] == "text/csv; charset=utf-8"
     assert client.get(reverse("imports:template", args=["nope"])).status_code == 404
 
     r = client.post(reverse("imports:upload", args=["units"]), {"file": csv_file(UNIT_CSV)})

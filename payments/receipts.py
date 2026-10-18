@@ -4,17 +4,17 @@ The PDF is drawn once, at confirmation, and stored; it records the balance as it
 It is served only through a permission-checked view, and its file name is a random UUID.
 """
 
-import io
 import secrets
 import uuid
 
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from reportlab.lib.pagesizes import A5
 from reportlab.lib.units import mm
-from reportlab.pdfgen import canvas
 
 from billing.invoicing import lease_balance
+from core import brand
 from core.money import format_money
 from core.numbering import next_number
 
@@ -60,68 +60,38 @@ def receipt_data(receipt: Receipt) -> dict:
                         for a in payment.allocations.select_related("invoice").order_by("pk")],
         "unallocated": format_money(payment.unallocated, currency) if payment.unallocated > 0 else "",
         "balance": format_money(abs(balance), currency),
-        "balance_label": "In credit" if balance < 0 else "Balance due",
+        "balance_label": _("In credit") if balance < 0 else _("Balance due"),
     }
 
 
 def render_pdf(receipt: Receipt) -> bytes:
     d = receipt_data(receipt)
-    buf = io.BytesIO()
-    pdf = canvas.Canvas(buf, pagesize=A5)
-    pdf.setTitle(f"Receipt {d['number']}")
-    width, height = A5
-    left, right = 14 * mm, width - 14 * mm
-    y = height - 18 * mm
-
-    pdf.setFont("Helvetica-Bold", 14)
-    pdf.drawString(left, y, d["organization"][:48])
-    pdf.setFont("Helvetica-Bold", 12)
-    pdf.drawRightString(right, y, "RECEIPT")
-    y -= 6 * mm
-    pdf.setFont("Helvetica", 9)
-    pdf.drawRightString(right, y, d["number"])
-    y -= 4.5 * mm
-    pdf.drawRightString(right, y, f"Issued {d['issued']}")
-    y -= 6 * mm
-    pdf.line(left, y, right, y)
-    y -= 8 * mm
-
-    def row(label, value, bold=False):
-        nonlocal y
-        pdf.setFont("Helvetica", 9)
-        pdf.drawString(left, y, label)
-        pdf.setFont("Helvetica-Bold" if bold else "Helvetica", 10 if bold else 9)
-        pdf.drawRightString(right, y, str(value)[:60])
-        y -= 6 * mm
-
-    row("Received from", d["tenant"])
+    org = receipt.payment.organization
+    stub = brand.Stub(A5, f"{_('Receipt')} {d['number']}", org.display_name, _("RECEIPT"), d["number"],
+                      _("Issued %(when)s") % {"when": d["issued"]}, org=org, lines=brand.org_lines(org),
+                      footer_label=f"{org.display_name} · {_('Receipt')} {d['number']}")
+    row = stub.row
+    row(_("Received from"), d["tenant"])
     row(d["place_label"], f"{d['property']} · {d['unit']}")
-    row("Account reference", d["reference"])
+    row(_("Account reference"), d["reference"])
     row(d["lease_label"], d["lease"])
-    row("Date paid", d["paid_at"])
-    row("Method", d["method"])
+    row(_("Date paid"), d["paid_at"])
+    row(_("Method"), d["method"])
     if d["payment_reference"]:
-        row("Reference", d["payment_reference"])
-    y -= 2 * mm
-    row("Amount received", d["amount"], bold=True)
+        row(_("Reference"), d["payment_reference"])
+    stub.y -= 2 * mm
+    stub.total(_("Amount received"), d["amount"])
 
     if d["allocations"] or d["unallocated"]:
-        y -= 3 * mm
-        pdf.line(left, y + 4 * mm, right, y + 4 * mm)
-        pdf.setFont("Helvetica-Bold", 9)
-        pdf.drawString(left, y, "Applied to")
-        y -= 6 * mm
+        stub.y -= 1 * mm
+        stub.heading(_("Applied to"))
         for number, amount in d["allocations"]:
-            row(f"Invoice {number}", amount)
+            row(_("Invoice %(number)s") % {"number": number}, amount)
         if d["unallocated"]:
-            row("Held as credit", d["unallocated"])
+            row(_("Held as credit"), d["unallocated"])
 
-    y -= 3 * mm
-    pdf.line(left, y + 4 * mm, right, y + 4 * mm)
-    row(d["balance_label"] + " after this payment", d["balance"], bold=True)
-
-    pdf.setFont("Helvetica-Oblique", 7)
-    pdf.drawString(left, 12 * mm, "Keep this receipt as proof of payment.")
-    pdf.showPage()
-    pdf.save()
-    return buf.getvalue()
+    stub.rule()
+    row(_("%(what)s after this payment") % {"what": d["balance_label"]}, d["balance"], bold=True)
+    stub.y -= 1 * mm
+    stub.note(_("Keep this receipt as proof of payment."))
+    return stub.finish()

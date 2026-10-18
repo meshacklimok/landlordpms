@@ -270,8 +270,55 @@ def _billable(lease: Lease) -> bool:
     return lease.status != Lease.Status.DRAFT and lease.archived_at is None
 
 
+INCLUDE_ALL, INCLUDE_CHARGES, INCLUDE_METERS = "all", "charges", "meters"
+
+
+def _plan(lease: Lease, months: list[datetime.date], include: str) -> tuple[list[DraftLine], list[DraftLine]]:
+    """The rent/charge lines and the meter lines still to bill for `months`, limited to what `include` asks for."""
+    lines, metered = [], []
+    if include != INCLUDE_METERS:
+        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
+                                                meter_charge__isnull=True)
+                     .values_list("billing_month", "charge_type_id"))
+        lines = [ln for m in months for ln in lines_for_month(lease, m)
+                 if (ln.billing_month, ln.charge_type.pk) not in billed]
+    if include != INCLUDE_CHARGES:
+        metered = meter_lines(lease, months)
+    return lines, metered
+
+
+@dataclass
+class Preview:
+    lease: Lease
+    start: datetime.date
+    end: datetime.date
+    due: datetime.date
+    lines: list[DraftLine]
+    messages: list = field(default_factory=list)  # what each tenant would be sent, filled by the view
+
+    @property
+    def total(self) -> Decimal:
+        return sum((ln.amount for ln in self.lines), ZERO)
+
+
+def preview_lease_period(lease: Lease, month: datetime.date, *, include: str = INCLUDE_ALL, today=None,
+                         due_date=None) -> Preview | None:
+    """What `generate_lease_period` would issue for the lease, without issuing it."""
+    today = today or timezone.localdate()
+    if not _billable(lease):
+        return None
+    months = period_months(lease, month)
+    lines, metered = _plan(lease, months, include)
+    if not lines and not metered:
+        return None
+    dated = lines or metered
+    start = min(ln.service_start for ln in dated)
+    end = max(ln.service_end for ln in dated)
+    return Preview(lease, start, end, due_date or _due_date(lease, months[0], start, today), lines + metered)
+
+
 def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, today=None, due_date=None,
-                          request=None) -> Invoice | None:
+                          request=None, include: str = INCLUDE_ALL) -> Invoice | None:
     """Bills whatever is not billed yet of the period holding `month` for one lease, as one issued invoice.
 
     For a monthly lease the period is the month itself. Returns None when there is nothing new
@@ -284,12 +331,7 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
         if not _billable(lease):
             return None
         months = period_months(lease, month)
-        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
-                                                meter_charge__isnull=True)
-                     .values_list("billing_month", "charge_type_id"))
-        lines = [ln for m in months for ln in lines_for_month(lease, m)
-                 if (ln.billing_month, ln.charge_type.pk) not in billed]
-        metered = meter_lines(lease, months)
+        lines, metered = _plan(lease, months, include)
         if not lines and not metered:
             return None
         # The invoice covers the period's rent and charges; water alone covers its reading period.
@@ -351,9 +393,51 @@ class RunResult:
         return sum((i.total for i in self.invoices), ZERO)
 
 
+def _targets(org: Organization, month: datetime.date, actor: Membership | None, leases=None):
+    qs = billable_leases(org, month).select_related("unit__property").order_by("pk")
+    if leases is not None:
+        qs = qs.filter(pk__in=[ls.pk for ls in leases])
+    return [ls for ls in qs if actor is None or can(actor, "invoices.generate", ls.unit.property)]
+
+
+def why_nothing(lease: Lease, month: datetime.date, include: str) -> str:
+    """Why a lease in scope has nothing new to bill for the period holding `month`."""
+    months = period_months(lease, month)
+    numbers = sorted(set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
+                                                    invoice__number__gt="")
+                         .values_list("invoice__number", flat=True)))
+    if numbers and include != INCLUDE_METERS:
+        return _("Already billed on %(numbers)s.") % {"numbers": ", ".join(numbers)}
+    if include == INCLUDE_METERS:
+        return _("No approved meter reading is waiting to be billed.")
+    if billed_span(lease, month) is None:
+        return _("The lease does not cover this month.")
+    return _("No rent or charge falls in this period.")
+
+
+def preview_month(org: Organization, month: datetime.date, *, actor: Membership, leases=None,
+                  include: str = INCLUDE_ALL, due_date=None, today=None) -> tuple[list[Preview], list[tuple[Lease, str]]]:
+    """(what would be issued, (lease, reason) for leases in scope with nothing new to bill)."""
+    if not can(actor, "invoices.generate"):
+        raise PermissionDenied(_("You don't have permission to generate invoices."))
+    previews, nothing = [], []
+    for lease in _targets(org, month, actor, leases):
+        p = preview_lease_period(lease, month, include=include, today=today, due_date=due_date)
+        if p:
+            previews.append(p)
+        else:
+            nothing.append((lease, why_nothing(lease, month, include)))
+    return previews, nothing
+
+
 def generate_month(org: Organization, month: datetime.date, *, actor: Membership | None = None,
-                   today=None, request=None) -> RunResult:
-    """Bills the period holding `month` for every lease the actor may bill (every lease when run by the job)."""
+                   today=None, request=None, leases=None, include: str = INCLUDE_ALL, due_date=None,
+                   notify: bool = True) -> RunResult:
+    """Bills the period holding `month` for the leases the actor may bill (every lease when run by the job).
+
+    `leases` narrows it to some leases, `include` to rent and charges or to meters, `due_date` overrides
+    the lease's due day and `notify` False issues without messaging the tenants.
+    """
     from notifications import triggers  # notifications depends on billing, not the other way round
     if actor is not None:
         if actor.organization_id != org.pk:
@@ -363,18 +447,18 @@ def generate_month(org: Organization, month: datetime.date, *, actor: Membership
     elif not org.is_operational:
         return RunResult()
     result = RunResult()
-    for lease in billable_leases(org, month).select_related("unit__property").order_by("pk"):
-        if actor is not None and not can(actor, "invoices.generate", lease.unit.property):
-            continue
+    for lease in _targets(org, month, actor, leases):
         try:
-            invoice = generate_lease_period(lease, month, actor=actor, today=today, request=request)
+            invoice = generate_lease_period(lease, month, actor=actor, today=today, request=request,
+                                            include=include, due_date=due_date)
         except ValidationError as e:
             result.errors.append((lease, e.messages[0]))
             continue
         if invoice is not None:
             result.invoices.append(invoice)
             # Only the monthly run tells the tenant; a month billed again after a correction does not (D-044).
-            triggers.invoice_issued(invoice)
+            if notify:
+                triggers.invoice_issued(invoice)
     return result
 
 

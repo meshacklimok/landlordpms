@@ -10,14 +10,16 @@ from django.views import View
 
 from accounts.mixins import OrgMemberRequiredMixin
 from accounts.permissions import can
+from core import exports
 from meters import ocr
 
-from . import scan, services, sheets
+from . import scan, services, sheets, switch
 from .models import ImportBatch
 
 ROW_PAGE_SIZE = 100
 KINDS = {"units": ImportBatch.Kind.UNITS, "tenants": ImportBatch.Kind.TENANTS,
-         "leases": ImportBatch.Kind.LEASES, "balances": ImportBatch.Kind.BALANCES}
+         "leases": ImportBatch.Kind.LEASES, "balances": ImportBatch.Kind.BALANCES,
+         "payments": ImportBatch.Kind.PAYMENTS}
 
 
 class UploadForm(forms.Form):
@@ -81,7 +83,7 @@ class ImportUploadView(OrgMemberRequiredMixin, View):
 class ImportTemplateView(OrgMemberRequiredMixin, View):
     def get(self, request, kind):
         kind = _kind(request, kind)
-        response = HttpResponse(services.template_csv(kind), content_type="text/csv")
+        response = HttpResponse(exports.BOM + services.template_csv(kind), content_type=exports.CSV_TYPE)
         response["Content-Disposition"] = f'attachment; filename="{kind.lower()}-template.csv"'
         return response
 
@@ -167,3 +169,14 @@ class ImportDetailView(OrgMemberRequiredMixin, View):
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
         return redirect("imports:detail", public_id=batch.public_id)
+
+
+class SwitchGuideView(OrgMemberRequiredMixin, View):
+    """Moving from cash, a bank account, another Paybill or Till, a notebook or another system."""
+
+    def get(self, request):
+        return render(request, "imports/switch.html", {
+            "steps": switch.steps(request.organization),
+            "can_import": bool(_kinds(request.membership)),
+            "can_announce": can(request.membership, "messages.send_bulk"),
+        })

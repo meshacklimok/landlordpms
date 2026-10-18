@@ -10,6 +10,7 @@ from django.core.paginator import Paginator
 from django.db.models import Q
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
@@ -17,14 +18,15 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from billing.invoicing import lease_balance
-from core import ratelimit
+from core import charts, ratelimit
 from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
 from payments import selectors as payment_selectors
-from payments.models import Payment, PaymentAccount
+from payments.models import Payment, PaymentAccount, PropertyPaymentAccount
+from properties.models import Property
 
-from . import codes, forms, inbox, paylinks, services, stk
+from . import codes, forms, inbox, overview, paylinks, services, setup, stk
 from .models import DarajaCredentials, MpesaTransaction, PayLink, StkRequest
 
 Status = MpesaTransaction.Status
@@ -39,6 +41,62 @@ def _add_errors(form, exc: ValidationError) -> None:
         form.add_error(None, exc)
 
 
+class OverviewView(CapabilityRequiredMixin, View):
+    """Where the M-Pesa menu item opens: this month's money, what needs a person and how each account is doing."""
+
+    template_name = "mpesa/overview.html"
+    required_capability = "mpesa.view_transactions"
+
+    def get(self, request):
+        m = request.membership
+        data = overview.dashboard(m, request.organization)
+        cur = request.organization.currency
+        listing = reverse("mpesa:transactions")
+
+        def between(start, end):
+            return f"{listing}?from={start.isoformat()}&to={end.isoformat()}"
+
+        months = data["months"]
+        month_labels = [f"{r['month']:%b %y}" for r in months]
+        month_labels[-1] = _("%(m)s (so far)") % {"m": month_labels[-1]}
+        month_chart = charts.chart(
+            "bar", month_labels,
+            [charts.series(_("Received"), [r["total"] for r in months], "1",
+                           colors=["1"] * (len(months) - 1) + ["1-soft"])],
+            currency=cur, links=[between(r["month"], overview.add_months(r["month"], 1) - datetime.timedelta(days=1))
+                                 for r in months])
+        day_chart = charts.chart(
+            "bar", [f"{d.day} {d:%b}" for d in data["days"]],
+            [charts.series(_("Received"), data["per_day"], "1"),
+             charts.series(_("7-day average"), [round(v) for v in data["per_day_avg"]], "4", type="line")],
+            currency=cur, links=[between(d, d) for d in data["days"]])
+        placement = [p for p in data["placement"] if p["total"]]
+        placed_chart = charts.chart(
+            "doughnut", [p["label"] for p in placement],
+            [charts.series(_("Received"), [p["total"] for p in placement], "1",
+                           colors=[p["color"] for p in placement])], currency=cur)
+        channels = [c for c in data["channels"] if c["total"]]
+        channel_chart = charts.chart(
+            "doughnut", [c["label"] for c in channels],
+            [charts.series(_("Received"), [c["total"] for c in channels], "1",
+                           colors=[c["color"] for c in channels])], currency=cur)
+        pattern_chart = charts.chart(
+            "bar", [str(d) for d in range(1, 32)],
+            [charts.series(_("Received"), data["month_days"], "1",
+                           colors=["1" if data["half_by"] and d <= data["half_by"] else "1-soft"
+                                   for d in range(1, 32)])], currency=cur)
+        return render(request, self.template_name, {
+            **overview.nav_counts(m), **data, "currency": cur, "cur": cur,
+            "chart": day_chart, "month_chart": month_chart, "placed_chart": placed_chart,
+            "channel_chart": channel_chart, "pattern_chart": pattern_chart,
+            "spark_total": [r["total"] for r in months], "spark_n": [r["n"] for r in months],
+            "spark_auto": [r["auto"] for r in months],
+            "day_rows": list(zip(data["days"], data["per_day"], data["per_day_avg"], strict=True)),
+            "pattern_rows": [(d, a) for d, a in enumerate(data["month_days"], start=1) if a],
+            "pattern_days": overview.PATTERN_DAYS, "hand_days": overview.HAND_MATCH_DAYS,
+            "can_match": can(m, "mpesa.match"), "can_settings": can(m, "mpesa.settings")})
+
+
 class SettingsView(CapabilityRequiredMixin, View):
     """The organization's Paybill and Till accounts and whether each is connected."""
 
@@ -51,7 +109,9 @@ class SettingsView(CapabilityRequiredMixin, View):
             creds = getattr(account, "daraja", None)
             rows.append({"account": account, "creds": creds})
         can_add = can(request.membership, "payment_accounts.manage")
-        return {"rows": rows, "can_add": can_add,
+        return {"rows": rows, "can_add": can_add, "video_url": setup.video_url(),
+                "video_embed": setup.video_embed(),
+                "help_url": setup.help_link(organization=request.organization, user=request.user),
                 "form": form or (forms.AccountForm() if can_add else None)}
 
     def get(self, request):
@@ -84,9 +144,9 @@ class AccountSettingsView(CapabilityRequiredMixin, View):
             raise Http404
         return account
 
-    def context(self, account, form=None):
+    def context(self, account, form=None, user=None):
         creds = DarajaCredentials.objects.filter(payment_account=account).first()
-        initial = {"environment": creds.environment if creds else DarajaCredentials.Environment.SANDBOX,
+        initial = {"environment": creds.environment if creds else DarajaCredentials.Environment.PRODUCTION,
                    "shortcode": creds.shortcode if creds and creds.shortcode != account.number else ""}
         form = form or forms.CredentialsForm(initial=initial)
         for name in DarajaCredentials.SECRETS:
@@ -94,11 +154,20 @@ class AccountSettingsView(CapabilityRequiredMixin, View):
             form.fields[name].widget.attrs.update({
                 "class": "form-control" + invalid, "autocomplete": "new-password",
                 "placeholder": _("Saved — leave blank to keep") if creds and creds.has(name) else _("Not set")})
-        return {"account": account, "creds": creds, "form": form}
+        prog = setup.progress(account, creds)
+        step = prog["current"]["title"] if prog["current"] else ""
+        selected = set(PropertyPaymentAccount.objects.filter(payment_account=account)
+                       .values_list("property_id", flat=True))
+        props = [{"p": p, "on": p.pk in selected}
+                 for p in Property.objects.filter(organization=account.organization).order_by("name")]
+        return {"account": account, "creds": creds, "form": form, "progress": prog, "props": props,
+                "video_url": setup.video_url(), "video_embed": setup.video_embed(),
+                "help_url": setup.help_link(organization=account.organization, user=user, account=account,
+                                            step=f"{prog['done'] + 1}/{prog['total']} {step}" if step else "")}
 
     def get(self, request, public_id):
         account = self.account(request, public_id)
-        return render(request, self.template_name, self.context(account))
+        return render(request, self.template_name, self.context(account, user=request.user))
 
     def post(self, request, public_id):
         account = self.account(request, public_id)
@@ -119,16 +188,43 @@ class AccountSettingsView(CapabilityRequiredMixin, View):
                 messages.error(request, " ".join(e.messages))
             return redirect("mpesa:account", public_id=account.public_id)
 
+        if action in ("applied", "not_applied"):
+            try:
+                services.mark_applied(m, account, action == "applied", request=request)
+            except PermissionDenied:
+                raise Http404 from None
+            messages.success(request, _("Noted. We will remind you if it takes long.") if action == "applied"
+                             else _("Taken back."))
+            return redirect("mpesa:account", public_id=account.public_id)
+
+        if action == "properties":
+            try:
+                n = services.set_properties(m, account, request.POST.getlist("property"), request=request)
+            except PermissionDenied:
+                raise Http404 from None
+            messages.success(request, _("This account now collects for %(n)s properties.") % {"n": n})
+            return redirect("mpesa:account", public_id=account.public_id)
+
         form = forms.CredentialsForm(request.POST)
         if form.is_valid():
             try:
-                services.save_credentials(m, account, **form.cleaned_data, request=request)
+                creds = services.save_credentials(m, account, **form.cleaned_data, request=request)
             except ValidationError as e:
                 _add_errors(form, e)
             else:
                 messages.success(request, _("M-Pesa settings saved."))
+                if creds.can_connect:
+                    try:
+                        services.check_keys(m, creds)
+                        messages.success(request, _("Safaricom accepted your keys."))
+                        if action == "save_connect" and not creds.urls_registered_at:
+                            services.register_urls(m, creds, request=request)
+                            messages.success(request, _("Connected. Safaricom will now send this account's "
+                                                        "payments here."))
+                    except ValidationError as e:
+                        messages.error(request, " ".join(e.messages))
                 return redirect("mpesa:account", public_id=account.public_id)
-        return render(request, self.template_name, self.context(account, form), status=400)
+        return render(request, self.template_name, self.context(account, form, request.user), status=400)
 
 
 # ---------------------------------------------------------------------------
