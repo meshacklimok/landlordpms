@@ -35,9 +35,9 @@
       </div>
       {% endif %}
     {% else %}
-      <p class="mb-2">{% trans "Let the owner see their monthly statements, payments made to them and their properties online, any time. Tenant names are not shown." %}</p>
+      <p class="mb-2">{% blocktrans with properties_l=vocab.properties|lower tenant=vocab.tenant %}Let the owner see their monthly statements, payments made to them and their {{ properties_l }} online, any time. {{ tenant }} names are not shown.{% endblocktrans %}</p>
       {% if not fully_sees %}
-      <p class="text-muted mb-0">{% trans "Only someone who sees all of this owner's properties can invite them." %}</p>
+      <p class="text-muted mb-0">{% blocktrans with properties_l=vocab.properties|lower %}Only someone who sees all of this owner's {{ properties_l }} can invite them.{% endblocktrans %}</p>
       {% elif not owner.phone %}
       <p class="text-muted mb-0">{% trans "Add the owner's phone number first: they log in with it." %}</p>
       {% else %}

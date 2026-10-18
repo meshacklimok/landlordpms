@@ -1,4 +1,4 @@
-{% extends "analytics/base.html" %}{% load i18n %}
+{% extends "console/base.html" %}{% load i18n %}
 {% block title %}{% if person %}{{ person.user.full_name }}{% else %}{% trans "Add a person" %}{% endif %}{% endblock %}
 {% block console_title %}{% if person %}{{ person.user.full_name }}{% else %}{% trans "Add a person to the console" %}{% endif %}{% endblock %}
 {% block console %}

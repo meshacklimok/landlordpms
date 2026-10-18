@@ -22,5 +22,17 @@
     {% endfor %}
   </div>
   {% endif %}
+
+  {% if can_export %}
+  <h2 class="h6 mt-4" id="your-data">{% trans "Your data" %}</h2>
+  <div class="card shadow-sm"><div class="card-body">
+    <p class="small mb-2">{% trans "Download everything your organization has in NyumbaPMS as one ZIP: a spreadsheet (CSV) for each kind of record and every uploaded file. Passwords and payment credentials are left out." %}</p>
+    <p class="small text-muted">{% trans "We put it together in the background and text you when it is ready, usually within a few minutes. Only you can download it, while signed in, and the link expires. It holds your tenants' personal data, so keep it safe. Everyone who manages the organization gets an SMS when you ask for it." %}</p>
+    <form method="post" action="{% url 'accounts:organization_export' %}">{% csrf_token %}
+      <button class="btn btn-outline-primary">{% trans "Download all my data" %}</button>
+    </form>
+    {% include "accounts/_data_exports.html" with download="accounts:organization_export_download" %}
+  </div></div>
+  {% endif %}
 </div>
 {% endblock %}

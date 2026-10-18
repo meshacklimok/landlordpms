@@ -1,4 +1,4 @@
-{% extends "analytics/base.html" %}{% load i18n money %}
+{% extends "console/base.html" %}{% load i18n money %}
 {% block title %}{% trans "Console growth" %}{% endblock %}
 {% block console_title %}{% trans "Growth, who uses the app, and where" %}{% endblock %}
 {% block console %}
@@ -25,11 +25,11 @@
   {% blocktrans with n=t.users %}{{ n }} people have accounts.{% endblocktrans %}</p>
 
 <div class="row g-3 mb-3">
-  <div class="col-lg-7">{% include "analytics/_chart.html" with spec="growth" title=_("How the app has grown") note=_("Running totals, month by month.") label=_("The same figures are in the table below.") %}</div>
-  <div class="col-lg-5">{% include "analytics/_chart.html" with spec="new" title=_("Who signs up each month") note=_("Landlords, agencies and the rest, against those who left.") label=_("Monthly counts are in the table.") %}</div>
-  <div class="col-lg-4">{% include "analytics/_chart.html" with spec="roles" title=_("Who is on the app") note=_("People by the role they hold, caretakers, owners, agents and so on.") label=_("Counts are in the table below.") %}</div>
-  <div class="col-lg-4">{% include "analytics/_chart.html" with spec="sizes" title=_("How big organizations are") note=_("By number of units.") label=_("Counts are in the table below.") %}</div>
-  <div class="col-lg-4">{% include "analytics/_chart.html" with spec="counties" title=_("Where it is used") note=_("Units by county, top twelve.") label=_("All counties are in the table below.") %}</div>
+  <div class="col-lg-7">{% include "console/_chart.html" with spec="growth" title=_("How the app has grown") note=_("Running totals, month by month.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-5">{% include "console/_chart.html" with spec="new" title=_("Who signs up each month") note=_("Landlords, agencies and the rest, against those who left.") label=_("Monthly counts are in the table.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="roles" title=_("Who is on the app") note=_("People by the role they hold, caretakers, owners, agents and so on.") label=_("Counts are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="sizes" title=_("How big organizations are") note=_("By number of units.") label=_("Counts are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="counties" title=_("Where it is used") note=_("Units by county, top twelve.") label=_("All counties are in the table below.") %}</div>
 </div>
 
 <h2 class="h6">{% trans "Month by month" %}</h2>
@@ -62,5 +62,5 @@
   </div>
 </div>
 {% endwith %}
-{% include "analytics/_specs.html" %}
+{% include "console/_specs.html" %}
 {% endblock %}

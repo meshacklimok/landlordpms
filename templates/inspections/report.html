@@ -1,8 +1,5 @@
 {% extends "base.html" %}{% load i18n money %}
 {% block title %}{{ report.get_kind_display }} {% trans "report" %} · {{ unit.code }}{% endblock %}
-{% block head %}<style>
-@media print { nav, .d-print-none, .alert-dismissible { display: none !important; } .card { box-shadow: none !important; break-inside: avoid; } body { background: #fff; } }
-</style>{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
   <a href="{% url 'leases:detail' lease.public_id %}" class="small d-print-none">← {{ lease }} · {{ unit.code }}</a>

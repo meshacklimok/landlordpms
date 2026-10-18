@@ -14,6 +14,31 @@
   <a href="{% url 'billing:arrears' %}">{% trans "Arrears by age" %}</a>
 </p>
 
+{% if summary.total %}{% with cur=summary.currency %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Overdue in total" %}</div>
+    <div class="stat-value num">{{ summary.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=summary.total %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Still to call" %}</div>
+    <div class="stat-value num">{{ summary.to_call }}</div>
+    <div class="stat-sub">{% if summary.broken %}{% blocktrans count n=summary.broken %}{{ n }} broken promise{% plural %}{{ n }} broken promises{% endblocktrans %}{% else %}{% trans "No broken promises" %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Promised to pay" %}</div>
+    <div class="stat-value num">{{ summary.promised }}</div>
+    <div class="stat-sub">{% blocktrans with a=summary.promised_amount|money:cur %}{{ a }} on the way{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Called today" %}</div>
+    <div class="stat-value num">{{ summary.done }}</div>
+    <div class="stat-sub">{% blocktrans with n=summary.done t=summary.total %}{{ n }} of {{ t }} reached today{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+{% endwith %}{% endif %}
+
 {% if form.non_field_errors or form.errors %}
 <div class="alert alert-danger small">
   {% if follow_up_lease %}{% blocktrans with l=follow_up_lease.number %}Not saved for {{ l }}:{% endblocktrans %}{% endif %}

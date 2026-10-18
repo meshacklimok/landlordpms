@@ -1,7 +1,5 @@
 {% extends "base.html" %}{% load i18n %}
 {% block title %}NyumbaPMS · {% trans "Rent collection and property management for Kenya" %}{% endblock %}
-{% block meta %}<meta name="description" content="{% trans 'Bill tenants, match M-Pesa payments to units, send SMS reminders and see who owes what. Free 30-day trial.' %}">
-<meta property="og:title" content="NyumbaPMS"><meta property="og:description" content="{% trans 'Rent collection and property management for Kenyan landlords, agents and estates.' %}">{% endblock %}
 {% block page_class %} page-wide{% endblock %}
 {% block content %}
 <div class="about land">
@@ -12,7 +10,7 @@
     <p class="land-pill"><span class="land-pill-dot" aria-hidden="true"></span>{% trans "Rent software made for Kenya" %}</p>
     <h1 class="about-title">{% trans "Collect rent." %} <span class="land-accent">{% trans "Know who owes." %}</span> {% trans "Stop chasing." %}</h1>
     <p class="about-lead">{% trans "NyumbaPMS bills your tenants, matches their M-Pesa payments to the right unit, reminds them by SMS, and shows you the figures, from one phone or computer." %}</p>
-    {% if invited %}<div class="alert alert-success small mt-3 mb-0" data-referral-applied>{% trans "You were invited by a NyumbaPMS customer. You both get free days when you pay for your first plan." %}</div>{% endif %}
+    {% if invited %}<div class="alert alert-success small mt-3 mb-0" data-referral-applied>{{ invited }}</div>{% endif %}
     <div class="land-cta-row">
       <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% blocktrans with d=trial_days %}Start your {{ d }}-day free trial{% endblocktrans %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
       <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}"><i class="bi bi-calendar-event" aria-hidden="true"></i> {% trans "Book a demo" %}</a>

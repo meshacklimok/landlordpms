@@ -8,6 +8,7 @@
   <li>{% trans "Fill it in on the computer or by hand, or paste in your own spreadsheet with the same column names." %}</li>
   <li>{% trans "Upload the file, or take a photo of the filled form." %}</li>
 </ol>
+<p class="small mb-3"><i class="bi bi-signpost-split" aria-hidden="true"></i> <a href="{% url 'imports:switch' %}">{% trans "Moving from another Paybill, a notebook or another system? Follow the steps" %}</a></p>
 <div class="row g-3 mb-4">
   {% for slug, kind in cards %}
   <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">

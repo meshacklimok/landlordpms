@@ -24,6 +24,7 @@
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:dashboard_export' %}?{% if query %}{{ query }}&{% endif %}format=xlsx"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download figures (Excel)" %}</a>{% endif %}
   <button type="button" class="btn btn-sm btn-outline-secondary" data-print><i class="bi bi-printer" aria-hidden="true"></i> {% trans "Print" %}</button>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:units' %}{% if board.scope.selected_property %}?property={{ board.scope.selected_property.public_id }}{% endif %}">{% trans "Unit by unit" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:outlook' %}{% if board.scope.selected_property %}?property={{ board.scope.selected_property.public_id }}{% endif %}">{% trans "Rent outlook" %}</a>
   {% if can_income %}
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:income' %}">{% trans "Rental income pack" %}</a>
   {% if agency_tools %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:owner_statement' %}">{% trans "Owner statement" %}</a>{% endif %}

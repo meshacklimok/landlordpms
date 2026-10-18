@@ -1,0 +1,15 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{{ item.subject }}{% endblock %}
+{% block console_title %}{{ item.subject }}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% blocktrans with d=item.created_at|date:"j M Y H:i" n=item.sent_by.full_name s=item.sent r=item.recipients f=item.failed %}Sent {{ d }} by {{ n }}. {{ s }} of {{ r }} delivered, {{ f }} failed.{% endblocktrans %}
+  <a href="{% url 'console:owner_emails' %}">{% trans "All emails sent" %}</a></p>
+<div class="card shadow-sm mb-3"><div class="card-body small" style="white-space:pre-wrap">{{ item.body }}</div></div>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Owner" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Address" %}</th><th>{% trans "Result" %}</th></tr></thead>
+  <tbody>{% for x in deliveries %}<tr>
+    <td>{{ x.user.full_name }}</td><td>{{ x.organization.name }}</td><td class="text-break">{{ x.address }}</td>
+    <td>{% if x.ok %}{% trans "Delivered" %}{% else %}<span class="text-danger">{{ x.error|default:_("Failed") }}</span>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

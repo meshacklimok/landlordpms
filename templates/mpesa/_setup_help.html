@@ -1,0 +1,18 @@
+{% load i18n %}
+{% if video_embed %}
+<div class="card shadow-sm mb-3" data-setup-video><div class="card-body">
+  <div class="fw-semibold small mb-2">{% trans "Watch: connecting your Paybill, start to finish" %}</div>
+  <div class="ratio ratio-16x9"><iframe src="{{ video_embed }}" title="{% trans 'Connecting your Paybill' %}" loading="lazy" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+</div></div>
+{% endif %}
+<div class="card shadow-sm mb-3" data-setup-help><div class="card-body d-flex flex-wrap align-items-center gap-2 justify-content-between">
+  <div class="small">
+    <div class="fw-semibold">{% trans "Stuck? We will walk you through it." %}</div>
+    <div class="text-body-secondary">{% trans "Message us on WhatsApp and we will help you step by step. Your details are filled in for you." %}</div>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    {% if video_url and not video_embed %}<a class="btn btn-sm btn-outline-secondary" href="{{ video_url }}" target="_blank" rel="noopener"><i class="bi bi-play-circle" aria-hidden="true"></i> {% trans "Watch the video" %}</a>{% endif %}
+    {% if help_url %}<a class="btn btn-sm btn-success" href="{{ help_url }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp" aria-hidden="true"></i> {% trans "Get help on WhatsApp" %}</a>
+    {% else %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'support:contact' %}">{% trans "Message us" %}</a>{% endif %}
+  </div>
+</div></div>

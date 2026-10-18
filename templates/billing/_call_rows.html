@@ -1,16 +1,25 @@
 {% load i18n money %}{% if rows %}
 <div class="list-group mb-2">
   {% for row in rows %}{% with lease=row.lease tenant=row.lease.primary_tenant cur=row.lease.currency %}
-  <div class="list-group-item py-2">
-    <div class="d-flex flex-wrap justify-content-between gap-2">
+  <div class="list-group-item py-3 border-start border-4 {% if row.promise == 'broken' or row.days > 60 %}border-danger{% elif row.days > 30 %}border-warning{% elif row.days > 7 %}border-info{% else %}border-secondary-subtle{% endif %}">
+    <div class="d-flex flex-wrap justify-content-between gap-3">
+      <div class="d-flex gap-3 align-items-start">
+        <span class="avatar" aria-hidden="true">{{ tenant.name|default:lease.number|slice:":1"|upper }}</span>
       <div>
-        <a class="fw-semibold" href="{% url 'billing:lease_account' lease.public_id %}">{{ tenant.name|default:lease.number }}</a>
+        <a class="fw-semibold fs-6" href="{% url 'billing:lease_account' lease.public_id %}">{{ tenant.name|default:lease.number }}</a>
         <span class="badge {% if row.grade.grade == 'A' or row.grade.grade == 'B' %}text-bg-success{% elif row.grade.grade == 'C' %}text-bg-warning{% elif row.grade.grade %}text-bg-danger{% else %}text-bg-light border{% endif %}" title="{% trans 'Collectability grade' %}">{{ row.grade.label }}</span>
         <div class="small text-muted">{{ lease.unit.property.name }} · {{ lease.unit.code }} · {{ lease.number }}{% if lease.status != "ACTIVE" %} · {{ lease.get_status_display }}{% endif %}</div>
-        {% if can_tenants and tenant.phone %}<div class="small"><a href="tel:{{ tenant.phone }}">{{ tenant.phone }}</a>{% if tenant.alt_phone %} · <a href="tel:{{ tenant.alt_phone }}">{{ tenant.alt_phone }}</a>{% endif %}</div>{% endif %}
+        {% if can_tenants and tenant.phone %}<div class="small mt-1 d-flex flex-wrap gap-2 align-items-center">
+          <a class="btn btn-sm btn-outline-primary py-0" href="tel:{{ tenant.phone }}" aria-label="{% blocktrans with p=tenant.phone %}Call {{ p }}{% endblocktrans %}">{% trans "Call" %} {{ tenant.phone }}</a>
+          {% blocktrans asvar wa_text with n=tenant.name|default:"" a=row.overdue|money:cur u=lease.unit.code p=lease.unit.property.name %}Hello {{ n }}, a friendly reminder that {{ a }} is overdue for {{ p }}, {{ u }}. Please let us know when you will pay. Thank you.{% endblocktrans %}
+          <a class="btn btn-sm btn-outline-secondary py-0" href="https://wa.me/{{ tenant.phone|cut:'+'|cut:' ' }}?text={{ wa_text|urlencode }}" target="_blank" rel="noopener">{% trans "WhatsApp" %}</a>
+          {% if tenant.alt_phone %}<a class="small" href="tel:{{ tenant.alt_phone }}">{{ tenant.alt_phone }}</a>{% endif %}
+        </div>{% endif %}
+      </div>
       </div>
       <div class="text-end small">
-        <div class="fw-semibold text-danger text-nowrap">{% blocktrans with a=row.overdue|money:cur %}{{ a }} overdue{% endblocktrans %}</div>
+        <div class="fw-bold fs-5 lh-1 mb-1 text-danger text-nowrap">{% blocktrans with a=row.overdue|money:cur %}{{ a }} overdue{% endblocktrans %}</div>
+        <div class="progress ms-auto mb-1" style="height: 4px; width: 7rem" role="progressbar" aria-label="{% trans 'Days overdue' %}" aria-valuenow="{% if row.days > 90 %}90{% else %}{{ row.days }}{% endif %}" aria-valuemin="0" aria-valuemax="90"><div class="progress-bar {% if row.days > 60 %}bg-danger{% elif row.days > 30 %}bg-warning{% else %}bg-info{% endif %}" style="width: {% if row.days > 90 %}100{% else %}{% widthratio row.days 90 100 %}{% endif %}%"></div></div>
         <div class="text-muted text-nowrap">{% blocktrans count n=row.days %}{{ n }} day since the oldest was due{% plural %}{{ n }} days since the oldest was due{% endblocktrans %}</div>
         {% if row.grade.invoices %}<div class="text-muted text-nowrap">{% blocktrans with k=row.grade.on_time n=row.grade.invoices avg=row.grade.average_late %}{{ k }} of {{ n }} paid in time · {{ avg }} days late on average{% endblocktrans %}</div>{% endif %}
       </div>
@@ -25,9 +34,9 @@
     </div>
     {% endwith %}{% endif %}
     {% if can_follow_up %}
-    <details class="mt-1 small"{% if follow_up_lease and follow_up_lease.pk == lease.pk %} open{% endif %}>
-      <summary>{% trans "Record a call" %}</summary>
-      <form method="post" action="{% url 'billing:follow_up' lease.public_id %}" class="row g-2 mt-1 align-items-end">
+    <details class="mt-2 small"{% if follow_up_lease and follow_up_lease.pk == lease.pk %} open{% endif %}>
+      <summary class="fw-semibold text-primary">{% trans "Record a call" %}</summary>
+      <form method="post" action="{% url 'billing:follow_up' lease.public_id %}" class="row g-2 mt-1 p-2 rounded bg-body-tertiary align-items-end">
         {% csrf_token %}
         <input type="hidden" name="next_query" value="{{ query }}">
         <div class="col-sm-3">

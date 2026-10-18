@@ -70,9 +70,15 @@
     <h2 class="h6 mb-1">{% trans "Delivery reports and replies" %}</h2>
     <p class="small text-body-secondary">{% trans "In Meta: WhatsApp > Configuration > Webhook. Paste these two values, then subscribe to “messages”. Without this, messages still go out, but you will not see delivered or failed, and a tenant's STOP will not be heard." %}</p>
     <label class="form-label small mb-1" for="wa-url">{% trans "Callback URL" %}</label>
-    <input id="wa-url" class="form-control form-control-sm font-monospace mb-2" value="{{ webhook_url }}" readonly>
+    <div class="input-group input-group-sm mb-2">
+      <input id="wa-url" class="form-control font-monospace" value="{{ webhook_url }}" readonly>
+      <button type="button" class="btn btn-outline-secondary" data-copy="#wa-url" data-copied="{% trans 'Copied' %}" aria-label="{% trans 'Copy the callback URL' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
+    </div>
     <label class="form-label small mb-1" for="wa-verify">{% trans "Verify token" %}</label>
-    <input id="wa-verify" class="form-control form-control-sm font-monospace mb-2" value="{{ account.verify_token }}" readonly>
+    <div class="input-group input-group-sm mb-2">
+      <input id="wa-verify" class="form-control font-monospace" value="{{ account.verify_token }}" readonly>
+      <button type="button" class="btn btn-outline-secondary" data-copy="#wa-verify" aria-label="{% trans 'Copy the verify token' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button>
+    </div>
     {% if not account.app_secret_encrypted %}<div class="alert alert-warning small py-2" role="alert">{% trans "Add the app secret above first: replies are ignored without it." %}</div>{% endif %}
     <form method="post" class="mt-2" data-confirm='{% trans "Make a new address and token? Meta needs the new ones, or it stops reporting." %}'>{% csrf_token %}<input type="hidden" name="action" value="webhook"><button class="btn btn-outline-secondary btn-sm">{% trans "Make new ones" %}</button></form>
   </div></div>

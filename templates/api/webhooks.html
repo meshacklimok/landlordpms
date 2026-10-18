@@ -9,7 +9,10 @@
   {% if secret %}
   <div class="alert alert-success" role="status">
     <div class="fw-semibold mb-1">{% trans "Webhook added. Copy its signing secret now: it will not be shown again." %}</div>
-    <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" aria-label="{% trans 'Signing secret' %}" data-webhook-secret data-select-on-focus>
+    <div class="input-group">
+      <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" id="webhook-secret" aria-label="{% trans 'Signing secret' %}" data-webhook-secret data-select-on-focus>
+      <button type="button" class="btn btn-outline-secondary" data-copy="#webhook-secret" data-copied="{% trans 'Copied' %}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+    </div>
     <div class="small mt-2">{% blocktrans %}Use it to check the <code>X-LPMS-Signature</code> header on every event.{% endblocktrans %} <a href="{% url 'api:webhook' created.public_id %}">{% trans "Open the webhook" %}</a></div>
   </div>
   {% endif %}

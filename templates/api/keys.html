@@ -9,7 +9,10 @@
   {% if secret %}
   <div class="alert alert-success" role="status">
     <div class="fw-semibold mb-1">{% blocktrans with name=created.name %}Key “{{ name }}” created. Copy it now: it will not be shown again.{% endblocktrans %}</div>
-    <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" aria-label="{% trans 'API key' %}" data-api-secret data-select-on-focus>
+    <div class="input-group">
+      <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" id="api-secret" aria-label="{% trans 'API key' %}" data-api-secret data-select-on-focus>
+      <button type="button" class="btn btn-outline-secondary" data-copy="#api-secret" data-copied="{% trans 'Copied' %}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+    </div>
     <div class="small mt-2">{% blocktrans %}Send it as <code>Authorization: Bearer &lt;key&gt;</code> to{% endblocktrans %} <code>{{ api_base }}</code></div>
   </div>
   {% endif %}

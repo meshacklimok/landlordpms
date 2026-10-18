@@ -2,28 +2,65 @@
 {% block title %}{% trans "Subscription" %}{% endblock %}
 {% block scripts %}<script src="{% static 'js/pay_status.js' %}" defer></script>{% endblock %}
 {% block content %}
-<h1 class="h4 mb-3">{% trans "Subscription" %}</h1>
+<div class="d-flex flex-wrap align-items-end justify-content-between gap-2 mb-3">
+  <h1 class="h4 mb-0">{% trans "Subscription" %}</h1>
+  <nav class="sub-jump" aria-label="{% trans 'On this page' %}">
+    {% if can_manage %}<a href="#plans">{% trans "Plans" %}</a>{% endif %}
+    <a href="#extras">{% trans "SMS and scans" %}</a>
+    <a href="#history">{% trans "Invoices and payments" %}</a>
+  </nav>
+</div>
 
-<div class="row g-3 mb-3">
-  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
-    <h2 class="h6 text-muted">{% trans "Your plan" %}</h2>
-    <p class="h5 mb-1">{{ sub.plan.name }}
-      <span class="badge {% if sub.status == 'ACTIVE' %}text-bg-success{% elif sub.status == 'TRIAL' %}text-bg-info{% else %}text-bg-warning{% endif %}">{{ sub.get_status_display }}</span></p>
+<div class="row g-3 mb-4">
+  <div class="col-lg-5"><div class="card shadow-sm h-100 sub-plan"><div class="card-body d-flex flex-column">
+    <p class="sub-eyebrow">{% trans "Your plan" %}</p>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="sub-plan-name">{{ sub.plan.name }}</span>
+      <span class="badge {% if sub.status == 'ACTIVE' %}text-bg-success{% elif sub.status == 'TRIAL' %}text-bg-info{% else %}text-bg-warning{% endif %}">{{ sub.get_status_display }}</span>
+    </div>
     {% if sub.status == "TRIAL" %}
-      <p class="small mb-0">{% blocktrans with d=sub.trial_ends_on|date:"j M Y" %}Free trial until {{ d }}. Then you move to Free if you fit its limits, or are asked to pay.{% endblocktrans %}</p>
+      <p class="small mt-2 mb-0">{% blocktrans with d=sub.trial_ends_on|date:"j M Y" %}Free trial until {{ d }}. Then you move to Free if you fit its limits, or are asked to pay.{% endblocktrans %}</p>
     {% elif sub.period_end %}
-      <p class="small mb-0">{% blocktrans with i=sub.get_interval_display|lower s=sub.period_start|date:"j M Y" e=sub.period_end|date:"j M Y" %}Paid {{ i }}, {{ s }} to {{ e }}.{% endblocktrans %}</p>
+      <p class="small mt-2 mb-0">{% blocktrans with i=sub.get_interval_display|lower s=sub.period_start|date:"j M Y" e=sub.period_end|date:"j M Y" %}Paid {{ i }}, {{ s }} to {{ e }}.{% endblocktrans %}</p>
     {% endif %}
-    <div class="table-responsive"><table class="table table-sm small mt-3 mb-0">
-      <thead><tr><th></th><th class="text-end">{% trans "Using" %}</th><th class="text-end">{% trans "Plan allows" %}</th></tr></thead>
-      <tbody>{% for label, used, limit in usage %}
-        <tr><td>{{ label|capfirst }}</td><td class="text-end">{{ used }}</td><td class="text-end">{% if limit is None %}{% trans "No limit" %}{% else %}{{ limit }}{% endif %}</td></tr>
-      {% endfor %}</tbody>
-    </table></div>
-    <p class="small text-muted mt-2 mb-0">{% trans "Viewers do not count as team members." %}</p>
+    {% if change %}
+      <div class="alert alert-info small mt-2 mb-0" role="status">
+        {% if change.stops %}{% blocktrans with d=change.on|date:"j M Y" %}Your plan will not renew. From {{ d }} you move to Free.{% endblocktrans %}{% else %}{% blocktrans with p=change.plan.name d=change.on|date:"j M Y" %}From {{ d }} you move to {{ p }}.{% endblocktrans %}{% endif %}
+        {% if can_manage %}<form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="cancel_change"><button class="btn btn-link btn-sm p-0 align-baseline">{% trans "Cancel this change" %}</button></form>{% endif %}
+      </div>
+    {% endif %}
+    {% if sub.has_card %}
+      <div class="small mt-2" id="auto-renew">
+        <i class="bi bi-credit-card" aria-hidden="true"></i>
+        {% blocktrans with c=sub.card_brand l=sub.card_last4 e=sub.card_expiry %}Saved card: {{ c }} ending {{ l }}, expires {{ e }}.{% endblocktrans %}
+        <strong>{% if sub.auto_renew %}{% trans "Renews automatically." %}{% else %}{% trans "Automatic renewal is off." %}{% endif %}</strong>
+        {% if can_manage %}
+        <form method="post" class="d-inline">{% csrf_token %}
+          <button class="btn btn-link btn-sm p-0 align-baseline" name="action" value="{% if sub.auto_renew %}auto_renew_off{% else %}auto_renew_on{% endif %}">{% if sub.auto_renew %}{% trans "Turn off" %}{% else %}{% trans "Turn on" %}{% endif %}</button>
+          <span aria-hidden="true">·</span>
+          <button class="btn btn-link btn-sm p-0 align-baseline text-danger" name="action" value="remove_card">{% trans "Remove card" %}</button>
+        </form>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% if sub.status == "PAST_DUE" %}<p class="small mt-2 mb-0">{% blocktrans with n=grace_days %}If payment is not made within {{ n }} days of the due date the account becomes read-only. You can still see and download all your records.{% endblocktrans %}</p>{% endif %}
+    {% if sub.status == "LAPSED" %}<p class="small mt-2 mb-0">{% trans "The account is read-only: you can see and download all your records. Pay the open invoice to add and change things again." %}</p>{% endif %}
+    <hr class="sub-rule">
+    <ul class="sub-meters list-unstyled mb-0">
+    {% for m in meters %}
+      <li>
+        <div class="d-flex justify-content-between align-items-baseline">
+          <span>{{ m.label|capfirst }}</span>
+          <span class="sub-meter-num"><strong>{{ m.used }}</strong> {% if m.limit is None %}<span class="text-muted">{% trans "of no limit" %}</span>{% else %}<span class="text-muted">{% blocktrans with n=m.limit %}of {{ n }}{% endblocktrans %}</span>{% endif %}</span>
+        </div>
+        {% if m.limit is not None %}<div class="progress sub-meter{% if m.percent >= 90 %} sub-meter-full{% endif %}" role="progressbar" aria-label="{{ m.label|capfirst }}" aria-valuenow="{{ m.percent }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width:{{ m.percent }}%"></div></div>{% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+    <p class="small text-muted mt-3 mb-0">{% trans "Viewers do not count as team members." %}</p>
   </div></div></div>
 
-  <div class="col-md-6"><div class="card shadow-sm h-100 pay-card"><div class="card-body">
+  <div class="col-lg-7"><div class="card shadow-sm h-100 pay-card"><div class="card-body">
     <h2 class="h6 text-muted">{% trans "To pay" %}</h2>
     {% if open_invoice %}
       <div class="pay-amount" aria-label="{% blocktrans with a=open_invoice.outstanding|floatformat:2 %}KES {{ a }} to pay{% endblocktrans %}"><span class="pay-cur">KES</span> {{ open_invoice.outstanding|floatformat:2 }}</div>
@@ -82,16 +119,20 @@
             <ul class="pay-accepts" aria-label="{% trans 'Accepted' %}">
               <li><i class="bi bi-credit-card-2-front" aria-hidden="true"></i> Visa</li>
               <li><i class="bi bi-credit-card-2-back" aria-hidden="true"></i> Mastercard</li>
-              <li><i class="bi bi-phone" aria-hidden="true"></i> M-Pesa</li>
             </ul>
             <p class="form-text mt-0">{% trans "You will enter your details on Paystack's secure page and come back here when it is done. We never see or store your card number." %}</p>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" name="save_card" id="pay-save-card" value="1">
+              <label class="form-check-label" for="pay-save-card">{% if sub.has_card %}{% trans "Use this card for automatic renewal instead of the saved one" %}{% else %}{% trans "Renew automatically with this card" %}{% endif %}</label>
+              <div class="form-text">{% trans "Paystack keeps the card. We charge it for your renewal a couple of days before your plan ends, and email you each time. You can turn this off or remove the card here at any time." %}</div>
+            </div>
             <button class="btn btn-primary w-100 pay-go"><i class="bi bi-lock" aria-hidden="true"></i> {% trans "Continue to secure checkout" %}</button>
           </form>
           <div class="pay-or" aria-hidden="true"><span>{% trans "or" %}</span></div>
           <form method="post" action="{% url 'subscriptions:pay_paystack_mpesa' %}">{% csrf_token %}
             <input type="hidden" name="invoice" value="{{ open_invoice.public_id }}">
             <label class="pay-label" for="pay-phone-ps">{% trans "M-Pesa prompt through Paystack" %}</label>
-            <div class="input-group">
+            <div class="input-group pay-prompt-row">
               <span class="input-group-text" aria-hidden="true"><i class="bi bi-phone"></i></span>
               <input id="pay-phone-ps" name="phone" type="tel" class="form-control" value="{{ phone }}" required
                      autocomplete="tel" inputmode="tel" placeholder="07XX XXX XXX" aria-describedby="pay-phone-ps-help">
@@ -125,9 +166,9 @@
 </div>
 
 {% if can_manage %}
-<div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Choose a plan" %}</h2>
-  <p class="small text-muted">{% trans "Prices are in KES before VAT. Moving up mid-period credits the unused days of what you paid." %}</p>
+<div class="card shadow-sm mb-4" id="plans"><div class="card-body">
+  <h2 class="h5">{% trans "Choose a plan" %}</h2>
+  <p class="small text-muted">{% trans "Prices are in KES before VAT. Moving up starts at once and credits the unused days of what you paid. Moving down, or going to Free to stop renewing, waits until your paid period ends, so you use what you paid for." %}</p>
   {% include "growth/_plans.html" with choose=True %}
   {% include "growth/_compare.html" %}
   <div class="border rounded p-3 mt-4">
@@ -139,8 +180,9 @@
 </div></div>
 {% endif %}
 
-<div class="card shadow-sm mb-3"><div class="card-body">
-    <h2 class="h6 text-muted">{% trans "SMS" %}</h2>
+<div class="row g-3 mb-4" id="extras">
+<div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <p class="sub-eyebrow">{% trans "SMS" %}</p>
     <p class="h5 mb-1">{% blocktrans with n=sms.used %}{{ n }} parts sent this month{% endblocktrans %}</p>
     {% if sms.mode == "SPONSORED" %}
       <p class="small mb-1">{% if sms.cap is not None %}{% blocktrans with cap=sms.cap left=sms.left %}We pay for your SMS, up to {{ cap }} parts a month. {{ left }} left.{% endblocktrans %}{% else %}{% trans "We pay for your SMS." %}{% endif %}</p>
@@ -170,14 +212,15 @@
         <div class="col-auto"><button class="btn btn-sm btn-primary" name="method" value="mpesa">{% trans "Top up with M-Pesa" %}</button></div>
         {% endif %}
         {% if sms_top_up.paystack %}
-        <div class="col-auto"><button class="btn btn-sm {% if sms_top_up.mpesa %}btn-outline-primary{% else %}btn-primary{% endif %}" name="method" value="paystack" formnovalidate>{% trans "Card or M-Pesa (Paystack)" %}</button></div>
+        <div class="col-auto"><button class="btn btn-sm {% if sms_top_up.mpesa %}btn-outline-primary{% else %}btn-primary{% endif %}" name="method" value="paystack" formnovalidate>{% trans "Card (Paystack)" %}</button></div>
         {% endif %}
       </form>
       {% endif %}
       {% if paybill %}<p class="small text-muted mb-0">{% blocktrans %}Or pay Paybill {{ paybill }} with account SMS and send us the M-Pesa code.{% endblocktrans %}</p>{% endif %}
     {% endif %}
-    <hr>
-    <h2 class="h6 text-muted" id="ai-use">{% trans "Photo scans and the assistant" %}</h2>
+</div></div></div>
+<div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <p class="sub-eyebrow" id="ai-use">{% trans "Photo scans and the assistant" %}</h2>
     {% if scans.available or scans.used %}
     <p class="h5 mb-1">{% blocktrans count n=scans.used %}{{ n }} photo scan this month{% plural %}{{ n }} photo scans this month{% endblocktrans %}</p>
     <p class="small mb-1">{% blocktrans with cap=scans.limit left=scans.left %}Up to {{ cap }} a month are included. {{ left }} left.{% endblocktrans %}
@@ -188,8 +231,8 @@
     {% endif %}
     <p class="small mb-0">{% if assistant.on or assistant.asked %}{% blocktrans count n=assistant.asked %}{{ n }} question asked of the assistant this month{% plural %}{{ n }} questions asked of the assistant this month{% endblocktrans %}{% if assistant.tenants %} <span class="text-muted">{% blocktrans with s=assistant.staff t=assistant.tenants %}(staff {{ s }}, tenants {{ t }}){% endblocktrans %}</span>{% endif %}.{% else %}{% trans "The assistant is off." %}{% endif %}</p>
     <p class="small text-muted mb-0">{% trans "Photos and questions are read by OpenAI. A scan that fails is not counted." %}</p>
-    <hr>
-    <h2 class="h6 text-muted" id="sender-name">{% trans "SMS sender name" %}</h2>
+    <hr class="sub-rule">
+    <p class="sub-eyebrow" id="sender-name">{% trans "SMS sender name" %}</p>
     {% with s=org %}
     {% if s.sms_sender_status == "APPROVED" %}
       <p class="h5 mb-1">{{ s.sms_sender_id }} <span class="badge text-bg-success">{% trans "Approved" %}</span></p>
@@ -222,10 +265,16 @@
       {% endif %}
     {% endif %}
     {% endwith %}
-</div></div>
+</div></div></div>
+</div>
 
-<div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Invoices" %}</h2>
+<div class="card shadow-sm mb-3" id="history"><div class="card-body">
+  <ul class="nav pay-tabs mb-3" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link active" id="hist-tab-inv" data-bs-toggle="pill" data-bs-target="#hist-inv" type="button" role="tab" aria-controls="hist-inv" aria-selected="true">{% trans "Invoices" %}</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="hist-tab-pay" data-bs-toggle="pill" data-bs-target="#hist-pay" type="button" role="tab" aria-controls="hist-pay" aria-selected="false">{% trans "Payments and receipts" %}</button></li>
+  </ul>
+  <div class="tab-content">
+  <div class="tab-pane fade show active" id="hist-inv" role="tabpanel" aria-labelledby="hist-tab-inv" tabindex="0">
   {% if invoices %}
   <div class="table-responsive"><table class="table table-sm small mb-0">
     <thead><tr><th>{% trans "Number" %}</th><th>{% trans "Plan" %}</th><th>{% trans "Issued" %}</th><th class="text-end">{% trans "Total" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
@@ -236,10 +285,8 @@
     {% endfor %}</tbody>
   </table></div>
   {% else %}<p class="small text-muted mb-0">{% trans "No invoices yet." %}</p>{% endif %}
-</div></div>
-
-<div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Payments and receipts" %}</h2>
+  </div>
+  <div class="tab-pane fade" id="hist-pay" role="tabpanel" aria-labelledby="hist-tab-pay" tabindex="0">
   {% if payments %}
   <div class="table-responsive"><table class="table table-sm small mb-0">
     <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Reference" %}</th><th>{% trans "For" %}</th><th class="text-end">{% trans "Amount" %}</th><th></th></tr></thead>
@@ -250,5 +297,7 @@
     {% endfor %}</tbody>
   </table></div>
   {% else %}<p class="small text-muted mb-0">{% trans "No payments yet." %}</p>{% endif %}
+  </div>
+  </div>
 </div></div>
 {% endblock %}

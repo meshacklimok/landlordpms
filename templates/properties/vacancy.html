@@ -45,11 +45,11 @@
         </div>
         {% endif %}{% endfor %}
         <button class="btn btn-primary btn-sm">{% trans "Send" %}</button>
-        <div class="form-text">{% trans "Your name and phone go only to the people letting this unit, to reply to you." %}</div>
+        <div class="form-text">{% blocktrans with unit_l=vocab.unit|lower %}Your name and phone go only to the people letting this {{ unit_l }}, to reply to you.{% endblocktrans %}</div>
       </form>
       {% endif %}
     {% else %}
-      <p class="small text-muted mb-0">{% trans "This unit has been let or taken off the market." %}</p>
+      <p class="small text-muted mb-0">{% blocktrans with unit_l=vocab.unit|lower %}This {{ unit_l }} has been let or taken off the market.{% endblocktrans %}</p>
     {% endif %}
   </div></div>
   <p class="small text-muted text-center mt-3">{{ unit.organization.display_name }}</p>

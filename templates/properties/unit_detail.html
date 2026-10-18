@@ -12,7 +12,7 @@
 
 {% if unit.is_archived %}
 <div class="alert alert-secondary d-flex justify-content-between align-items-center gap-2">
-  <span>{% trans "This unit is archived." %}</span>
+  <span>{% blocktrans with unit_l=vocab.unit|lower %}This {{ unit_l }} is archived.{% endblocktrans %}</span>
   {% if can_archive %}
   <form method="post">{% csrf_token %}<input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button></form>
   {% endif %}
@@ -40,7 +40,7 @@
         </select>
         <button class="btn btn-sm btn-outline-primary">{% trans "Update" %}</button>
       </div>
-      <div class="form-text">{% trans "Occupied is set by the lease, not here." %}</div>
+      <div class="form-text">{% blocktrans with lease_l=vocab.lease|lower %}Occupied is set by the {{ lease_l }}, not here.{% endblocktrans %}</div>
     </form>
     {% endif %}
 
@@ -50,9 +50,9 @@
       {% if share_url %}
       <div class="input-group input-group-sm mb-2">
         <input type="text" readonly class="form-control" value="{{ share_url }}" id="share-url" aria-label="{% trans 'Vacancy link' %}">
-        <button type="button" class="btn btn-outline-secondary" data-copy="#share-url">{% trans "Copy" %}</button>
+        <button type="button" class="btn btn-outline-secondary" data-copy="#share-url" data-copied="{% trans 'Copied' %}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
       </div>
-      {% if not available %}<div class="small text-warning mb-2">{% trans "The unit is not available, so the page says it is no longer available." %}</div>{% endif %}
+      {% if not available %}<div class="small text-warning mb-2">{% blocktrans with unit_l=vocab.unit|lower %}The {{ unit_l }} is not available, so the page says it is no longer available.{% endblocktrans %}</div>{% endif %}
       <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-success btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text={% filter urlencode %}{% if unit.type_label %}{{ unit.type_label }}{% else %}{{ unit.get_unit_type_display }}{% endif %} {% trans "to let at" %} {{ property.name }}{% if unit.list_rent is not None %}, KES {{ unit.list_rent|floatformat:"0g" }}{% endif %}: {{ share_url }}{% endfilter %}"><i class="bi bi-whatsapp" aria-hidden="true"></i>{% trans "Share on WhatsApp" %}</a>
         <form method="post">{% csrf_token %}<input type="hidden" name="action" value="share"><button class="btn btn-outline-secondary btn-sm">{% trans "New link" %}</button></form>
@@ -60,7 +60,7 @@
       </div>
       <div class="form-text">{% blocktrans with name=unit.shared_by.full_name %}Anyone with the link sees the rent and area, and {{ name }}'s phone as the contact.{% endblocktrans %}</div>
       {% else %}
-      <p class="small text-muted mb-2">{% trans "Create a public page for this unit to share on WhatsApp. It shows the type, area and asking rent, and your name and phone as the contact. No login needed, and search engines are asked not to list it." %}</p>
+      <p class="small text-muted mb-2">{% blocktrans with unit_l=vocab.unit|lower rent_l=vocab.rent|lower %}Create a public page for this {{ unit_l }} to share on WhatsApp. It shows the type, area and asking {{ rent_l }}, and your name and phone as the contact. No login needed, and search engines are asked not to list it.{% endblocktrans %}</p>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="share"><button class="btn btn-outline-success btn-sm">{% trans "Create vacancy link" %}</button></form>
       {% endif %}
     </section>
@@ -85,7 +85,7 @@
         {% endfor %}
       </ul>
       {% else %}
-      <p class="text-muted small mb-0">{% trans "No leases yet." %}</p>
+      <p class="text-muted small mb-0">{% blocktrans with leases_l=vocab.leases|lower %}No {{ leases_l }} yet.{% endblocktrans %}</p>
       {% endif %}
     </section>
     {% endif %}
@@ -113,7 +113,7 @@
     {% if can_see_items %}
     <section class="panel channel-row">
       <div><h2 class="h6 mb-0">{% trans "Items and condition reports" %}</h2>
-        <div class="small text-muted">{% trans "What the unit has, and its move-in and move-out reports." %}</div></div>
+        <div class="small text-muted">{% blocktrans with unit_l=vocab.unit|lower %}What the {{ unit_l }} has, and its move-in and move-out reports.{% endblocktrans %}</div></div>
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'inspections:register' unit.public_id %}">{% trans "Open" %}</a>
     </section>
     {% endif %}
@@ -121,7 +121,7 @@
     {% if can_see_prospects %}
     <section class="panel channel-row">
       <div><h2 class="h6 mb-0">{% trans "Prospects" %}</h2>
-        <div class="small {% if held_for %}{% if held_for.held_until < today %}text-warning-emphasis{% endif %}{% else %}text-muted{% endif %}">{% if held_for %}{% blocktrans with name=held_for.name until=held_for.held_until|date:"j M Y" %}Held for {{ name }} until {{ until }}.{% endblocktrans %}{% else %}{% trans "People asking about this unit." %}{% endif %}</div></div>
+        <div class="small {% if held_for %}{% if held_for.held_until < today %}text-warning-emphasis{% endif %}{% else %}text-muted{% endif %}">{% if held_for %}{% blocktrans with name=held_for.name until=held_for.held_until|date:"j M Y" %}Held for {{ name }} until {{ until }}.{% endblocktrans %}{% else %}{% blocktrans with unit_l=vocab.unit|lower %}People asking about this {{ unit_l }}.{% endblocktrans %}{% endif %}</div></div>
       <span class="d-flex flex-wrap gap-2">
         {% if held_for %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'prospects:detail' held_for.public_id %}">{{ held_for.name|truncatechars:20 }}</a>{% endif %}
         <a class="btn btn-outline-secondary btn-sm" href="{% url 'prospects:list' %}?unit={{ unit.public_id }}&amp;status=all">{% trans "Open" %}</a>
@@ -146,7 +146,7 @@
     {% if can_archive and not unit.is_archived %}
     <form method="post" class="danger-zone">{% csrf_token %}
       <input type="hidden" name="action" value="archive">
-      <button class="btn btn-outline-danger btn-sm" data-confirm="{% trans "Archive this unit?" %}">{% blocktrans with w=vocab.unit|lower %}Archive {{ w }}{% endblocktrans %}</button>
+      <button class="btn btn-outline-danger btn-sm" data-confirm="{% blocktrans with unit_l=vocab.unit|lower %}Archive this {{ unit_l }}?{% endblocktrans %}">{% blocktrans with w=vocab.unit|lower %}Archive {{ w }}{% endblocktrans %}</button>
     </form>
     {% endif %}
   </div>

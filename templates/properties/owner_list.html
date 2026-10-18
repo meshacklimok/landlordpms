@@ -3,7 +3,7 @@
 {% block content %}
 <a href="{% url 'properties:list' %}" class="small">← {{ vocab.properties }}</a>
 <h1 class="h4 mt-2">{% trans "Owners" %}</h1>
-<p class="small text-muted">{% trans "Who owns each property. The monthly owner statement goes to the owner; choose the owner and the management fee on each property." %}
+<p class="small text-muted">{% blocktrans with property_l=vocab.property|lower %}Who owns each {{ property_l }}. The monthly owner statement goes to the owner; choose the owner and the management fee on each {{ property_l }}.{% endblocktrans %}
 {% if unowned %}{% blocktrans count n=unowned %}{{ n }} property has no owner set; it gets a statement addressed to your organization.{% plural %}{{ n }} properties have no owner set; they get a statement addressed to your organization.{% endblocktrans %}{% endif %}</p>
 <div class="row g-3">
   <div class="col-md-7">
@@ -18,7 +18,7 @@
       <div class="list-group-item small text-muted">{% trans "No owners yet." %}</div>
       {% endfor %}
     </div>
-    <p class="small text-muted mt-2">{% trans "To let an owner see their statements and payments online, open the owner and invite them to the owner portal. Tenant names are not shown there." %}
+    <p class="small text-muted mt-2">{% blocktrans with tenant=vocab.tenant %}To let an owner see their statements and payments online, open the owner and invite them to the owner portal. {{ tenant }} names are not shown there.{% endblocktrans %}
     {% if can_invite %}<a href="{% url 'accounts:invite' %}">{% trans "Invite someone" %}</a>{% endif %}</p>
   </div>
   <div class="col-md-5">

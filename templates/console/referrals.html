@@ -1,0 +1,11 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Referrals" %}{% endblock %}
+{% block console_title %}{% trans "What a referral earns" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% blocktrans %}Set what the landlord who refers earns, what the landlord who is invited earns, and when a referral counts. Nothing is given for a sign-up alone. The daily job and each plan payment apply these rules, to referrals still waiting as well.{% endblocktrans %}</p>
+<p class="small">{% blocktrans with w=waiting r=rewarded %}Waiting: {{ w }} · Rewarded so far: {{ r }}{% endblocktrans %}</p>
+<form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+</form>
+{% endblock %}

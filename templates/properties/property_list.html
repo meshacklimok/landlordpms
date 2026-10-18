@@ -36,11 +36,11 @@
 {% if q or branch %}{% trans "No properties match your search." as t %}{% include "partials/empty_state.html" with icon="bi-search" title=t %}
 {% elif show_archived %}{% trans "No archived properties." as t %}{% include "partials/empty_state.html" with icon="bi-archive" title=t %}
 {% else %}{% trans "No properties yet" as t %}{% trans "Add a property first, then its units, then your tenants." as x %}{% include "partials/empty_state.html" with icon="bi-buildings" title=t text=x %}
-{% if can_manage %}<p class="text-center mt-3"><a class="btn btn-primary" href="{% url 'properties:create' %}">{% trans "Add your first property" %}</a></p>{% endif %}{% endif %}
+{% if can_manage %}<p class="text-center mt-3"><a class="btn btn-primary" href="{% url 'properties:create' %}">{% blocktrans with property_l=vocab.property|lower %}Add your first {{ property_l }}{% endblocktrans %}</a></p>{% endif %}{% endif %}
 {% endif %}
 {% include "partials/pager.html" %}
 {% if can_manage %}
-<p class="small mt-3 d-flex flex-wrap gap-3">{% if show_archived %}<a href="{% url 'properties:list' %}">{% trans "Back to active properties" %}</a>{% else %}<a href="?archived=on">{% trans "Show archived properties" %}</a>{% endif %}
+<p class="small mt-3 d-flex flex-wrap gap-3">{% if show_archived %}<a href="{% url 'properties:list' %}">{% blocktrans with properties_l=vocab.properties|lower %}Back to active {{ properties_l }}{% endblocktrans %}</a>{% else %}<a href="?archived=on">{% blocktrans with properties_l=vocab.properties|lower %}Show archived {{ properties_l }}{% endblocktrans %}</a>{% endif %}
   {% if agency_tools %}<a href="{% url 'properties:owners' %}">{% trans "Owners" %}</a>{% endif %}</p>
 {% endif %}
 {% endblock %}

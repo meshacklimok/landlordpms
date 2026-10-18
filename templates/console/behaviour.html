@@ -1,4 +1,4 @@
-{% extends "analytics/base.html" %}{% load i18n money %}
+{% extends "console/base.html" %}{% load i18n money %}
 {% block title %}{% trans "How tenants pay" %}{% endblock %}
 {% block console_title %}{% trans "How tenants pay, across all organizations" %}{% endblock %}
 {% block console %}
@@ -24,10 +24,10 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="timeliness" title=_("When rent is paid") note=_("Each month's invoices by how late they were paid, as shares.") label=_("The same figures are in the table below.") %}</div>
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="methods" title=_("How rent is paid") note=_("Money received by month and method.") label=_("The method totals are in the table below.") %}</div>
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="days" title=_("Day of the month tenants pay") note=_("Payments in the last 90 days, by day of the month.") label=_("Counts by day.") %}</div>
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="matching" title=_("Money matched without anyone") note=_("M-Pesa and bank money in, by what happened to it.") label=_("The same figures are in the matching table.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="timeliness" title=_("When rent is paid") note=_("Each month's invoices by how late they were paid, as shares.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="methods" title=_("How rent is paid") note=_("Money received by month and method.") label=_("The method totals are in the table below.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="days" title=_("Day of the month tenants pay") note=_("Payments in the last 90 days, by day of the month.") label=_("Counts by day.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="matching" title=_("Money matched without anyone") note=_("M-Pesa and bank money in, by what happened to it.") label=_("The same figures are in the matching table.") %}</div>
 </div>
 
 <div class="row g-3">
@@ -65,8 +65,8 @@
 <h2 class="h5 mt-4">{% trans "Which way tenants pay most" %}</h2>
 <p class="small text-muted">{% trans "Counted by number of payments as well as by money, since many small M-Pesa payments and a few large bank ones tell different stories. Confirmed payments, last six months." %}</p>
 <div class="row g-3">
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="method_counts" title=_("Payments by method") note="" label=_("The same figures are in the table.") %}</div>
-  <div class="col-lg-6">{% include "analytics/_chart.html" with spec="method_months" title=_("Payments by method, each month") note="" label=_("Monthly counts.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="method_counts" title=_("Payments by method") note="" label=_("The same figures are in the table.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="method_months" title=_("Payments by method, each month") note="" label=_("Monthly counts.") %}</div>
 </div>
 <div class="table-responsive mt-2"><table class="table table-sm small">
   <thead><tr><th>{% trans "Method" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Of payments" %}</th><th class="text-end">{% trans "Money" %}</th><th class="text-end">{% trans "Of money" %}</th></tr></thead>
@@ -74,5 +74,5 @@
   {% empty %}<tr><td colspan="5" class="text-muted">{% trans "No payments yet." %}</td></tr>{% endfor %}</tbody>
 </table></div>
 <p class="small text-muted">{% blocktrans with n=methods.ever_payments t=methods.ever_amount|money %}Since the start: {{ n }} payments, {{ t }} collected for landlords through the platform.{% endblocktrans %}</p>
-{% include "analytics/_specs.html" %}
+{% include "console/_specs.html" %}
 {% endblock %}

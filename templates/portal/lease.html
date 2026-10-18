@@ -143,6 +143,20 @@
     </ul>
   </div></div>
 
+  {% if signings %}
+  <div class="card shadow-sm mb-3 d-print-none border-primary"><div class="card-body">
+    <h2 class="h6">{% trans "To sign" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for r, s in signings %}
+      <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+        <span>{{ r.title }}</span>
+        <a class="btn btn-primary btn-sm" href="{% url 'portal:signing' lease.public_id r.public_id %}">{% trans "Read and sign" %}</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+
   {% if documents %}
   <div class="card shadow-sm mb-3 d-print-none"><div class="card-body">
     <h2 class="h6">{% trans "Documents" %}</h2>

@@ -23,7 +23,7 @@
     </div>
     <div class="small text-muted text-break">{% trans "Fingerprint (SHA-256) of what is signed:" %} <span class="font-monospace">{{ req.original_sha256 }}</span></div>
     {% if req.signed_sha256 %}<div class="small text-muted text-break">{% trans "Signed copy:" %} <span class="font-monospace">{{ req.signed_sha256 }}</span></div>{% endif %}
-    <div class="small text-muted text-break">{% trans "Anyone can check a copy at" %} {{ check_url }}</div>
+    <div class="small text-muted text-break">{% trans "Anyone can check a copy at" %} <span id="esign-check-url">{{ check_url }}</span> <button type="button" class="btn btn-sm btn-link py-0" data-copy="#esign-check-url" aria-label="{% trans 'Copy the check link' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button></div>
     {% if req.share_with_tenant %}<div class="small text-muted">{% trans "The signed copy will be shared with the tenant in the portal." %}</div>{% endif %}
     {% if req.no_renewal_option %}<div class="small text-muted">{% trans "Sent as a lease of two years or less with no option to renew, or a periodic lease." %}</div>{% endif %}
     <div class="small text-muted">{% if keep_until %}{% blocktrans with day=keep_until|date:"j M Y" %}Keep the signed copy until {{ day }}.{% endblocktrans %}{% else %}{% trans "Keep the signed copy until six years after the lease ends." %}{% endif %}</div>

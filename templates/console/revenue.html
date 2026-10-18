@@ -1,4 +1,4 @@
-{% extends "analytics/base.html" %}{% load i18n money %}
+{% extends "console/base.html" %}{% load i18n money %}
 {% block title %}{% trans "Console revenue" %}{% endblock %}
 {% block console_title %}{% trans "Revenue" %}{% endblock %}
 {% block console %}
@@ -25,8 +25,8 @@
 </div>
 
 <div class="row g-3 mb-3">
-  <div class="col-lg-8">{% include "analytics/_chart.html" with spec="collected" title=_("Subscription money collected") note=_("By month, split by how it was paid.") label=_("The same figures are in the table below.") %}</div>
-  <div class="col-lg-4">{% include "analytics/_chart.html" with spec="plans" title=_("Organizations by plan") note="" label=_("The same figures are in the plan table.") %}</div>
+  <div class="col-lg-8">{% include "console/_chart.html" with spec="collected" title=_("Subscription money collected") note=_("By month, split by how it was paid.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="plans" title=_("Organizations by plan") note="" label=_("The same figures are in the plan table.") %}</div>
 </div>
 
 <div class="row g-3">
@@ -48,5 +48,5 @@
     <ul class="small list-unstyled">{% for status, n in data.status.items %}<li>{{ status }}: {{ n }}</li>{% empty %}<li class="text-muted">—</li>{% endfor %}</ul>
   </div>
 </div>
-{% include "analytics/_specs.html" %}
+{% include "console/_specs.html" %}
 {% endblock %}

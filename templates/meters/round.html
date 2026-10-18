@@ -65,6 +65,9 @@
         data-minimum="{% trans 'minimum charge' %}"
         data-landlord="{% trans 'The landlord pays this meter: nothing is billed.' %}"
         data-vacant-room="{% trans 'Vacant: nothing is billed.' %}"
+        data-usual="{% trans 'Usually about {n} a month' %}"
+        data-high="{% trans 'Much higher than usual (about {n} expected). Check the number before saving.' %}"
+        data-digit="{% trans 'This has more digits than last time. Check for an extra digit.' %}"
         data-own-meters="{% trans 'Divided by each room’s own meter when approved.' %}">{% csrf_token %}
     {% include "partials/form.html" %}
     {% if rows %}
@@ -80,7 +83,8 @@
         {% endfor %}
       </div>
       {% endif %}
-      <div class="form-check form-switch small mb-0 ms-auto">
+      <button type="button" class="btn btn-sm btn-outline-primary ms-auto" data-sheet-next><i class="bi bi-arrow-down-circle" aria-hidden="true"></i> {% trans "Next unread" %}</button>
+      <div class="form-check form-switch small mb-0">
         <input class="form-check-input" type="checkbox" role="switch" id="sheet-unread" data-sheet-unread>
         <label class="form-check-label" for="sheet-unread">{% trans "Only rows not read yet" %}</label>
       </div>
@@ -103,7 +107,7 @@
                data-prev="{% if row.last %}{{ row.last.value|stringformat:'s' }}{% endif %}" data-rate="{{ m.rate|stringformat:'s' }}"
                data-minimum="{{ m.minimum_charge|stringformat:'s' }}" data-split="{{ m.split }}" data-vacant="{{ m.vacant_share }}"
                data-rooms="{% for s in row.served %}{{ s.weight|stringformat:'s' }}:{{ s.tenant|yesno:'1,0' }}{% if not forloop.last %},{% endif %}{% endfor %}"
-               {% if row.done %}data-done="1" {% endif %}data-landlord="{{ m.landlord_pays|yesno:'1,' }}" data-prepaid="{{ m.is_prepaid|yesno:'1,' }}" data-unit="{{ m.unit_label }}"{% if row.errors %} class="sheet-error"{% endif %}>
+               {% if row.done %}data-done="1" {% endif %}data-landlord="{{ m.landlord_pays|yesno:'1,' }}" data-prepaid="{{ m.is_prepaid|yesno:'1,' }}" data-unit="{{ m.unit_label }}" data-usual-daily="{{ row.usual_daily }}"{% if row.last %} data-prev-on="{{ row.last.read_on|date:'Y-m-d' }}"{% endif %}{% if row.errors %} class="sheet-error"{% endif %}>
           <tr>
             <th scope="row" class="fw-normal">
               <label for="value-{{ m.pk }}" class="d-block mb-0">
@@ -121,7 +125,7 @@
             <td class="text-end num small text-muted d-none d-sm-table-cell">{% if row.last %}{{ row.last.value|floatformat:"-3" }}<span class="d-block">{{ row.last.read_on|date:"j M" }}</span>{% else %}—{% endif %}</td>
             <td class="sheet-col-input">
               <input class="form-control form-control-sm num{% if row.errors %} is-invalid{% endif %}" id="value-{{ m.pk }}" name="value-{{ m.pk }}"
-                     value="{{ row.value|default:'' }}" inputmode="decimal" autocomplete="off" placeholder="{{ m.unit_label }}" data-sheet-value
+                     value="{{ row.value|default:'' }}" inputmode="decimal" enterkeyhint="next" autocomplete="off" placeholder="{{ m.unit_label }}" data-sheet-value
                      {% if row.errors %}aria-describedby="err-{{ m.pk }}"{% endif %}>
             </td>
             <td class="sheet-col-units">

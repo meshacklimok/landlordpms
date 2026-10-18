@@ -1,0 +1,36 @@
+{% load i18n %}
+<div class="card shadow-sm mb-3" data-setup-steps><div class="card-body">
+  <div class="d-flex justify-content-between align-items-baseline">
+    <h2 class="h6 mb-1">{% trans "Setup steps" %}</h2>
+    <span class="small text-body-secondary">{% blocktrans with d=progress.done t=progress.total %}{{ d }} of {{ t }} done{% endblocktrans %}</span>
+  </div>
+  <div class="progress mb-3" style="height:6px" role="progressbar" aria-label="{% trans 'Setup progress' %}" aria-valuemin="0" aria-valuemax="{{ progress.total }}" aria-valuenow="{{ progress.done }}"><div class="progress-bar bg-success" style="width: {% widthratio progress.done progress.total 100 %}%"></div></div>
+  {% if progress.complete %}<div class="alert alert-success small py-2">{% trans "All set. Payments to this number arrive here and are matched to leases." %}</div>{% endif %}
+  <ol class="list-unstyled mb-0">
+    {% for s in progress.steps %}
+    <li class="mb-2">
+      <details{% if s.state == "current" %} open{% endif %}>
+        <summary class="d-flex align-items-center gap-2">
+          {% if s.state == "done" %}<i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i><span class="visually-hidden">{% trans "Done:" %}</span>
+          {% elif s.waiting %}<i class="bi bi-hourglass-split text-warning" aria-hidden="true"></i><span class="visually-hidden">{% trans "Waiting:" %}</span>
+          {% elif s.state == "current" %}<i class="bi bi-arrow-right-circle-fill text-primary" aria-hidden="true"></i><span class="visually-hidden">{% trans "Next:" %}</span>
+          {% else %}<i class="bi bi-circle text-body-secondary" aria-hidden="true"></i>{% endif %}
+          <span class="{% if s.state == 'current' %}fw-semibold{% endif %}">{{ s.n }}. {{ s.title }}</span>
+        </summary>
+        <p class="small text-body-secondary ms-4 mt-1 mb-1">{{ s.body }}</p>
+        {% if s.key == "payment" %}
+          {% if s.test %}<p class="small ms-4 mb-1 text-success">{% blocktrans with amt=s.test.amount code=s.test.trans_id %}We received KES {{ amt }} (code {{ code }}). You are live.{% endblocktrans %}{% if s.test.status != "MATCHED" %} {% trans "It is waiting in your M-Pesa inbox because the account number did not match a unit, which is fine for a test." %}{% endif %}</p>
+          {% elif progress.steps.4.done %}<p class="small ms-4 mb-1">{{ s.trouble }}</p><p class="ms-4 mb-1"><a class="btn btn-sm btn-outline-secondary" href="">{% trans "Check again" %}</a></p>{% endif %}
+        {% endif %}
+        {% if s.key == "golive" and s.state != "done" %}
+        <form method="post" class="ms-4 mb-1">{% csrf_token %}
+          {% if s.waiting %}<p class="small mb-1">{% blocktrans with d=s.applied_at|date:"j M Y" %}You told us you applied on {{ d }}.{% endblocktrans %}</p>
+          <button class="btn btn-sm btn-outline-secondary" name="action" value="not_applied">{% trans "I have not applied yet" %}</button>
+          {% else %}<button class="btn btn-sm btn-outline-primary" name="action" value="applied">{% trans "I have applied, waiting for Safaricom" %}</button>{% endif %}
+        </form>{% endif %}
+        {% if s.key == "daraja" or s.key == "golive" %}<p class="small ms-4 mb-1"><a href="https://developer.safaricom.co.ke" target="_blank" rel="noopener">developer.safaricom.co.ke <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a></p>{% endif %}
+      </details>
+    </li>
+    {% endfor %}
+  </ol>
+</div></div>

@@ -1,10 +1,10 @@
-{% load i18n static %}{% get_current_language as LANGUAGE_CODE %}<!doctype html>
+{% load i18n static growth_tags %}{% get_current_language as LANGUAGE_CODE %}<!doctype html>
 <html lang="{{ LANGUAGE_CODE|default:'en' }}"{% if report_pane %} class="is-pane"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}NyumbaPMS{% endblock %}</title>
-  {% block meta %}{% endblock %}
+  {% block meta %}{% include "seo/_head.html" %}{% endblock %}
   <link rel="manifest" href="{% url 'support:manifest' %}">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#171d1a" media="(prefers-color-scheme: dark)">
@@ -29,11 +29,11 @@
 {# One menu (D-141): open on the left on a laptop; on a phone or tablet the same element slides in from the menu button. #}
 <aside id="app-menu" class="app-sidebar offcanvas-lg offcanvas-start" tabindex="-1" aria-labelledby="app-menu-title">
   <div class="offcanvas-header app-sidebar-head">
-    <a class="app-brand p-0" href="{% url 'accounts:home' %}" id="app-menu-title"><span class="app-brand-mark" aria-hidden="true"><i class="bi bi-house-door-fill" aria-hidden="true"></i></span>NyumbaPMS</a>
+    <a class="app-brand p-0" href="{% url 'accounts:home' %}" id="app-menu-title">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
     <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#app-menu" aria-label="{% trans 'Close the menu' %}"></button>
   </div>
   <div class="offcanvas-body app-sidebar-body">
-    <a class="app-brand d-none d-lg-flex" href="{% url 'accounts:home' %}"><span class="app-brand-mark" aria-hidden="true"><i class="bi bi-house-door-fill" aria-hidden="true"></i></span>NyumbaPMS</a>
+    <a class="app-brand d-none d-lg-flex" href="{% url 'accounts:home' %}">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
     {% if user_memberships|length > 1 %}
     <form method="post" action="{% url 'accounts:switch_org' %}" class="org-switch">{% csrf_token %}
       <label class="app-nav-label pt-0" for="org-switch">{% trans "Organization" %}</label>
@@ -53,7 +53,7 @@
       {% for group in app_menu %}
       <div class="app-nav-label" id="side-{{ forloop.counter }}">{{ group.label }}</div>
       <ul class="app-nav" aria-labelledby="side-{{ forloop.counter }}">
-        {% for item in group.items %}<li><a class="app-nav-link{% if item.active %} active{% endif %}" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}><i class="bi bi-{{ item.icon }}" aria-hidden="true"></i>{{ item.label }}</a></li>{% endfor %}
+        {% for item in group.items %}<li><a class="app-nav-link{% if item.active %} active{% endif %}" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}><i class="bi bi-{{ item.icon }}" aria-hidden="true"></i>{{ item.label }}{% if item.badge %} <span class="app-nav-badge"><span aria-hidden="true">{% if item.badge > 99 %}99+{% else %}{{ item.badge }}{% endif %}</span><span class="visually-hidden">{% blocktrans count n=item.badge %}({{ n }} waiting){% plural %}({{ n }} waiting){% endblocktrans %}</span></span>{% endif %}</a></li>{% endfor %}
       </ul>
       {% endfor %}
     </nav>
@@ -68,7 +68,7 @@
     {% if membership %}
     <button type="button" class="btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-menu" aria-controls="app-menu" aria-label="{% trans 'Open the menu' %}"><i class="bi bi-list" aria-hidden="true"></i></button>
     {% endif %}
-    <a class="app-brand app-topbar-brand{% if membership %} d-lg-none{% endif %}" href="{% if membership %}{% url 'accounts:home' %}{% elif portal_access %}{% url 'portal:home' %}{% elif owner_portal_access %}{% url 'owner_portal:home' %}{% else %}{% url 'accounts:home' %}{% endif %}"><span class="app-brand-mark" aria-hidden="true"><i class="bi bi-house-door-fill" aria-hidden="true"></i></span><span class="app-brand-name">NyumbaPMS</span></a>
+    <a class="app-brand app-topbar-brand{% if membership %} d-lg-none{% endif %}" href="{% if membership %}{% url 'accounts:home' %}{% elif portal_access %}{% url 'portal:home' %}{% elif owner_portal_access %}{% url 'owner_portal:home' %}{% else %}{% url 'accounts:home' %}{% endif %}">{% include "_brand_mark.html" %}<span class="app-brand-name">Nyumba<span class="brand-pms">PMS</span></span></a>
     {% if not membership %}{% if portal_access or owner_portal_access %}
     <nav class="app-topbar-links" aria-label="{% trans 'Main menu' %}">
       {% if portal_access %}<a class="app-topbar-link{% if request.resolver_match.namespace == 'portal' %} active{% endif %}" href="{% url 'portal:home' %}"{% if request.resolver_match.namespace == 'portal' %} aria-current="page"{% endif %}><i class="bi bi-house-heart" aria-hidden="true"></i><span class="label-sm-up">{% trans "My home" %}</span></a>{% endif %}
@@ -171,7 +171,7 @@
 {% elif user.is_authenticated %}
 <footer class="app-footer container page">
   <div class="app-footer-inner">
-  <p class="footer-brand"><span class="app-brand-mark" aria-hidden="true"><i class="bi bi-house-door-fill" aria-hidden="true"></i></span><span>NyumbaPMS</span></p>
+  <p class="footer-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></p>
   <nav aria-label="{% trans 'Footer' %}">
     <ul class="footer-links">
       <li><a href="{% url 'support:help' %}">{% trans "Help" %}</a></li>
@@ -190,7 +190,7 @@
   <div class="container-xl site-footer-inner">
     <div class="site-footer-top">
       <div class="site-footer-about">
-        <p class="footer-brand"><span class="app-brand-mark" aria-hidden="true"><i class="bi bi-house-door-fill" aria-hidden="true"></i></span><span>NyumbaPMS</span></p>
+        <p class="footer-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></p>
         <p class="site-footer-pitch">{% trans "Rent, tenants and payments for Kenyan landlords, agents and estates. Paid straight to your own Paybill or Till." %}</p>
         <div class="d-flex flex-wrap gap-2">
           <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
@@ -205,6 +205,13 @@
             <li><a href="{% url 'growth:pricing' %}">{% trans "Pricing" %}</a></li>
             <li><a href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a></li>
             <li><a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="site-footer-h">{% trans "Solutions" %}</h2>
+          <ul class="footer-links">
+            {% footer_solutions as solution_links %}{% for s in solution_links %}<li><a href="{% url 'growth:solution' s.slug %}">{{ s.title }}</a></li>{% endfor %}
+            <li><a href="{% url 'growth:solutions' %}">{% trans "All solutions" %}</a></li>
           </ul>
         </div>
         <div>
