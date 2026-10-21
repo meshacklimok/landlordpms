@@ -1,0 +1,122 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Review invoices" %}{% endblock %}
+{% block content %}
+<div class="mx-auto" style="max-width: 72rem">
+  <a href="{% if change_url %}{{ change_url }}{% else %}{% url 'billing:generate' %}{% endif %}" class="small">← {% if change_url %}{% trans "Change my choices" %}{% else %}{% trans "Issue invoices" %}{% endif %}</a>
+  <h1 class="h4 mt-2">{% if result %}{% trans "Invoices issued" %}{% else %}{% trans "Review before issuing" %}{% endif %}</h1>
+
+  {% if previews is not None %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6 mb-3">{% trans "What you are about to send" %}</h2>
+    <dl class="row small mb-0">
+      <dt class="col-sm-3">{% trans "Billing period" %}</dt><dd class="col-sm-9">{{ month|date:"F Y" }}</dd>
+      <dt class="col-sm-3">{% trans "For" %}</dt><dd class="col-sm-9">{{ include_label }}</dd>
+      <dt class="col-sm-3">{% trans "Tenants" %}</dt><dd class="col-sm-9">{{ scope_label }}</dd>
+      <dt class="col-sm-3">{% trans "Issued on" %}</dt><dd class="col-sm-9">{{ today|date:"l j F Y" }}</dd>
+      <dt class="col-sm-3">{% trans "Due on" %}</dt><dd class="col-sm-9">{% if form.cleaned_data.due_date %}{{ form.cleaned_data.due_date|date:"l j F Y" }} {% trans "(for every invoice)" %}{% else %}{% trans "Each lease's own due day (see the table)" %}{% endif %}</dd>
+      <dt class="col-sm-3">{% trans "Tenants told" %}</dt><dd class="col-sm-9">{% if form.cleaned_data.notify %}{% blocktrans with n=told total=previews|length %}Yes, now. {{ n }} of {{ total }} can be reached.{% endblocktrans %}{% else %}{% trans "No. The invoices are issued quietly." %}{% endif %}</dd>
+    </dl>
+  </div></div>
+
+  {% if previews %}
+  <div class="row g-2 mb-3 text-center">
+    <div class="col-6 col-md-3"><div class="card shadow-sm h-100"><div class="card-body py-2"><div class="h4 mb-0">{{ previews|length }}</div><div class="small text-muted">{% trans "invoices" %}</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card shadow-sm h-100"><div class="card-body py-2"><div class="h4 mb-0">{{ preview_total|money }}</div><div class="small text-muted">{% trans "in total" %}</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card shadow-sm h-100"><div class="card-body py-2"><div class="h4 mb-0">{{ by_property|length }}</div><div class="small text-muted">{% trans "properties" %}</div></div></div></div>
+    <div class="col-6 col-md-3"><div class="card shadow-sm h-100 {% if flagged %}border-warning{% endif %}"><div class="card-body py-2"><div class="h4 mb-0">{{ flagged }}</div><div class="small text-muted">{% trans "to look at" %}</div></div></div></div>
+  </div>
+
+  {% if by_property|length > 1 %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "By property" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      {% for name, row in by_property %}<tr><td>{{ name }}</td><td class="text-end">{{ row.count }}</td><td class="text-end">{{ row.total|money }}</td></tr>{% endfor %}
+    </table></div>
+  </div></div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "The invoices" %}</h2>
+    <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead><tr><th>{% trans "Tenant" %}</th><th>{% trans "Unit" %}</th><th>{% trans "Covers" %}</th><th>{% trans "Due" %}</th><th>{% trans "Charges" %}</th><th class="text-end">{% trans "Total" %}</th></tr></thead>
+      <tbody>{% for p in previews %}<tr>
+        <td class="text-nowrap">{{ p.lease.primary_tenant.name|default:p.lease.number }}</td>
+        <td class="text-nowrap">{{ p.lease.unit.property.name }} · {{ p.lease.unit.code }}</td>
+        <td class="text-nowrap">{{ p.start|date:"j M Y" }} – {{ p.end|date:"j M Y" }}</td>
+        <td class="text-nowrap">{{ p.due|date:"j M Y" }}</td>
+        <td class="small">{% for ln in p.lines %}<div>{{ ln.description }} · {{ ln.amount|money }}</div>{% endfor %}
+          {% for level, text in p.flags %}<div class="{% if level == 'warning' %}text-warning-emphasis{% else %}text-muted{% endif %}"><i class="bi {% if level == 'warning' %}bi-exclamation-triangle{% else %}bi-info-circle{% endif %}" aria-hidden="true"></i> {{ text }}</div>{% endfor %}</td>
+        <td class="text-end text-nowrap fw-semibold">{{ p.total|money }}</td></tr>{% endfor %}</tbody>
+      <tfoot><tr><td colspan="5" class="text-end">{% trans "Total" %}</td><td class="text-end fw-semibold">{{ preview_total|money }}</td></tr></tfoot>
+    </table></div>
+  </div></div>
+
+  {% if form.cleaned_data.notify %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "The message each tenant gets" %}</h2>
+    <p class="small text-muted">{% trans "Sent the moment the invoice is issued. The invoice number is filled in then." %}
+      {% if example and example.edit_url %}<a href="{{ example.edit_url }}">{% trans "Change the wording" %}</a>{% endif %}</p>
+    <div class="row g-2">
+      {% for p in previews %}{% for m in p.messages %}
+      <div class="col-md-6"><div class="border rounded p-2 small h-100">
+        <div class="text-muted mb-1">{{ m.tenant.name }} · {{ p.lease.unit.code }}{% if m.channel %} · <span class="badge text-bg-secondary">{{ m.channel }}</span>{% endif %}</div>
+        {% if m.text %}<div style="white-space: pre-line">{{ m.text }}</div>{% endif %}
+        {% if not m.sendable %}<div class="text-warning-emphasis mt-1">{% trans "This would not be sent:" %} {{ m.reason }}</div>{% endif %}
+      </div></div>
+      {% endfor %}{% endfor %}
+    </div>
+  </div></div>
+  {% endif %}
+
+  <form method="post" action="{% url 'billing:generate_review' %}" class="card shadow-sm mb-3 border-primary"><div class="card-body d-flex flex-wrap gap-2 align-items-center">{% csrf_token %}
+    <input type="hidden" name="month" value="{{ month|date:'Y-m' }}">
+    <input type="hidden" name="include" value="{{ form.cleaned_data.include }}">
+    <input type="hidden" name="scope" value="{{ form.cleaned_data.scope }}">
+    <input type="hidden" name="property" value="{{ form.cleaned_data.property }}">
+    {% for k in form.cleaned_data.leases %}<input type="hidden" name="leases" value="{{ k }}">{% endfor %}
+    <input type="hidden" name="due_date" value="{{ form.cleaned_data.due_date|date:'Y-m-d' }}">
+    {% if form.cleaned_data.notify %}<input type="hidden" name="notify" value="on">{% endif %}
+    <button class="btn btn-primary" name="action" value="issue">{% blocktrans count n=previews|length with total=preview_total|money %}Issue {{ n }} invoice ({{ total }}){% plural %}Issue {{ n }} invoices ({{ total }}){% endblocktrans %}</button>
+    <a class="btn btn-outline-secondary" href="{{ change_url }}">{% trans "Change my choices" %}</a>
+    <span class="small text-muted">{% trans "An issued invoice can be voided afterwards with a reason." %}</span>
+  </div></form>
+  {% else %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <p class="mb-2">{% trans "Nothing new to bill for these leases." %}</p>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ change_url }}">{% trans "Change my choices" %}</a>
+  </div></div>
+  {% include "billing/_example_message.html" %}
+  {% endif %}
+
+  {% if nothing %}
+  <details class="card shadow-sm mb-3"><summary class="card-body py-2 small">{% blocktrans count n=nothing|length %}{{ n }} lease not billed and why{% plural %}{{ n }} leases not billed and why{% endblocktrans %}</summary>
+    <ul class="list-unstyled small text-muted px-3 pb-3 mb-0">
+      {% for lease, why in nothing %}<li>{{ lease.unit.property.name }} · {{ lease.unit.code }} · {{ lease.primary_tenant.name|default:lease.number }}: {{ why }}</li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% endif %}
+
+  {% if result %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{{ month|date:"F Y" }}</h2>
+    {% if result.invoices %}
+    <p class="mb-2">{% blocktrans count n=result.invoices|length with total=result.total|money %}{{ n }} invoice issued, {{ total }} in total.{% plural %}{{ n }} invoices issued, {{ total }} in total.{% endblocktrans %}
+      {% if form.cleaned_data.notify %}{% trans "The tenants were told." %}{% else %}{% trans "The tenants were not told." %}{% endif %}</p>
+    <ul class="list-unstyled small mb-3">
+      {% for invoice in result.invoices %}<li><a href="{% url 'billing:invoice' invoice.public_id %}">{{ invoice.number }}</a> · {{ invoice.lease.unit.property.name }} · {{ invoice.lease.unit.code }} · {{ invoice.total|money:invoice.currency }} · {% trans "due" %} {{ invoice.due_date|date:"j M Y" }}</li>{% endfor %}
+    </ul>
+    {% else %}
+    <p class="mb-3 text-muted">{% trans "Nothing new to bill for this month." %}</p>
+    {% endif %}
+    {% if result.errors %}
+    <div class="alert alert-warning small">
+      {% for lease, message in result.errors %}<div>{{ lease.number }}: {{ message }}</div>{% endfor %}
+    </div>
+    {% endif %}
+    <a class="btn btn-primary btn-sm" href="{% url 'billing:invoices' %}">{% trans "See all invoices" %}</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'billing:generate' %}">{% trans "Bill something else" %}</a>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -11,6 +11,7 @@ from django.contrib.auth.mixins import AccessMixin
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
 
+from . import mfa
 from .permissions import can, is_membership_usable
 
 
@@ -25,17 +26,30 @@ class VerifiedUserRequiredMixin(AccessMixin):
         return super().dispatch(request, *args, **kwargs)
 
 
+def no_seat_home(user) -> str:
+    """Where someone without a staff seat lands: their tenant portal, their owner portal (D-128) or onboarding."""
+    from owner_portal import selectors as owner_portal  # both portals import this module's app
+    from portal import selectors as portal
+    from portal import services as portal_services
+
+    if portal.has_access(user) or portal_services.self_claim(user):  # D-203: no invitation needed
+        return "portal:home"
+    if owner_portal.has_access(user):
+        return "owner_portal:home"
+    return "accounts:onboarding"
+
+
 class OrgMemberRequiredMixin(VerifiedUserRequiredMixin):
-    """Needs an active organization in the session."""
+    """Needs an active organization in the session, and its two-step login if it requires one (D-107)."""
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated and request.user.phone_verified:
             if request.membership is None:
-                from portal.selectors import has_access  # portal imports this module's app
-
-                return redirect("portal:home" if has_access(request.user) else "accounts:onboarding")
+                return redirect(no_seat_home(request.user))
             if not is_membership_usable(request.membership):
                 raise PermissionDenied("This organization is not available.")
+            if (response := mfa.gate(request)) is not None:
+                return response
         return super().dispatch(request, *args, **kwargs)
 
 

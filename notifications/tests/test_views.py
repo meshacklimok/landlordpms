@@ -123,7 +123,7 @@ def test_retry(client, owner, org, tenant, outbox, django_capture_on_commit_call
 def test_settings_save_rule_and_reset(client, owner, org):
     login(client, owner)
     url = reverse("notifications:settings")
-    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "offsets": "7, 3", "action": "save"})
+    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "sms": "on", "offsets": "7, 3", "action": "save"})
     assert r.status_code == 302
     assert delivery.effective_rule(org, catalog.get("rent_due_soon")).offsets == (7, 3)
     r = client.post(url, {"type": "rent_due_soon", "action": "reset"})
@@ -132,7 +132,7 @@ def test_settings_save_rule_and_reset(client, owner, org):
     client.post(url, {"type": "announcement", "action": "save"})  # switch unticked
     assert not delivery.effective_rule(org, catalog.get("announcement")).enabled
 
-    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "offsets": "99", "action": "save"})
+    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "sms": "on", "offsets": "99", "action": "save"})
     assert r.status_code == 400 and "between" in r.content.decode()
     assert client.post(url, {"type": "nope"}).status_code == 404
 
@@ -198,3 +198,47 @@ def test_tenant_opt_out_scope(client, org, tenant):
     login(client, make_org())
     assert client.post(url).status_code == 404
     assert services.channel_allowed(tenant, catalog.SMS)
+
+
+# ---------------------------------------------------------------------------
+# Log filters, inbox filters and search (messages)
+# ---------------------------------------------------------------------------
+
+
+def _sms(org, tenant, body, **kw):
+    return Message.objects.create(organization=org, type=catalog.TYPES[0].codename, channel=catalog.SMS,
+                                  tenant=tenant, to="+254712000114", body=body, **kw)
+
+
+def test_log_filters_by_channel_and_date(client, owner, org, tenant):
+    _sms(org, tenant, "rent reminder sms")
+    Message.objects.create(organization=org, type=catalog.TYPES[0].codename, channel=catalog.EMAIL, tenant=tenant,
+                           to="a@b.co", subject="Invoice ready", body="email body")
+    login(client, owner)
+    url = reverse("notifications:log")
+    assert b"rent reminder sms" in client.get(url, {"channel": "SMS"}).content
+    assert b"email body" not in client.get(url, {"channel": "SMS"}).content
+    assert b"Invoice ready" in client.get(url, {"q": "Invoice ready"}).content or b"email body" in client.get(url, {"q": "Invoice ready"}).content
+    assert b"rent reminder sms" not in client.get(url, {"date_from": "2999-01-01"}).content
+
+
+def test_inbox_filters(client, owner, org):
+    t = catalog.TYPES[0].codename
+    Message.objects.create(organization=org, type=t, channel=catalog.IN_APP, user=owner.user, body="alpha alert")
+    Message.objects.create(organization=org, type=t, channel=catalog.IN_APP, user=owner.user, body="beta alert",
+                           read_at="2025-01-01T00:00:00Z")
+    login(client, owner)
+    url = reverse("notifications:inbox")
+    html = client.get(url, {"q": "alpha"}).content
+    assert b"alpha alert" in html and b"beta alert" not in html
+    html = client.get(url, {"unread": "on"}).content
+    assert b"beta alert" not in html
+
+
+def test_search_finds_messages(owner, org, tenant):
+    from search import services as search
+    _sms(org, tenant, "Please pay the water bill")
+    group = next(g for g in search.search(owner, "water bill").groups if g.key == "messages")
+    assert group.hits and group.hits[0].url.startswith("/")
+    viewer = add_member(org, "caretaker", all_properties=True)
+    assert all(g.key != "messages" for g in search.search(viewer, "water bill").groups)

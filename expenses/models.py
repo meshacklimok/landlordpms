@@ -1,6 +1,6 @@
 """Property expenses: money the landlord paid out to suppliers (flow C, D-027, D-067).
 
-- An expense is for one property, already paid (cash basis), and is never edited or deleted:
+- An expense is for one property (a cost shared by several is recorded as one share per property, D-197), already paid (cash basis), and is never edited or deleted:
   a wrong one is rejected or voided with a reason.
 - It waits for approval unless the recorder may approve. Only approved expenses count in reports.
 - Expenses never touch a tenant's balance.
@@ -17,9 +17,24 @@ from django.utils.translation import gettext_lazy as _
 from core.models import AllObjectsManager, ArchivableModel, LiveManager, PublicIdModel, ScopedQuerySet, TimeStampedModel
 
 
+class CostClass(models.TextChoices):
+    """The kind of cost a category stands for (D-191): what the profitability report groups expenses by."""
+
+    MAINTENANCE = "MAINTENANCE", _("Maintenance and repairs")
+    SALARIES = "SALARIES", _("Caretaker and staff salaries")
+    SECURITY = "SECURITY", _("Security")
+    GARBAGE = "GARBAGE", _("Garbage and cleaning")
+    INSURANCE = "INSURANCE", _("Insurance")
+    UTILITIES = "UTILITIES", _("Water and electricity bills")
+    MANAGEMENT = "MANAGEMENT", _("Property management fees")
+    OTHER = "OTHER", _("Other operating costs")
+
+
 class ExpenseCategory(PublicIdModel, TimeStampedModel, ArchivableModel):
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     name = models.CharField(_("name"), max_length=60)
+    cost_class = models.CharField(_("kind of cost"), max_length=12, choices=CostClass.choices,
+                                  default=CostClass.OTHER)
 
     objects = LiveManager()
     all_objects = AllObjectsManager()
@@ -84,6 +99,9 @@ class Expense(PublicIdModel, TimeStampedModel):
     paid_on = models.DateField(_("date paid"))
     method = models.CharField(_("paid by"), max_length=10, choices=Method.choices, default=Method.MPESA)
     reference = models.CharField(_("reference"), max_length=60, blank=True)
+    # A cost that comes back every month, such as a caretaker's or guard's salary. A label only: nothing is
+    # recorded for the landlord until they record that month's payment.
+    is_recurring = models.BooleanField(_("repeats every month"), default=False)
     # Upper case, no spaces: the duplicate check (D-067 item 3).
     reference_key = models.CharField(max_length=60, blank=True, editable=False)
     # Private: a re-encoded JPEG or a checked PDF, served only through a view that checks scope.
@@ -91,6 +109,11 @@ class Expense(PublicIdModel, TimeStampedModel):
     # The repair this paid for (D-068 item 6).
     maintenance_request = models.ForeignKey("maintenance.MaintenanceRequest", on_delete=models.PROTECT, null=True,
                                             blank=True, related_name="expenses", editable=False)
+    # One payment shared by several properties (D-197): each property gets its own expense for its share, and the
+    # shares have the same split_key. The shares add up to split_total, the amount actually paid.
+    split_key = models.UUIDField(null=True, blank=True, editable=False, db_index=True)
+    split_total = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True, editable=False)
+    split_rule = models.CharField(max_length=10, blank=True, editable=False)
     status = models.CharField(_("status"), max_length=10, choices=Status.choices, default=Status.SUBMITTED,
                               editable=False)
     recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")

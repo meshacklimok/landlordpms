@@ -103,7 +103,7 @@ def test_pages(client, owner, prop, leases):
     r = client.get(reverse("imports:list"))
     assert ("balances", BALANCES) in r.context["cards"]
     r = client.get(reverse("imports:template", args=["balances"]))
-    assert r.content.decode().splitlines()[0] == ",".join(services.COLUMNS[BALANCES])
+    assert r.content.decode("utf-8-sig").splitlines()[0] == ",".join(services.COLUMNS[BALANCES])
     r = client.post(reverse("imports:upload", args=["balances"]),
                     {"file": csv_file(f"property_code,unit_code,amount,as_of\n{prop.code},A1,500,2026-01-31\n")})
     batch = ImportBatch.objects.get(kind=BALANCES)

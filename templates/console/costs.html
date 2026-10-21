@@ -1,0 +1,68 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Costs by landlord" %}{% endblock %}
+{% block console_title %}{% trans "What each landlord cost us" %}{% endblock %}
+{% block console %}
+{% with d=data t=data.totals %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <nav class="d-flex align-items-center gap-2" aria-label="{% trans 'Month' %}">
+    <a class="btn btn-sm btn-outline-secondary" href="?month={{ previous|date:'Y-m' }}" aria-label="{% trans 'Previous month' %}">←</a>
+    <span class="fw-semibold">{{ d.month|date:"F Y" }}</span>
+    {% if next %}<a class="btn btn-sm btn-outline-secondary" href="?month={{ next|date:'Y-m' }}" aria-label="{% trans 'Next month' %}">→</a>{% endif %}
+  </nav>
+  {% if d.rows %}<a class="btn btn-sm btn-outline-secondary" href="?month={{ d.month|date:'Y-m' }}&amp;format=csv">{% trans "Download CSV" %}</a>{% endif %}
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Total cost" %}</div><div class="h4 mb-0">{{ t.total|money }}</div>
+    <div class="small">{% blocktrans count n=d.rows|length %}{{ n }} landlord{% plural %}{{ n }} landlords{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "SMS" %}</div><div class="h4 mb-0">{{ t.sms_cost|money }}</div>
+    <div class="small">{% blocktrans with n=t.sms_parts b=t.sms_billed|money %}{{ n }} parts · {{ b }} billed back{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Photo scans" %}</div><div class="h4 mb-0">{{ t.scan_cost|money }}</div>
+    <div class="small">{% blocktrans count n=t.scans %}{{ n }} scan{% plural %}{{ n }} scans{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Assistant" %}</div><div class="h4 mb-0">{{ t.ai_cost|money }}</div>
+    <div class="small">{% blocktrans count n=t.questions %}{{ n }} question{% plural %}{{ n }} questions{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+
+<div class="card shadow-sm"><div class="card-body">
+  {% if d.rows %}
+  <div class="table-responsive"><table class="table table-sm align-middle small mb-0">
+    <thead><tr>
+      <th scope="col">{% trans "Organization" %}</th>
+      <th scope="col" class="text-end">{% trans "SMS parts" %}</th><th scope="col" class="text-end">{% trans "SMS cost" %}</th><th scope="col" class="text-end">{% trans "SMS billed" %}</th>
+      <th scope="col" class="text-end">{% trans "Scans" %}</th><th scope="col" class="text-end">{% trans "Scan cost" %}</th>
+      <th scope="col" class="text-end">{% trans "Questions" %}</th><th scope="col" class="text-end">{% trans "Tokens" %}</th><th scope="col" class="text-end">{% trans "Assistant cost" %}</th>
+      <th scope="col" class="text-end">{% trans "Total cost" %}</th>
+      <th scope="col" class="text-end">{% trans "Paid us" %}</th><th scope="col" class="text-end">{% trans "Left over" %}</th>
+    </tr></thead>
+    <tbody>
+    {% for r in d.rows %}
+      <tr><th scope="row" class="fw-normal">{% if "organizations" in allowed %}<a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% else %}{{ r.org.name }}{% endif %}</th>
+        <td class="text-end">{{ r.sms_parts }}</td><td class="text-end">{{ r.sms_cost|money }}</td><td class="text-end">{{ r.sms_billed|money }}</td>
+        <td class="text-end">{{ r.scans }}</td><td class="text-end">{{ r.scan_cost|money }}</td>
+        <td class="text-end">{{ r.questions }}</td><td class="text-end">{{ r.tokens_in|add:r.tokens_out }}</td><td class="text-end">{{ r.ai_cost|money }}</td>
+        <td class="text-end fw-semibold">{{ r.total|money }}</td>
+        <td class="text-end">{{ r.income|money }}</td><td class="text-end fw-semibold{% if r.margin < 0 %} text-danger{% endif %}">{{ r.margin|money }}</td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><th scope="row">{% trans "All" %}</th>
+      <td class="text-end">{{ t.sms_parts }}</td><td class="text-end">{{ t.sms_cost|money }}</td><td class="text-end">{{ t.sms_billed|money }}</td>
+      <td class="text-end">{{ t.scans }}</td><td class="text-end">{{ t.scan_cost|money }}</td>
+      <td class="text-end">{{ t.questions }}</td><td class="text-end">{{ t.tokens_in|add:t.tokens_out }}</td><td class="text-end">{{ t.ai_cost|money }}</td>
+      <td class="text-end fw-semibold">{{ t.total|money }}</td>
+      <td class="text-end">{{ t.income|money }}</td><td class="text-end fw-semibold">{{ t.margin|money }}</td></tr></tfoot>
+  </table></div>
+  {% else %}
+  <p class="text-muted mb-0">{% trans "No SMS, photo scans, assistant questions or subscription payments this month." %}</p>
+  {% endif %}
+  <p class="small text-muted mt-3 mb-0">{% blocktrans with i=d.prices.input o=d.prices.output u=d.prices.usd %}SMS cost is what the provider charged for each message. Scans and the assistant are priced from their tokens at ${{ i }} per million in and ${{ o }} per million out, at KES {{ u }} to the dollar (AI_PRICE_INPUT_PER_M, AI_PRICE_OUTPUT_PER_M, USD_TO_KES). Check the OpenAI bill under Money. Failed scans and questions over the daily limit are not counted.{% endblocktrans %}</p>
+</div></div>
+{% endwith %}
+{% endblock %}

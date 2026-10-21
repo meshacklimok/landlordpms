@@ -146,3 +146,161 @@ def test_home_checklist_ticks_tenants(client, owner):
     assert not _steps(client)["tenant"]
     services.create_tenant(owner, name="X", phone="0712345678")
     assert _steps(client)["tenant"]
+
+
+def test_list_shows_where_a_tenant_lives_and_filters_by_property(client, owner, tenant):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    block = property_services.create_building(owner, prop, name="Block A")
+    unit = property_services.create_unit(owner, prop, code="B22", building=block)
+    other = make_property(owner.organization, name="Elsewhere")
+    lease = lease_services.create_lease(owner, unit=unit, tenants=[tenant], start_date=datetime.date(2026, 1, 1),
+                                        end_date=None, rent=15000)
+    lease_services.activate_lease(owner, lease)
+    url = reverse("tenants:list")
+    html = client.get(url).content.decode()
+    assert "Block A" in html and "B22" in html
+    assert [t.pk for t in client.get(url + f"?property={prop.public_id}").context["page"]] == [tenant.pk]
+    assert list(client.get(url + f"?property={other.public_id}").context["page"]) == []
+
+
+def test_add_tenant_with_a_unit_goes_to_its_lease_and_detail_offers_assign_and_move(client, owner):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    a1 = property_services.create_unit(owner, prop, code="A1")
+    b2 = property_services.create_unit(owner, prop, code="B2")
+    r = client.post(reverse("tenants:create"), {"kind": "INDIVIDUAL", "name": "Achieng", "phone": "0711000222",
+                                                "unit": a1.pk, "language": "en"})
+    t = Tenant.objects.get(name="Achieng")
+    assert r.status_code == 302 and r.url == reverse("leases:create", args=[a1.public_id]) + f"?tenant={t.public_id}"
+    detail = client.get(reverse("tenants:detail", args=[t.public_id]))
+    assert detail.context["assign_units"] is not None and detail.context["move_form"] is None
+    r = client.get(reverse("tenants:assign", args=[t.public_id]) + f"?unit={b2.public_id}")
+    assert r.url == reverse("leases:create", args=[b2.public_id]) + f"?tenant={t.public_id}"
+    lease = lease_services.create_lease(owner, unit=a1, tenants=[t], start_date=datetime.date(2026, 1, 1),
+                                        end_date=None, rent=9000)
+    lease_services.activate_lease(owner, lease)
+    detail = client.get(reverse("tenants:detail", args=[t.public_id]))
+    assert detail.context["assign_units"] is None and detail.context["move_lease"] == lease
+    assert b"Move to another unit" in detail.content
+
+
+def test_move_now_activates_the_new_lease_and_ends_the_old_one(client, owner):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from leases.models import Lease
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    a1 = property_services.create_unit(owner, prop, code="A1")
+    b2 = property_services.create_unit(owner, prop, code="B2")
+    t = services.create_tenant(owner, name="Achieng", phone="0711000222")
+    old = lease_services.create_lease(owner, unit=a1, tenants=[t], start_date=datetime.date(2026, 1, 1),
+                                      end_date=None, rent=9000)
+    lease_services.activate_lease(owner, old)
+    client.post(reverse("leases:detail", args=[old.public_id]), {
+        "action": "transfer", "unit": b2.pk, "start_date": "2026-10-11", "activate_now": "on"})
+    old.refresh_from_db()
+    new = Lease.objects.get(unit=b2)
+    assert new.status == Lease.Status.ACTIVE and old.status == Lease.Status.ENDED
+
+
+def test_filter_tenants_with_no_unit_yet(client, owner, tenant):
+    url = reverse("tenants:list")
+    assert [t.pk for t in client.get(url + "?placed=none").context["page"]] == [tenant.pk]
+    assert list(client.get(url + "?placed=yes").context["page"]) == []
+
+
+def test_add_tenant_from_a_lease_form_returns_to_that_units_lease(client, owner):
+    from accounts.tests.factories import make_property
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    a1 = property_services.create_unit(owner, prop, code="A1")
+    page = client.get(reverse("tenants:create") + f"?for_unit={a1.public_id}")
+    assert b'name="for_unit"' in page.content and b"Assign to a unit" not in page.content
+    assert b"More details" in page.content
+    r = client.post(reverse("tenants:create"), {"kind": "INDIVIDUAL", "name": "Achieng", "phone": "0711000222",
+                                                "for_unit": str(a1.public_id), "language": "en"})
+    t = Tenant.objects.get(name="Achieng")
+    assert r.url == reverse("leases:create", args=[a1.public_id]) + f"?tenant={t.public_id}"
+
+
+def test_new_lease_shows_a_draft_banner_then_a_settling_in_checklist(client, owner):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    a1 = property_services.create_unit(owner, prop, code="A1")
+    t = services.create_tenant(owner, name="Achieng", phone="0711000222")
+    lease = lease_services.create_lease(owner, unit=a1, tenants=[t], start_date=datetime.date.today(), rent=9000,
+                                        deposit_amount=9000)
+    page = client.get(reverse("leases:detail", args=[lease.public_id]))
+    assert b"bills nothing until you activate" in page.content and page.context["move_in_steps"] == []
+    lease_services.activate_lease(owner, lease)
+    steps = client.get(reverse("leases:detail", args=[lease.public_id])).context["move_in_steps"]
+    labels = [s["label"] for s in steps]
+    assert any("Invite Achieng" in label for label in labels)
+    assert "Record the deposit" in labels and not any(s["done"] for s in steps)
+
+
+def test_welcome_message_starts_with_house_rules_room(client, owner):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from notifications import compose
+    from properties import services as property_services
+
+    client.force_login(owner.user)
+    prop = make_property(owner.organization)
+    a1 = property_services.create_unit(owner, prop, code="A1")
+    t = services.create_tenant(owner, name="Achieng", phone="0711000222", email="a@example.com")
+    lease = lease_services.create_lease(owner, unit=a1, tenants=[t], start_date=datetime.date.today(), rent=9000)
+    lease_services.activate_lease(owner, lease)
+    steps = client.get(reverse("leases:detail", args=[lease.public_id])).context["move_in_steps"]
+    assert any("welcome message" in s["label"] and not s["done"] for s in steps)
+    topic = compose.for_tenant(owner, t, welcome=True)
+    subject, text = compose.draft(owner.organization, topic, t, "EMAIL")
+    assert subject.startswith("Welcome to") and "House rules" in text and "Achieng" in text
+    page = client.get(reverse("notifications:compose"), {"tenant": t.public_id, "welcome": 1})
+    assert page.status_code == 200 and b"House rules" in page.content
+
+
+def test_welcome_wording_is_kept_for_the_next_tenant(client, owner):
+    import datetime
+
+    from accounts.tests.factories import make_property
+    from leases import services as lease_services
+    from notifications import compose
+    from properties import services as property_services
+
+    prop = make_property(owner.organization)
+    made = []
+    for code, name, phone in (("A1", "Achieng", "0711000222"), ("A2", "Brian", "0711000333")):
+        unit = property_services.create_unit(owner, prop, code=code)
+        t = services.create_tenant(owner, name=name, phone=phone, email=f"{name}@example.com")
+        lease = lease_services.create_lease(owner, unit=unit, tenants=[t], start_date=datetime.date.today(), rent=9000)
+        lease_services.activate_lease(owner, lease)
+        made.append((t, lease))
+    first, lease = made[0]
+    topic = compose.for_tenant(owner, first, welcome=True)
+    compose.send(owner, topic, first, "EMAIL", subject="Welcome", text="Hi Achieng, quiet after 10pm. Ref A1 {x}")
+    second = made[1][0]
+    _, text = compose.draft(owner.organization, compose.for_tenant(owner, second, welcome=True), second, "EMAIL")
+    assert text.startswith("Hi Brian, quiet after 10pm. Ref A2") and "Achieng" not in text

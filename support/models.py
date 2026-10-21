@@ -68,6 +68,7 @@ class SupportRequest(PublicIdModel, TimeStampedModel):
         QUESTION = "QUESTION", _("A question")
         PROBLEM = "PROBLEM", _("Something is not working")
         IMPORT_HELP = "IMPORT_HELP", _("Import my data for me")
+        DELETION = "DELETION", _("Delete my account")
 
     class Status(models.TextChoices):
         OPEN = "OPEN", _("Open")
@@ -88,9 +89,58 @@ class SupportRequest(PublicIdModel, TimeStampedModel):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.OPEN, db_index=True)
     internal_note = models.TextField(blank=True)
     closed_at = models.DateTimeField(null=True, blank=True)
+    # When our team first answered it from the console: the start of "how fast do we reply".
+    first_reply_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["-created_at"]
 
     def __str__(self):
         return f"{self.number} {self.subject}"
+
+
+class SupportReply(models.Model):  # noqa: DJ008 - shown through its request
+    """What our team wrote back to the landlord from the console, and how it was sent."""
+
+    class Channel(models.TextChoices):
+        EMAIL = "EMAIL", _("Email")
+        SMS = "SMS", _("SMS")
+
+    request = models.ForeignKey(SupportRequest, on_delete=models.CASCADE, related_name="replies")
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    channel = models.CharField(max_length=5, choices=Channel.choices)
+    body = models.TextField(max_length=2000)
+    sent = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+
+class AppOpen(models.Model):
+    """How often the installed app is opened, per day (D-099 item 3, D-102). Counts only: no user, IP or browser."""
+
+    class Audience(models.TextChoices):
+        STAFF = "STAFF", _("Staff")
+        TENANT = "TENANT", _("Tenant")
+        SIGNED_OUT = "SIGNED_OUT", _("Signed out")
+
+    class Platform(models.TextChoices):
+        ANDROID = "ANDROID", _("Android")
+        IOS = "IOS", _("iPhone")
+        OTHER = "OTHER", _("Other")
+
+    day = models.DateField()
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE, null=True, blank=True,
+                                     related_name="+")  # staff only
+    audience = models.CharField(max_length=10, choices=Audience.choices)
+    platform = models.CharField(max_length=8, choices=Platform.choices)
+    count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["day", "organization", "audience", "platform"],
+                                               nulls_distinct=False, name="support_appopen_one_row")]
+        ordering = ["-day"]
+
+    def __str__(self):
+        return f"{self.day} {self.audience} {self.platform}: {self.count}"

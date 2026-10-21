@@ -25,7 +25,7 @@
       <form method="post" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
         <h2 class="h6">{% trans "Add a bank account" %}</h2>
         {% include "partials/form.html" %}
-        <button class="btn btn-dark">{% trans "Add" %}</button>
+        <button class="btn btn-primary">{% trans "Add" %}</button>
       </div></form>
     </div>
     {% endif %}

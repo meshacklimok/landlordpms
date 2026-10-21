@@ -10,6 +10,27 @@
   {% if can_owners %}· <a href="{% url 'properties:owners' %}">{% trans "Owners and fees" %}</a>{% endif %}
 </p>
 
+{% if specs %}
+<section class="row g-3 mb-3">
+  <div class="col-12 col-lg-8">
+    <div class="chart-card">
+      <h2>{% trans "Collected and paid, by month" %}</h2>
+      <p class="chart-sub">{% trans "The figures are in the table below." %}</p>
+      <div class="chart-box h-lg"><canvas data-chart="chart-owner-months" role="img" aria-label="{% trans 'Rent collected and paid to the owner by month. The same figures are in the table below.' %}"></canvas></div>
+    </div>
+  </div>
+  {% if specs.split %}
+  <div class="col-12 col-lg-4">
+    <div class="chart-card">
+      <h2>{% trans "Where the rent went" %}</h2>
+      <p class="chart-sub">{% trans "Collected rent over the last 12 months." %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-owner-split" role="img" aria-label="{% trans 'Collected rent split into paid, still to pay and fee.' %}"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
 <div class="card shadow-sm mb-3"><div class="card-body p-2">
   <h2 class="h6">{% trans "The last 12 months" %}</h2>
   <div class="table-responsive">
@@ -46,4 +67,11 @@
   {% include "reports/_remittances.html" with remittances=account.remittances back="account" show_month=True %}
   {% if can_remit %}<p class="small text-muted mb-0 mt-2">{% trans "Record a payment from the statement of the month it pays." %}</p>{% endif %}
 </div></div>
+{% if specs %}{{ specs.months|json_script:"chart-owner-months" }}{% if specs.split %}{{ specs.split|json_script:"chart-owner-split" }}{% endif %}{% endif %}
 {% endwith %}{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

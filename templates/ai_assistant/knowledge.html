@@ -1,0 +1,36 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "What the assistant knows" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <a href="{% url 'ai_assistant:ask' %}#settings" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Ask" %}</a>
+  <h1 class="h4 mt-2 mb-1">{% trans "What the assistant knows" %}</h1>
+  <p class="small text-body-secondary">{% trans "Write down how your organization does things, such as office hours, deposit refunds, house rules or when water is billed, and the assistant answers from it. Your figures and the app's help it already knows." %}</p>
+
+  {% if entries %}
+  <div class="list-group shadow-sm mb-4" data-entries>
+    {% for entry in entries %}
+    <a href="{% url 'ai_assistant:knowledge_entry' entry.public_id %}" class="list-group-item list-group-item-action">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="fw-semibold small">{{ entry.title }}</span>
+        <span class="small text-body-secondary text-nowrap">{% if entry.property %}{{ entry.property.name }}{% else %}{% trans "All properties" %}{% endif %}{% if entry.for_tenants %} · {% trans "Tenants too" %}{% else %} · {% trans "Staff only" %}{% endif %}</span>
+      </div>
+      <div class="small text-body-secondary text-truncate">{{ entry.answer }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-secondary small">{% trans "Nothing yet. Add the questions your staff and tenants ask most." %}</div>
+  {% endif %}
+
+  {% if entries|length < max_entries %}
+  <form method="post" class="card shadow-sm mb-3" novalidate><div class="card-body">{% csrf_token %}
+    <h2 class="h6 mb-3">{% trans "Add an entry" %}</h2>
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Add" %}</button>
+  </div></form>
+  {% else %}
+  <div class="alert alert-secondary small">{% blocktrans with n=max_entries %}You have {{ n }} entries, the most allowed. Remove one to add another.{% endblocktrans %}</div>
+  {% endif %}
+  <p class="small text-body-secondary">{% trans "Entries are sent to OpenAI with the questions they answer, like the rest of what the assistant uses. Every change is kept in the activity log." %}{% if not tenants_on %} {% trans "\"Tenants too\" entries are used once you switch on Answer tenants." %}{% endif %}</p>
+</div>
+{% endblock %}

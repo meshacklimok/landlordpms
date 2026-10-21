@@ -1,0 +1,7 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Page not found" %}{% endblock %}
+{% block content %}
+<h1 class="h4">{% trans "We could not find that page" %}</h1>
+<p class="text-muted">{% trans "The link may be old or mistyped, or the record may have been removed." %}</p>
+<a href="{% url 'accounts:home' %}">{% trans "Go home" %}</a>
+{% endblock %}

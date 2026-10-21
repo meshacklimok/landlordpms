@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% blocktrans with n=property.name %}Book a bed at {{ n }}{% endblocktrans %}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    <h1 class="h4 mb-1">{{ property.name }}</h1>
+    {% if property.area or property.county %}<div class="text-muted small mb-3">{% if property.area %}{{ property.area }}, {% endif %}{{ property.get_county_display }}</div>{% endif %}
+    {% if any_free %}
+    <p class="mb-2"><span class="badge text-bg-success">{% trans "Beds available" %}</span></p>
+    <dl class="row small mb-3">
+      <dt class="col-6">{% trans "Female rooms" %}</dt><dd class="col-6">{{ free.F }} {% trans "free" %}</dd>
+      <dt class="col-6">{% trans "Male rooms" %}</dt><dd class="col-6">{{ free.M }} {% trans "free" %}</dd>
+      {% if bed_from is not None %}<dt class="col-6">{% trans "A bed, from" %}</dt><dd class="col-6">KES {{ bed_from|floatformat:"0g" }} {% trans "per month" %}</dd>{% endif %}
+      {% if room_from is not None %}<dt class="col-6">{% trans "A whole room, from" %}</dt><dd class="col-6">KES {{ room_from|floatformat:"0g" }} {% trans "per month" %}</dd>{% endif %}
+    </dl>
+    {% else %}
+    <p class="mb-3"><span class="badge text-bg-secondary">{% trans "Full right now" %}</span> <span class="small">{% trans "Leave your details and you will be on the waitlist. We call you when a bed is free." %}</span></p>
+    {% endif %}
+    {% if sent == "waitlist" %}
+    <div class="alert alert-info small mb-0" role="status">{% trans "You are on the waitlist. We will call you when a bed is free." %}</div>
+    {% elif sent %}
+    <div class="alert alert-success small mb-0" role="status">{% trans "Thank you. We have your details and will call you to confirm your bed." %}</div>
+    {% else %}
+    <form method="post" novalidate>{% csrf_token %}
+      {% for error in enquiry_form.non_field_errors %}<div class="alert alert-danger small">{{ error }}</div>{% endfor %}
+      {% for field in enquiry_form %}{% if field.name == "website" %}
+      <div style="position:absolute;left:-10000px" aria-hidden="true"><label for="{{ field.id_for_label }}">Website</label>{{ field }}</div>
+      {% else %}
+      <div class="mb-2">
+        <label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {% if field.widget_type == "select" %}<select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select form-select-sm{% if field.errors %} is-invalid{% endif %}" required>{% for v, l in field.field.choices %}<option value="{{ v }}"{% if field.value == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        {% elif field.widget_type == "textarea" %}<textarea name="{{ field.html_name }}" id="{{ field.id_for_label }}" rows="2" maxlength="500" class="form-control form-control-sm">{{ field.value|default_if_none:"" }}</textarea>
+        {% else %}{{ field }}{% endif %}
+        {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      </div>
+      {% endif %}{% endfor %}
+      <button class="btn btn-primary btn-sm">{% if any_free %}{% trans "Request a bed" %}{% else %}{% trans "Join the waitlist" %}{% endif %}</button>
+      <div class="form-text">{% trans "Your name and phone go only to the hostel, to reply to you." %}</div>
+    </form>
+    {% endif %}
+    {% if contact_phone %}
+    <hr><div class="d-flex flex-wrap gap-2">
+      <a class="btn btn-success btn-sm" href="https://wa.me/{{ contact_phone|slice:'1:' }}" rel="noopener">WhatsApp</a>
+      <a class="btn btn-outline-primary btn-sm" href="tel:{{ contact_phone }}">{% trans "Call" %} {{ contact_phone }}</a>
+    </div>
+    {% endif %}
+  </div></div>
+  <p class="small text-muted text-center mt-3">{{ org_name }}</p>
+</div>
+{% endblock %}

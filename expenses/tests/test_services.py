@@ -290,6 +290,171 @@ def test_totals_split_approved_and_waiting(owner, org, prop, repairs):
     t = services.totals(Expense.objects.all())
     assert (t.approved, t.approved_count, t.waiting, t.waiting_count) == (
         Decimal("4000.00"), 2, Decimal("250.00"), 1)
-    assert [r["category__name"] for r in t.by_category] == ["Security", "Repairs and maintenance"]
+    assert [r["name"] for r in t.by_category] == ["Security", "Repairs and maintenance"]
     w = services.waiting_summary(org, [prop], PAID, PAID)
     assert (w.waiting, w.waiting_count) == (Decimal("250.00"), 1)
+
+
+def test_totals_break_down_approved_spending(owner, org, prop, repairs):
+    """D-110: by property and supplier, the average and spending a month count approved expenses only."""
+    other = make_property(org, name="Baobab Flats")
+    s = services.create_supplier(owner, name="Kamau Plumbing")
+    spend(owner, prop, repairs, "1000", supplier=s)
+    spend(owner, other, repairs, "3000", paid_on=PAID - datetime.timedelta(days=40))
+    spend(add_member(org, "manager", all_properties=True), prop, repairs, "250")  # waiting
+    t = services.totals(Expense.objects.all())
+    assert [(r["name"], r["total"], r["n"]) for r in t.by_property] == [
+        ("Baobab Flats", Decimal("3000.00"), 1), ("Acacia Court", Decimal("1000.00"), 1)]
+    assert [(r["name"], r["n"]) for r in t.by_supplier] == [("Kamau Plumbing", 1)]
+    assert (t.months, t.average, t.monthly) == (2, Decimal("2000.00"), Decimal("2000.00"))
+    empty = services.totals(Expense.objects.none())
+    assert empty.average is None and empty.monthly is None
+
+
+def _edit(actor, expense, **kw):
+    values = {"prop": expense.property, "category": expense.category, "description": expense.description,
+              "amount": expense.amount, "paid_on": expense.paid_on, "method": expense.method,
+              "reference": expense.reference, "supplier": expense.supplier}
+    values.update(kw)
+    return services.update_expense(actor, expense, **values)
+
+
+def test_an_owner_corrects_an_approved_expense_and_it_stays_approved(owner, org, prop, repairs):
+    other = make_property(org, name="Baobab Flats")
+    e = spend(owner, prop, repairs, "2500", reference="ABC123")
+    _edit(owner, e, amount="2,750", prop=other, reference="abc 124", description="Gate lock and hinges")
+    e.refresh_from_db()
+    assert (e.amount, e.property, e.reference_key, e.status) == (Decimal("2750"), other, "ABC124", Status.APPROVED)
+    event = AuditEvent.objects.get(action="expenses.edit")
+    assert event.changes["amount"] == ["2500.00", "2750.00"]
+    assert event.changes["property"] == ["Acacia Court", "Baobab Flats"] and "reference_key" not in event.changes
+    _edit(owner, e)  # nothing changed, nothing recorded
+    assert AuditEvent.objects.filter(action="expenses.edit").count() == 1
+
+
+def test_the_recorder_edits_only_until_it_is_approved(owner, org, prop, repairs):
+    manager = add_member(org, "manager", properties=[prop])
+    e = spend(manager, prop, repairs)
+    assert services.can_edit(manager, e)
+    _edit(manager, e, amount="3000")
+    e.refresh_from_db()
+    assert e.amount == 3000 and e.status == Status.SUBMITTED  # still needs a checker
+    assert not services.can_edit(add_member(org, "manager", properties=[prop]), e)  # not theirs
+    services.approve(owner, e)
+    e.refresh_from_db()
+    assert not services.can_edit(manager, e)
+    with pytest.raises(PermissionDenied):
+        _edit(manager, e, amount="1")
+
+
+def test_edits_keep_the_same_checks(owner, org, prop, repairs):
+    first = spend(owner, prop, repairs, reference="QWE1")
+    second = spend(owner, prop, repairs)
+    with pytest.raises(ValidationError) as exc:
+        _edit(owner, second, reference="qwe 1", amount="0")
+    assert {"reference", "amount"} <= set(exc.value.message_dict)
+    _edit(owner, first, reference="QWE1", amount="10")  # its own reference is not a duplicate
+    # A category archived since recording may stay, but not be newly chosen.
+    old = ExpenseCategory.objects.create(organization=org, name="Old")
+    e = spend(owner, prop, old)
+    services.archive_category(owner, old)
+    _edit(owner, e, amount="99")
+    with pytest.raises(ValidationError):
+        _edit(owner, second, category=old)
+    # Voided or rejected expenses are history.
+    services.void(owner, first, reason="Duplicate")
+    first.refresh_from_db()
+    assert not services.can_edit(owner, first)
+
+
+def test_moving_to_a_property_outside_scope_is_refused(owner, org, prop, repairs):
+    other = make_property(org, name="Baobab Flats")
+    manager = add_member(org, "manager", properties=[prop])
+    e = spend(manager, prop, repairs)
+    with pytest.raises(PermissionDenied):
+        _edit(manager, e, prop=other)
+
+
+# ---------------------------------------------------------------------------
+# One payment shared by several properties (D-197)
+# ---------------------------------------------------------------------------
+
+
+def _three(org):
+    return [make_property(org, name=n) for n in ("Acacia", "Baobab", "Cedar")]
+
+
+def test_equal_shares_add_up_to_what_was_paid(owner, org, repairs):
+    a, b, c = _three(org)
+    made = services.record_split(owner, [a, b, c], rule="equal", category=repairs, description="Guard",
+                                 amount="10000", paid_on=PAID, method="CASH", reference="ab12")
+    assert [e.amount for e in made] == [Decimal("3333.33"), Decimal("3333.33"), Decimal("3333.34")]
+    assert sum(e.amount for e in made) == Decimal("10000")
+    assert len({e.split_key for e in made}) == 1 and made[0].split_total == Decimal("10000")
+    assert made[0].reference_key == "AB12" and made[1].reference_key == "" and all(e.status == Status.APPROVED for e in made)
+    assert len(services.split_group(made[1])) == 3
+    assert services.totals(Expense.objects.all()).approved == Decimal("10000")
+
+
+def test_shares_by_units_and_by_percent(owner, org, repairs):
+    from properties import services as property_services
+    a, b, _c = _three(org)
+    for code in ("1", "2", "3"):
+        property_services.create_unit(owner, a, code=code)
+    property_services.create_unit(owner, b, code="1")
+    made = services.record_split(owner, [a, b], rule="units", category=repairs, description="Guard", amount="4000",
+                                 paid_on=PAID, method="CASH")
+    assert [e.amount for e in made] == [Decimal("3000"), Decimal("1000")]
+    made = services.record_split(owner, [a, b], rule="percent", percents={a.pk: Decimal("70"), b.pk: Decimal("30")},
+                                 category=repairs, description="Bins", amount="1000", paid_on=PAID, method="CASH")
+    assert [e.amount for e in made] == [Decimal("700"), Decimal("300")]
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a, b], rule="percent", percents={a.pk: Decimal("70"), b.pk: Decimal("20")},
+                              category=repairs, description="Bins", amount="1000", paid_on=PAID, method="CASH")
+    with pytest.raises(ValidationError):  # no units to count
+        services.record_split(owner, [a, _c], rule="units", category=repairs, description="x", amount="1000",
+                              paid_on=PAID, method="CASH")
+
+
+def test_a_split_needs_two_properties_and_a_big_enough_amount(owner, org, repairs):
+    a, b, _c = _three(org)
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a], rule="equal", category=repairs, description="x", amount="100",
+                              paid_on=PAID, method="CASH")
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a, b, _c], rule="equal", category=repairs, description="x", amount="0.02",
+                              paid_on=PAID, method="CASH")
+    assert not Expense.objects.exists()
+
+
+def test_shares_are_approved_rejected_and_voided_together(owner, org, repairs):
+    a, b, _c = _three(org)
+    manager = add_member(org, "manager", properties=[a])
+    with pytest.raises(PermissionDenied):  # a manager may not record on a property outside their scope
+        services.record_split(manager, [a, b], rule="equal", category=repairs, description="x", amount="100",
+                              paid_on=PAID, method="CASH")
+    both = add_member(org, "manager", properties=[a, b])
+    made = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                 paid_on=PAID, method="CASH")
+    assert {e.status for e in made} == {Status.SUBMITTED}
+    assert not services.can_approve(both, made[0])
+    services.approve(owner, made[1])
+    assert {e.status for e in Expense.objects.all()} == {Status.APPROVED}
+    assert not services.can_edit(owner, made[0])
+    services.void(owner, made[0], reason="Recorded twice")
+    assert {e.status for e in Expense.objects.all()} == {Status.VOIDED}
+    again = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                  paid_on=PAID, method="CASH")
+    services.reject(owner, again[0], reason="Not ours")
+    assert Expense.objects.filter(status=Status.REJECTED).count() == 2
+
+
+def test_one_approver_for_only_one_property_cannot_approve_a_share(owner, org, repairs):
+    a, b, _c = _three(org)
+    both = add_member(org, "manager", properties=[a, b])
+    made = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                 paid_on=PAID, method="CASH")
+    accountant = add_member(org, "accountant", properties=[a])
+    assert not services.can_approve(accountant, made[0])
+    with pytest.raises(PermissionDenied):
+        services.approve(accountant, made[0])

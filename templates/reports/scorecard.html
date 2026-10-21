@@ -1,0 +1,102 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Property scorecard" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Property scorecard" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Every property side by side {{ p }}, best net income per unit first. Money is on the cash basis of the profit and loss.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.rows %}
+{% with t=report.total %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net operating income" %}</div><div class="stat-value num">{{ t.noi|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with a=t.income|money:cur b=t.expenses|money:cur %}{{ a }} in, {{ b }} out{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Occupancy" %}</div><div class="stat-value">{{ t.occupancy|percent }}</div>
+    <div class="stat-sub">{% blocktrans with a=t.occupied b=t.units %}{{ a }} of {{ b }} units{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Rent collected" %}</div><div class="stat-value">{{ t.collection|percent }}</div>
+    <div class="stat-sub">{% trans "of rent billed" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Turnover" %}</div><div class="stat-value">{{ t.turnover|percent }}</div>
+    <div class="stat-sub">{% blocktrans count n=t.move_outs %}{{ n }} move-out{% plural %}{{ n }} move-outs{% endblocktrans %}</div></div></div></div>
+</div>
+{% endwith %}
+
+<section class="row g-3 mb-3">
+  {% if specs.rates %}<div class="col-12 col-lg-6"><div class="chart-card">
+    <h2>{% trans "Full and paying" %}</h2><p class="chart-sub">{% trans "Occupancy and rent collected for each property." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-rates" role="img" aria-label="{% trans 'Occupancy and rent collected by property. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+  {% if specs.noi %}<div class="col-12 col-lg-6"><div class="chart-card">
+    <h2>{% trans "Net income per unit" %}</h2><p class="chart-sub">{% trans "Income less expenses, divided by the property's units." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-noi" role="img" aria-label="{% trans 'Net income per unit by property. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+</section>
+{% if specs.rates %}{{ specs.rates|json_script:"chart-rates" }}{% endif %}
+{% if specs.noi %}{{ specs.noi|json_script:"chart-noi" }}{% endif %}
+
+<section class="mb-3" aria-labelledby="health-h">
+  <h2 class="h6" id="health-h">{% trans "Property health" %}</h2>
+  <p class="small text-body-secondary">{% trans "A score out of 100 from five parts. The weights are ours, not an industry standard. A part with nothing to measure is left out and the rest re-weighted, so missing records never lower a score." %}</p>
+  <div class="row g-2">
+  {% for r in report.rows %}{% if r.health %}
+    <div class="col-12 col-md-6 col-xl-4"><div class="card shadow-sm h-100"><div class="card-body py-2">
+      <div class="d-flex justify-content-between align-items-baseline">
+        <div class="fw-semibold">{{ r.property.name }}</div>
+        {% if r.health.score is None %}<span class="badge text-bg-secondary">{% trans "Not enough records" %}</span>
+        {% else %}<span class="fs-5 fw-semibold num">{{ r.health.score }}<span class="small text-body-secondary">/100</span></span>{% endif %}
+      </div>
+      {% if r.health.provisional %}<div class="small text-warning-emphasis">{% trans "Provisional: some parts have no records yet." %}</div>{% endif %}
+      <ul class="list-unstyled small mb-0 mt-1">
+      {% for p in r.health.parts %}
+        <li class="d-flex justify-content-between"><span>{% if p.url %}<a href="{{ p.url }}">{{ p.label }}</a>{% else %}{{ p.label }}{% endif %} <span class="text-body-secondary">({{ p.weight }}%)</span></span>
+          <span>{% if p.points is None %}<span class="text-body-secondary">{% trans "No records" %}</span>{% else %}{{ p.points }} · {% if p.band == "strong" %}{% trans "Strong" %}{% elif p.band == "good" %}{% trans "Good" %}{% else %}{% trans "Needs attention" %}{% endif %}{% endif %}</span></li>
+      {% endfor %}
+      </ul>
+    </div></div></div>
+  {% endif %}{% endfor %}
+  </div>
+  <p class="small text-body-secondary mt-2">{% trans "Collection: rent collected over rent billed. Occupancy: occupied over rentable units. Arrears: overdue balance against a month of rent billed (two months overdue scores 0). Maintenance: open repairs not yet past their fix-by time. Expense control: expenses as a share of income (30% or less scores 100, 80% or more scores 0)." %}</p>
+</section>
+
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Property" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Occupied" %}</th>
+    <th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Income" %}</th><th class="text-end">{% trans "Expenses" %}</th>
+    <th class="text-end">{% trans "Net" %}</th><th class="text-end">{% trans "Net per unit" %}</th><th class="text-end">{% trans "Costs of income" %}</th><th class="text-end">{% trans "Turnover" %}</th><th class="text-end">{% trans "Health" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for r in report.rows %}
+    <tr>
+      <td class="fw-semibold">{{ r.property.name }}</td>
+      <td class="text-end">{{ r.units }}</td>
+      <td class="text-end">{{ r.occupancy|percent }}</td>
+      <td class="text-end">{{ r.collection|percent }}</td>
+      <td class="text-end num text-nowrap">{{ r.income|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ r.expenses|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ r.noi|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ r.noi_per_unit|money:cur|default:"—" }}</td>
+      <td class="text-end">{{ r.expense_ratio|percent }}</td>
+      <td class="text-end">{{ r.turnover|percent }}{% if r.move_outs %}<div class="text-body-secondary">{{ r.move_outs }}</div>{% endif %}</td>
+      <td class="text-end">{% if r.health and r.health.score is not None %}{{ r.health.score }}{% if r.health.provisional %}*{% endif %}{% else %}—{% endif %}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. Occupancy is on the last day of the period (or today). "Costs of income" is expenses as a share of income. Turnover is move-outs over leases in force. Archived properties are left out.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No properties with units or money in this period." %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

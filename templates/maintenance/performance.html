@@ -1,0 +1,112 @@
+{% extends "maintenance/_base.html" %}{% load i18n money %}
+{% block title %}{% trans "Maintenance performance" %}{% endblock %}
+{% block content %}
+<div class="wide mx-auto">
+  <a href="{% url 'maintenance:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Maintenance" %}</a>
+  <h1 class="h3 mt-2 mb-1">{% trans "Performance" %}</h1>
+  <p class="small text-body-secondary">{% blocktrans with days=days %}Requests reported in the last {{ days }} days, by who is on the job now. On time means work started and was fixed by the target times; jobs still open past a target count as late. Cancelled requests are left out.{% endblocktrans %}</p>
+
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
+    <div class="row g-2 align-items-end">
+      {% if many_properties %}
+      <div class="col-6 col-md-4">
+        <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+        <select id="f-property" name="property" class="form-select">
+          <option value="">{% trans "All properties" %}</option>
+          {% for p in properties %}<option value="{{ p.public_id }}" {% if p == property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-body-secondary mb-1" for="f-days">{% trans "Reported in the last" %}</label>
+        <select id="f-days" name="days" class="form-select">
+          {% for d in periods %}<option value="{{ d }}" {% if d == days %}selected{% endif %}>{% blocktrans %}{{ d }} days{% endblocktrans %}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="col-12 col-md-auto"><noscript><button class="btn btn-outline-secondary w-100">{% trans "Apply" %}</button></noscript></div>
+    </div>
+  </div></form>
+
+  {% if total.jobs %}
+  <div class="row g-2 mb-3">
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Jobs" %}</div>
+      <div class="stat-value">{{ total.jobs }}</div>
+      <div class="stat-sub">{% blocktrans with n=total.finished o=total.open %}{{ n }} finished, {{ o }} open{% endblocktrans %}{% if total.overdue %} · <span class="text-danger">{% blocktrans with n=total.overdue %}{{ n }} overdue{% endblocktrans %}</span>{% endif %}</div>
+    </div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Fixed on time" %}</div>
+      <div class="stat-value">{% if total.fix_on_time is not None %}{{ total.fix_on_time }}%{% else %}—{% endif %}</div>
+      <div class="stat-sub">{% if total.respond_on_time is not None %}{% blocktrans with p=total.respond_on_time %}started on time {{ p }}%{% endblocktrans %}{% else %}{% trans "no targets passed yet" %}{% endif %}</div>
+    </div></div></div>
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Days to fix" %}</div>
+      <div class="stat-value">{% if total.avg_days_to_fix is not None %}{{ total.avg_days_to_fix }}{% else %}—{% endif %}</div>
+      <div class="stat-sub">{% if total.avg_hours_to_respond is not None %}{% blocktrans with h=total.avg_hours_to_respond %}{{ h }} hours to start, on average{% endblocktrans %}{% else %}{% trans "on average" %}{% endif %}</div>
+    </div></div></div>
+    {% if with_costs %}
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Approved cost" %}</div>
+      <div class="stat-value num">{{ total.cost|money:currency }}</div>
+      <div class="stat-sub">{% blocktrans with c=total.cost_per_job|money:currency %}{{ c }} a job{% endblocktrans %}{% if total.reopened %} · {% blocktrans count n=total.reopened %}{{ n }} reopened{% plural %}{{ n }} reopened{% endblocktrans %}{% endif %}</div>
+    </div></div></div>
+    {% else %}
+    <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+      <div class="stat-label">{% trans "Reopened" %}</div>
+      <div class="stat-value">{{ total.reopened }}</div>
+      <div class="stat-sub">{% blocktrans with n=total.due_moved %}due time moved {{ n }} times{% endblocktrans %}</div>
+    </div></div></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if specs %}
+  <section class="row g-3 mb-3" aria-label="{% trans 'Maintenance performance, in charts' %}">
+    <div class="col-lg-5"><div class="chart-card h-100">
+      <h2>{% trans "What the jobs were" %}</h2>
+      <p class="chart-sub">{% blocktrans with n=total.jobs %}{{ n }} jobs, by kind. The table below has the detail.{% endblocktrans %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-kinds" role="img" aria-label="{% trans 'Jobs by kind. The same figures are in the table below.' %}"></canvas></div>
+    </div></div>
+    {% if specs.priorities %}
+    <div class="col-lg-7"><div class="chart-card h-100">
+      <h2>{% trans "Keeping to the targets, by priority" %}</h2>
+      <p class="chart-sub">{% trans "The share of jobs started and fixed by their target times. Priorities with no target passed yet are left out." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-priorities" role="img" aria-label="{% trans 'Share of jobs started and fixed on time, by priority. The same figures are in the table below.' %}"></canvas></div>
+    </div></div>
+    {% endif %}
+  </section>
+  {{ specs.kinds|json_script:"chart-kinds" }}
+  {% if specs.priorities %}{{ specs.priorities|json_script:"chart-priorities" }}{% endif %}
+  {% endif %}
+
+  {% trans "By kind of job" as h_kinds %}{% trans "No jobs in this period." as e_none %}
+  {% include "maintenance/_performance_table.html" with heading=h_kinds rows=kinds param="kind" empty=e_none %}
+  {% trans "By priority" as h_priorities %}
+  {% include "maintenance/_performance_table.html" with heading=h_priorities rows=priorities param="priority" empty=e_none %}
+  {% if places|length > 1 %}{% trans "By property" as h_places %}
+  {% include "maintenance/_performance_table.html" with heading=h_places rows=places param="property" empty=e_none %}{% endif %}
+
+  {% trans "Suppliers" as h_suppliers %}{% trans "No jobs with a supplier in this period." as e_suppliers %}
+  {% include "maintenance/_performance_table.html" with heading=h_suppliers rows=suppliers param="supplier" empty=e_suppliers %}
+  {% trans "Staff" as h_staff %}{% trans "No jobs assigned to staff in this period." as e_staff %}
+  {% include "maintenance/_performance_table.html" with heading=h_staff rows=staff param="staff" empty=e_staff %}
+  {% if unassigned %}<p class="small text-body-secondary">{% blocktrans count n=unassigned %}{{ n }} request in this period has nobody on it.{% plural %}{{ n }} requests in this period have nobody on them.{% endblocktrans %}</p>{% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+      <h2 class="h6 mb-0">{% trans "Targets" %}</h2>
+      {% if can_targets %}<a class="small" href="{% url 'maintenance:targets' %}">{% trans "Change targets" %} →</a>{% endif %}
+    </div>
+    <ul class="small mb-0 list-unstyled">
+      {% for label, respond, fix in targets %}<li><span class="fw-medium">{{ label }}</span>: {% blocktrans %}start within {{ respond }}, fix within {{ fix }}{% endblocktrans %}</li>{% endfor %}
+    </ul>
+  </div></div>
+  {% if can_export %}<div class="small text-end"><a href="?{{ csv_query }}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download CSV" %}</a></div>{% endif %}
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

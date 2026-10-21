@@ -88,6 +88,20 @@ def test_reference_match_confirms_allocates_and_receipts_without_a_reviewer(clie
     assert all(e.actor is None and e.changes["source"] == [None, "mpesa:QAB12CD34E"] for e in events)
 
 
+def test_a_lapsed_read_only_organization_still_receives_and_posts_rent(client, creds, owner, lease):
+    """Money already paid is recorded whatever the subscription says; only new work is blocked."""
+    from accounts.models import Organization
+
+    invoice = bill(lease, FEB)
+    Organization.objects.filter(pk=owner.organization_id).update(status=Organization.Status.READ_ONLY)
+    post(client, creds, payload(BillRefNumber=lease.unit.payment_reference))
+
+    tx = MpesaTransaction.objects.get()
+    assert tx.status == Status.MATCHED and tx.payment.receipt.number.startswith("RCT-")
+    invoice.refresh_from_db()
+    assert invoice.status == Invoice.Status.PAID
+
+
 @pytest.mark.parametrize("typed", ["{ref}", "{low}", " {spaced} ", "{nodash}"])
 def test_reference_ignores_case_spaces_and_dashes(client, creds, lease, typed):
     ref = lease.unit.payment_reference

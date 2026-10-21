@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="page-head mb-2">
+  <div>
+    <p class="small text-muted mb-0">{% trans "Developer console" %} · {{ seat.get_role_display }}</p>
+    <h1 class="h4 mb-0">{% block console_title %}{% endblock %}</h1>
+  </div>
+</div>
+{% with here=request.resolver_match.view_name %}
+<ul class="nav nav-pills small mb-3 flex-wrap gap-1" id="console-nav" aria-label="{% trans 'Console pages' %}">
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:today' %} active{% endif %}" href="{% url 'console:today' %}">{% trans "Today" %}</a></li>
+  {% if "overview" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:overview' %} active{% endif %}" href="{% url 'console:overview' %}">{% trans "Overview" %}</a></li>{% endif %}
+  {% if "revenue" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:revenue' %} active{% endif %}" href="{% url 'console:revenue' %}">{% trans "Revenue" %}</a></li>{% endif %}
+  {% if "behaviour" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:behaviour' %} active{% endif %}" href="{% url 'console:behaviour' %}">{% trans "How tenants pay" %}</a></li>{% endif %}
+  {% if "engagement" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:usage' %} active{% endif %}" href="{% url 'console:usage' %}">{% trans "Usage" %}</a></li>{% endif %}
+  {% if "organizations" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if 'organization' in here %} active{% endif %}" href="{% url 'console:organizations' %}">{% trans "Organizations" %}</a></li>{% endif %}
+  {% if "growth" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:growth' %} active{% endif %}" href="{% url 'console:growth' %}">{% trans "Growth" %}</a></li>{% endif %}
+  {% if "channels" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:channels' %} active{% endif %}" href="{% url 'console:channels' %}">{% trans "Messages and AI" %}</a></li>{% endif %}
+  {% if "finance" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:money' or here == 'console:expense' %} active{% endif %}" href="{% url 'console:money' %}">{% trans "Money" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:statement' %} active{% endif %}" href="{% url 'console:statement' %}">{% trans "Income and expenses" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:costs' %} active{% endif %}" href="{% url 'console:costs' %}">{% trans "Costs by landlord" %}</a></li>{% endif %}
+  {% if "health" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:health' or here == 'console:problems' %} active{% endif %}" href="{% url 'console:health' %}">{% trans "Health" %}</a></li>{% endif %}
+  {% if "support" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if 'support' in here %} active{% endif %}" href="{% url 'console:support' %}">{% trans "Support" %}</a></li>{% endif %}
+  {% if "tools" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if here == 'console:tools' %} active{% endif %}" href="{% url 'console:tools' %}">{% trans "Tools" %}</a></li>{% endif %}
+  {% if "articles" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if 'article' in here %} active{% endif %}" href="{% url 'console:articles' %}">{% trans "Articles" %}</a></li>{% endif %}
+  {% if "staff" in allowed %}<li class="nav-item"><a data-flow class="nav-link{% if 'team' in here %} active{% endif %}" href="{% url 'console:team' %}">{% trans "Team" %}</a></li>{% endif %}
+  {% if request.user.is_superuser %}<li class="nav-item"><a data-flow class="nav-link{% if 'owner' in here %} active{% endif %}" href="{% url 'console:owners' %}">{% trans "Owners" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:audit' %} active{% endif %}" href="{% url 'console:audit' %}">{% trans "Audit log" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:email' %} active{% endif %}" href="{% url 'console:email' %}">{% trans "Email" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:email_previews' %} active{% endif %}" href="{% url 'console:email_previews' %}">{% trans "Email previews" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if 'notification' in here %} active{% endif %}" href="{% url 'console:notifications' %}">{% trans "Notifications" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:system_messages' %} active{% endif %}" href="{% url 'console:system_messages' %}">{% trans "System messages" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:referrals' %} active{% endif %}" href="{% url 'console:referrals' %}">{% trans "Referrals" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:late_policy' %} active{% endif %}" href="{% url 'console:late_policy' %}">{% trans "Late payment" %}</a></li>
+  <li class="nav-item"><a data-flow class="nav-link{% if here == 'console:announcements' %} active{% endif %}" href="{% url 'console:announcements' %}">{% trans "Announcements" %}</a></li>
+  <li class="nav-item"><a class="nav-link" href="{% url 'admin:index' %}" rel="noopener" target="_blank"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i> {% trans "Admin panel" %}</a></li>{% endif %}
+</ul>
+{% endwith %}
+{# The floating button and the sheet behind it: every console page, like the reports' "Jump to". The list is copied from the pills above. #}
+<button type="button" class="report-nav-menu report-fab d-print-none" data-keep data-bs-toggle="offcanvas" data-bs-target="#console-sheet" aria-controls="console-sheet" aria-label="{% trans 'Console pages' %}" title="{% trans 'Console pages' %}"><i class="bi bi-list" aria-hidden="true"></i></button>
+<div class="offcanvas offcanvas-start report-sheet d-print-none" tabindex="-1" id="console-sheet" aria-labelledby="console-sheet-title" data-console-sheet>
+  <div class="offcanvas-header"><span class="h6 mb-0" id="console-sheet-title">{% trans "Console pages" %}</span>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{% trans 'Close' %}"></button></div>
+  <div class="offcanvas-body"><ul class="app-nav" data-console-sheet-list></ul></div>
+</div>
+<div id="console-flow">
+<div id="console-body">{% block console %}{% endblock %}</div>
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+<script src="{% static 'js/console_flow.js' %}" defer></script>
+{% endblock %}

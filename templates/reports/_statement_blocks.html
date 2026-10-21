@@ -1,0 +1,58 @@
+{% load i18n money %}{# Each property on the statement; shared with the owner portal (D-128). #}
+{% for block in st.blocks %}
+<h2 class="h6 mt-3">{{ block.property.name }}
+  <span class="small text-muted fw-normal">
+    {% if block.rentable %}· {% blocktrans with o=block.occupied r=block.rentable %}{{ o }} of {{ r }} units occupied{% endblocktrans %}{% endif %}
+    {% if block.fee_label %}· {% blocktrans with f=block.fee_label %}fee {{ f }}{% endblocktrans %}{% endif %}
+    {% if block.joint %}· <span class="badge text-bg-light border">{% blocktrans with s=block.share|floatformat:"-2" %}Owned jointly: {{ s }}% share{% endblocktrans %}</span>{% endif %}
+  </span>
+</h2>
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Unit" %}</th>{% if st.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th class="text-end">{% trans "Billed" %}</th><th class="text-end">{% trans "Collected" %}</th>
+    <th class="text-end">{% trans "Deposit" %}</th><th class="text-end">{% trans "Owed at month end" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for line in block.lines %}
+    <tr>
+      <td>{{ line.lease.unit.code }}</td>{% if st.show_tenants %}<td>{{ line.tenant }}</td>{% endif %}
+      <td class="text-end text-nowrap">{{ line.billed|money:cur }}</td>
+      <td class="text-end text-nowrap">{{ line.collected|money:cur }}</td>
+      <td class="text-end text-nowrap">{% if line.deposit %}{{ line.deposit|money:cur }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td class="text-end text-nowrap {% if line.balance > 0 %}text-danger{% endif %}">{{ line.balance|money:cur }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="6" class="text-muted">{% trans "No tenants or payments this month." %}</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if block.lines %}
+  <tfoot><tr class="fw-semibold">
+    <td{% if st.show_tenants %} colspan="2"{% endif %}>{% trans "Total" %}</td>
+    <td class="text-end text-nowrap">{{ block.billed|money:cur }}</td><td class="text-end text-nowrap">{{ block.collected|money:cur }}</td>
+    <td class="text-end text-nowrap">{{ block.deposit|money:cur }}</td><td class="text-end text-nowrap">{{ block.balance|money:cur }}</td>
+  </tr></tfoot>
+  {% endif %}
+</table>
+</div>
+{% if block.fee_label %}<p class="small text-muted">{% blocktrans with fee=block.fee|money:cur rent=block.rent|money:cur f=block.fee_label %}Management fee: {{ fee }} ({{ f }}) on rent collected of {{ rent }}.{% endblocktrans %}</p>{% endif %}
+{% if block.joint %}<p class="small text-muted">{% blocktrans with s=block.share|floatformat:"-2" whole=block.whole_due|money:cur due=block.due|money:cur %}Due on the property: {{ whole }}. The owner's {{ s }}% share: {{ due }}.{% endblocktrans %}</p>{% endif %}
+{% if block.expenses %}
+<div class="table-responsive">
+<table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Expense" %}</th><th>{% trans "Date paid" %}</th><th>{% trans "Category" %}</th><th>{% trans "Paid to" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>
+    {% for e in block.expenses %}
+    <tr>
+      <td>{% if link_expenses %}<a href="{% url 'expenses:detail' e.public_id %}">{{ e.description }}</a>{% else %}{{ e.description }}{% endif %}</td>
+      <td class="text-nowrap">{{ e.paid_on|date:"j M" }}</td><td>{{ e.category.name }}</td><td>{{ e.supplier.name|default:"—" }}</td>
+      <td class="text-end text-nowrap">{{ e.amount|money:cur }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Expenses" %}</td><td class="text-end text-nowrap">{{ block.expense_total|money:cur }}</td></tr></tfoot>
+</table>
+</div>
+{% endif %}
+{% endfor %}

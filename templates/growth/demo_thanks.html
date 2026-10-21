@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Thank you" %} · NyumbaPMS{% endblock %}
+{% block content %}
+<div class="about"><div class="pub-thanks">
+  <span class="about-icon pub-thanks-icon" aria-hidden="true"><i class="bi bi-check-lg"></i></span>
+  <h1 class="about-title">{% if first_name %}{% blocktrans %}Thank you, {{ first_name }}{% endblocktrans %}{% else %}{% trans "Thank you" %}{% endif %}</h1>
+  <p class="about-lead">{% trans "We have your request and will contact you by phone to agree a time." %}</p>
+  <p class="text-muted mt-4">{% trans "While you wait, these may help:" %}</p>
+  <div class="d-flex flex-wrap justify-content-center gap-2">
+    <a class="btn btn-primary" href="{% url 'growth:tutorials' %}">{% trans "Read the tutorials" %}</a>
+    <a class="btn btn-outline-secondary" href="{% url 'growth:faq' %}">{% trans "See the FAQ" %}</a>
+  </div>
+</div></div>
+{% endblock %}

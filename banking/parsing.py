@@ -1,19 +1,19 @@
-"""Reading statement CSVs (D-064 items 3 and 7). Pure functions over the file's bytes; no database.
+"""Reading statement files (D-064 items 3 and 7, widened in D-211). Pure functions over the file's bytes; no database.
 
-`read_bank` reads a bank statement and `read_mpesa` an M-Pesa organization statement. Both find the
-header row among the first rows by known column names, keep money in, count money out, and report
-lines that could not be read with their line number.
+`read_bank` reads a bank statement and `read_mpesa` an M-Pesa organization statement, from CSV, Excel or
+PDF (see `readers`). Both find the header row among the first rows by known column names, keep money in,
+count money out, and report lines that could not be read with their line number.
 """
 
-import csv
 import datetime
-import io
 import re
 import zoneinfo
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-MAX_BYTES = 1_000_000
+from . import readers
+
+MAX_BYTES = 5_000_000
 MAX_LINES = 5000
 HEADER_SCAN = 30
 DELIMITERS = (",", ";", "\t")
@@ -26,18 +26,27 @@ TIME_FORMATS = ("", " %H:%M:%S", " %H:%M", "T%H:%M:%S", " %I:%M:%S %p", " %I:%M 
 
 # Column names, already normalized (lower case, punctuation as spaces), in order of preference.
 BANK_COLUMNS = {
-    "date": ("transaction date", "trans date", "tran date", "txn date", "posting date", "post date",
-             "booking date", "date", "value date", "val date"),
+    "date": ("transaction date", "trans date", "tran date", "txn date", "tran dt", "posting date", "post date",
+             "posted date", "booking date", "processing date", "entry date", "date", "value date", "val date",
+             "value dt"),
     "description": ("description", "narrative", "narration", "particulars", "details", "transaction details",
-                    "transaction description", "remarks", "memo"),
-    "reference": ("reference", "ref", "ref no", "reference no", "reference number", "transaction reference",
-                  "transaction ref", "bank reference", "customer reference", "cheque no", "chq no",
-                  "cheque number", "receipt no", "document no"),
-    "credit": ("credit", "credits", "credit amount", "money in", "paid in", "deposit", "deposits", "cr"),
-    "debit": ("debit", "debits", "debit amount", "money out", "withdrawn", "withdrawal", "withdrawals", "dr"),
-    "amount": ("amount", "transaction amount"),
+                    "transaction description", "trans details", "tran particulars", "transaction particulars",
+                    "transaction narration", "txn description", "transaction remarks", "remarks", "memo",
+                    "payment details", "tran details"),
+    "reference": ("reference", "ref", "ref no", "ref number", "ref num", "reference no", "reference number",
+                  "transaction reference", "transaction ref", "bank reference", "customer reference",
+                  "cheque no", "chq no", "cheque number", "receipt no", "document no", "transaction id",
+                  "txn ref", "trans ref", "instrument no"),
+    "credit": ("credit", "credits", "credit amount", "credit amt", "cr amount", "cr amt", "money in", "paid in",
+               "amount in", "deposit", "deposits", "deposit amount", "lodgement", "lodgements", "receipts",
+               "cr"),
+    "debit": ("debit", "debits", "debit amount", "debit amt", "dr amount", "dr amt", "money out", "paid out",
+              "amount out", "withdrawn", "withdrawal", "withdrawals", "withdrawal amount", "payments", "dr"),
+    "amount": ("amount", "transaction amount", "txn amount", "amt"),
+    "type": ("dr cr", "cr dr", "type", "transaction type", "txn type", "debit credit", "credit debit",
+             "indicator", "dr cr indicator"),
     "balance": ("balance", "running balance", "book balance", "ledger balance", "closing balance",
-                "available balance"),
+                "available balance", "balance after"),
 }
 MPESA_COLUMNS = {
     "receipt": ("receipt no", "receipt number", "receipt", "transaction id", "m pesa code"),
@@ -54,6 +63,10 @@ MPESA_COLUMNS = {
 
 class StatementError(ValueError):
     """The file as a whole cannot be read."""
+
+
+class NotRecognised(StatementError):
+    """The file opened but its columns are not ones we know; the landlord can match them by hand (D-212)."""
 
 
 @dataclass
@@ -91,11 +104,7 @@ class Parsed:
 # ---------------------------------------------------------------------------
 
 
-def normalize_header(value: str) -> str:
-    words = re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).split()
-    if words and words[-1] in ("kes", "ksh", "kshs"):
-        words = words[:-1]
-    return " ".join(words)
+normalize_header = readers.normalise
 
 
 _CURRENCY = re.compile(r"\b(KES|KSHS|KSH|SH)\b\.?|/=", re.IGNORECASE)
@@ -150,15 +159,6 @@ class _When:
         raise ValueError(raw)
 
 
-def _decode(data: bytes) -> str:
-    for encoding in ("utf-8-sig", "cp1252"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("latin-1")
-
-
 # ---------------------------------------------------------------------------
 # The header row
 # ---------------------------------------------------------------------------
@@ -177,13 +177,15 @@ def _columns(header: list[str], names: dict[str, tuple[str, ...]]) -> dict[str, 
     return found
 
 
-def _table(data: bytes, names, is_header) -> tuple[list[list[str]], int, dict[str, int]]:
-    """(rows, index of the header row, {field: column}) for the first delimiter that finds a header."""
+def _table(data: bytes, names, is_header, anchors) -> tuple[list[list[str]], int, dict[str, int]]:
+    """(rows, index of the header row, {field: column}) for the first table in the file that has a header."""
     if len(data) > MAX_BYTES:
         raise StatementError(f"The file is larger than {MAX_BYTES // 1_000_000} MB.")
-    text = _decode(data)
-    for delimiter in DELIMITERS:
-        rows = list(csv.reader(io.StringIO(text), delimiter=delimiter))
+    try:
+        candidates = readers.tables(data, names, anchors)
+    except readers.FileError as e:
+        raise StatementError(str(e)) from None
+    for rows in candidates:
         for i, row in enumerate(rows[:HEADER_SCAN]):
             columns = _columns(row, names)
             if is_header(columns):
@@ -204,27 +206,114 @@ def _cell(row: list[str], columns: dict[str, int], key: str) -> str:
 
 BANK_HELP = ("The statement needs a header row with a date column (Date, Transaction date or Value date) and a "
              "money-in column (Credit, Money in or Paid in) or an Amount column. A Description or Narrative "
-             "column and a Reference column help matching.")
+             "column and a Reference column help matching. Excel, CSV and PDF statements are read.")
 
 
-def read_bank(data: bytes) -> Parsed:
+def _description(row: list[str], columns: dict[str, int]) -> str:
+    """The description column, or, when the bank's name for it is not known, the text of the unmapped cells."""
+    text = _cell(row, columns, "description")
+    if text or "description" in columns:
+        return text
+    mapped = set(columns.values())
+    return " ".join(c.strip() for i, c in enumerate(row) if i not in mapped and c.strip())
+
+
+def _signed(row, columns, amount_key: str) -> Decimal | None:
+    """The single amount column as a signed amount, using a Dr/Cr column when there is one."""
+    amount = parse_amount(_cell(row, columns, amount_key))
+    kind = _cell(row, columns, "type").lower()
+    if amount is not None and kind:
+        if kind.startswith(("d", "w")):  # DR, Debit, Withdrawal
+            return -abs(amount)
+        if kind.startswith(("c", "r")):  # CR, Credit, Receipt
+            return abs(amount)
+    return amount
+
+
+def _debits_by_balance(rows: list[dict]) -> None:
+    """A single unsigned Amount column gives no direction. Each line is compared with the line before it in
+    time: where the running balance moved by exactly that amount downwards, it took money out. Statements run
+    oldest first or newest first, so the direction that fits more lines is used."""
+
+    def moves(step: int) -> list[Decimal | None]:
+        out = []
+        for i, row in enumerate(rows):
+            earlier = rows[i + step] if 0 <= i + step < len(rows) else None
+            usable = earlier is not None and row["balance"] is not None and earlier["balance"] is not None
+            out.append(row["balance"] - earlier["balance"] if usable else None)
+        return out
+
+    fits = {step: moves(step) for step in (-1, 1)}
+    step = max(fits, key=lambda s: sum(1 for m, r in zip(fits[s], rows, strict=True)
+                                       if m is not None and r["amount"] is not None and abs(m) == r["amount"]))
+    for row, moved in zip(rows, fits[step], strict=True):
+        if not row["signed"] and row["amount"] is not None and moved == -row["amount"]:
+            row["amount"] = -row["amount"]
+
+
+MAPPABLE = ("date", "description", "reference", "credit", "debit", "amount", "balance")
+
+
+def with_mapping(names: dict[str, tuple[str, ...]], mapping: dict[str, str] | None) -> dict[str, tuple[str, ...]]:
+    """The known column names, with the names a landlord saved for their bank tried first (D-212)."""
+    if not mapping:
+        return names
+    saved = {key: normalize_header(value) for key, value in mapping.items() if key in names and value}
+    return {key: ((saved[key],) if key in saved else ()) + options for key, options in names.items()}
+
+
+def describe(data: bytes) -> dict:
+    """Where the header of an unrecognised statement probably is, for the "match your columns" page:
+    {"headers": [...], "samples": [[...], ...]}. The header is the first row of at least three filled cells,
+    none of them a date or amount, that is followed by a row starting with a date."""
     try:
-        rows, start, columns = _table(data, BANK_COLUMNS,
-                                      lambda c: "date" in c and ("credit" in c or "amount" in c))
+        candidates = readers.tables(data, BANK_COLUMNS, ("date",))
+    except readers.FileError as e:
+        raise StatementError(str(e)) from None
+    for rows in candidates:
+        rows = [r for r in rows[:HEADER_SCAN + 10]]
+        for i, row in enumerate(rows[:HEADER_SCAN]):
+            filled = [c.strip() for c in row if c.strip()]
+            if len(filled) < 3 or any(_looks_like_value(c) for c in filled):
+                continue
+            below = [r for r in rows[i + 1:i + 4] if any(c.strip() for c in r)]
+            if below and any(readers.starts_with_date(c) for c in below[0]):
+                width = len(row)
+                return {"headers": [c.strip() for c in row],
+                        "samples": [[c.strip() for c in r[:width]] for r in below[:3]]}
+    return {"headers": [], "samples": []}
+
+
+def _looks_like_value(cell: str) -> bool:
+    if readers.starts_with_date(cell):
+        return True
+    try:
+        return parse_amount(cell) is not None
+    except ValueError:
+        return False
+
+
+def read_bank(data: bytes, mapping: dict[str, str] | None = None) -> Parsed:
+    names = with_mapping(BANK_COLUMNS, mapping)
+    try:
+        rows, start, columns = _table(data, names,
+                                      lambda c: "date" in c and ("credit" in c or "amount" in c), ("date",))
     except StatementError as e:
-        raise StatementError(str(e) or BANK_HELP) from None
+        raise (NotRecognised if not str(e) else StatementError)(str(e) or BANK_HELP) from None
     when = _When()
     result = Parsed()
+    split = "credit" in columns
+    entries = []
     for number, row in enumerate(rows[start + 1:], start=start + 2):
         if not any(cell.strip() for cell in row):
             continue
         raw_date = _cell(row, columns, "date")
         try:
-            if "credit" in columns:
+            if split:
                 amount = parse_amount(_cell(row, columns, "credit"))
                 debit = parse_amount(_cell(row, columns, "debit"))
             else:
-                amount, debit = parse_amount(_cell(row, columns, "amount")), None
+                amount, debit = _signed(row, columns, "amount"), None
         except ValueError as e:
             result.errors.append((number, f"The amount “{e}” could not be read."))
             continue
@@ -237,16 +326,22 @@ def read_bank(data: bytes) -> Parsed:
         except ValueError:
             result.errors.append((number, f"The date “{raw_date}” could not be read."))
             continue
-        if amount is None or amount <= 0:
-            result.skipped += 1
-            continue
         try:
             balance = parse_amount(_cell(row, columns, "balance"))
         except ValueError:
             balance = None
+        explicit = split or "type" in columns or (amount is not None and amount < 0)
+        entries.append({"line": number, "posted": posted, "row": row, "amount": amount, "balance": balance,
+                        "signed": explicit})
+    if not split:
+        _debits_by_balance(entries)
+    for e in entries:
+        if e["amount"] is None or e["amount"] <= 0:
+            result.skipped += 1
+            continue
         result.lines.append(BankLine(
-            line=number, posted_on=posted, description=_cell(row, columns, "description")[:300],
-            reference=_cell(row, columns, "reference")[:60], amount=amount, balance=balance))
+            line=e["line"], posted_on=e["posted"], description=_description(e["row"], columns)[:300],
+            reference=_cell(e["row"], columns, "reference")[:60], amount=e["amount"], balance=e["balance"]))
     return result
 
 
@@ -272,7 +367,8 @@ def _other_party(value: str) -> tuple[str, str]:
 def read_mpesa(data: bytes) -> Parsed:
     try:
         rows, start, columns = _table(data, MPESA_COLUMNS,
-                                      lambda c: {"receipt", "completed", "paid_in"} <= c.keys())
+                                      lambda c: {"receipt", "completed", "paid_in"} <= c.keys(),
+                                      ("completed",))
     except StatementError as e:
         raise StatementError(str(e) or MPESA_HELP) from None
     when = _When()
@@ -314,3 +410,26 @@ def read_mpesa(data: bytes) -> Parsed:
             line=number, receipt=receipt, paid_at=paid_at, amount=amount, bill_ref=bill_ref[:60],
             details=details[:300], payer_raw=payer_raw[:80], payer_name=payer_name[:150]))
     return result
+
+
+# ---------------------------------------------------------------------------
+# Checking lines read from a photo against the running balance (D-212)
+# ---------------------------------------------------------------------------
+
+
+def unreconciled(entries: list[tuple[Decimal, Decimal | None]]) -> set[int]:
+    """Indexes of lines whose running balance disagrees with the line before it in time. `entries` are (signed
+    amount, balance) in the order printed, newest first or oldest first (the direction that fits more lines is
+    used). A line with no balance, or with no neighbour that has one, cannot be checked and is not reported."""
+
+    def moves(step: int) -> list[Decimal | None]:
+        out = []
+        for i, (_amount, balance) in enumerate(entries):
+            j = i + step
+            other = entries[j][1] if 0 <= j < len(entries) else None
+            out.append(balance - other if balance is not None and other is not None else None)
+        return out
+
+    fits = {step: moves(step) for step in (-1, 1)}
+    step = max(fits, key=lambda s: sum(1 for m, (a, _b) in zip(fits[s], entries, strict=True) if m == a))
+    return {i for i, (m, (a, _b)) in enumerate(zip(fits[step], entries, strict=True)) if m is not None and m != a}

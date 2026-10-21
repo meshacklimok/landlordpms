@@ -16,7 +16,7 @@ from urllib.parse import quote, urlencode
 import segno
 from django.conf import settings
 from django.contrib.auth import update_session_auth_hash
-from django.core.exceptions import ValidationError
+from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -27,7 +27,7 @@ from core import crypto, ratelimit
 
 from .models import RecoveryCode, TOTPDevice, User
 
-ISSUER = "landlordpms"
+ISSUER = "NyumbaPMS"
 DIGITS = 6
 STEP = 30
 # Steps either side of now accepted for phone clock drift.
@@ -200,6 +200,9 @@ def check(user, code: str, request=None) -> str | None:
 
 def disable(user, *, password: str, code: str, request=None) -> None:
     """Needs the password and a code. May raise MFAError. The failed-code audit is kept, so no outer atomic."""
+    if orgs := requiring_orgs(user):
+        raise ValidationError({NON_FIELD_ERRORS: _("%(orgs)s requires two-step login for all staff, so it stays on.")
+                               % {"orgs": ", ".join(orgs)}})
     if not user.check_password(password or ""):
         raise ValidationError({"password": _("The password is wrong.")})
     if check(user, code, request) is None:
@@ -239,10 +242,10 @@ def admin_reset(admin, user, request=None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def begin_login(request, user, next_url: str = "") -> None:
+def begin_login(request, user, next_url: str = "", remember: bool = False) -> None:
     """The password was right; hold the user until the code is given. Not logged in yet."""
     request.session[PENDING] = {"user": user.pk, "backend": getattr(user, "backend", ""), "at": int(time.time()),
-                                "next": next_url}
+                                "next": next_url, "remember": remember}
 
 
 def pending_user(request):
@@ -256,6 +259,30 @@ def pending_user(request):
 
 def session_verified(request) -> bool:
     return bool(request.session.get(VERIFIED))
+
+
+def requiring_orgs(user) -> list[str]:
+    """Names of the user's organizations that require two-step login for all staff (D-107)."""
+    from .middleware import user_memberships
+
+    return [m.organization.display_name for m in user_memberships(user) if m.organization.require_mfa]
+
+
+def gate(request):
+    """A redirect when the active organization requires two-step login and this session has not passed it, else
+    None. Setting it up passes it (confirm_setup marks the session)."""
+    from django.contrib import messages
+    from django.shortcuts import redirect
+    from django.urls import reverse
+
+    org = request.organization
+    if org is None or not org.require_mfa or session_verified(request):
+        return None
+    if not is_enabled(request.user):
+        messages.warning(request, _("%(org)s requires two-step login for all staff. Set it up to carry on.")
+                         % {"org": org.display_name})
+        return redirect("accounts:security")
+    return redirect(f"{reverse('accounts:login_mfa')}?{urlencode({'next': request.get_full_path()})}")
 
 
 def suggest(membership) -> bool:

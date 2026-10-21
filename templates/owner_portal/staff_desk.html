@@ -1,0 +1,85 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% blocktrans with name=owner.name %}Owner desk: {{ name }}{% endblocktrans %}{% endblock %}
+{% block content %}{% with cur=currency %}
+<a href="{% url 'properties:owner_edit' owner.public_id %}" class="small">← {{ owner.name }}</a>
+<h1 class="h4 mt-1 mb-3">{% blocktrans with name=owner.name %}Owner desk: {{ name }}{% endblocktrans %}</h1>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Approvals" %}</h2>
+      <p class="small text-muted">{% trans "The owner's answer is a record for you. It does not approve or reject the expense or change the repair." %}</p>
+      <form method="post" action="{% url 'owner_portal:staff_ask' owner.public_id %}" class="row g-2 mb-3">{% csrf_token %}
+        <div class="col-12"><label class="form-label small mb-0" for="a-subject">{% trans "Ask the owner about" %}</label>
+          <select class="form-select form-select-sm" id="a-subject" name="subject" required>
+            <option value="">—</option>
+            {% for r in askable.repairs %}<option value="REPAIR:{{ r.public_id }}">{% trans "Repair" %} {{ r.number }} · {{ r.title }}{% if r.quote_amount %} · {{ r.quote_amount|money:cur }}{% endif %}</option>{% endfor %}
+            {% for e in askable.expenses %}<option value="EXPENSE:{{ e.public_id }}">{% trans "Expense" %} {{ e.number }} · {{ e.description }} · {{ e.amount|money:cur }}</option>{% endfor %}
+          </select></div>
+        <div class="col-12"><input class="form-control form-control-sm" name="note" maxlength="300" placeholder="{% trans 'Note for the owner (optional)' %}" aria-label="{% trans 'Note' %}"></div>
+        <div class="col-12"><button class="btn btn-sm btn-primary">{% trans "Ask by SMS and portal" %}</button></div>
+      </form>
+      {% for a in approvals %}
+      <div class="border-top py-2 small d-flex justify-content-between gap-2">
+        <div>{{ a.get_kind_display }}: {{ a.title }}{% if a.amount %} · {{ a.amount|money:cur }}{% endif %}
+          {% if a.answer_note %}<br><span class="text-muted">“{{ a.answer_note }}”</span>{% endif %}</div>
+        <div class="text-end">
+          <span class="badge text-bg-{% if a.status == 'APPROVED' %}success{% elif a.status == 'DECLINED' %}danger{% elif a.status == 'ASKED' %}warning{% else %}secondary{% endif %}">{{ a.get_status_display }}</span>
+          {% if a.status == asked %}
+          <form method="post" action="{% url 'owner_portal:staff_withdraw' owner.public_id a.public_id %}" class="mt-1">{% csrf_token %}<button class="btn btn-sm btn-link p-0">{% trans "Withdraw" %}</button></form>
+          {% endif %}
+        </div>
+      </div>
+      {% empty %}<p class="small text-muted mb-0">{% trans "Nothing asked yet." %}</p>{% endfor %}
+    </div></div>
+
+    <div class="card"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Payout" %}</h2>
+      {% if confirmed %}<p class="small mb-2">{% trans "Confirmed:" %} {{ confirmed.get_method_display }} · {{ confirmed.account_name }} · {% if confirmed.bank_name %}{{ confirmed.bank_name }} {% endif %}{{ confirmed.account_number }}</p>
+      {% else %}<p class="small text-muted mb-2">{% trans "No confirmed payout details." %}</p>{% endif %}
+      {% if pending %}
+      <div class="border rounded p-2 small mb-2">
+        <div>{% trans "New details from the owner:" %} {{ pending.get_method_display }} · {{ pending.account_name }} · {% if pending.bank_name %}{{ pending.bank_name }} {% endif %}{{ pending.account_number }}</div>
+        <div class="text-muted">{% trans "Call the owner on the number you already have to check them before you confirm." %}</div>
+        <form method="post" action="{% url 'owner_portal:staff_detail' owner.public_id pending.public_id %}" class="mt-2 d-flex flex-wrap gap-2">{% csrf_token %}
+          <input class="form-control form-control-sm w-auto" name="reason" maxlength="200" placeholder="{% trans 'Reason, if not accepted' %}" aria-label="{% trans 'Reason' %}">
+          <button class="btn btn-sm btn-success" name="decision" value="confirm">{% trans "Confirm" %}</button>
+          <button class="btn btn-sm btn-outline-danger" name="decision" value="reject">{% trans "Do not accept" %}</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if open_request %}
+      <div class="border rounded p-2 small">
+        <div>{% trans "The owner asks to be paid" %}{% if open_request.amount %}: {{ open_request.amount|money:cur }}{% endif %}{% if open_request.note %} · {{ open_request.note }}{% endif %}</div>
+        <form method="post" action="{% url 'owner_portal:staff_request' owner.public_id open_request.public_id %}" class="mt-2 d-flex flex-wrap gap-2">{% csrf_token %}
+          <input class="form-control form-control-sm w-auto" name="note" maxlength="300" placeholder="{% trans 'Note to the owner' %}" aria-label="{% trans 'Note' %}">
+          <button class="btn btn-sm btn-success" name="decision" value="paid">{% trans "Mark as paid" %}</button>
+          <button class="btn btn-sm btn-outline-danger" name="decision" value="declined">{% trans "Not paying" %}</button>
+        </form>
+        <div class="text-muted mt-1">{% trans "Marking it paid does not move money. Record the payment on the owner's account." %}</div>
+      </div>
+      {% endif %}
+      {% if requests %}<ul class="list-unstyled small mt-2 mb-0">{% for r in requests %}<li>{{ r.created_at|date:"d M Y" }} · {% if r.amount %}{{ r.amount|money:cur }} · {% endif %}{{ r.get_status_display }}</li>{% endfor %}</ul>{% endif %}
+    </div></div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Messages" %}</h2>
+      <div class="mb-3" style="max-height:360px;overflow:auto">
+        {% for m in thread %}
+        <div class="small mb-2 {% if m.side == 'STAFF' %}text-end{% endif %}">
+          <div class="d-inline-block rounded p-2 {% if m.side == 'STAFF' %}bg-primary-subtle{% else %}bg-body-secondary{% endif %}" style="max-width:85%;white-space:pre-wrap">{{ m.body }}</div>
+          <div class="text-muted" style="font-size:.75rem">{% if m.side == 'STAFF' %}{{ m.author.get_full_name|default:m.author }} · {% endif %}{{ m.created_at|date:"d M, H:i" }}</div>
+        </div>
+        {% empty %}<p class="small text-muted">{% trans "No messages yet." %}</p>{% endfor %}
+      </div>
+      <form method="post" action="{% url 'owner_portal:staff_reply' owner.public_id %}">{% csrf_token %}
+        <label class="form-label small" for="s-body">{% trans "Reply" %}</label>
+        <textarea class="form-control mb-2" id="s-body" name="body" rows="3" maxlength="{{ max_length }}" required></textarea>
+        <button class="btn btn-sm btn-primary">{% trans "Send (the owner gets an SMS)" %}</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endwith %}{% endblock %}

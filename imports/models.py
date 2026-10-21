@@ -17,6 +17,12 @@ class ImportBatch(PublicIdModel, TimeStampedModel):
         UNITS = "UNITS", _("Units")
         TENANTS = "TENANTS", _("Tenants")
         BALANCES = "BALANCES", _("Opening balances")
+        LEASES = "LEASES", _("Tenants moving in (with leases)")
+        PAYMENTS = "PAYMENTS", _("Past payments")
+
+    class Source(models.TextChoices):
+        FILE = "FILE", _("Spreadsheet")
+        PHOTO = "PHOTO", _("Photo of a filled form")
 
     class Status(models.TextChoices):
         PREVIEW = "PREVIEW", _("Checked, not imported")
@@ -29,12 +35,17 @@ class ImportBatch(PublicIdModel, TimeStampedModel):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PREVIEW)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     file_name = models.CharField(max_length=200, blank=True)
+    source = models.CharField(max_length=5, choices=Source.choices, default=Source.FILE)
+    # LEASES only: issue the leases as they are created (otherwise they stay drafts to check and activate).
+    activate = models.BooleanField(default=False)
     # [{"line": 2, "data": {...}, "errors": [...], "label": "GV-A1"}]. Sensitive values are dropped once applied.
     rows = models.JSONField(default=list, blank=True)
     ok_count = models.PositiveIntegerField(default=0)
     error_count = models.PositiveIntegerField(default=0)
     # Primary keys of the records this batch created, for undo.
     created_ids = models.JSONField(default=list, blank=True)
+    # LEASES only: tenants the batch created along the way, for undo.
+    created_tenant_ids = models.JSONField(default=list, blank=True)
     applied_at = models.DateTimeField(null=True, blank=True)
     undone_at = models.DateTimeField(null=True, blank=True)
 

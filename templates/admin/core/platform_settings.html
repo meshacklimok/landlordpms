@@ -1,0 +1,24 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Type the provider keys and contact details here. A value saved here replaces the one in the server's environment file; blank falls back to it. Keys are stored encrypted and never shown again. The database, secret key, mail logins and encryption keys stay in the environment file.</p>
+<form method="post" autocomplete="off">{% csrf_token %}
+  {{ form.non_field_errors }}
+  {% for group in groups %}
+  <fieldset class="module aligned">
+    <h2>{{ group.name }}</h2>
+    {% for row in group.rows %}
+    <div class="form-row{% if row.field.errors %} errors{% endif %}">
+      {{ row.field.errors }}
+      <div>
+        <label for="{{ row.field.id_for_label }}">{{ row.field.label }}:</label>
+        {{ row.field }}
+        {% if row.clear %}<label class="vCheckboxLabel" for="{{ row.clear.id_for_label }}">{{ row.clear }} Clear</label>{% endif %}
+        <div class="help">{{ row.state|capfirst }}.{% if row.field.help_text %} {{ row.field.help_text }}{% endif %}</div>
+      </div>
+    </div>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <div class="submit-row"><input type="submit" value="Save" class="default"></div>
+</form>
+{% endblock %}

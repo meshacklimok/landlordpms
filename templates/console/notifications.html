@@ -1,0 +1,28 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Notifications" %}{% endblock %}
+{% block console_title %}{% trans "Notification types" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% blocktrans %}Every SMS, WhatsApp and email notification the platform sends, with its default for all organizations. Open one to change it.{% endblocktrans %}</p>
+<div class="table-responsive">
+<table class="table align-middle table-hover notif-table">
+  <thead><tr>
+    <th scope="col">{% trans "Notification" %}</th><th scope="col">{% trans "Audience" %}</th><th scope="col">{% trans "Channels" %}</th>
+    <th scope="col">{% trans "On" %}</th><th scope="col"><span class="visually-hidden">{% trans "Actions" %}</span></th>
+  </tr></thead>
+  <tbody>
+  {% for t, changed in rows %}
+    <tr data-href="{% url 'console:notification' t.codename %}">
+      <td class="notif-name"><a class="fw-semibold" href="{% url 'console:notification' t.codename %}">{{ t.label }}</a>
+        {% if t.mandatory %}<span class="badge text-bg-secondary">{% trans "Required" %}</span>{% endif %}
+        {% if t.urgent %}<span class="badge text-bg-warning">{% trans "Urgent" %}</span>{% endif %}
+        {% if changed %}<span class="badge text-bg-info">{% trans "Changed" %}</span>{% endif %}</td>
+      <td><span class="notif-audience">{{ t.audience }}</span></td>
+      <td><span class="chip-row">{% for c in t.channels %}<span class="chip chip-{{ c|lower }}">{{ c }}</span>{% endfor %}</span></td>
+      <td>{% if t.enabled %}<span class="status-pill is-on"><i class="bi bi-check-circle-fill" aria-hidden="true"></i> {% trans "On" %}</span>{% else %}<span class="status-pill is-off"><i class="bi bi-dash-circle" aria-hidden="true"></i> {% trans "Off" %}</span>{% endif %}</td>
+      <td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'console:notification' t.codename %}">{% trans "Edit" %}<span class="visually-hidden"> {{ t.label }}</span></a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

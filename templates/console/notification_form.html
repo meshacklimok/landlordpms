@@ -1,0 +1,13 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{{ base.label }}{% endblock %}
+{% block console_title %}{{ base.label }}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% blocktrans with a=base.audience %}For: {{ a }}. Available channels: {% endblocktrans %}{{ base.channels|join:", " }}.</p>
+{% if base.placeholders %}<p class="small text-muted">{% trans "Placeholders in its wording:" %} {{ base.placeholders|join:", " }}</p>{% endif %}
+<form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+  <button class="btn btn-outline-secondary" name="reset" value="1" formnovalidate>{% trans "Back to built-in defaults" %}</button>
+  <a class="btn btn-link" href="{% url 'console:notifications' %}">{% trans "Cancel" %}</a>
+</form>
+{% endblock %}

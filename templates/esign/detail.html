@@ -1,0 +1,87 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ req.number }} · {{ req.title }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small">← {% trans "Lease" %} {{ lease }} · {{ lease.unit.property.name }} · {{ lease.unit.code }}</a>
+  <h1 class="h4 mt-2">{{ req.title }}</h1>
+  <div class="small text-muted mb-3">{{ req.number }} · {{ req.shown_status }} ·
+    {% blocktrans with who=req.created_by when=req.created_at|date:"j M Y, H:i" %}sent by {{ who }} on {{ when }}{% endblocktrans %}
+    {% if req.is_open %}· {% blocktrans with day=req.expires_at|date:"j M Y" %}links work until {{ day }}{% endblocktrans %}{% endif %}</div>
+
+  {% if req.close_reason %}
+  <div class="alert {% if req.status == 'DECLINED' %}alert-warning{% else %}alert-secondary{% endif %} small">
+    {% if req.status == "DECLINED" %}{% trans "Declined" %}{% else %}{% trans "Cancelled" %}{% if req.closed_by %} {% blocktrans with who=req.closed_by %}by {{ who }}{% endblocktrans %}{% endif %}{% endif %}
+    {{ req.closed_at|date:"j M Y, H:i" }}: {{ req.close_reason }}</div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "The document" %}</h2>
+    <div class="d-flex flex-wrap gap-2 mb-2">
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'esign:pdf' req.public_id %}" target="_blank" rel="noopener">{% trans "As sent for signing" %}</a>
+      {% if req.signed_pdf %}<a class="btn btn-sm btn-primary" href="{% url 'esign:pdf' req.public_id %}?signed=1" target="_blank" rel="noopener">{% trans "Signed copy" %}</a>{% endif %}
+      {% if req.document %}<a class="btn btn-sm btn-link" href="{% url 'documents:detail' req.document.public_id %}">{% trans "In the lease's documents" %}</a>{% endif %}
+    </div>
+    <div class="small text-muted text-break">{% trans "Fingerprint (SHA-256) of what is signed:" %} <span class="font-monospace">{{ req.original_sha256 }}</span></div>
+    {% if req.signed_sha256 %}<div class="small text-muted text-break">{% trans "Signed copy:" %} <span class="font-monospace">{{ req.signed_sha256 }}</span></div>{% endif %}
+    <div class="small text-muted text-break">{% trans "Anyone can check a copy at" %} <span id="esign-check-url">{{ check_url }}</span> <button type="button" class="btn btn-sm btn-link py-0" data-copy="#esign-check-url" aria-label="{% trans 'Copy the check link' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button></div>
+    {% if req.share_with_tenant %}<div class="small text-muted">{% trans "The signed copy will be shared with the tenant in the portal." %}</div>{% endif %}
+    {% if req.no_renewal_option %}<div class="small text-muted">{% trans "Sent as a lease of two years or less with no option to renew, or a periodic lease." %}</div>{% endif %}
+    <div class="small text-muted">{% if keep_until %}{% blocktrans with day=keep_until|date:"j M Y" %}Keep the signed copy until {{ day }}.{% endblocktrans %}{% else %}{% trans "Keep the signed copy until six years after the lease ends." %}{% endif %}</div>
+    {% if can_evidence %}<a class="btn btn-sm btn-link px-0" href="{% url 'esign:evidence' req.public_id %}">{% trans "Download the evidence pack (files, signers, audit trail and a certificate to sign)" %}</a>{% endif %}
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Signers" %}</h2>
+    <div class="list-group list-group-flush">
+      {% for s in signers %}
+      <div class="list-group-item px-0 small">
+        <div class="d-flex justify-content-between flex-wrap gap-2">
+          <span><strong>{{ s.name }}</strong> · {{ s.get_role_display }}</span>
+          <span>{% if s.signed_at %}<span class="badge text-bg-success">{% trans "Signed" %}</span>{% elif s.declined_at %}<span class="badge text-bg-warning">{% trans "Declined" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Not yet" %}</span>{% endif %}</span>
+        </div>
+        {% if s.signed_at %}
+        <div class="text-muted">{% blocktrans with name=s.signed_name when=s.signed_at|date:"j M Y, H:i" %}Signed as “{{ name }}” on {{ when }}{% endblocktrans %}{% if s.signed_by %} · {{ s.signed_by }}{% endif %}{% if s.signed_ip %} · {{ s.signed_ip }}{% endif %}</div>
+        {% elif s.declined_at %}
+        <div class="text-muted">{{ s.declined_at|date:"j M Y, H:i" }}: {{ s.decline_reason }}</div>
+        {% elif s.role == "TENANT" %}
+        <div class="text-muted">{% if s.link_sent_at %}{% blocktrans with when=s.link_sent_at|date:"j M Y, H:i" %}Link made {{ when }}{% endblocktrans %}{% else %}{% trans "No link yet" %}{% endif %}{% if s.verified_at %} · {% trans "code entered" %}{% endif %}</div>
+        {% if can_act %}
+        <form method="post" class="mt-1">{% csrf_token %}
+          <input type="hidden" name="action" value="link"><input type="hidden" name="signer" value="{{ s.public_id }}">
+          <button class="btn btn-sm btn-link px-0">{% trans "Send a new link (the old one stops working)" %}</button>
+        </form>
+        {% endif %}
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div></div>
+
+  {% if can_act and landlord and not landlord.signed_at %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Sign for the landlord" %}</h2>
+    <form method="post" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="sign">
+      <div class="mb-2"><label class="form-label small" for="typed_name">{% trans "Type your full name" %}</label>
+        <input id="typed_name" name="typed_name" class="form-control" maxlength="200" value="{{ request.user.full_name }}" required></div>
+      <div class="form-check mb-2">
+        <input class="form-check-input" type="checkbox" name="agree" id="agree" required>
+        <label class="form-check-label small" for="agree">{% blocktrans with org=req.organization.name %}I may sign for {{ org }}. I have read the document and agree to sign it electronically, with the same effect as signing on paper.{% endblocktrans %}</label>
+      </div>
+      <button class="btn btn-sm btn-primary">{% trans "Sign" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+
+  {% if can_act %}
+  <details class="mb-3"><summary class="small">{% trans "Cancel this request" %}</summary>
+    <form method="post" class="mt-2" novalidate>{% csrf_token %}
+      <input type="hidden" name="action" value="cancel">
+      <label class="form-label small" for="reason">{% trans "Why?" %}</label>
+      <input id="reason" name="reason" class="form-control mb-2" maxlength="300" required>
+      <button class="btn btn-sm btn-outline-danger">{% trans "Cancel the request" %}</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console support" %}{% endblock %}
+{% block console_title %}{% trans "Support and feedback" %}{% endblock %}
+{% block console %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Time to first reply" %}</div>
+    <div class="h4 mb-0">{% if speed.avg_reply_hours is not None %}{{ speed.avg_reply_hours }} {% trans "hours" %}{% else %}—{% endif %}</div>
+    <div class="small">{% trans "Last 90 days, replies sent from here" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Time to close" %}</div>
+    <div class="h4 mb-0">{% if speed.avg_close_days is not None %}{{ speed.avg_close_days }} {% trans "days" %}{% else %}—{% endif %}</div>
+    <div class="small">{% blocktrans with c=speed.closed r=speed.received %}{{ c }} closed of {{ r }} received{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "No reply after 24 hours" %}</div>
+    <div class="h4 mb-0{% if speed.unanswered_24h %} text-danger{% endif %}">{{ speed.unanswered_24h }}</div>
+    <div class="small">{% blocktrans with n=speed.open %}{{ n }} not closed{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Older than 3 days" %}</div>
+    <div class="h4 mb-0{% if speed.older_than_3_days %} text-danger{% endif %}">{{ speed.older_than_3_days }}</div>
+    <div class="small">{% trans "Still not closed" %}</div></div></div></div>
+</div>
+<p class="small"><a href="{% url 'console:canned_replies' %}">{% trans "Saved replies" %} &rarr;</a></p>
+<form method="get" class="row g-2 mb-3 small">
+  <div class="col-auto"><label class="visually-hidden" for="status">{% trans "Status" %}</label>
+    <select class="form-select form-select-sm" id="status" name="status">
+      <option value="open"{% if status == "open" %} selected{% endif %}>{% blocktrans with n=open_count %}Not closed ({{ n }}){% endblocktrans %}</option>
+      <option value="all"{% if status == "all" %} selected{% endif %}>{% trans "Everything" %}</option>
+      {% for v, l in statuses %}<option value="{{ v }}"{% if status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select></div>
+  <div class="col-auto"><label class="visually-hidden" for="kind">{% trans "Kind" %}</label>
+    <select class="form-select form-select-sm" id="kind" name="kind">
+      <option value="">{% trans "Any kind" %}</option>
+      {% for v, l in kinds %}<option value="{{ v }}"{% if kind == v %} selected{% endif %}>{{ l }}</option>{% endfor %}
+    </select></div>
+  <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">{% trans "Filter" %}</button></div>
+</form>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "Number" %}</th><th>{% trans "Sent" %}</th><th>{% trans "Kind" %}</th><th>{% trans "Subject" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Status" %}</th></tr></thead>
+  <tbody>{% for i in items %}<tr>
+    <td><a href="{% url 'console:support_item' i.public_id %}">{{ i.number }}</a></td>
+    <td>{{ i.created_at|date:"j M Y" }}</td><td>{{ i.get_kind_display }}</td><td>{{ i.subject }}</td>
+    <td>{{ i.organization.name|default:"—" }}</td><td>{{ i.get_status_display }}</td></tr>
+  {% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nothing here." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

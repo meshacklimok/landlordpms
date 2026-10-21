@@ -1,119 +1,302 @@
-{% load i18n %}<!doctype html>
-<html lang="en">
+{% load i18n static growth_tags %}{% get_current_language as LANGUAGE_CODE %}<!doctype html>
+<html lang="{{ LANGUAGE_CODE|default:'en' }}"{% if report_pane %} class="is-pane"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}landlordpms{% endblock %}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-  <style>
-    body { background: #f6f7f9; }
-    .page { max-width: 960px; }
-    .narrow { max-width: 440px; }
-    .cap-sensitive::after { content: " ⚠"; color: #b54708; }
-    .global-search input { width: 100%; }
-    @media (min-width: 768px) { .global-search input { width: 12rem; } }
-    .global-search-list { width: min(26rem, calc(100vw - 2rem)); max-height: 70vh; overflow-y: auto; top: 100%; right: 0; left: auto; margin-top: .25rem; z-index: 1050; }
-    @media (max-width: 767.98px) { .global-search-list { width: 100%; left: 0; } }
-    .global-search-list .gs-head { font-size: .7rem; letter-spacing: .04em; text-transform: uppercase; }
-    .global-search-list .gs-item { display: block; padding: .35rem .75rem; color: inherit; text-decoration: none; }
-    .global-search-list .gs-item[aria-selected="true"], .global-search-list .gs-item:hover { background: #eef2ff; }
-    .global-search-list mark { padding: 0; background: #fde68a; }
-  </style>
+  <title>{% block title %}NyumbaPMS{% endblock %}</title>
+  {% block meta %}{% include "seo/_head.html" %}{% endblock %}
+  <link rel="manifest" href="{% url 'support:manifest' %}">
+  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#171d1a" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="{% static 'icons/favicon-32.png' %}" type="image/png">
+  <link rel="apple-touch-icon" href="{% static 'icons/apple-touch-icon.png' %}">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="NyumbaPMS">
+  <link rel="preload" href="{% static 'fonts/inter-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link href="{% static 'vendor/bootstrap-5.3.3/bootstrap.min.css' %}" rel="stylesheet">
+  <link href="{% static 'vendor/bootstrap-icons-1.11.3/bootstrap-icons.min.css' %}" rel="stylesheet">
+  <link href="{% static 'css/app.css' %}" rel="stylesheet">
+  <script src="{% static 'js/theme.js' %}"></script>
   {% block head %}{% endblock %}
 </head>
-<body>
-{% if user.is_authenticated %}
-<nav class="navbar navbar-expand-md bg-white border-bottom">
-  <div class="container page">
-    <a class="navbar-brand fw-semibold" href="{% if membership or not portal_access %}{% url 'accounts:home' %}{% else %}{% url 'portal:home' %}{% endif %}">landlordpms</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="nav">
-      {% load access %}
-      <ul class="navbar-nav me-auto">
-        {% if portal_access %}<li class="nav-item"><a class="nav-link" href="{% url 'portal:home' %}">{% trans "My home" %}</a></li>{% endif %}
-        {% if membership|can:"properties.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'properties:list' %}">{% trans "Properties" %}</a></li>{% endif %}
-        {% if membership|can:"units.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'properties:units' %}">{% trans "Units" %}</a></li>{% endif %}
-        {% if membership|can:"tenants.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'tenants:list' %}">{% trans "Tenants" %}</a></li>{% endif %}
-        {% if membership|can:"leases.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'leases:list' %}">{% trans "Leases" %}</a></li>{% endif %}
-        {% if membership|can:"meters.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'meters:list' %}">{% trans "Water" %}</a></li>{% endif %}
-        {% if membership|can:"expenses.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'expenses:list' %}">{% trans "Expenses" %}</a></li>{% endif %}
-        {% if membership|can:"maintenance.view" or membership|can:"maintenance.view_assigned" %}<li class="nav-item"><a class="nav-link" href="{% url 'maintenance:list' %}">{% trans "Maintenance" %}</a></li>{% endif %}
-        {% if membership|can:"invoices.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'billing:invoices' %}">{% trans "Invoices" %}</a></li>{% endif %}
-        {% if membership|can:"payments.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'payments:list' %}">{% trans "Payments" %}</a></li>{% endif %}
-        {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:inbox' %}">{% trans "M-Pesa" %}</a></li>
-        {% elif membership|can:"mpesa.view_transactions" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:transactions' %}">{% trans "M-Pesa" %}</a></li>
-        {% elif membership|can:"mpesa.settings" %}<li class="nav-item"><a class="nav-link" href="{% url 'mpesa:settings' %}">{% trans "M-Pesa" %}</a></li>{% endif %}
-        {% if membership|can:"mpesa.match" %}<li class="nav-item"><a class="nav-link" href="{% url 'banking:inbox' %}">{% trans "Bank" %}</a></li>
-        {% elif membership|can:"payments.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'banking:lines' %}">{% trans "Bank" %}</a></li>{% endif %}
-        {% if membership|can:"messages.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:log' %}">{% trans "Messages" %}</a></li>
-        {% elif membership|can:"templates.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:templates' %}">{% trans "Messages" %}</a></li>
-        {% elif membership|can:"organization.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'notifications:settings' %}">{% trans "Messages" %}</a></li>{% endif %}
-        {% if membership|can:"dashboard.view_financial" %}<li class="nav-item"><a class="nav-link" href="{% url 'reports:dashboard' %}">{% trans "Reports" %}</a></li>
-        {% elif membership|can:"reports.view_financial" %}<li class="nav-item"><a class="nav-link" href="{% url 'reports:income' %}">{% trans "Reports" %}</a></li>{% endif %}
-        {% if membership|can:"units.manage" or membership|can:"tenants.manage" or membership|can:"invoices.adjust" %}<li class="nav-item"><a class="nav-link" href="{% url 'imports:list' %}">{% trans "Import" %}</a></li>{% endif %}
-        {% if membership|can:"staff.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:staff' %}">{% trans "Staff" %}</a></li>{% endif %}
-        {% if membership|can:"roles.manage" %}<li class="nav-item"><a class="nav-link" href="{% url 'accounts:roles' %}">{% trans "Roles" %}</a></li>{% endif %}
-        {% if membership|can:"subscription.view" %}<li class="nav-item"><a class="nav-link" href="{% url 'subscriptions:page' %}">{% trans "Subscription" %}</a></li>{% endif %}
+<body data-text-filters="{% trans 'Filters applied' %}" data-text-clear-all="{% trans 'Clear all' %}" data-text-remove="{% trans 'Remove filter' %}">
+{% if not report_pane %}<a class="skip-link" href="#main">{% trans "Skip to main content" %}</a>{% endif %}
+<div class="page-progress" aria-hidden="true"></div>
+{% with app_menu=nav_groups %}
+<div class="app-shell{% if membership and not report_pane %} has-sidebar{% endif %}">
+{% if user.is_authenticated and membership and not report_pane %}
+{# One menu (D-141): open on the left on a laptop; on a phone or tablet the same element slides in from the menu button. #}
+<aside id="app-menu" class="app-sidebar offcanvas-lg offcanvas-start" tabindex="-1" aria-labelledby="app-menu-title">
+  <div class="offcanvas-header app-sidebar-head">
+    <a class="app-brand p-0" href="{% url 'accounts:home' %}" id="app-menu-title">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" data-bs-target="#app-menu" aria-label="{% trans 'Close the menu' %}"></button>
+  </div>
+  <div class="offcanvas-body app-sidebar-body">
+    <a class="app-brand d-none d-lg-flex" href="{% url 'accounts:home' %}">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
+    {% if user_memberships|length > 1 %}
+    <form method="post" action="{% url 'accounts:switch_org' %}" class="org-switch">{% csrf_token %}
+      <label class="app-nav-label pt-0" for="org-switch">{% trans "Organization" %}</label>
+      <select name="organization" id="org-switch" class="form-select form-select-sm" data-autosubmit>
+        {% for m in user_memberships %}
+        <option value="{{ m.organization.public_id }}" {% if m.organization == organization %}selected{% endif %}>{{ m.organization.name }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    <nav aria-label="{% trans 'Main menu' %}">
+      <ul class="app-nav">
+        <li><a class="app-nav-link{% if request.resolver_match.view_name == 'accounts:home' %} active{% endif %}" href="{% url 'accounts:home' %}"{% if request.resolver_match.view_name == 'accounts:home' %} aria-current="page"{% endif %}><i class="bi bi-grid-1x2" aria-hidden="true"></i>{% trans "Home" %}</a></li>
+        {% if portal_access %}<li><a class="app-nav-link" href="{% url 'portal:home' %}"><i class="bi bi-house-heart" aria-hidden="true"></i>{% trans "My home" %}</a></li>{% endif %}
+        {% if owner_portal_access %}<li><a class="app-nav-link" href="{% url 'owner_portal:home' %}"><i class="bi bi-buildings" aria-hidden="true"></i>{% trans "My properties" %}</a></li>{% endif %}
       </ul>
+      {% for group in app_menu %}
+      <div class="app-nav-label" id="side-{{ forloop.counter }}">{{ group.label }}</div>
+      <ul class="app-nav" aria-labelledby="side-{{ forloop.counter }}">
+        {% for item in group.items %}<li><a class="app-nav-link{% if item.active %} active{% endif %}" href="{{ item.url }}"{% if item.active %} aria-current="page"{% endif %}><i class="bi bi-{{ item.icon }}" aria-hidden="true"></i>{{ item.label }}{% if item.badge %} <span class="app-nav-badge"><span aria-hidden="true">{% if item.badge > 99 %}99+{% else %}{{ item.badge }}{% endif %}</span><span class="visually-hidden">{% blocktrans count n=item.badge %}({{ n }} waiting){% plural %}({{ n }} waiting){% endblocktrans %}</span></span>{% endif %}</a></li>{% endfor %}
+      </ul>
+      {% endfor %}
+    </nav>
+  </div>
+</aside>
+{% endif %}
+<div class="app-body">
+{% if report_pane %}{# drawn inside the report centre (D-148): no menus or top bar #}
+{% elif user.is_authenticated %}
+<header class="app-topbar">
+  <div class="container page app-topbar-inner">
+    {% if membership %}
+    <button type="button" class="btn-icon d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#app-menu" aria-controls="app-menu" aria-label="{% trans 'Open the menu' %}"><i class="bi bi-list" aria-hidden="true"></i></button>
+    {% endif %}
+    <a class="app-brand app-topbar-brand{% if membership %} d-lg-none{% endif %}" href="{% if membership %}{% url 'accounts:home' %}{% elif portal_access %}{% url 'portal:home' %}{% elif owner_portal_access %}{% url 'owner_portal:home' %}{% else %}{% url 'accounts:home' %}{% endif %}">{% include "_brand_mark.html" %}<span class="app-brand-name">Nyumba<span class="brand-pms">PMS</span></span></a>
+    {% if not membership %}{% if portal_access or owner_portal_access %}
+    <nav class="app-topbar-links" aria-label="{% trans 'Main menu' %}">
+      {% if portal_access %}<a class="app-topbar-link{% if request.resolver_match.namespace == 'portal' %} active{% endif %}" href="{% url 'portal:home' %}"{% if request.resolver_match.namespace == 'portal' %} aria-current="page"{% endif %}><i class="bi bi-house-heart" aria-hidden="true"></i><span class="label-sm-up">{% trans "My home" %}</span></a>{% endif %}
+      {% if owner_portal_access %}<a class="app-topbar-link{% if request.resolver_match.namespace == 'owner_portal' %} active{% endif %}" href="{% url 'owner_portal:home' %}"{% if request.resolver_match.namespace == 'owner_portal' %} aria-current="page"{% endif %}><i class="bi bi-buildings" aria-hidden="true"></i><span class="label-sm-up">{% trans "My properties" %}</span></a>{% endif %}
+    </nav>
+    {% endif %}{% endif %}
+    {% if membership %}
+    <form method="get" action="{% url 'search:results' %}" class="global-search" role="search"
+          data-suggest-url="{% url 'search:suggest' %}" data-min-length="2"
+          data-text-none="{% trans 'No matches' %}" data-text-found="{% trans '%s suggestions' %}" data-text-all="{% trans 'See all results' %}"
+          data-text-error="{% trans 'Search is not available right now' %}">
+      <i class="bi bi-search" aria-hidden="true"></i>
+      <input type="search" name="q" class="form-control form-control-sm" maxlength="60" autocomplete="off" spellcheck="false"
+             placeholder="{% trans 'Search tenants, units, invoices' %}" aria-label="{% trans 'Search tenants, units, leases, invoices and payments' %}"
+             aria-keyshortcuts="/" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="global-search-list"
+             value="{% if request.resolver_match.view_name == 'search:results' %}{{ request.GET.q|slice:':60' }}{% endif %}">
+      <kbd class="global-search-key" aria-hidden="true">/</kbd>
+      <div id="global-search-list" class="global-search-list dropdown-menu shadow-sm p-0" role="listbox" aria-label="{% trans 'Suggestions' %}"></div>
+      <span class="visually-hidden" aria-live="polite" data-role="status"></span>
+    </form>
+    {% endif %}
+    <div class="app-topbar-end">
+      <span class="badge text-bg-warning" data-offline-badge hidden data-text="{% trans '{n} waiting to send' %}"></span>
       {% if membership %}
-      <form method="get" action="{% url 'search:results' %}" class="global-search position-relative me-md-2 my-2 my-md-0" role="search"
-            data-suggest-url="{% url 'search:suggest' %}" data-min-length="2"
-            data-text-none="{% trans 'No matches' %}" data-text-found="{% trans '%s suggestions' %}" data-text-all="{% trans 'See all results' %}"
-            data-text-error="{% trans 'Search is not available right now' %}">
-        <input type="search" name="q" class="form-control form-control-sm" maxlength="60" autocomplete="off" spellcheck="false"
-               placeholder="{% trans 'Search' %} ( / )" aria-label="{% trans 'Search tenants, units, leases, invoices and payments' %}"
-               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="global-search-list"
-               value="{% if request.resolver_match.view_name == 'search:results' %}{{ request.GET.q|slice:':60' }}{% endif %}">
-        <div id="global-search-list" class="global-search-list dropdown-menu shadow-sm p-0" role="listbox" aria-label="{% trans 'Suggestions' %}"></div>
-        <span class="visually-hidden" aria-live="polite" data-role="status"></span>
-      </form>
-      {% endif %}
-      {% if user_memberships|length > 1 %}
-      <form method="post" action="{% url 'accounts:switch_org' %}" class="me-md-2 my-2 my-md-0">{% csrf_token %}
-        <select name="organization" class="form-select form-select-sm" onchange="this.form.submit()" aria-label="{% trans 'Organization' %}">
-          {% for m in user_memberships %}
-          <option value="{{ m.organization.public_id }}" {% if m.organization == organization %}selected{% endif %}>{{ m.organization.name }}</option>
-          {% endfor %}
-        </select>
-      </form>
-      {% elif organization %}<span class="navbar-text me-md-3">{{ organization.name }}</span>{% endif %}
-      {% if membership %}
-      <a class="nav-link position-relative me-md-3 my-2 my-md-0 d-inline-block" href="{% url 'notifications:inbox' %}" aria-label="{% if unread_count %}{% blocktrans count n=unread_count %}{{ n }} unread notification{% plural %}{{ n }} unread notifications{% endblocktrans %}{% else %}{% trans 'Notifications' %}{% endif %}">
-        <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/></svg>
-        {% if unread_count %}<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: .6rem">{% if unread_count > 99 %}99+{% else %}{{ unread_count }}{% endif %}</span>{% endif %}
+      <a class="btn-icon" href="{% url 'notifications:inbox' %}"{% if request.resolver_match.view_name == 'notifications:inbox' %} aria-current="page"{% endif %} aria-label="{% if unread_count %}{% blocktrans count n=unread_count %}{{ n }} unread notification{% plural %}{{ n }} unread notifications{% endblocktrans %}{% else %}{% trans 'Notifications' %}{% endif %}">
+        <i class="bi bi-bell" aria-hidden="true"></i>
+        {% if unread_count %}<span class="notif-badge" aria-hidden="true">{% if unread_count > 99 %}99+{% else %}{{ unread_count }}{% endif %}</span>{% endif %}
       </a>
       {% endif %}
-      <a class="nav-link me-md-3 my-2 my-md-0 d-inline-block" href="{% url 'support:help' %}">{% trans "Help" %}</a>
-      <a class="nav-link me-md-3 my-2 my-md-0 d-inline-block" href="{% url 'accounts:security' %}">{% trans "Security" %}</a>
-      <form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}
-        <button class="btn btn-sm btn-outline-secondary">{% trans "Log out" %}</button>
-      </form>
+      <div class="dropdown">
+        <button type="button" class="account-btn" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">
+          <span class="avatar" aria-hidden="true">{{ user.full_name|default:user.phone|default:"?"|slice:":1"|upper }}</span>
+          <span class="label-md-up">{% trans "Account" %}</span>
+          <i class="bi bi-chevron-down" aria-hidden="true"></i>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end account-menu">
+          <li class="account-menu-head">
+            <span class="avatar avatar-lg" aria-hidden="true">{{ user.full_name|default:user.phone|default:"?"|slice:":1"|upper }}</span>
+            <span class="min-w-0"><span class="d-block fw-semibold text-truncate account-name">{{ user }}</span>{% if organization %}<span class="d-block small text-muted text-truncate account-name">{{ organization.name }}</span>{% endif %}</span>
+          </li>
+          {% if not membership and user_memberships|length > 1 %}
+          <li class="px-3 pb-2"><form method="post" action="{% url 'accounts:switch_org' %}" class="org-switch">{% csrf_token %}
+            <select name="organization" class="form-select form-select-sm" data-autosubmit aria-label="{% trans 'Organization' %}">
+              {% for m in user_memberships %}
+              <option value="{{ m.organization.public_id }}" {% if m.organization == organization %}selected{% endif %}>{{ m.organization.name }}</option>
+              {% endfor %}
+            </select>
+          </form></li>
+          {% endif %}
+          <li><hr class="dropdown-divider mt-0"></li>
+          <li><a class="dropdown-item" href="{% url 'support:help' %}"><i class="bi bi-question-circle" aria-hidden="true"></i>{% trans "Help" %}</a></li>
+          <li><a class="dropdown-item" href="{% url 'accounts:security' %}"><i class="bi bi-shield-check" aria-hidden="true"></i>{% trans "Security" %}</a></li>
+          {% if has_console %}<li><a class="dropdown-item" href="{% url 'console:overview' %}"><i class="bi bi-speedometer" aria-hidden="true"></i>{% trans "Console" %}</a></li>{% endif %}
+          <li><button type="button" class="dropdown-item text-primary" data-install-app hidden><i class="bi bi-phone" aria-hidden="true"></i>{% trans "Install the app" %}</button></li>
+          <li class="px-3 py-2"><div class="small text-muted mb-1" id="theme-label">{% trans "Theme" %}</div>{% include "partials/theme_switch.html" %}</li>
+          <li><hr class="dropdown-divider"></li>
+          <li><form method="post" action="{% url 'accounts:logout' %}" data-logout>{% csrf_token %}
+            <button class="dropdown-item"><i class="bi bi-box-arrow-right" aria-hidden="true"></i>{% trans "Log out" %}</button>
+          </form></li>
+        </ul>
+      </div>
     </div>
   </div>
-</nav>
+</header>
+{% else %}
+{% include "growth/_public_nav.html" %}
 {% endif %}
-<main class="container page py-3">
+<main id="main" tabindex="-1" class="container page{% block page_class %}{% endblock %}{% if report_steps %} has-report-steps{% endif %} py-3 py-lg-4">
+  {% if not report_pane %}
+  {% if request.viewing_as or request.viewing_tenant %}<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status"><span>{% blocktrans with n=viewing_label %}You are viewing as {{ n }}. Nothing can be changed.{% endblocktrans %}</span>
+    <form method="post" action="{% url 'console:view_as_stop' %}" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-dark">{% trans "Stop viewing" %}</button></form></div>{% endif %}
+  {% for a in announcements %}<div class="alert alert-{{ a.level }}" role="status">{{ a.message }}</div>{% endfor %}
+  {% if in_demo %}
+  <div class="alert alert-info" role="status">
+    {% trans "You are looking at a demo with sample data. Nothing here is real and nothing can be changed." %}
+    <a href="{% url 'growth:demo_leave' %}" class="alert-link">{% trans "Start your free trial" %}</a>
+    <div class="mt-1 small">{% trans "Look around as:" %}
+      {% for p in demo_people %}{% if p.current %}<strong>{{ p.name }} ({{ p.role }})</strong>{% else %}<a href="{{ p.url }}" class="alert-link">{{ p.name }} ({{ p.role }})</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% if organization and organization.status == "READ_ONLY" %}
-  <div class="alert alert-warning">{% trans "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created." %}</div>
+  <div class="alert alert-warning">{% trans "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created." %} <a href="{% url 'subscriptions:page' %}" class="alert-link">{% trans "Pay to restore access" %}</a></div>
   {% elif organization and organization.status == "FROZEN" %}
   <div class="alert alert-danger">{% trans "This organization is frozen. Contact support." %}</div>
   {% elif subscription_banner %}
   <div class="alert alert-{{ subscription_banner.level }}">{{ subscription_banner.text }} <a href="{% url 'subscriptions:page' %}" class="alert-link">{% trans "Subscription" %}</a></div>
   {% endif %}
+  {% if email_notice and request.resolver_match.url_name != "verify_email" and request.resolver_match.url_name != "email" %}
+  <div class="alert alert-warning app-notice" data-email-notice>
+    <i class="bi bi-envelope-exclamation" aria-hidden="true"></i>
+    <span>{% if user.email %}{% blocktrans with email=user.email %}Confirm your email {{ email }} so we can reach you if you lose your phone.{% endblocktrans %}{% else %}{% trans "Add your email so we can reach you if you lose your phone." %}{% endif %}</span>
+    <a class="btn btn-sm btn-primary ms-auto" href="{% if user.email %}{% url 'accounts:verify_email' %}{% else %}{% url 'accounts:email' %}{% endif %}">{% if user.email %}{% trans "Confirm email" %}{% else %}{% trans "Add email" %}{% endif %}</a>
+  </div>
+  {% endif %}
+  {% if terms_notice %}
+  <div class="alert alert-info app-notice" data-terms-notice>
+    <i class="bi bi-file-earmark-text" aria-hidden="true"></i>
+    <span>{% trans "We have updated our Terms of Service and Privacy Policy." %} <a class="alert-link" href="{% url 'support:terms' %}">{% trans "Read the Terms" %}</a> · <a class="alert-link" href="{% url 'support:privacy' %}">{% trans "Privacy Policy" %}</a></span>
+    <form method="post" action="{% url 'support:accept_terms' %}" class="ms-auto">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="btn btn-sm btn-primary">{% trans "I accept" %}</button></form>
+  </div>
+  {% endif %}
   {% for message in messages %}
-  <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %}">{{ message }}</div>
+  <div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %}{% if message.tags == 'success' %} alert-autohide{% endif %}" role="{% if message.tags == 'error' %}alert{% else %}status{% endif %}">{{ message }}</div>
   {% endfor %}
+  {% endif %}
+  {% if report_steps %}{% include "reports/_steps.html" with steps=report_steps %}{% endif %}
   {% block content %}{% endblock %}
 </main>
-<footer class="container page pb-4 small text-muted">
-  {% if user.is_authenticated %}<a class="text-muted" href="{% url 'support:help' %}">{% trans "Help" %}</a> · {% endif %}
-  <a class="text-muted" href="{% url 'support:status' %}">{% trans "Status" %}</a> ·
-  <a class="text-muted" href="{% url 'support:security' %}">{% trans "Security and your data" %}</a>
+{% if report_pane %}
+{% elif user.is_authenticated %}
+<footer class="app-footer container page">
+  <div class="app-footer-inner">
+  <p class="footer-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></p>
+  <nav aria-label="{% trans 'Footer' %}">
+    <ul class="footer-links">
+      <li><a href="{% url 'support:help' %}">{% trans "Help" %}</a></li>
+      <li><a href="{% url 'support:status' %}">{% trans "Status" %}</a></li>
+      <li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>
+      <li><a href="{% url 'support:terms' %}">{% trans "Terms" %}</a></li>
+      <li><a href="{% url 'support:privacy' %}">{% trans "Privacy" %}</a></li>
+      <li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>
+    </ul>
+  </nav>
+  <p class="footer-note">© {% now "Y" %} NyumbaPMS · {% trans "Rent, tenants and payments for Kenyan landlords" %}{% if support_email %} · <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% endif %}</p>
+  </div>
 </footer>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-{% if membership %}{% load static %}<script src="{% static 'js/search.js' %}" defer></script>{% endif %}
+{% else %}
+<footer class="site-footer">
+  <div class="container-xl site-footer-inner">
+    <div class="site-footer-top">
+      <div class="site-footer-about">
+        <p class="footer-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></p>
+        <p class="site-footer-pitch">{% trans "Rent, tenants and payments for Kenyan landlords, agents and estates. Paid straight to your own Paybill or Till." %}</p>
+        <div class="d-flex flex-wrap gap-2">
+          <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+        </div>
+        <ul class="footer-links footer-contact mt-3">
+          {% if hello_email %}<li>{% trans "Sales" %}: <a href="mailto:{{ hello_email }}">{{ hello_email }}</a></li>{% endif %}
+          {% if support_email %}<li>{% trans "Support" %}: <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>{% endif %}
+          {% if support_whatsapp %}<li>WhatsApp: <a href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">{{ support_phone|default:support_whatsapp }}</a></li>{% endif %}
+        </ul>
+      </div>
+      <nav class="site-footer-cols" aria-label="{% trans 'Footer' %}">
+        <div>
+          <h2 class="site-footer-h">{% trans "Product" %}</h2>
+          <ul class="footer-links">
+            <li><a href="{% url 'growth:how_it_works' %}">{% trans "How it works" %}</a></li>
+            <li><a href="{% url 'growth:pricing' %}">{% trans "Pricing" %}</a></li>
+            <li><a href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a></li>
+            <li><a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="site-footer-h">{% trans "Solutions" %}</h2>
+          <ul class="footer-links">
+            <li><a href="{% url 'growth:solutions' %}">{% trans "All solutions" %}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="site-footer-h">{% trans "Learn" %}</h2>
+          <ul class="footer-links">
+            <li><a href="{% url 'growth:tutorials' %}">{% trans "Tutorials" %}</a></li>
+            <li><a href="{% url 'growth:articles' %}">{% trans "Articles" %}</a></li>
+            <li><a href="{% url 'growth:faq' %}">{% trans "FAQ" %}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="site-footer-h">{% trans "Company" %}</h2>
+          <ul class="footer-links">
+            <li><a href="{% url 'growth:about' %}">{% trans "About" %}</a></li>
+            <li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>
+            <li><a href="{% url 'support:status' %}">{% trans "Status" %}</a></li>
+          </ul>
+        </div>
+        <div>
+          <h2 class="site-footer-h">{% trans "Legal" %}</h2>
+          <ul class="footer-links">
+            <li><a href="{% url 'support:terms' %}">{% trans "Terms" %}</a></li>
+            <li><a href="{% url 'support:privacy' %}">{% trans "Privacy" %}</a></li>
+            <li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>
+          </ul>
+        </div>
+      </nav>
+    </div>
+    <div class="site-footer-bottom">
+      <p class="footer-note">© {% now "Y" %} NyumbaPMS</p>
+      <div class="footer-theme"><span class="visually-hidden" id="theme-label">{% trans "Theme" %}</span>{% include "partials/theme_switch.html" %}</div>
+    </div>
+  </div>
+</footer>
+{% endif %}
+</div>
+</div>
+{% endwith %}
+{# Shown by ui.js once a long page is scrolled down; takes keyboard focus back to the top of the content. #}
+{% if membership and not report_pane and request.resolver_match.app_name != "ai_assistant" and show_ask_button %}
+<section class="ask-panel" data-ask-panel hidden role="dialog" aria-label="{% trans 'NyumbaPMS AI' %}"
+         data-loading="{% trans 'Loading…' %}" data-failed="{% trans 'Something went wrong. Try again.' %}"
+         data-open="{% trans 'Open' %}" data-dismissed="{% trans 'Dismissed. Nothing was done.' %}"
+         data-expired="{% trans 'This has expired. Ask again if it is still needed.' %}" data-message="{% trans 'Message' %}"
+         data-careful="{% trans 'Nothing is done until you confirm. Check the details first.' %}"
+         data-t-confirm="{% trans 'Confirm' %}" data-t-dismiss="{% trans 'Dismiss' %}" data-pages="{% trans 'Pages used:' %}"
+         data-not-set-up="{% trans 'The assistant is not set up on this service yet.' %}"
+         data-off-owner="{% trans 'The assistant is off for your organization. You can switch it on in Ask settings.' %}"
+         data-off="{% trans 'The assistant is off for your organization. An owner can switch it on.' %}"
+         data-placeholder="{% trans 'Who owes more than 30 days?' %}" data-question="{% trans 'Your question' %}"
+         data-try="{% trans 'Try asking:' %}" data-ask="{% trans 'Ask' %}" data-thinking="{% trans 'Thinking…' %}" data-new="{% trans 'New conversation' %}">
+  <header class="ask-panel-head">
+    <strong class="ask-panel-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span> AI</span></strong>
+    <span class="ask-panel-tools">
+      <button type="button" class="ask-icon-btn" data-ask-new hidden aria-label="{% trans 'New conversation' %}" title="{% trans 'New conversation' %}"><i class="bi bi-pencil-square" aria-hidden="true"></i></button>
+      <a href="{% url 'ai_assistant:ask' %}" class="ask-icon-btn" aria-label="{% trans 'Open full page' %}" title="{% trans 'Open full page' %}"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+      <button type="button" class="ask-icon-btn" data-ask-close aria-label="{% trans 'Close' %}" title="{% trans 'Close' %}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></span>
+  </header>
+  <div class="ask-panel-body" data-ask-body aria-live="polite"></div>
+</section>
+<button type="button" class="ask-fab" data-ask-fab data-api="{% url 'ai_assistant:web_ask' %}" aria-expanded="false" aria-label="{% trans 'Open NyumbaPMS AI' %}"><i class="bi bi-stars" aria-hidden="true"></i><span>Nyumba<b>PMS</b> AI</span></button>
+{% endif %}
+{% if not report_pane %}<button type="button" class="back-to-top" data-back-to-top aria-label="{% trans 'Back to top' %}" title="{% trans 'Back to top' %}"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>{% endif %}
+<script src="{% static 'vendor/bootstrap-5.3.3/bootstrap.bundle.min.js' %}"></script>
+<script src="{% static 'js/ui.js' %}" defer></script>
+<script src="{% static 'js/pwa.js' %}" data-sw="{% url 'support:sw' %}"></script>
+{% if report_pane %}<script src="{% static 'js/report_pane.js' %}" defer></script>
+{% elif membership %}<script src="{% static 'js/search.js' %}" defer></script>
+{% if show_ask_button %}<script src="{% static 'js/ask_widget.js' %}" defer></script>{% endif %}
+<script src="{% static 'js/offline.js' %}" data-user="{{ user.public_id }}" data-logout-text="{% trans 'Meter readings typed without a connection are still on this phone. They will be sent when you log in again here. Log out anyway?' %}" defer></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

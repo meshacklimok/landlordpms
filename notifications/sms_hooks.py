@@ -53,24 +53,27 @@ def delivery_report(provider_id: str, status: str, failure_reason: str = "",
     return message
 
 
-def _tenants_with(phone: str) -> list[Tenant]:
+def _tenants_with(phone: str, organization=None) -> list[Tenant]:
     try:
         phone = normalize_phone(phone)
     except InvalidPhoneNumber:
         return []
-    return list(Tenant.all_objects.filter(phone=phone).select_related("organization"))
+    tenants = Tenant.all_objects.filter(phone=phone).select_related("organization")
+    return list(tenants.filter(organization=organization) if organization is not None else tenants)
 
 
 @transaction.atomic
 def set_channel_from_phone(phone: str, channel: str, *, allowed: bool, note: str,
-                           source: str = ConsentRecord.Source.SMS_REPLY, only_restore: bool = False) -> int:
+                           source: str = ConsentRecord.Source.SMS_REPLY, only_restore: bool = False,
+                           organization=None) -> int:
     """Stops (or restarts) a channel for every tenant with this phone. Returns how many changed.
 
     `only_restore` restarts it only for tenants who agreed to it before: a reply to a shared
     number cannot say which landlord a first grant is meant for (D-044 item 16).
+    `organization` limits it to one landlord's tenants: the reply came in on that landlord's own number.
     """
     changed = 0
-    for tenant in _tenants_with(phone):
+    for tenant in _tenants_with(phone, organization):
         if channel_allowed(tenant, channel) == allowed:
             continue
         if allowed and only_restore and not ConsentRecord.objects.filter(

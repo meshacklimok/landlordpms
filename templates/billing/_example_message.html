@@ -1,0 +1,10 @@
+{% load i18n %}
+  {% if example %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "The message tenants get with a new invoice" %}</h2>
+    <p class="small text-muted mb-2">{% blocktrans with t=example.row.tenant.name u=example.lease.unit.code %}Example with {{ t }}'s figures ({{ u }}). Each tenant gets their own.{% endblocktrans %}</p>
+    <div class="border rounded p-2 small" style="white-space: pre-line">{{ example.row.text }}</div>
+    <p class="small mt-2 mb-0">{% if not example.row.sendable %}<span class="text-warning-emphasis">{% trans "This would not be sent now:" %} {{ example.row.reason }}.</span> {% endif %}
+      {% if example.edit_url %}<a href="{{ example.edit_url }}">{% trans "Change the wording" %}</a>{% endif %}</p>
+  </div></div>
+  {% endif %}

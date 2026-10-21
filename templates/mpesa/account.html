@@ -1,23 +1,31 @@
 {% extends "mpesa/_base.html" %}{% load i18n %}
 {% block title %}{{ account.display_name }}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 640px">
+<div class="mx-auto mw-640">
   <a href="{% url 'mpesa:settings' %}" class="small">← {% trans "M-Pesa" %}</a>
   <h1 class="h4 mt-2 mb-0">{{ account.display_name }}</h1>
   <div class="small text-body-secondary mb-3">{{ account.get_type_display }} {{ account.number }}</div>
+  {% if account.type == "TILL" %}
+  <div class="alert alert-info small" data-till-note>
+    {% trans "Payments to a Till have no account number, so each one waits in the M-Pesa inbox for you to match, with a suggestion when the phone is a tenant's. Payment requests and pay links need a Paybill. If you can, collect rent on a Paybill instead." %}
+  </div>
+  {% endif %}
+
+  {% include "mpesa/_setup_steps.html" %}
+  {% include "mpesa/_setup_help.html" %}
 
   {% if creds %}
   <div class="card shadow-sm mb-3"><div class="card-body">
     <h2 class="h6 mb-2">{% trans "Connection" %}</h2>
     {% if creds.urls_registered_at %}
-      <p class="small mb-2"><i class="bi bi-check-circle-fill text-success"></i> {% blocktrans with when=creds.urls_registered_at|date:"j M Y H:i" %}Registered with Safaricom on {{ when }}. Payments to {{ account.number }} arrive here.{% endblocktrans %}</p>
+      <p class="small mb-2"><i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i> {% blocktrans with when=creds.urls_registered_at|date:"j M Y H:i" %}Registered with Safaricom on {{ when }}. Payments to {{ account.number }} arrive here.{% endblocktrans %}</p>
     {% else %}
-      <p class="small mb-2"><i class="bi bi-exclamation-triangle-fill text-warning"></i> {% trans "Not registered yet: Safaricom does not know where to send this account's payments." %}</p>
+      <p class="small mb-2"><i class="bi bi-exclamation-triangle-fill text-warning" aria-hidden="true"></i> {% trans "Not registered yet: Safaricom does not know where to send this account's payments." %}</p>
     {% endif %}
     {% if creds.registration_error %}<div class="alert alert-danger small py-2">{% trans "Last attempt failed:" %} {{ creds.registration_error }}</div>{% endif %}
     <form method="post" class="d-flex flex-wrap gap-2">{% csrf_token %}
       <button class="btn btn-sm btn-primary" name="action" value="register">{% if creds.urls_registered_at %}{% trans "Register again" %}{% else %}{% trans "Register with Safaricom" %}{% endif %}</button>
-      <button class="btn btn-sm btn-outline-secondary" name="action" value="new_token" onclick="return confirm('{% trans "Make a new secret callback link? Payments stop arriving until you register again." %}')">{% trans "New callback link" %}</button>
+      <button class="btn btn-sm btn-outline-secondary" name="action" value="new_token" data-confirm="{% trans "Make a new secret callback link? Payments stop arriving until you register again." %}">{% trans "New callback link" %}</button>
     </form>
   </div></div>
   {% endif %}
@@ -43,7 +51,19 @@
       {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
     </div>
     {% endfor %}
-    <button class="btn btn-dark">{% trans "Save" %}</button>
+    <div class="d-flex flex-wrap gap-2">
+      <button class="btn btn-primary" name="action" value="save_connect">{% trans "Save and connect" %}</button>
+      <button class="btn btn-outline-secondary" name="action" value="save">{% trans "Save only" %}</button>
+    </div>
+  </div></form>
+
+  <form method="post" class="card shadow-sm mt-3" data-properties>{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="properties">
+    <h2 class="h6">{% trans "Properties paid into this number" %}</h2>
+    {% for row in props %}
+    <div class="form-check"><input class="form-check-input" type="checkbox" name="property" value="{{ row.p.public_id }}" id="prop-{{ row.p.public_id }}"{% if row.on %} checked{% endif %}><label class="form-check-label" for="prop-{{ row.p.public_id }}">{{ row.p.name }}</label></div>
+    {% empty %}<p class="small text-body-secondary mb-0">{% trans "Add a property first." %}</p>{% endfor %}
+    {% if props %}<button class="btn btn-sm btn-outline-primary mt-3">{% trans "Save properties" %}</button>{% endif %}
   </div></form>
 </div>
 {% endblock %}

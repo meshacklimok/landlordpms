@@ -2,7 +2,7 @@
 {% block title %}{% trans "Enter your code" %}{% endblock %}
 {% block heading %}{% trans "Enter your code" %}{% endblock %}
 {% block card %}
-<p class="small text-muted">{% trans "Open your authenticator app and enter the 6-digit code for LandlordPMS." %}</p>
+<p class="small text-muted">{% trans "Open your authenticator app and enter the 6-digit code for NyumbaPMS." %}</p>
 <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
   <input type="hidden" name="next" value="{{ next }}">
   <button class="btn btn-primary w-100">{% trans "Continue" %}</button>

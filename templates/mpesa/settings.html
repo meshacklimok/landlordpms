@@ -1,10 +1,32 @@
 {% extends "mpesa/_base.html" %}{% load i18n %}
 {% block title %}{% trans "M-Pesa settings" %}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
+<div class="mx-auto mw-760">
   <h1 class="h3 mb-0">{% trans "M-Pesa" %}</h1>
   <p class="small text-body-secondary">{% trans "Connect your own Paybill or Till so tenants' payments arrive here and are matched to their leases. Money goes straight to your account; we never hold it." %}</p>
   {% include "mpesa/_nav.html" with section="settings" %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body small">
+    <div class="fw-semibold mb-1">{% trans "How connecting works" %}</div>
+    <ol class="mb-0 ps-3">
+      <li>{% trans "Add your Paybill number below." %}</li>
+      <li>{% trans "Make a free app on Safaricom's Daraja site and ask them to make it live (a few days)." %}</li>
+      <li>{% trans "Paste the keys they give you. We check them and connect for you." %}</li>
+      <li>{% trans "Pay KES 10 as a test, and you are done." %}</li>
+    </ol>
+  </div></div>
+  <details class="card shadow-sm mb-3" data-no-paybill{% if not rows %} open{% endif %}><summary class="card-body py-2 fw-semibold small">{% trans "I don't have a Paybill yet" %}</summary>
+    <div class="card-body pt-0 small">
+      <p class="mb-2">{% trans "A Paybill is a business number from Safaricom that tenants pay into. You usually get one from a Safaricom shop or the M-Pesa business portal with your ID and business or property documents. Safaricom decides what they ask for, and it can take several days." %}</p>
+      <p class="mb-1 fw-semibold">{% trans "Until then you can still use the app:" %}</p>
+      <ul class="mb-2">
+        <li>{% trans "Record each payment by hand when a tenant pays you (cash, bank or your own M-Pesa)." %} <a href="{% url 'payments:pick_lease' %}">{% trans "Record a payment" %}</a></li>
+        <li>{% trans "Import your M-Pesa or bank statement and we match the payments for you." %} <a href="{% url 'banking:import' %}">{% trans "Import a statement" %}</a></li>
+      </ul>
+      <p class="mb-0 text-body-secondary">{% trans "Once you have the number, add it below and follow the steps. We can help on WhatsApp." %}</p>
+    </div>
+  </details>
+  {% include "mpesa/_setup_help.html" %}
 
   <div class="list-group shadow-sm mb-4">
     {% for row in rows %}
@@ -15,6 +37,7 @@
         </div>
         {% if row.creds.urls_registered_at %}<span class="badge text-bg-success">{% trans "Connected" %}</span>
         {% elif row.creds %}<span class="badge text-bg-warning">{% trans "Not registered" %}</span>
+        {% elif row.account.safaricom_applied_at %}<span class="badge text-bg-warning">{% trans "Waiting for Safaricom" %}</span>
         {% else %}<span class="badge text-bg-secondary">{% trans "Not set up" %}</span>{% endif %}
       </a>
     {% empty %}

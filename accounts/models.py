@@ -5,12 +5,14 @@ of platform templates and fully editable (doc 13, D-023, D-024).
 """
 
 import datetime
+import os
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
+from django.core.files.storage import FileSystemStorage
 from django.core.mail import send_mail
-from django.core.validators import MaxValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower, Upper
 from django.utils import timezone
@@ -25,6 +27,7 @@ from core.models import (
     TimeStampedModel,
 )
 from core.phone import normalize_phone
+from notifications.providers.mail import SYSTEM, mailer_for
 
 # ---------------------------------------------------------------------------
 # User
@@ -79,6 +82,9 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     date_joined = models.DateTimeField(default=timezone.now)
     # Raised to end every other session, e.g. when MFA is switched on or off (D-059).
     session_epoch = models.PositiveIntegerField(default=0, editable=False)
+    # The version of the Terms of Service and Privacy Policy accepted, and when (D-095).
+    terms_version = models.CharField(max_length=20, blank=True, default="", editable=False)
+    terms_accepted_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     objects = UserManager()
 
@@ -126,7 +132,14 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
     def email_user(self, subject, message, from_email=None, **kwargs):
         """No-op when the user has no email (email is optional)."""
         if self.email:
-            send_mail(subject, message, from_email, [self.email], **kwargs)
+            kwargs.setdefault("using", mailer_for(SYSTEM))
+            from notifications.email_html import send_branded
+
+            using = kwargs.pop("using")
+            if kwargs:  # options the branded sender does not take: send it as plain text
+                send_mail(subject, message, from_email, [self.email], using=using, **kwargs)
+            else:
+                send_branded(subject, message, [self.email], using=using, from_email=from_email)
 
 
 class TOTPDevice(models.Model):
@@ -161,11 +174,12 @@ class RecoveryCode(models.Model):
 
 
 class OTPCode(models.Model):
-    """One-time code sent by SMS. Temporary: may be hard-deleted (doc 11 §23)."""
+    """One-time code sent by SMS (or by email for VERIFY_EMAIL, still keyed by the phone). Temporary: may be hard-deleted (doc 11 §23)."""
 
     class Purpose(models.TextChoices):
         VERIFY_PHONE = "VERIFY_PHONE", _("Verify phone")
         RESET_PASSWORD = "RESET_PASSWORD", _("Reset password")
+        VERIFY_EMAIL = "VERIFY_EMAIL", _("Verify email")
 
     phone = models.CharField(max_length=16, db_index=True)
     purpose = models.CharField(max_length=20, choices=Purpose.choices)
@@ -190,10 +204,22 @@ class OTPCode(models.Model):
 class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     """The workspace that owns business data (the customer, D-038)."""
 
+    class SenderStatus(models.TextChoices):
+        NONE = "", _("Platform name")
+        REQUESTED = "REQUESTED", _("Requested")
+        APPROVED = "APPROVED", _("Approved")
+        REJECTED = "REJECTED", _("Rejected")
+
     class Type(models.TextChoices):
         INDIVIDUAL = "INDIVIDUAL", _("Individual landlord")
         COMPANY = "COMPANY", _("Company")
         AGENCY = "AGENCY", _("Property management agency")
+        # Not landlords (D-130): they bill households monthly, with their own words for people and places.
+        ESTATE = "ESTATE", _("Estate or residents' association")
+        WATER = "WATER", _("Water vendor")
+        WASTE = "WASTE", _("Garbage collection company")
+        # Student accommodation (D-186): bills like a landlord, with rooms, beds and semesters.
+        HOSTEL = "HOSTEL", _("Student hostel")
 
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", _("Active")
@@ -201,6 +227,11 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         READ_ONLY = "READ_ONLY", _("Read-only")
         # Frozen by the Platform Admin for abuse or security (doc 14 D14).
         FROZEN = "FROZEN", _("Frozen")
+
+    class LateFeeMode(models.TextChoices):
+        OFF = "OFF", _("No late fees")
+        FIXED = "FIXED", _("A fixed amount")
+        PERCENT = "PERCENT", _("A percentage of what is unpaid")
 
     class TaxResidence(models.TextChoices):
         RESIDENT = "RESIDENT", _("Resident in Kenya")
@@ -212,21 +243,67 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     currency = models.CharField(max_length=3, default="KES")
     # Tax and billing settings (D-034): design-in only, no calculation yet.
     kra_pin = models.CharField(_("KRA PIN"), max_length=20, blank=True)
+    # Who signed up, kept as hashes so a repeat free trial can be spotted (D-207): the browser (a long-lived cookie)
+    # and the network address. Empty when the organization was made without a web request.
+    signup_device = models.CharField(max_length=32, blank=True, db_index=True, editable=False)
+    signup_ip_hash = models.CharField(max_length=64, blank=True, db_index=True, editable=False)
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
     # Picks the rate in the rental income tax estimate (D-050). An estimate only, never filed.
     landlord_tax_residence = models.CharField(
         _("landlord tax residence"), max_length=12, choices=TaxResidence.choices, default=TaxResidence.RESIDENT)
+    # The month the organization's financial year starts (D-199): 1 is the calendar year, 7 is July to June. Moves
+    # "this year", "last year" and the quarters on the report pages; the tax pack stays on the calendar year.
+    financial_year_start_month = models.PositiveSmallIntegerField(
+        _("financial year starts in"), default=1, validators=[MinValueValidator(1), MaxValueValidator(12)])
     # Rent billing (doc 14 A3, D-036). Partial first and last months are prorated by days
     # unless the organization bills them as a full month.
     prorate_partial_months = models.BooleanField(_("prorate partial months"), default=True)
     invoice_lead_days = models.PositiveSmallIntegerField(
         _("invoice lead days"), default=5, validators=[MaxValueValidator(28)],
         help_text=_("How many days before the month starts its invoices go out."))
+    # Estates, water vendors and garbage collectors choose whether they hold deposits (D-130). Landlords always do.
+    holds_deposits = models.BooleanField(_("we hold deposits"), default=False)
+    # How the owner wants deposits cleared (D-150). Kenyan law sets no refund deadline, so the lease and these rules do.
+    deposit_refund_days = models.PositiveSmallIntegerField(
+        _("days to settle a deposit"), default=30, validators=[MaxValueValidator(365)],
+        help_text=_("Days after a lease ends by which the deposit is refunded or a statement of deductions is given."))
+    deposit_allow_offset = models.BooleanField(_("deposit may be put towards rent owed"), default=True)
+    deposit_proof_required = models.BooleanField(_("deductions need proof"), default=False)
+    # Codes from billing.DepositEntry.Heading a deduction may use; empty means any, and the heading is optional.
+    deposit_deduction_headings = models.JSONField(_("deduction headings"), default=list, blank=True)
+    # Late fees (D-129): off until the owner picks a way to work them out. Staff approve each fee before it is charged.
+    late_fee_mode = models.CharField(_("late fees"), max_length=8, choices=LateFeeMode.choices,
+                                     default=LateFeeMode.OFF)
+    late_fee_amount = models.DecimalField(_("late fee amount"), max_digits=14, decimal_places=2, null=True,
+                                          blank=True)
+    late_fee_percent = models.DecimalField(_("late fee percent"), max_digits=5, decimal_places=2, null=True,
+                                           blank=True)
+    # Most a percentage fee may come to on one invoice; blank means no limit.
+    late_fee_cap = models.DecimalField(_("late fee maximum"), max_digits=14, decimal_places=2, null=True,
+                                       blank=True)
+    # Set when late fees are switched on: invoices overdue before this day never get one.
+    late_fees_from = models.DateField(_("late fees from"), null=True, blank=True, editable=False)
     # Notifications (doc 11 §27, D-044): non-urgent messages wait until quiet hours end.
     quiet_hours_start = models.TimeField(_("quiet hours start"), default=datetime.time(21, 0))
     quiet_hours_end = models.TimeField(_("quiet hours end"), default=datetime.time(7, 0))
+    # Replies to emails sent to tenants go here (D-076). Blank: no reply-to.
+    reply_email = models.EmailField(_("reply-to email"), blank=True)
+    # The assistant answers staff questions from the organization's figures (D-091). Off until an owner turns it on.
+    assistant_enabled = models.BooleanField(_("assistant on"), default=False)
+    # Tenants' questions on WhatsApp (D-093), a separate switch from the staff one.
+    tenant_assistant_enabled = models.BooleanField(_("tenant assistant on"), default=False)
+    # Photos read a month (D-144). Blank: the platform's SCAN_MONTHLY_LIMIT; 0 turns scans off for this landlord.
+    scan_limit = models.PositiveIntegerField(_("photo scans a month"), null=True, blank=True)
+    # Every member must pass two-step login before opening the organization (D-107). Tenants in the portal are not
+    # members, so this never reaches them.
+    require_mfa = models.BooleanField(_("two-step login for all staff"), default=False)
+    # A tenant who signs up and verifies the phone number held on their tenant record gets portal access without an
+    # invitation (D-203). On by default; an owner who wants to invite each tenant by hand switches it off.
+    tenant_self_signup = models.BooleanField(_("tenants can join the portal themselves"), default=True)
+    # The public "Try the demo" organization (D-210): sample data, read-only, and nothing is ever sent from it.
+    is_demo = models.BooleanField(default=False, editable=False)
     # What tenancy letters state besides the tenants, units and dates (D-048).
     letter_show_payment_record = models.BooleanField(_("on-time payment record"), default=True)
     letter_show_balance = models.BooleanField(_("balance owed"), default=True)
@@ -240,6 +317,28 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     brand_color = models.CharField(_("brand colour"), max_length=7, blank=True, validators=[
         RegexValidator(r"^#[0-9A-Fa-f]{6}$", _("Use a hex colour like #1A73E8."))])
     document_footer = models.CharField(_("document footer"), max_length=200, blank=True)
+    # The conditions printed on tenancy agreements (D-187); blank means the standard ones in leases.clauses.
+    agreement_clauses = models.TextField(_("agreement wording"), blank=True)
+    # What the invoice PDF adds (D-149): the owner's address under the name, how to pay, terms, and the tenant's contacts.
+    address = models.CharField(_("address"), max_length=200, blank=True)
+    invoice_payment_info = models.TextField(_("how to pay"), max_length=500, blank=True)
+    invoice_terms = models.TextField(_("invoice terms"), max_length=600, blank=True)
+    invoice_show_tenant_contact = models.BooleanField(_("tenant phone and email on invoices"), default=False)
+    # Printed above "Authorised signature" at the end of the invoice.
+    stamp = models.ImageField(_("signature or stamp"), upload_to="org-stamps/", blank=True)
+    invoice_show_previous_balance = models.BooleanField(_("earlier unpaid invoices on invoices"), default=True)
+    # Own SMS sender name (D-120), a paid add-on: the owner asks, a Platform Admin registers it with the networks
+    # and approves it. Until then, and after a rejection, tenant SMS go under the platform's AT_SENDER_ID.
+    sms_sender_id = models.CharField(_("SMS sender name"), max_length=11, blank=True)
+    sms_sender_status = models.CharField(_("SMS sender name status"), max_length=10, choices=SenderStatus.choices,
+                                         blank=True, default=SenderStatus.NONE)
+    sms_sender_note = models.CharField(_("note to the organization"), max_length=200, blank=True,
+                                       help_text=_("Shown on their Subscription page, e.g. why it was rejected."))
+    sms_sender_requested_at = models.DateTimeField(null=True, blank=True)
+    sms_sender_decided_at = models.DateTimeField(null=True, blank=True)
+    # Staff in these roles are told in the app when the subscription lapses or is paid again, besides the owner.
+    # The owner picks them on the Subscription page; owner roles are always told.
+    lapse_notify_roles = models.ManyToManyField("Role", blank=True, related_name="+")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -252,12 +351,34 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.brand_name or self.name
 
     @property
+    def vocab(self) -> dict:
+        """What this organization calls tenants, units and the rest (D-130)."""
+        from .vocabulary import vocabulary_for
+
+        return vocabulary_for(self.org_type)
+
+    @property
+    def bills_rent(self) -> bool:
+        """False for estates, water vendors and garbage collectors, whose messages avoid rent words (D-130)."""
+        return self.org_type not in (self.Type.ESTATE, self.Type.WATER, self.Type.WASTE)
+
+    @property
+    def takes_deposits(self) -> bool:
+        """Whether deposits are held and cleared (D-130): always for landlords, by the owner's choice for the rest."""
+        return self.bills_rent or self.holds_deposits
+
+    @property
+    def sms_sender_name(self) -> str:
+        """The sender name its SMS go out under, or blank for the platform's."""
+        return self.sms_sender_id if self.sms_sender_status == self.SenderStatus.APPROVED else ""
+
+    @property
     def is_operational(self) -> bool:
         return self.status == self.Status.ACTIVE and not self.is_archived
 
 
 class Branch(PublicIdModel, TimeStampedModel, ArchivableModel):
-    """An agency's office (D-040): design-in only. Properties may point at one; nothing scopes by it yet."""
+    """An agency's office (D-040). Staff given a branch see every property in it (D-127)."""
 
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT, related_name="branches")
     name = models.CharField(_("name"), max_length=100)
@@ -371,10 +492,14 @@ class Membership(PublicIdModel, TimeStampedModel, ArchivableModel):
     organization = models.ForeignKey(Organization, on_delete=models.PROTECT, related_name="memberships")
     role = models.ForeignKey(Role, on_delete=models.PROTECT, related_name="memberships")
     all_properties = models.BooleanField(
-        default=False, help_text=_("If off, only properties listed under property access.")
+        default=False, help_text=_("If off, only properties listed under property access and in the branches below.")
     )
+    # Every property in these branches, now and later (D-127). Archived branches give nothing.
+    branches = models.ManyToManyField(Branch, blank=True, related_name="memberships")
     # Suspended when False; archived when removed from the organization.
     is_active = models.BooleanField(default=True)
+    # The monthly property report by email (D-194); the link in the email turns it off.
+    monthly_report = models.BooleanField(default=True)
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -436,6 +561,7 @@ class Invitation(PublicIdModel, TimeStampedModel):
     role = models.ForeignKey(Role, on_delete=models.PROTECT, related_name="invitations")
     all_properties = models.BooleanField(default=False)
     properties = models.ManyToManyField("properties.Property", blank=True, related_name="+")
+    branches = models.ManyToManyField(Branch, blank=True, related_name="+")
     token_hash = models.CharField(max_length=64, unique=True)
     invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     expires_at = models.DateTimeField()
@@ -451,3 +577,63 @@ class Invitation(PublicIdModel, TimeStampedModel):
     @property
     def is_pending(self) -> bool:
         return self.accepted_at is None and self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class _ExportStorage(FileSystemStorage):
+    """Files under DATA_EXPORT_DIR, read each time so a changed setting (or a test's) is followed."""
+
+    @property
+    def base_location(self):
+        return str(settings.DATA_EXPORT_DIR)
+
+    @property
+    def location(self):
+        return os.path.abspath(self.base_location)
+
+
+def _export_storage():
+    return _ExportStorage()
+
+
+class DataExport(PublicIdModel, TimeStampedModel):
+    """One organization's data as a ZIP, built by the run_data_exports job (D-177).
+
+    The file is kept outside media, downloaded only by the person who asked while signed in, and deleted when it
+    expires. ``for_console`` marks an export the platform owner asked for from the console.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Waiting")
+        RUNNING = "RUNNING", _("Being made")
+        READY = "READY", _("Ready")
+        FAILED = "FAILED", _("Failed")
+        EXPIRED = "EXPIRED", _("Expired")
+
+    organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="data_exports")
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    for_console = models.BooleanField(default=False)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    file = models.FileField(storage=_export_storage, upload_to="", blank=True)
+    size = models.PositiveBigIntegerField(default=0)
+    rows = models.PositiveIntegerField(default=0)
+    files = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(null=True, blank=True)
+    ready_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    downloads = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["status", "created_at"])]
+
+    def __str__(self):
+        return f"Data export of {self.organization} ({self.get_status_display()})"
+
+    @property
+    def is_open(self) -> bool:
+        return self.status in (self.Status.PENDING, self.Status.RUNNING)
+
+    @property
+    def can_download(self) -> bool:
+        return self.status == self.Status.READY and bool(self.file) and self.expires_at > timezone.now()

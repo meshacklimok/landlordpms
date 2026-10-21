@@ -7,28 +7,49 @@
     {% if available %}<span class="badge text-bg-success mb-2">{% trans "Available to let" %}</span>
     {% else %}<span class="badge text-bg-secondary mb-2">{% trans "No longer available" %}</span>{% endif %}
     <h1 class="h4 mb-1">{{ unit.get_unit_type_display }}{% if unit.type_label %} · {{ unit.type_label }}{% endif %}</h1>
-    <div class="text-muted mb-3">{{ property.name }} · {% trans "Unit" %} {{ unit.code }}</div>
+    <div class="text-muted mb-3">{{ property.name }} · {{ vocab.unit }} {{ unit.code }}</div>
     <dl class="row small mb-3">
       {% if property.area or property.county %}
       <dt class="col-4">{% trans "Location" %}</dt>
       <dd class="col-8">{% if property.area %}{{ property.area }}, {% endif %}{% if property.sub_county %}{{ property.sub_county }}, {% endif %}{{ property.get_county_display }}</dd>
       {% endif %}
       {% if unit.list_rent is not None %}
-      <dt class="col-4">{% trans "Rent" %}</dt><dd class="col-8">KES {{ unit.list_rent|floatformat:"0g" }} {% trans "per month" %}</dd>
+      <dt class="col-4">{{ vocab.rent }}</dt><dd class="col-8">KES {{ unit.list_rent|floatformat:"0g" }} {% trans "per month" %}</dd>
       {% endif %}
     </dl>
     {% if available %}
       {% if contact_phone %}
       <p class="small mb-2">{% blocktrans with name=contact_name %}Contact {{ name }}{% endblocktrans %}</p>
-      <div class="d-flex gap-2">
+      <div class="d-flex flex-wrap gap-2">
         <a class="btn btn-success btn-sm" href="https://wa.me/{{ contact_phone|slice:'1:' }}?text={% filter urlencode %}{% blocktrans with p=property.name u=unit.code %}Hello, is unit {{ u }} at {{ p }} still available?{% endblocktrans %}{% endfilter %}" rel="noopener">WhatsApp</a>
         <a class="btn btn-outline-primary btn-sm" href="tel:{{ contact_phone }}">{% trans "Call" %} {{ contact_phone }}</a>
       </div>
       {% else %}
       <p class="small mb-0">{% blocktrans with name=contact_name %}Contact {{ name }}.{% endblocktrans %}</p>
       {% endif %}
+      {% if sent %}
+      <div class="alert alert-success small mt-3 mb-0" role="status">{% trans "Thank you. We have your details and will get back to you." %}</div>
+      {% elif enquiry_form %}
+      <hr>
+      <h2 class="h6">{% trans "Or leave your number and we will call you" %}</h2>
+      <form method="post" novalidate>{% csrf_token %}
+        {% for error in enquiry_form.non_field_errors %}<div class="alert alert-danger small">{{ error }}</div>{% endfor %}
+        {% for field in enquiry_form %}{% if field.name == "website" %}
+        <div style="position:absolute;left:-10000px" aria-hidden="true"><label for="{{ field.id_for_label }}">Website</label>{{ field }}</div>
+        {% else %}
+        <div class="mb-2">
+          <label class="form-label small mb-1" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {% if field.widget_type == "textarea" %}<textarea name="{{ field.html_name }}" id="{{ field.id_for_label }}" rows="2" maxlength="500" class="form-control form-control-sm{% if field.errors %} is-invalid{% endif %}" placeholder="{{ field.field.widget.attrs.placeholder }}">{{ field.value|default_if_none:"" }}</textarea>
+          {% else %}<input type="text" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control form-control-sm{% if field.errors %} is-invalid{% endif %}"{% if field.value %} value="{{ field.value }}"{% endif %}{% for k, v in field.field.widget.attrs.items %} {{ k }}="{{ v }}"{% endfor %} required>{% endif %}
+          {% for e in field.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+        </div>
+        {% endif %}{% endfor %}
+        <button class="btn btn-primary btn-sm">{% trans "Send" %}</button>
+        <div class="form-text">{% blocktrans with unit_l=vocab.unit|lower %}Your name and phone go only to the people letting this {{ unit_l }}, to reply to you.{% endblocktrans %}</div>
+      </form>
+      {% endif %}
     {% else %}
-      <p class="small text-muted mb-0">{% trans "This unit has been let or taken off the market." %}</p>
+      <p class="small text-muted mb-0">{% blocktrans with unit_l=vocab.unit|lower %}This {{ unit_l }} has been let or taken off the market.{% endblocktrans %}</p>
     {% endif %}
   </div></div>
   <p class="small text-muted text-center mt-3">{{ unit.organization.display_name }}</p>

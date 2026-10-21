@@ -1,0 +1,83 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console revenue" %}{% endblock %}
+{% block console_title %}{% trans "Revenue" %}{% endblock %}
+{% block console %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Monthly recurring revenue" %}</div>
+    <div class="h4 mb-0">{{ data.mrr.total|money }}</div>
+    <div class="small">{% blocktrans with a=data.mrr.arr|money %}{{ a }} a year{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Paying organizations" %}</div>
+    <div class="h4 mb-0">{{ data.mrr.paying }}</div>
+    <div class="small">{% if data.conversion is not None %}{% blocktrans with c=data.conversion %}{{ c }}% of all organizations{% endblocktrans %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Collected, last 12 months" %}</div>
+    <div class="h4 mb-0">{{ data.collected_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Overdue invoices" %}</div>
+    <div class="h4 mb-0">{{ data.overdue_total|money }}</div>
+    <div class="small">{% blocktrans with n=data.overdue_count %}{{ n }} invoices past their due date{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+
+<h2 class="h6">{% trans "Tenant rent collected, all organizations" %}</h2>
+<p class="small text-muted">{% trans "Confirmed rent payments only, amounts with no tenant named. 'Through the site' is M-Pesa that arrived by Paybill, Till or a payment request; the rest was imported from a statement or recorded by hand." %}</p>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "All time" %}</div>
+    <div class="h4 mb-0">{{ rent.ever_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "This month" %}</div>
+    <div class="h4 mb-0">{{ rent.month_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Last 12 months" %}</div>
+    <div class="h4 mb-0">{{ rent.last_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Through the site" %}</div>
+    <div class="h4 mb-0">{% if rent.site_share is not None %}{{ rent.site_share }}%{% else %}—{% endif %}</div>
+    <div class="small">{% trans "of all rent collected" %}</div>
+  </div></div></div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">{% include "console/_chart.html" with spec="rent" title=_("Rent collected by month") note=_("Split by how the money reached the site.") label=_("The same figures are in the table beside it.") %}</div>
+  <div class="col-lg-5">
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "How it arrived" %}</th><th class="text-end">{% trans "This month" %}</th><th class="text-end">{% trans "12 months" %}</th><th class="text-end">{% trans "All time" %}</th></tr></thead>
+      <tbody>{% for r in rent.rows %}<tr><td>{{ r.channel }}</td><td class="text-end">{{ r.this_month|money }}</td><td class="text-end">{{ r.last_12|money }}</td><td class="text-end">{{ r.ever|money }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-8">{% include "console/_chart.html" with spec="collected" title=_("Subscription money collected") note=_("By month, split by how it was paid.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="plans" title=_("Organizations by plan") note="" label=_("The same figures are in the plan table.") %}</div>
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Collected by month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Collected" %}</th></tr></thead>
+      <tbody>{% for m in data.months %}<tr><td>{{ m }}</td><td class="text-end">{{ data.collected|slice:forloop.counter0|first|money }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Paying plans" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "Plan" %}</th><th class="text-end">{% trans "Paying" %}</th><th class="text-end">{% trans "Per month" %}</th></tr></thead>
+      <tbody>{% for name, n, amount in data.mrr.by_plan %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td><td class="text-end">{{ amount|money }}</td></tr>
+      {% empty %}<tr><td colspan="3" class="text-muted">{% trans "No paying organizations yet." %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <h2 class="h6 mt-3">{% trans "All subscriptions by status" %}</h2>
+    <ul class="small list-unstyled">{% for status, n in data.status.items %}<li>{{ status }}: {{ n }}</li>{% empty %}<li class="text-muted">—</li>{% endfor %}</ul>
+  </div>
+</div>
+{% include "console/_specs.html" %}
+{% endblock %}

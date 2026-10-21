@@ -21,12 +21,21 @@ from accounts.models import Membership, PropertyAccess
 from accounts.permissions import can, clear_cache, require
 from audit import services as audit
 
-from .models import Building, Property, PropertyOwner, Unit, clean_code, payment_reference_for
+from .models import (
+    Building,
+    Property,
+    PropertyOwner,
+    PropertyShare,
+    Unit,
+    clean_code,
+    format_percent,
+    payment_reference_for,
+)
 
 PROPERTY_FIELDS = ("name", "category", "county", "sub_county", "area", "street", "latitude", "longitude", "owner",
-                   "management_fee_percent")
+                   "management_fee_percent", "management_fee_fixed", "branch", "service_days", "market_value")
 OWNER_FIELDS = ("name", "phone", "email", "note")
-UNIT_FIELDS = ("code", "building", "unit_type", "type_label", "list_rent")
+UNIT_FIELDS = ("code", "building", "room", "unit_type", "type_label", "list_rent")
 
 # Case C: a single house gets one unit automatically.
 MAIN_HOUSE_CODE = "MAIN"
@@ -36,6 +45,18 @@ def _same_org(actor: Membership, *objs) -> None:
     for obj in objs:
         if obj is not None and obj.organization_id != actor.organization_id:
             raise PermissionDenied(_("That record belongs to another organization."))
+
+
+def _check_branch(actor: Membership, branch, current=None) -> None:
+    """A branch decides who sees the property (D-127): only those who run the organization move it."""
+    if branch == current:
+        return
+    if not can(actor, "organization.manage"):
+        raise PermissionDenied(_("Only staff who manage the organization can change a property's branch."))
+    if branch is not None:
+        _same_org(actor, branch)
+        if branch.is_archived:
+            raise ValidationError({"branch": _("That branch is archived.")})
 
 
 def _validate(obj, exclude=()) -> None:
@@ -91,6 +112,57 @@ def update_owner(actor: Membership, owner: PropertyOwner, *, request=None, **fie
 
 
 # ---------------------------------------------------------------------------
+# Joint ownership (D-078)
+# ---------------------------------------------------------------------------
+
+HUNDRED = Decimal(100)
+
+
+def shares_of(prop: Property) -> list[tuple[PropertyOwner, Decimal]]:
+    """Every owner of the property and their percentage; the sole owner holds 100."""
+    rows = [(s.owner, s.percent) for s in prop.shares.select_related("owner")]
+    if rows:
+        return rows
+    return [(prop.owner, HUNDRED)] if prop.owner_id else []
+
+
+@transaction.atomic
+def set_shares(actor: Membership, prop: Property, shares: list[tuple[PropertyOwner, Decimal]], *,
+               request=None) -> Property:
+    """Replaces the property's owners. Two or more rows adding up to 100 make it jointly owned; the
+    largest share becomes the main owner. One row makes that owner the sole owner; none clears it."""
+    _same_org(actor, prop)
+    require(actor, "properties.manage", prop)
+    _same_org(actor, *(owner for owner, _pct in shares))
+    owners = [owner for owner, _pct in shares]
+    if len({o.pk for o in owners}) != len(owners):
+        raise ValidationError(_("Each owner can appear only once."))
+    if any(pct is None or pct <= 0 or pct > HUNDRED for _o, pct in shares):
+        raise ValidationError(_("Each share must be more than 0 and at most 100%."))
+    if len(shares) > 1 and sum(pct for _o, pct in shares) != HUNDRED:
+        raise ValidationError(_("The shares add up to %(total)s%%; they must add up to 100%%.")
+                              % {"total": format_percent(sum(pct for _o, pct in shares))})
+    if len(shares) == 1 and shares[0][1] != HUNDRED:
+        raise ValidationError(_("A sole owner holds 100%. Add the other owners and their shares."))
+
+    before = {str(o): format_percent(p) for o, p in shares_of(prop)}
+    prop.shares.all().delete()
+    if len(shares) > 1:
+        PropertyShare.objects.bulk_create([PropertyShare(organization=prop.organization, property=prop, owner=o,
+                                                         percent=p) for o, p in shares])
+        main = max(shares, key=lambda row: row[1])[0]  # the first of the largest, as entered
+    else:
+        main = shares[0][0] if shares else None
+    prop.owner = main
+    prop.save(update_fields=["owner", "updated_at"])
+    after = {str(o): format_percent(p) for o, p in shares_of(prop)}
+    if before != after:
+        audit.record("property.shares", actor=actor.user, organization=actor.organization, obj=prop,
+                     request=request, changes={"owners": [before, after]})
+    return prop
+
+
+# ---------------------------------------------------------------------------
 # Properties
 # ---------------------------------------------------------------------------
 
@@ -110,6 +182,7 @@ def create_property(actor: Membership, *, name: str, code: str, category: str = 
     prop = Property(organization=org, name=name.strip(), code=clean_code(code), category=category,
                     created_by=actor.user, **{k: v for k, v in address.items() if k in PROPERTY_FIELDS})
     _same_org(actor, prop.owner)
+    _check_branch(actor, prop.branch)
     _validate(prop, exclude=["organization", "created_by"])
     if _property_code_taken(org, prop.code):
         raise ValidationError({"code": _("Another property already uses the code %(code)s.") % {"code": prop.code}})
@@ -140,6 +213,13 @@ def update_property(actor: Membership, prop: Property, *, request=None, **fields
     if "code" in fields and clean_code(fields["code"]) != prop.code:
         raise ValidationError({"code": _("A property code cannot be changed; unit payment references use it.")})
     _same_org(actor, fields.get("owner"))
+    if "branch" in fields:
+        _check_branch(actor, fields["branch"], prop.branch)
+    if "owner" in fields and prop.shares.exists():
+        new = fields["owner"]
+        if new is None or not prop.shares.filter(owner=new).exists():
+            raise ValidationError({"owner": _("This property has joint owners. Change them under Owners and shares "
+                                              "on the property page.")})
     before = _snapshot(prop, PROPERTY_FIELDS)
     for k in PROPERTY_FIELDS:
         if k in fields:
@@ -147,6 +227,8 @@ def update_property(actor: Membership, prop: Property, *, request=None, **fields
     _validate(prop, exclude=["organization", "created_by"])
     prop.save()
     changes = audit.diff(before, _snapshot(prop, PROPERTY_FIELDS))
+    if "branch" in changes:
+        clear_cache(actor)
     if changes:
         audit.record("property.update", actor=actor.user, organization=actor.organization, obj=prop,
                      request=request, changes=changes)
@@ -264,6 +346,8 @@ def archive_building(actor: Membership, building: Building, request=None) -> Non
 def _check_unit(prop: Property, unit: Unit, exclude_pk=None) -> None:
     if unit.building is not None and (unit.building.property_id != prop.pk or unit.building.is_archived):
         raise ValidationError({"building": _("Choose a building in this property.")})
+    if unit.room is not None and (unit.room.property_id != prop.pk or unit.room.is_archived):
+        raise ValidationError({"room": _("Choose a room in this hostel.")})
     code_taken = (
         Unit.all_objects.filter(property=prop).annotate(ucode=Upper("code")).filter(ucode=unit.code)
         .exclude(pk=exclude_pk).exists()
@@ -346,7 +430,38 @@ def set_unit_status(actor: Membership, unit: Unit, status: str, request=None) ->
         unit.save(update_fields=["manual_status", "updated_at"])
         audit.record("unit.status", actor=actor.user, organization=actor.organization, obj=unit, request=request,
                      changes={"manual_status": [old, status]})
+        if old == Unit.ManualStatus.RESERVED:
+            from prospects import services as prospects  # a hold for a prospect ends with the Reserved status
+
+            prospects.unit_status_changed(actor, unit, request=request)
     return unit
+
+
+@transaction.atomic
+def bulk_update_units(actor: Membership, units, *, rent=None, percent=None, status: str = "", request=None) -> int:
+    """Change the asking rent (to an amount, or by a percent) and/or the manual status of many units at once.
+
+    Each unit goes through the single-unit services, so permissions, audit and rules are the same.
+    All or nothing: one blocked unit rolls the whole change back.
+    """
+    if rent is not None and percent is not None:
+        raise ValidationError(_("Choose a new rent or a percentage change, not both."))
+    if rent is not None and rent < 0:
+        raise ValidationError(_("Rent cannot be negative."))
+    count = 0
+    for unit in units:
+        if rent is not None:
+            update_unit(actor, unit, request=request, list_rent=Decimal(rent))
+        elif percent is not None:
+            base = unit.list_rent
+            if base is None:
+                continue
+            new = (base * (Decimal(100) + Decimal(percent)) / Decimal(100)).quantize(Decimal("1"))
+            update_unit(actor, unit, request=request, list_rent=max(new, Decimal(0)))
+        if status:
+            set_unit_status(actor, unit, status, request=request)
+        count += 1
+    return count
 
 
 @transaction.atomic

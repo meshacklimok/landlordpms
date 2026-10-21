@@ -14,7 +14,6 @@ from billing.models import Invoice
 from billing.tests.test_invoicing import FEB, bill, make_lease
 from mpesa import c2b, inbox, services
 from mpesa.models import MpesaTransaction
-from notifications import services as notification_services
 from notifications.models import Message
 from payments import services as payment_services
 from payments.models import Payment, PropertyPaymentAccount
@@ -238,54 +237,36 @@ def test_reversing_a_hand_recorded_mpesa_payment_touches_no_transaction(owner, c
 # ---------------------------------------------------------------------------
 
 
-def test_unmatched_alerts_whoever_can_match_it_and_texts_the_payer(owner, org, prop, creds, lease):
+def test_unmatched_alerts_whoever_can_match_it_in_the_app_and_by_email(owner, org, prop, creds, lease):
     clerk = add_member(org, "accountant", all_properties=True)
     add_member(org, "accountant", properties=[prop])  # the account serves no property: not theirs
     add_member(org, "caretaker", all_properties=True)
+    for member in (owner, clerk):
+        member.user.email = f"{member.user.pk}@example.com"
+        member.user.save()
     tx = receive(creds)
 
     staff = Message.objects.filter(type="mpesa_unmatched")
     assert {m.user for m in staff} == {owner.user, clerk.user}
     assert all(m.channel == "IN_APP" and "Jane Doe" in m.body and "ZZ-99" in m.body for m in staff)
-    payer = Message.objects.get(type="payment_unmatched")
-    assert (payer.tenant, payer.user, payer.to, payer.channel) == (None, None, STRANGER, "SMS")
-    assert tx.trans_id in payer.body and "03/02/2026" in payer.body
+    emails = Message.objects.filter(type="mpesa_unmatched_email")
+    assert {m.user for m in emails} == {owner.user, clerk.user}
+    assert all(m.channel == "EMAIL" and m.to == m.user.email and tx.trans_id in m.body for m in emails)
 
     c2b.process(tx)  # nothing twice
-    assert Message.objects.count() == 3
+    assert Message.objects.count() == 4
 
 
-def test_payer_who_is_a_tenant_is_texted_as_the_tenant(creds, lease):
-    tenant = lease.primary_tenant
-    receive(creds, MSISDN=tenant.phone.lstrip("+"))
-    assert Message.objects.get(type="payment_unmatched").tenant == tenant
-
-
-def test_hidden_number_gets_no_text(creds, lease):
-    receive(creds, MSISDN=c2b.phone_hash(STRANGER))
-    assert not Message.objects.filter(type="payment_unmatched").exists()
-    assert Message.objects.filter(type="mpesa_unmatched").exists()
-
-
-def test_payer_who_stopped_sms_is_skipped(owner, creds, lease):
-    tenant = lease.primary_tenant
-    notification_services.set_tenant_channel(owner, tenant, "SMS", allowed=False)
-    receive(creds, MSISDN=tenant.phone.lstrip("+"))
-    assert Message.objects.get(type="payment_unmatched").status == Message.Status.SKIPPED
-
-
-def test_shared_number_goes_to_the_bare_number_and_respects_a_stop(owner, prop, creds, lease):
-    other = make_lease(owner, prop, code="B2")  # same phone as `lease`
-    notification_services.set_tenant_channel(owner, other.primary_tenant, "SMS", allowed=False)
-    receive(creds, MSISDN=lease.primary_tenant.phone.lstrip("+"), TransAmount="1")
-    message = Message.objects.get(type="payment_unmatched")
-    assert message.tenant is None and message.to == lease.primary_tenant.phone
-    assert message.status == Message.Status.SKIPPED
+def test_the_payer_is_told_nothing_until_it_is_matched(creds, lease):
+    receive(creds, MSISDN=lease.primary_tenant.phone.lstrip("+"))
+    receive(creds, MSISDN=STRANGER.lstrip("+"), n=2)
+    assert not Message.objects.exclude(type__in=["mpesa_unmatched", "mpesa_unmatched_email"]).exists()
+    assert not Message.objects.filter(channel="SMS").exists()
 
 
 def test_confident_match_alerts_nobody(creds, lease):
     receive(creds, BillRefNumber=lease.unit.payment_reference)
-    assert not Message.objects.filter(type__in=["mpesa_unmatched", "payment_unmatched"]).exists()
+    assert not Message.objects.filter(type__in=["mpesa_unmatched", "mpesa_unmatched_email"]).exists()
 
 
 def test_alert_failure_does_not_undo_the_inbox(creds, lease, monkeypatch):
@@ -396,9 +377,10 @@ def test_code_already_recorded_by_hand_is_not_paid_twice(owner, org, creds, leas
     assert (tx.status, tx.payment, tx.suggested_lease) == (Status.UNMATCHED, None, lease)
     assert "Already recorded by hand on" in tx.note and lease.number in tx.note
     assert Payment.objects.get() == typed and lease_balance(lease) == 0
-    # Staff are told; the payer already has a receipt, so no "we could not match it" SMS.
+    # Staff are told; the payer already has a receipt from the hand-recorded payment.
     assert Message.objects.filter(type="mpesa_unmatched").exists()
-    assert not Message.objects.filter(type="payment_unmatched").exists()
+    assert set(Message.objects.values_list("type", flat=True)) <= {"mpesa_unmatched", "mpesa_unmatched_email",
+                                                                    "payment_received"}
     with pytest.raises(ValidationError, match="already recorded by hand"):
         inbox.accept_suggestion(owner, tx)
     assert Payment.objects.count() == 1

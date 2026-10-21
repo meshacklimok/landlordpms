@@ -9,12 +9,12 @@
   </summary>
   <div class="px-3 pb-3">
     <p class="small text-body-secondary mb-2">{% trans "Leave every box blank to pay the oldest invoice first. Anything not allocated is kept as credit." %}</p>
-    <div class="d-flex gap-2 mb-2">
+    <div class="d-flex flex-wrap gap-2 mb-2">
       <button type="button" class="btn btn-sm btn-outline-secondary" data-alloc-auto>{% trans "Fill oldest first" %}</button>
       <button type="button" class="btn btn-sm btn-link text-body-secondary" data-alloc-clear>{% trans "Clear" %}</button>
     </div>
-    <table class="table table-sm align-middle small mb-0">
-      <thead><tr><th>{% trans "Invoice" %}</th><th class="d-none d-sm-table-cell">{% trans "Due" %}</th><th class="text-end">{% trans "Left to pay" %}</th><th class="text-end" style="width: 9rem">{% trans "Apply" %}</th></tr></thead>
+    <div class="table-responsive"><table class="table table-sm align-middle small mb-0">
+      <thead><tr><th>{% trans "Invoice" %}</th><th class="d-none d-sm-table-cell">{% trans "Due" %}</th><th class="text-end">{% trans "Left to pay" %}</th><th class="text-end w-9r">{% trans "Apply" %}</th></tr></thead>
       <tbody>
         {% for invoice, f in rows %}
         <tr>
@@ -28,7 +28,7 @@
         </tr>
         {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </div>
 </details>
 {% endif %}{% endwith %}

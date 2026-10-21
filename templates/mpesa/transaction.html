@@ -1,8 +1,8 @@
 {% extends "mpesa/_base.html" %}{% load i18n money access %}
 {% block title %}{{ tx.trans_id }}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
-  <a href="{% if tx.status == 'UNMATCHED' or tx.status == 'FLAGGED' %}{% if can_match %}{% url 'mpesa:inbox' %}{% else %}{% url 'mpesa:transactions' %}{% endif %}{% else %}{% url 'mpesa:transactions' %}{% endif %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left"></i> {% trans "M-Pesa" %}</a>
+<div class="mx-auto mw-760">
+  <a href="{% if tx.status == 'UNMATCHED' or tx.status == 'FLAGGED' %}{% if can_match %}{% url 'mpesa:inbox' %}{% else %}{% url 'mpesa:transactions' %}{% endif %}{% else %}{% url 'mpesa:transactions' %}{% endif %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "M-Pesa" %}</a>
   <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mt-2 mb-3">
     <div>
       <h1 class="h3 mb-0"><code class="text-body">{{ tx.trans_id }}</code> {% include "mpesa/_status.html" %}</h1>
@@ -36,14 +36,14 @@
     <form method="post" class="alert alert-success d-flex flex-wrap align-items-center gap-2 py-2" data-confirm="{% blocktrans with lease=tx.suggested_lease.number %}Match this payment to {{ lease }}?{% endblocktrans %}">{% csrf_token %}
       <input type="hidden" name="action" value="accept">
       <div class="flex-grow-1 small"><strong>{% trans "Suggested:" %}</strong> {{ tx.suggested_lease.primary_tenant.name|default:"—" }} · {{ tx.suggested_lease.unit.property.name }} · {{ tx.suggested_lease.unit.code }} <span class="text-body-secondary">({% trans "the payer's number is on this lease" %})</span></div>
-      <button class="btn btn-sm btn-success"><i class="bi bi-check2"></i> {% trans "Accept" %}</button>
+      <button class="btn btn-sm btn-success"><i class="bi bi-check2" aria-hidden="true"></i> {% trans "Accept" %}</button>
     </form>
     {% endif %}
     <form method="get" class="mb-2" role="search">
       <div class="input-group">
-        <span class="input-group-text bg-body"><i class="bi bi-search"></i></span>
+        <span class="input-group-text bg-body"><i class="bi bi-search" aria-hidden="true"></i></span>
         <input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Tenant, unit, account reference or lease' %}" aria-label="{% trans 'Search leases' %}">
-        <button class="btn btn-dark">{% trans "Find" %}</button>
+        <button class="btn btn-outline-secondary">{% trans "Find" %}</button>
       </div>
     </form>
     <div class="list-group">
@@ -81,7 +81,7 @@
   </div></form>
   {% elif can_match and tx.status == "IGNORED" %}
   <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="restore">
-    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-counterclockwise"></i> {% trans "Put back in the inbox" %}</button>
+    <button class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i> {% trans "Put back in the inbox" %}</button>
   </form>
   {% endif %}
 

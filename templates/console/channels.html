@@ -1,0 +1,75 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Messages and AI" %}{% endblock %}
+{% block console_title %}{% trans "Messages and AI, against their limits" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "This month so far. Put your plan's monthly allowance in the settings (EMAIL_MONTHLY_LIMIT, SMS_MONTHLY_LIMIT, WHATSAPP_MONTHLY_LIMIT) and each box shows how close you are, and whether the pace will take you over before month end. That is the sign to upgrade." %}</p>
+<div class="row g-3 mb-3">
+  {% for c in msgs.channels %}
+  <div class="col-lg-4"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{{ c.name }}</div>
+    <div class="h4 mb-0">{{ c.sent }} <span class="small text-muted">{% trans "sent" %}</span></div>
+    <ul class="small list-unstyled mb-2">
+      <li>{% blocktrans with p=c.projected %}About {{ p }} by month end at this pace{% endblocktrans %}</li>
+      {% if c.limit %}<li class="{% if c.projected_over %}text-danger{% endif %}">{% blocktrans with u=c.limit_used l=c.limit %}{{ u }}% of the {{ l }} allowed{% endblocktrans %}{% if c.projected_over %} · {% trans "likely to pass the limit" %}{% endif %}{% if c.days_left is not None %} · {% blocktrans with d=c.days_left %}about {{ d }} days left{% endblocktrans %}{% endif %}</li>
+      {% else %}<li class="text-muted">{% trans "No limit set" %}</li>{% endif %}
+      <li>{% blocktrans with f=c.failed s=c.skipped %}{{ f }} failed · {{ s }} skipped{% endblocktrans %}{% if c.failed_share %} ({{ c.failed_share }}% failed){% endif %}</li>
+      {% if c.delivered_share is not None %}<li>{% blocktrans with d=c.delivered_share %}{{ d }}% delivery confirmed{% endblocktrans %}</li>{% endif %}
+      <li>{% blocktrans with o=c.organizations t=c.tenants %}{{ o }} organizations · {{ t }} tenants reached{% endblocktrans %}</li>
+      {% if c.cost %}<li>{% blocktrans with t=c.cost e=c.cost_each %}Cost {{ t }}{% endblocktrans %}{% if c.cost_each %} ({{ c.cost_each }} each){% endif %}</li>{% endif %}
+    </ul>
+    {% if c.limit %}<div class="progress" role="progressbar" aria-label="{{ c.name }}" aria-valuenow="{{ c.limit_used }}" aria-valuemin="0" aria-valuemax="100" style="height:.5rem"><div class="progress-bar{% if c.projected_over %} bg-danger{% endif %}" style="width: {% if c.limit_used > 100 %}100{% else %}{{ c.limit_used }}{% endif %}%"></div></div>{% endif %}
+  </div></div></div>
+  {% endfor %}
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="messages" title=_("Messages sent each month") note=_("Email, SMS and WhatsApp.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Sent each month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th></th>{% for m in msgs.months %}<th class="text-end">{{ m }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for c in msgs.channels %}<tr><td>{{ c.name }}</td>{% for n in c.history %}<td class="text-end">{{ n }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table></div>
+    {% for c in msgs.channels %}{% if c.by_type %}
+    <p class="small mb-1"><strong>{{ c.name }}</strong>: {% for name, n in c.by_type %}{{ name|cut:"_"|lower }} {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if c.by_provider %} · {% for p, n in c.by_provider %}{{ p }} {{ n }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</p>
+    {% endif %}{% endfor %}
+  </div>
+</div>
+
+<h2 class="h6">{% trans "Messages by category" %}</h2>
+<p class="small text-muted">{% trans "Sent (not failed or skipped) this month, and since the start. Each column is a channel." %}</p>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th rowspan="2">{% trans "Category" %}</th>{% for c in categories.channels %}<th colspan="2" class="text-center">{{ c }}</th>{% endfor %}<th colspan="2" class="text-center">{% trans "All channels" %}</th></tr>
+  <tr>{% for c in categories.channels %}<th class="text-end">{% trans "Month" %}</th><th class="text-end">{% trans "Ever" %}</th>{% endfor %}<th class="text-end">{% trans "Month" %}</th><th class="text-end">{% trans "Ever" %}</th></tr></thead>
+  <tbody>{% for r in categories.rows %}<tr><td>{{ r.type }}</td>{% for c in r.counts %}<td class="text-end">{{ c.month }}</td><td class="text-end">{{ c.ever }}</td>{% endfor %}<td class="text-end">{{ r.month }}</td><td class="text-end">{{ r.ever }}</td></tr>
+  {% empty %}<tr><td colspan="8" class="text-muted">{% trans "Nothing sent yet." %}</td></tr>{% endfor %}</tbody>
+  {% if categories.rows %}<tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td>{% for t in categories.totals %}<td class="text-end">{{ t.month }}</td><td class="text-end">{{ t.ever }}</td>{% endfor %}<td></td><td></td></tr></tfoot>{% endif %}
+</table></div>
+
+<h2 class="h5 mt-4">{% trans "The AI assistant" %}</h2>
+{% with a=ai %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Questions this month" %}</div><div class="h4 mb-0">{{ a.this_month }}</div>
+    <div class="small">{% blocktrans with n=a.total_ever %}{{ n }} since the start{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Answered" %}</div><div class="h4 mb-0">{% if a.answered_share is not None %}{{ a.answered_share }}%{% else %}—{% endif %}</div>
+    <div class="small">{% blocktrans with f=a.failed l=a.limited %}{{ f }} failed · {{ l }} over the daily limit{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Tokens this month" %}</div><div class="h4 mb-0">{{ a.input_tokens|add:a.output_tokens }}</div>
+    <div class="small">{% blocktrans with i=a.input_tokens o=a.output_tokens %}{{ i }} in · {{ o }} out{% endblocktrans %}{% if a.tokens_each %} · {{ a.tokens_each }} per question{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Organizations using it" %}</div><div class="h4 mb-0">{{ a.organizations }}</div>
+    <div class="small">{% blocktrans with e=a.enabled_organizations t=a.tenant_assistant_organizations %}{{ e }} have it on · {{ t }} let tenants ask{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+<p class="small text-muted">{% if a.cost_each %}{% blocktrans with s=a.spend c=a.cost_each %}From your AI spending this month (KES {{ s }}), each answer costs about KES {{ c }}.{% endblocktrans %}{% else %}{% trans "Enter your AI payments on the Money page to see what each answer costs." %}{% endif %}</p>
+<div class="row g-3">
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="ai" title=_("Questions each month") note=_("By who asked.") label=_("Monthly counts.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="tokens" title=_("Tokens each month") note=_("Used for the AI bill.") label=_("Monthly counts.") %}</div>
+</div>
+{% endwith %}
+{% include "console/_specs.html" %}
+{% endblock %}

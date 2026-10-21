@@ -1,12 +1,9 @@
 {% extends "base.html" %}{% load i18n money %}
 {% block title %}{{ report.get_kind_display }} {% trans "report" %} · {{ unit.code }}{% endblock %}
-{% block head %}<style>
-@media print { nav, .d-print-none, .alert-dismissible { display: none !important; } .card { box-shadow: none !important; break-inside: avoid; } body { background: #fff; } }
-</style>{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
   <a href="{% url 'leases:detail' lease.public_id %}" class="small d-print-none">← {{ lease }} · {{ unit.code }}</a>
-  <div class="d-flex justify-content-between align-items-start mt-2 mb-3 gap-2">
+  <div class="d-flex flex-wrap justify-content-between align-items-start mt-2 mb-3 gap-2">
     <div>
       <h1 class="h4 mb-0">{% blocktrans with kind=report.get_kind_display %}{{ kind }} condition report{% endblocktrans %}</h1>
       <div class="small text-muted">{{ property.name }} · {% trans "Unit" %} {{ unit.code }} · {{ lease }}{% if lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %}</div>
@@ -15,7 +12,7 @@
       {% if report.status == "COMPLETED" %}<span class="badge text-bg-success">{{ report.get_status_display }}</span>
       {% elif report.status == "CANCELLED" %}<span class="badge text-bg-secondary">{{ report.get_status_display }}</span>
       {% else %}<span class="badge text-bg-warning">{{ report.get_status_display }}</span>{% endif %}
-      {% if report.status == "COMPLETED" %}<button type="button" class="btn btn-outline-secondary btn-sm d-print-none" onclick="window.print()"><i class="bi bi-printer"></i> {% trans "Print" %}</button>{% endif %}
+      {% if report.status == "COMPLETED" %}<button type="button" class="btn btn-outline-secondary btn-sm d-print-none" data-print><i class="bi bi-printer" aria-hidden="true"></i> {% trans "Print" %}</button>{% endif %}
     </div>
   </div>
 
@@ -24,7 +21,12 @@
   {% elif report.status == "COMPLETED" %}
   <div class="alert alert-success small">{% blocktrans with by=report.completed_by.full_name on=report.completed_at|date:"j M Y H:i" %}Completed by {{ by }} on {{ on }}. It can no longer be changed.{% endblocktrans %}</div>
   {% elif can_edit and left_count %}
-  <div class="alert alert-info small d-print-none">{% blocktrans count n=left_count %}{{ n }} item still needs a condition before the report can be completed.{% plural %}{{ n }} items still need a condition before the report can be completed.{% endblocktrans %}</div>
+  <div class="alert alert-info small d-print-none">{% blocktrans count n=left_count %}{{ n }} item still needs a condition before the report can be completed.{% plural %}{{ n }} items still need a condition before the report can be completed.{% endblocktrans %}
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <button form="details" name="action" value="fill_good" class="btn btn-sm btn-outline-primary">{% trans "Mark the rest as Good" %}</button>
+      <button form="details" name="action" value="fill_not_checked" class="btn btn-sm btn-outline-secondary">{% trans "Mark the rest as Not checked" %}</button>
+    </div>
+  </div>
   {% endif %}
 
   {% if report.kind == "MOVE_OUT" %}
@@ -50,8 +52,8 @@
       <dt class="col-5">{% trans "Inspected by" %}</dt><dd class="col-7">{{ report.inspected_by.full_name }}</dd>
       <dt class="col-5">{% trans "Tenant present" %}</dt><dd class="col-7">{% if report.tenant_present %}{% trans "Yes" %}{% else %}{% trans "No" %}{% endif %}</dd>
       {% if report.keys_handed is not None %}<dt class="col-5">{% trans "Keys handed over" %}</dt><dd class="col-7">{{ report.keys_handed }}</dd>{% endif %}
-      {% if report.tenant_comments %}<dt class="col-5">{% trans "Tenant's comments" %}</dt><dd class="col-7" style="white-space:pre-line">{{ report.tenant_comments }}</dd>{% endif %}
-      {% if report.notes %}<dt class="col-5">{% trans "General notes" %}</dt><dd class="col-7" style="white-space:pre-line">{{ report.notes }}</dd>{% endif %}
+      {% if report.tenant_comments %}<dt class="col-5">{% trans "Tenant's comments" %}</dt><dd class="col-7 pre-line">{{ report.tenant_comments }}</dd>{% endif %}
+      {% if report.notes %}<dt class="col-5">{% trans "General notes" %}</dt><dd class="col-7 pre-line">{{ report.notes }}</dd>{% endif %}
     </dl>
     {% endif %}
   </div></div>
@@ -110,9 +112,9 @@
   {% endif %}
 
   {% if can_edit %}
-  <div class="d-flex gap-2 mb-4 d-print-none">
+  <div class="d-flex flex-wrap gap-2 mb-4 d-print-none">
     <button form="details" name="action" value="save" class="btn btn-outline-primary">{% trans "Save" %}</button>
-    <button form="details" name="action" value="complete" class="btn btn-primary" onclick="return confirm('{% trans "Complete this report? It is locked after this and cannot be changed." %}')">{% trans "Complete report" %}</button>
+    <button form="details" name="action" value="complete" class="btn btn-primary" data-confirm="{% trans "Complete this report? It is locked after this and cannot be changed." %}">{% trans "Complete report" %}</button>
   </div>
   {% endif %}
 
@@ -133,7 +135,7 @@
     <form method="post" novalidate>{% csrf_token %}
       <input type="hidden" name="action" value="deduct">
       {% with form=deduct_form %}{% include "partials/form.html" %}{% endwith %}
-      <button class="btn btn-sm btn-primary" onclick="return confirm('{% trans "Record this deduction?" %}')">{% trans "Record deduction" %}</button>
+      <button class="btn btn-sm btn-primary" data-confirm="{% trans "Record this deduction?" %}">{% trans "Record deduction" %}</button>
     </form>
   </div></div>
   {% endif %}

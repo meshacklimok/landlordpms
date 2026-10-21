@@ -1,0 +1,15 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Emails sent to owners" %}{% endblock %}
+{% block console_title %}{% trans "Emails sent to owners" %}{% endblock %}
+{% block console %}
+<p><a class="btn btn-sm btn-primary" href="{% url 'console:owner_email' %}">{% trans "Write a new email" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:owners' %}">{% trans "Owners" %}</a></p>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Subject" %}</th><th>{% trans "Sent" %}</th><th>{% trans "By" %}</th><th>{% trans "To" %}</th><th class="text-end">{% trans "Delivered" %}</th><th class="text-end">{% trans "Failed" %}</th></tr></thead>
+  <tbody>{% for e in items %}<tr>
+    <td><a href="{% url 'console:owner_email_detail' e.pk %}">{{ e.subject }}</a></td>
+    <td class="text-nowrap">{{ e.created_at|date:"j M Y H:i" }}</td><td>{{ e.sent_by.full_name|default:"—" }}</td>
+    <td>{{ e.audience }}</td><td class="text-end">{{ e.sent }}{% if not e.is_done %} <span class="text-muted">/ {{ e.recipients }}</span>{% endif %}</td><td class="text-end">{{ e.failed }}</td>
+  </tr>{% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nothing sent yet." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

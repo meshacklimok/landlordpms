@@ -19,8 +19,8 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from billing.invoicing import lease_balance
-from core import ratelimit
-from core.money import ZERO
+from core import charts, exports, ratelimit
+from core.money import ZERO, format_money
 from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
@@ -64,19 +64,38 @@ class PaymentListView(CapabilityRequiredMixin, View):
         filters = form.filters()
         page = Paginator(qs.order_by("-paid_at", "-pk"), PAGE_SIZE).get_page(request.GET.get("page"))
         today = timezone.localdate()
+        currency = m.organization.currency
+        received = selectors.received(base, currency, today, date_from=filters.get("date_from"),
+                                      date_to=filters.get("date_to"), other_label=_("Other properties"))
         return render(request, self.template_name, {
-            "page": page, "form": form, "filters": filters,
+            "page": page, "form": form, "filters": filters, "received": received,
+            "specs": _received_charts(received) if received else None,
             "status": filters.get("status", ""),
             "filtered": bool(form.without_status()),
             "totals": selectors.totals_by_state(base),
             "states": Payment.STATES,
             "presets": [(key, start, end, start == filters.get("date_from") and end == filters.get("date_to"))
-                        for key, start, end in selectors.period_presets(today)],
+                        for key, start, end in selectors.period_presets(today, request.organization.financial_year_start_month)],
             "pending_count": selectors.pending_review(m).count(),
             "can_record": can(m, "payments.record"),
             "can_export": can(m, "reports.export"),
             "show_property": form.fields["property"].queryset.count() > 1,
         })
+
+
+def _received_charts(received) -> dict:
+    """The charts above the list (D-114): money over time, by method and by property."""
+    cur = received.currency
+    return {
+        "periods": charts.chart(
+            "bar", [f"{d.day} {d:%b}" if received.daily else f"{d:%b %Y}" for d, _a, _n in received.periods],
+            [charts.series(_("Money received"), [a for _d, a, _n in received.periods], "1")], currency=cur),
+        "methods": charts.doughnut(_("Money received"), [(label, a) for label, a, _n in received.methods],
+                                   charts.SERIES, currency=cur),
+        "places": charts.chart("bar", [name for name, _a in received.places],
+                               [charts.series(_("Money received"), [a for _n, a in received.places], "1")],
+                               currency=cur, horizontal=True) if len(received.places) > 1 else None,
+    }
 
 
 class PaymentExportView(CapabilityRequiredMixin, View):
@@ -93,7 +112,7 @@ class PaymentExportView(CapabilityRequiredMixin, View):
         _form, _base, qs = _filtered(request)
         qs = qs.select_related("recorded_by").order_by("-paid_at", "-pk")
         writer = csv.writer(_Echo())
-        rows = (writer.writerow([_cell(v) for v in row]) for row in self._rows(qs))
+        rows = (writer.writerow([exports.safe(v) for v in row]) for row in self._rows(qs))
         response = StreamingHttpResponse(rows, content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="payments-{timezone.localdate():%Y-%m-%d}.csv"'
         return response
@@ -112,11 +131,6 @@ class PaymentExportView(CapabilityRequiredMixin, View):
 class _Echo:
     def write(self, value):
         return value
-
-
-def _cell(value) -> str:
-    text = str(value)
-    return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
 
 
 def _is_uuid(value: str) -> bool:
@@ -256,6 +270,8 @@ class PaymentDetailView(CapabilityRequiredMixin, View):
             "duplicates": selectors.duplicates_of(payment).filter(
                 pk__in=selectors.visible_payments(m).values("pk")).select_related("lease__unit")[:5],
             "can_confirm": can_confirm, "can_reverse": can_reverse,
+            # Send the receipt to the tenant in words staff choose (D-125).
+            "can_send": hasattr(payment, "receipt") and can(m, "messages.send", prop),
             "code_flag": code_flag(payment) if payment.method == Payment.Method.MPESA else None,
             "code_check": getattr(payment, "code_check", None),
             "can_record": can(m, "payments.record", prop) and payment.lease.status != Lease.Status.DRAFT
@@ -335,6 +351,30 @@ class PublicReceiptView(View):
             raise Http404
         response = FileResponse(receipt.pdf.open("rb"), content_type="application/pdf",
                                 filename=f"{receipt.number}.pdf")
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+
+class PublicReceiptCheckView(View):
+    """What a receipt's QR code opens (D-194): is this receipt genuine, and is it still good?
+
+    It shows only what is printed on the receipt's face: number, who issued it, the date, method and amount, and
+    whether the payment has since been reversed. No tenant, unit or balance. The token is the key.
+    """
+
+    def get(self, request, token):
+        if not ratelimit.hit(f"receipt_check:ip:{client_ip(request)}", RECEIPT_LINK_RATE_LIMIT, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        receipt = (Receipt.objects.select_related("payment", "organization").filter(share_token=token).first())
+        if receipt is None:
+            response = render(request, "payments/receipt_check.html", {"receipt": None}, status=404)
+        else:
+            payment = receipt.payment
+            response = render(request, "payments/receipt_check.html", {
+                "receipt": receipt, "organization": receipt.organization.display_name, "payment": payment,
+                "reversed": payment.status == Payment.Status.REVERSED,
+                "amount": format_money(payment.amount, payment.lease.currency)})
         response["X-Robots-Tag"] = "noindex, nofollow"
         response["Referrer-Policy"] = "no-referrer"
         return response

@@ -5,7 +5,7 @@
     <div class="d-flex justify-content-between align-items-start gap-2">
       <div>
         <div class="fw-medium">{{ t.label }}{% if row.changed %} <span class="badge bg-primary-subtle text-primary-emphasis fw-normal">{% trans "Changed" %}</span>{% endif %}</div>
-        <div class="small text-body-secondary">{% for c in rule.channels %}{% if c == "SMS" %}{% trans "SMS" %}{% elif c == "IN_APP" %}{% trans "In-app" %}{% else %}{{ c }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if t.mandatory %} · {% trans "Always sent" %}{% endif %}</div>
+        <div class="small text-body-secondary">{% for c in rule.channels %}{% if c == "SMS" %}{% trans "SMS" %}{% elif c == "IN_APP" %}{% trans "In-app" %}{% elif c == "EMAIL" %}{% trans "Email" %}{% else %}{{ c }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if t.mandatory %} · {% trans "Always sent" %}{% endif %}</div>
       </div>
       {% if t.mandatory %}
       <span class="badge bg-secondary-subtle text-secondary-emphasis">{% trans "Required" %}</span>
@@ -17,6 +17,18 @@
       {% endif %}
     </div>
 
+    {% if row.switches %}
+    <fieldset class="mt-2">
+      <legend class="form-label small mb-1 float-none">{% trans "Send by" %}</legend>
+      {% for sw in row.switches %}
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="checkbox" name="{{ sw.name }}" id="{{ sw.name }}-{{ t.codename }}" {% if sw.on %}checked{% endif %}>
+        <label class="form-check-label small" for="{{ sw.name }}-{{ t.codename }}">{{ sw.label }}{% if sw.needs_setup %} <span class="text-body-secondary">({% trans "not set up yet" %})</span>{% endif %}</label>
+      </div>
+      {% endfor %}
+      <div class="form-text">{% trans "Email goes to tenants who have an email address. Leave SMS off to send only by email." %}</div>
+    </fieldset>
+    {% endif %}
     {% if t.offsets or t.audience == "tenant" %}
     <div class="row g-2 mt-1 align-items-end">
       {% if t.offsets %}
@@ -38,8 +50,8 @@
     {% endif %}
     {% if row.error %}<div class="small text-danger mt-2">{{ row.error }}</div>{% endif %}
 
-    <div class="d-flex gap-2 mt-2">
-      <button class="btn btn-sm btn-dark" name="action" value="save">{% trans "Save" %}</button>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <button class="btn btn-sm btn-primary" name="action" value="save">{% trans "Save" %}</button>
       {% if row.changed %}<button class="btn btn-sm btn-link text-body-secondary" name="action" value="reset">{% trans "Back to default" %}</button>{% endif %}
     </div>
   </div>

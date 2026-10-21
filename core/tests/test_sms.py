@@ -7,7 +7,7 @@ from decimal import Decimal
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from core.sms import AfricasTalkingSmsSender, parse_cost
+from notifications.providers.sms import AfricasTalkingSmsSender, parse_cost
 
 
 @pytest.fixture
@@ -68,7 +68,14 @@ def test_rejected_recipient(at, monkeypatch, code, permanent):
 def test_empty_recipients_is_a_retryable_failure(at, monkeypatch):
     reply(at, monkeypatch, {"SMSMessageData": {"Message": "InvalidSenderId", "Recipients": []}})
     result = at.send("+254712345678", "Hello")
-    assert not result.ok and not result.permanent and result.error == "InvalidSenderId"
+    assert not result.ok and not result.permanent and result.error == "402 InvalidSenderId"
+
+
+def test_an_odd_reply_is_a_failure_not_a_crash(at, monkeypatch):
+    reply(at, monkeypatch, {"SMSMessageData": {"Recipients": [{"statusCode": "abc", "status": "?"}]}})
+    assert not at.send("+254712345678", "Hello").ok
+    reply(at, monkeypatch, ["not", "a", "dict"])
+    assert not at.send("+254712345678", "Hello").ok
 
 
 def test_http_4xx_is_permanent_5xx_and_network_are_not(at, monkeypatch):

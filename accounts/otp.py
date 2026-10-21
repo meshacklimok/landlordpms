@@ -3,6 +3,7 @@ allow few attempts, and requests are rate-limited per phone (doc 14 D14)."""
 
 import hashlib
 import hmac
+import logging
 import secrets
 from datetime import timedelta
 
@@ -13,15 +14,20 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from core import ratelimit
-from core.sms import send_sms
+from notifications.email_html import send_branded
+from notifications.providers.mail import SYSTEM, mailer_for
+from notifications.providers.sms import send_sms
 
 from .models import OTPCode
+
+logger = logging.getLogger(__name__)
 
 OTP_TTL = timedelta(minutes=10)
 OTP_LENGTH = 6
 MAX_ATTEMPTS = 5
 RESEND_COOLDOWN = timedelta(seconds=60)
 MAX_PER_HOUR = 5
+MAX_PER_PHONE_PER_DAY = 10  # across every purpose, so changing the purpose does not reset the count
 
 
 class OTPError(Exception):
@@ -38,20 +44,35 @@ def _throttle(phone: str, purpose: str, last_sent_at) -> None:
         raise OTPError(_("Please wait a minute before asking for another code."))
     if not ratelimit.hit(f"otp:{purpose}:{phone}", MAX_PER_HOUR, 3600):
         raise OTPError(_("Too many codes requested. Try again in an hour."))
+    if not ratelimit.hit(f"otp-day:{phone}", MAX_PER_PHONE_PER_DAY, 86400):
+        raise OTPError(_("Too many codes requested for this number today. Try again tomorrow."))
 
 
-def issue_otp(phone: str, purpose: str) -> None:
+def issue_otp(phone: str, purpose: str, email: str = "") -> None:
+    """Sends a code to the phone by SMS, or to `email` when given. The code stays keyed by the phone."""
     now = timezone.now()
     last = OTPCode.objects.filter(phone=phone, purpose=purpose).order_by("-created_at").first()
     _throttle(phone, purpose, last.created_at if last else None)
+    if not email and not ratelimit.hit("otp-sms-all", getattr(settings, "OTP_SMS_DAILY_LIMIT", 3000), 86400):
+        # Many different numbers in one day looks like someone running up our SMS bill, not like sign-ins.
+        logger.error("Daily limit of %s login-code SMS reached", getattr(settings, "OTP_SMS_DAILY_LIMIT", 3000))
+        raise OTPError(_("Codes by SMS are paused for a while. Try again later, or ask for the code by email."))
 
     code = f"{secrets.randbelow(10 ** OTP_LENGTH):0{OTP_LENGTH}d}"
     # Only the newest code is valid.
     OTPCode.objects.filter(phone=phone, purpose=purpose, consumed_at__isnull=True).update(consumed_at=now)
     OTPCode.objects.create(phone=phone, purpose=purpose, code_hash=_hash(phone, purpose, code),
                            expires_at=now + OTP_TTL)
-    send_sms(phone, _("Your landlordpms code is %(code)s. It expires in 10 minutes. Never share it.")
-             % {"code": code})
+    text = _("Your NyumbaPMS code is %(code)s. It expires in 10 minutes. Never share it.") % {"code": code}
+    if email:
+        try:
+            send_branded(_("Your NyumbaPMS code"),
+                         _("Your NyumbaPMS code:\n\n%(code)s\n\nIt expires in 10 minutes. Never share it.")
+                         % {"code": code}, [email], using=mailer_for(SYSTEM))
+        except Exception as exc:  # noqa: BLE001 - any mail failure reads the same to the user
+            raise OTPError(_("We could not send the email. Check the address and try again.")) from exc
+        return
+    send_sms(phone, text)
 
 
 def pretend_issue_otp(phone: str, purpose: str) -> None:

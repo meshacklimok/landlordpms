@@ -3,7 +3,7 @@
 {% block content %}
 <div class="wide mx-auto">
   <h1 class="h3 mb-0">{% trans "Expense categories" %}</h1>
-  <p class="small text-body-secondary">{% trans "Used to group expenses in the profit and loss." %}</p>
+  <p class="small text-body-secondary">{% trans "Used to group expenses in the profit and loss. The kind of cost (salaries, security, insurance and so on) groups them on the profitability report." %}</p>
   {% include "expenses/_nav.html" with section="categories" %}
   <div class="card shadow-sm mb-3"><ul class="list-group list-group-flush">
     {% for c in categories %}
@@ -14,6 +14,10 @@
         <input type="text" name="name" value="{{ c.name }}" maxlength="60" class="form-control form-control-sm" aria-label="{% trans 'Name' %}">
         <button class="btn btn-sm btn-outline-secondary">{% trans "Rename" %}</button>
       </form>
+      <form method="post" class="d-flex gap-1">{% csrf_token %}
+        <input type="hidden" name="action" value="class"><input type="hidden" name="category" value="{{ c.public_id }}">
+        <select name="cost_class" class="form-select form-select-sm" aria-label="{% trans 'Kind of cost' %}">{% for value, label in cost_classes %}<option value="{{ value }}"{% if value == c.cost_class %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+        <button class="btn btn-sm btn-outline-secondary">{% trans "Save" %}</button></form>
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="archive"><input type="hidden" name="category" value="{{ c.public_id }}">
         <button class="btn btn-sm btn-link text-body-secondary">{% trans "Archive" %}</button></form>
       {% else %}

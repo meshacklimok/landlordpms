@@ -16,15 +16,18 @@ from datetime import timedelta
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from audit import services as audit
+from core import system_messages
 from core.phone import normalize_phone
-from core.sms import send_sms
+from notifications.providers.sms import send_sms
 
-from .capabilities import CAPABILITIES, OWNER_CRITICAL, ROLE_TEMPLATES
+from .capabilities import CAPABILITIES, OWNER_CRITICAL, ROLE_TEMPLATES, email_required_for
 from .models import (
+    Branch,
     Capability,
     Invitation,
     Membership,
@@ -36,7 +39,7 @@ from .models import (
     RoleTemplate,
     User,
 )
-from .permissions import clear_cache, effective_capabilities, require
+from .permissions import accessible_property_ids, branch_ids, clear_cache, effective_capabilities, require
 
 INVITATION_TTL = timedelta(days=7)
 
@@ -116,22 +119,55 @@ def copy_role_templates(organization: Organization) -> dict[str, Role]:
     return roles
 
 
+DEVICE_COOKIE = "npms_dev"
+
+
+def signup_marks(request) -> tuple[str, str]:
+    """(device id, hashed network address) of a sign-up request, or empty strings without one. The device id is the
+    long-lived cookie this browser already has, or a new one the view then sets (D-207)."""
+    if request is None:
+        return "", ""
+    import hashlib
+    import uuid
+
+    from django.conf import settings
+
+    from core.net import client_ip
+
+    device = request.COOKIES.get(DEVICE_COOKIE, "")
+    if not (len(device) == 32 and device.isalnum()):
+        device = uuid.uuid4().hex
+    request.signup_device = device
+    ip = client_ip(request)
+    ip_hash = hashlib.sha256(f"{settings.SECRET_KEY}:{ip}".encode()).hexdigest() if ip else ""
+    return device, ip_hash
+
+
 @transaction.atomic
 def create_organization(*, user: User, name: str, org_type: str = Organization.Type.INDIVIDUAL,
                         request=None) -> Membership:
     """Organization + roles + Owner membership in one transaction (doc 11 §16)."""
     if not user.phone_verified:
         raise PermissionDenied(_("Verify your phone number first."))
+    device, ip_hash = signup_marks(request)
     org = Organization.objects.create(name=name.strip(), org_type=org_type, created_by=user,
-                                      billing_phone=user.phone, billing_email=user.email or "")
+                                      billing_phone=user.phone, billing_email=user.email or "",
+                                      signup_device=device, signup_ip_hash=ip_hash)
     roles = copy_role_templates(org)
     owner_role = next(r for r in roles.values() if r.is_owner_role)
     membership = Membership.objects.create(user=user, organization=org, role=owner_role, all_properties=True)
     from subscriptions.services import subscription_for
 
     subscription_for(org)  # the 30-day trial (D-060 item 2)
+    from growth import referrals  # who referred this organization and which campaign brought it (D-133)
+
+    referrals.attach(org, request)
     audit.record("organization.create", actor=user, organization=org, obj=org, request=request,
                  changes={"name": org.name, "type": org.org_type})
+    from core import productevents
+
+    transaction.on_commit(lambda: productevents.capture(
+        "organization_created", user_id=user.pk, organization_id=org.pk, org_type=org.org_type))
     return membership
 
 
@@ -320,7 +356,8 @@ def set_member_active(actor: Membership, membership: Membership, active: bool, r
         clear_cache(membership)
         _no_escalation(actor, effective_capabilities(membership))
         _check_scope_escalation(actor, membership.all_properties,
-                                set(membership.property_access.values_list("property_id", flat=True)))
+                                set(membership.property_access.values_list("property_id", flat=True)),
+                                set(membership.branches.filter(archived_at__isnull=True).values_list("pk", flat=True)))
     if membership.is_active != active:
         membership.is_active = active
         membership.save(update_fields=["is_active", "updated_at"])
@@ -342,6 +379,141 @@ def remove_member(actor: Membership, membership: Membership, request=None) -> No
     audit.record("membership.remove", actor=actor.user, organization=actor.organization, obj=membership,
                  request=request)
 
+
+def set_require_mfa(actor: Membership, on: bool, request=None) -> None:
+    """Every member must pass two-step login to open the organization (D-107). Whoever switches it on must already
+    use it, so they cannot lock themselves out."""
+    from . import mfa
+
+    require(actor, "organization.manage")
+    org = actor.organization
+    if on and not mfa.is_enabled(actor.user):
+        raise ValidationError(_("Set up two-step login for yourself first, under Security."))
+    if org.require_mfa == on:
+        return
+    org.require_mfa = on
+    org.save(update_fields=["require_mfa", "updated_at"])
+    audit.record("organization.require_mfa_on" if on else "organization.require_mfa_off", actor=actor.user,
+                 organization=org, obj=org, request=request, changes={"require_mfa": [not on, on]})
+
+
+# What an owner edits on the organization page (D-123). Everything else on Organization has its own page (letters,
+# messages, tax residence, sender name) or is the Platform Admin's.
+ORGANIZATION_FIELDS = ("name", "org_type", "brand_name", "billing_phone", "billing_email", "document_footer",
+                       "address", "brand_color", "invoice_payment_info", "invoice_terms", "invoice_show_tenant_contact",
+                       "invoice_show_previous_balance", "tenant_self_signup",
+                       "holds_deposits", "financial_year_start_month", "invoice_lead_days", "prorate_partial_months", "late_fee_mode", "late_fee_amount",
+                       "late_fee_percent", "late_fee_cap", "deposit_refund_days", "deposit_deduction_headings",
+                       "deposit_proof_required", "deposit_allow_offset")
+
+
+def _check_late_fees(org: Organization, values: dict) -> None:
+    """A fixed fee needs an amount and a percentage a rate (D-129); the unused one is cleared."""
+    if "late_fee_mode" not in values:
+        return
+    mode, modes = values["late_fee_mode"], Organization.LateFeeMode
+    if mode == modes.FIXED:
+        if not values.get("late_fee_amount"):
+            raise ValidationError(_("Give the late fee amount."))
+        values["late_fee_percent"] = None
+    elif mode == modes.PERCENT:
+        if not values.get("late_fee_percent"):
+            raise ValidationError(_("Give the late fee percentage."))
+        if values["late_fee_percent"] > 100:
+            raise ValidationError(_("A late fee cannot be more than 100% of what is unpaid."))
+        values["late_fee_amount"] = None
+    else:
+        values["late_fee_amount"] = values["late_fee_percent"] = values["late_fee_cap"] = None
+    if values.get("late_fee_cap") is not None and values["late_fee_cap"] <= 0:
+        values["late_fee_cap"] = None
+
+
+@transaction.atomic
+def set_logo(actor: Membership, *, upload=None, remove=False, request=None) -> bool:
+    """Replace or remove the logo printed on invoices; True when it changed."""
+    return _set_picture(actor, "logo", upload, remove, request)
+
+
+@transaction.atomic
+def set_stamp(actor: Membership, *, upload=None, remove=False, request=None) -> bool:
+    """Replace or remove the signature or stamp printed at the end of invoices; True when it changed."""
+    return _set_picture(actor, "stamp", upload, remove, request)
+
+
+def _clean_picture(upload):
+    """The picture decoded and saved again as a PNG under a random name: nothing hidden in the original
+    file or its metadata is kept, and transparency stays."""
+    import io
+    import secrets
+
+    from django.core.files.base import ContentFile
+    from PIL import Image, ImageOps
+
+    try:
+        with Image.open(upload) as img:
+            if img.width * img.height > 25_000_000:
+                raise ValidationError(_("The picture is too large."))
+            img = ImageOps.exif_transpose(img).convert("RGBA")
+            img.thumbnail((1200, 1200))
+            out = io.BytesIO()
+            img.save(out, "PNG", optimize=True)
+    except (OSError, ValueError, Image.DecompressionBombError):
+        raise ValidationError(_("That picture cannot be read. Use a PNG or JPG.")) from None
+    return ContentFile(out.getvalue(), name=f"{secrets.token_hex(16)}.png")
+
+
+def _set_picture(actor: Membership, field: str, upload, remove: bool, request) -> bool:
+    require(actor, "organization.manage")
+    if not upload and not remove:
+        return False
+    org = _lock_org(actor.organization)
+    if getattr(org, field):
+        getattr(org, field).delete(save=False)
+    setattr(org, field, _clean_picture(upload) if upload else "")
+    org.save(update_fields=[field, "updated_at"])
+    setattr(actor.organization, field, getattr(org, field))
+    audit.record(f"organization.{field}_set" if upload else f"organization.{field}_removed", actor=actor.user,
+                 organization=org, obj=org, request=request)
+    return True
+
+
+@transaction.atomic
+def update_organization(actor: Membership, *, request=None, **values) -> dict:
+    """Save the organization's details and billing habits; returns {field: [before, after]} for what changed."""
+    require(actor, "organization.manage")
+    unknown = set(values) - set(ORGANIZATION_FIELDS)
+    if unknown:
+        raise ValueError(f"Not editable here: {sorted(unknown)}")
+    org = _lock_org(actor.organization)
+    if "name" in values:
+        values["name"] = (values["name"] or "").strip()
+        if not values["name"]:
+            raise ValidationError(_("Give the organization a name."))
+    if values.get("billing_phone"):
+        values["billing_phone"] = normalize_phone(values["billing_phone"])
+    if values.get("billing_email"):
+        values["billing_email"] = values["billing_email"].strip().lower()
+    _check_late_fees(org, values)
+    changes = {f: [getattr(org, f), v] for f, v in values.items() if getattr(org, f) != v}
+    # Switching late fees on starts the clock: invoices already overdue never get one.
+    if (changes.get("late_fee_mode", [None, None])[0] == Organization.LateFeeMode.OFF
+            and values["late_fee_mode"] != Organization.LateFeeMode.OFF):
+        changes["late_fees_from"] = [org.late_fees_from, timezone.localdate()]
+    if not changes:
+        return {}
+    for field, (_before, after) in changes.items():
+        setattr(org, field, after)
+        setattr(actor.organization, field, after)
+    org.full_clean(exclude=[f.name for f in Organization._meta.fields if f.name not in changes],
+                   validate_unique=False)
+    org.save(update_fields=[*changes, "updated_at"])
+    audit.record("organization.update", actor=actor.user, organization=org, obj=org, request=request,
+                 changes={f: [str(b), str(a)] for f, (b, a) in changes.items()})
+    if {"billing_phone", "billing_email"} & set(changes):
+        from subscriptions.services import recheck_trial
+
+        recheck_trial(org)
+    return changes
 
 @transaction.atomic
 def set_override(actor: Membership, membership: Membership, codename: str, granted: bool | None,
@@ -372,14 +544,16 @@ def set_override(actor: Membership, membership: Membership, codename: str, grant
                  request=request, changes={codename: [old, granted]})
 
 
-def _check_scope_escalation(actor: Membership, all_properties: bool, property_ids: set[int]) -> None:
+def _check_scope_escalation(actor: Membership, all_properties: bool, property_ids: set[int],
+                            branch_pks: set[int] = frozenset()) -> None:
     if actor.all_properties:
         return
     if all_properties:
         raise PermissionDenied(_("You cannot give access to all properties."))
-    own = set(actor.property_access.values_list("property_id", flat=True))
-    if property_ids - own:
+    if property_ids - accessible_property_ids(actor):
         raise PermissionDenied(_("You can only give access to properties you can access."))
+    if set(branch_pks) - branch_ids(actor):
+        raise PermissionDenied(_("You can only give access to branches you have."))
 
 
 def _org_property_ids(org: Organization, properties: Iterable) -> set[int]:
@@ -392,15 +566,30 @@ def _org_property_ids(org: Organization, properties: Iterable) -> set[int]:
     return ids
 
 
+def _org_branch_ids(org: Organization, branches: Iterable) -> set[int]:
+    """Live branches of the organization (D-127)."""
+    ids = {getattr(b, "pk", b) for b in branches}
+    found = set(Branch.objects.for_org(org).filter(pk__in=ids).values_list("pk", flat=True))
+    if found != ids:
+        raise PermissionDenied(_("That branch belongs to another organization or was removed."))
+    return ids
+
+
+def _branch_names(ids) -> list[str]:
+    return sorted(Branch.all_objects.filter(pk__in=ids).values_list("name", flat=True))
+
+
 @transaction.atomic
 def set_property_scope(actor: Membership, membership: Membership, *, all_properties: bool,
-                       properties: Iterable = (), request=None) -> None:
+                       properties: Iterable = (), branches: Iterable = (), request=None) -> None:
     require(actor, "staff.manage")
     _same_org(actor, membership)
     _require_owner_for(actor, membership=membership)
     ids = set() if all_properties else _org_property_ids(actor.organization, properties)
-    _check_scope_escalation(actor, all_properties, ids)
+    new_branches = set() if all_properties else _org_branch_ids(actor.organization, branches)
+    _check_scope_escalation(actor, all_properties, ids, new_branches)
     old_ids = set(membership.property_access.values_list("property_id", flat=True))
+    old_branches = set(membership.branches.values_list("pk", flat=True))
     old_all = membership.all_properties
     if membership.role.is_owner_role and not all_properties:
         raise ValidationError(_("Owners always have access to all properties."))
@@ -410,11 +599,86 @@ def set_property_scope(actor: Membership, membership: Membership, *, all_propert
     PropertyAccess.objects.bulk_create(
         [PropertyAccess(membership=membership, property_id=pid) for pid in ids - old_ids]
     )
+    membership.branches.set(new_branches)
     clear_cache(membership)
-    if old_all != all_properties or old_ids != ids:
+    if old_all != all_properties or old_ids != ids or old_branches != new_branches:
+        changes = {"all_properties": [old_all, all_properties], "properties": [sorted(old_ids), sorted(ids)]}
+        if old_branches != new_branches:
+            changes["branches"] = [_branch_names(old_branches), _branch_names(new_branches)]
         audit.record("membership.scope", actor=actor.user, organization=actor.organization, obj=membership,
-                     request=request, changes={"all_properties": [old_all, all_properties],
-                                               "properties": [sorted(old_ids), sorted(ids)]})
+                     request=request, changes=changes)
+
+
+# ---------------------------------------------------------------------------
+# Who looks after one property: a manager or caretaker per property, at a company as at an agency
+# ---------------------------------------------------------------------------
+
+
+def _via_branch(membership: Membership, prop) -> bool:
+    return bool(prop.branch_id and prop.branch.archived_at is None
+                and membership.branches.filter(pk=prop.branch_id).exists())
+
+
+def property_team(prop) -> dict:
+    """The staff who see this property: those given it or its branch, and those who see every property.
+
+    {"assigned": [(membership, via_branch, given_directly)], "everywhere": [membership],
+     "invited": [(invitation, via_branch)]}: active members only, and invitations not yet accepted that will
+    give this property (all properties included), so nobody waiting is missed, whatever the organization type.
+    """
+    live = Membership.objects.for_org(prop.organization).filter(is_active=True).select_related("user", "role")
+    direct = set(PropertyAccess.objects.filter(property=prop).values_list("membership_id", flat=True))
+    by_branch = set()
+    if prop.branch_id and prop.branch.archived_at is None:
+        by_branch = set(Membership.objects.filter(branches=prop.branch_id).values_list("pk", flat=True))
+    assigned = [(m, m.pk in by_branch, m.pk in direct)
+                for m in live.filter(all_properties=False, pk__in=direct | by_branch).order_by("user__full_name")]
+    live_branch = prop.branch_id if prop.branch_id and prop.branch.archived_at is None else None
+    reaches = Q(all_properties=True) | Q(properties=prop)
+    if live_branch:
+        reaches |= Q(branches=live_branch)
+    pending = (Invitation.objects.filter(reaches, organization=prop.organization_id, accepted_at__isnull=True,
+                                         revoked_at__isnull=True, expires_at__gt=timezone.now())
+               .select_related("role").distinct().order_by("created_at"))
+    by_branch_invites = set(Invitation.objects.filter(branches=live_branch).values_list("pk", flat=True))         if live_branch else set()
+    return {"assigned": assigned, "everywhere": list(live.filter(all_properties=True).order_by("user__full_name")),
+            "invited": [(i, i.pk in by_branch_invites and not i.all_properties) for i in pending]}
+
+
+def _property_access_change(actor: Membership, membership: Membership, prop, *, give: bool, request=None) -> None:
+    require(actor, "staff.manage", prop)
+    _same_org(actor, membership, prop)
+    _require_owner_for(actor, membership=membership)
+    if membership.all_properties:
+        raise ValidationError(_("%(name)s already sees every property.") % {"name": membership.user.full_name})
+    old_ids = set(membership.property_access.values_list("property_id", flat=True))
+    if give:
+        _check_scope_escalation(actor, False, {prop.pk})
+        PropertyAccess.objects.get_or_create(membership=membership, property=prop)
+        new_ids = old_ids | {prop.pk}
+    else:
+        if prop.pk not in old_ids and _via_branch(membership, prop):
+            raise ValidationError(_("%(name)s sees it through the %(branch)s branch. Change that on their page "
+                                    "under Staff.") % {"name": membership.user.full_name, "branch": prop.branch.name})
+        PropertyAccess.objects.filter(membership=membership, property=prop).delete()
+        new_ids = old_ids - {prop.pk}
+    clear_cache(membership)
+    if new_ids != old_ids:
+        audit.record("membership.scope", actor=actor.user, organization=actor.organization, obj=membership,
+                     request=request, changes={"properties": [sorted(old_ids), sorted(new_ids)]})
+
+
+@transaction.atomic
+def give_property(actor: Membership, membership: Membership, prop, request=None) -> None:
+    """Puts a staff member on one property, e.g. its manager or caretaker, keeping the rest of their access."""
+    _property_access_change(actor, membership, prop, give=True, request=request)
+
+
+@transaction.atomic
+def take_property(actor: Membership, membership: Membership, prop, request=None) -> bool:
+    """Takes one property off a staff member. True when they still see it through its branch."""
+    _property_access_change(actor, membership, prop, give=False, request=request)
+    return _via_branch(membership, prop)
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +692,8 @@ def _hash_token(token: str) -> str:
 
 @transaction.atomic
 def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = "", email: str = "",
-                 all_properties: bool = False, properties: Iterable = (), request=None) -> tuple[Invitation, str]:
+                 all_properties: bool = False, properties: Iterable = (), branches: Iterable = (),
+                 request=None) -> tuple[Invitation, str]:
     require(actor, "staff.manage")
     _same_org(actor, role)
     if role.archived_at is not None:
@@ -437,7 +702,8 @@ def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = 
     _no_escalation(actor, role_codenames(role))
     all_properties = all_properties or role.is_owner_role
     ids = set() if all_properties else _org_property_ids(actor.organization, properties)
-    _check_scope_escalation(actor, all_properties, ids)
+    branch_pks = set() if all_properties else _org_branch_ids(actor.organization, branches)
+    _check_scope_escalation(actor, all_properties, ids, branch_pks)
     phone = normalize_phone(phone)
     email = (email or "").strip().lower()
     if Membership.objects.filter(organization=actor.organization, user__phone=phone).exists():
@@ -455,15 +721,19 @@ def invite_staff(actor: Membership, *, phone: str, role: Role, full_name: str = 
     )
     if ids:
         invitation.properties.set(ids)
+    if branch_pks:
+        invitation.branches.set(branch_pks)
     audit.record("invitation.create", actor=actor.user, organization=actor.organization, obj=invitation,
                  request=request, changes={"phone": phone, "role": role.name})
     return invitation, token
 
 
 def send_invitation(invitation: Invitation, accept_url: str) -> None:
+    if not system_messages.allows("invite_staff", system_messages.SMS):
+        return  # switched off by the owner: the link on the page still works
     send_sms(
         invitation.phone,
-        _("%(org)s invited you to landlordpms as %(role)s. Accept: %(url)s")
+        _("%(org)s invited you to NyumbaPMS as %(role)s. Accept: %(url)s")
         % {"org": invitation.organization.name, "role": invitation.role.name, "url": accept_url},
     )
 
@@ -488,6 +758,9 @@ def accept_invitation(token: str, user: User, request=None) -> Membership:
         raise PermissionDenied(_("Log in with the verified phone number this invitation was sent to."))
     if invitation.role.archived_at is not None:
         raise ValidationError(_("The role on this invitation has been removed. Ask for a new invitation."))
+    if not user.email and email_required_for(invitation.role):
+        raise ValidationError(_("Add your email address first: the %(role)s role needs one.")
+                              % {"role": invitation.role.name})
 
     membership = Membership.all_objects.filter(user=user, organization=invitation.organization).first()
     if membership is not None and membership.archived_at is None:
@@ -505,6 +778,7 @@ def accept_invitation(token: str, user: User, request=None) -> Membership:
     PropertyAccess.objects.bulk_create(
         [PropertyAccess(membership=membership, property=p) for p in invitation.properties.all()]
     )
+    membership.branches.set(invitation.branches.filter(archived_at__isnull=True))
     invitation.accepted_at = timezone.now()
     invitation.accepted_by = user
     invitation.save(update_fields=["accepted_at", "accepted_by", "updated_at"])

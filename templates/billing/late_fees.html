@@ -1,0 +1,68 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Late fees" %}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-2 gap-2">
+  <h1 class="h4 mb-0">{% trans "Late fees" %}</h1>
+  {% if can_settings %}<a class="small" href="{% url 'accounts:organization' %}">{% trans "Change the rule" %}</a>{% endif %}
+</div>
+<p class="small text-muted">
+  {% if is_on %}{% blocktrans %}Your rule: {{ rule }}. Each invoice that goes overdue gets one fee, listed here until you charge or skip it. Charging works the fee out again from what is still unpaid and sends the tenant an invoice for it.{% endblocktrans %}
+  {% else %}{% trans "Late fees are off. An owner can switch them on in Settings, as a fixed amount or a percentage of what is unpaid." %}{% endif %}
+</p>
+
+{% with cur=currency %}
+{% if pending %}
+<form method="post">{% csrf_token %}
+  <div class="list-group shadow-sm mb-2">
+    {% for fee, now in pending %}
+    <label class="list-group-item d-flex gap-2 align-items-start">
+      <input class="form-check-input mt-1" type="checkbox" name="fee" value="{{ fee.public_id }}" checked>
+      <div class="flex-grow-1">
+        <div class="fw-semibold">{{ fee.lease.primary_tenant.name|default:"—" }} · {{ fee.lease.unit.property.name }} {{ fee.lease.unit.code }}</div>
+        <div class="small text-muted">
+          <a href="{% url 'billing:invoice' fee.invoice.public_id %}">{{ fee.invoice.number }}</a>
+          · {% blocktrans with d=fee.invoice.overdue_after|date:"j M Y" %}overdue after {{ d }}{% endblocktrans %}
+          · {% blocktrans with u=fee.invoice.outstanding|money:cur %}{{ u }} unpaid{% endblocktrans %}
+        </div>
+      </div>
+      <div class="text-end text-nowrap">
+        <div class="fw-semibold num">{{ now|money:cur }}</div>
+        {% if now != fee.amount %}<div class="small text-muted">{% blocktrans with a=fee.amount|money:cur %}was {{ a }}{% endblocktrans %}</div>{% endif %}
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+  <div class="row g-2 align-items-end">
+    <div class="col-md">
+      <label class="form-label small" for="reason">{% trans "Reason, when skipping (optional)" %}</label>
+      <input class="form-control" id="reason" name="reason" maxlength="300" placeholder="{% trans 'e.g. promised to pay on Friday' %}">
+    </div>
+    <div class="col-md-auto d-flex gap-2">
+      <button class="btn btn-primary" name="action" value="charge">{% trans "Charge ticked" %}</button>
+      <button class="btn btn-outline-secondary" name="action" value="skip">{% trans "Skip ticked" %}</button>
+    </div>
+  </div>
+</form>
+{% else %}
+<p class="text-muted">{% trans "No late fees to approve." %}</p>
+{% endif %}
+
+{% if decided %}
+<h2 class="h6 mt-4">{% trans "Decided lately" %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "Invoice" %}</th><th>{% trans "Unit" %}</th><th>{% trans "Decision" %}</th><th class="text-end">{% trans "Fee" %}</th><th>{% trans "By" %}</th></tr></thead>
+  <tbody>
+    {% for fee in decided %}
+    <tr>
+      <td><a href="{% url 'billing:invoice' fee.invoice.public_id %}">{{ fee.invoice.number }}</a></td>
+      <td>{{ fee.lease.unit.property.name }} {{ fee.lease.unit.code }}</td>
+      <td>{% if fee.fee_invoice %}{% trans "Charged on" %} <a href="{% url 'billing:invoice' fee.fee_invoice.public_id %}">{{ fee.fee_invoice.number }}</a>{% else %}<span class="badge text-bg-secondary">{{ fee.get_status_display }}</span>{% if fee.reason %}: {{ fee.reason }}{% endif %}{% endif %}</td>
+      <td class="text-end num text-nowrap">{{ fee.amount|money:cur }}</td>
+      <td>{{ fee.decided_by.full_name|default:_("Daily job") }} · {{ fee.decided_at|date:"j M" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table></div>
+{% endif %}
+{% endwith %}
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Advocate handover pack" %} · {{ lease }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'leases:detail' lease.public_id %}" class="small">← {% trans "Lease" %} {{ lease }} · {{ property.name }} · {{ unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Advocate handover pack" %}</h1>
+  <p class="small text-muted">{% trans "Everything an advocate asks for before acting on a tenant in arrears or a disputed move-out, in one ZIP file: a brief, the statement of account, payments, follow-ups, the letters and how they were served, the move-out papers and photos, the lease's documents, and a certificate for the records to be used in court. It is drawn from the records when you download it. It is not legal advice." %}</p>
+
+  {% if problem %}
+  <div class="card shadow-sm mb-3"><div class="card-body small text-muted">{{ problem }}</div></div>
+  {% else %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "The amount" %}</h2>
+    <div class="row g-2 small">
+      <div class="col-6 col-md-3"><div class="text-muted">{% trans "Balance" %}</div><div class="fw-semibold">{{ data.balance|money:data.currency }}</div></div>
+      <div class="col-6 col-md-3"><div class="text-muted">{% trans "Past grace days" %}</div><div class="fw-semibold">{{ data.owed|money:data.currency }}</div></div>
+      <div class="col-6 col-md-3"><div class="text-muted">{% trans "Late since" %}</div><div class="fw-semibold">{% if data.late_from %}{{ data.late_from|date:"j M Y" }}{% else %}—{% endif %}</div></div>
+      <div class="col-6 col-md-3"><div class="text-muted">{% trans "Deposit held" %}</div><div class="fw-semibold">{{ data.deposit_held|money:data.currency }}</div></div>
+    </div>
+    {% if data.buckets %}
+    <div class="small text-muted mt-2">{% trans "How late" %}</div>
+    <div class="table-responsive"><table class="table table-sm small mb-0">
+      <tbody>{% for label, value in data.buckets %}<tr><td>{{ label }}</td><td class="text-end text-nowrap">{{ value|money:data.currency }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% endif %}
+  </div></div>
+
+  {% if data.concerns %}
+  <div class="alert alert-warning small">
+    <div class="fw-semibold mb-1">{% trans "To check before handing it over" %}</div>
+    <ul class="mb-0 ps-3">{% for c in data.concerns %}<li>{{ c }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "What the pack holds" %}</h2>
+    <ul class="small mb-0 ps-3">
+      <li>{% trans "Brief: parties, premises, lease, amount, what is unpaid, letters, follow-ups and what to check" %}</li>
+      <li>{% blocktrans count n=data.entries|length %}Statement of account, {{ n }} row, as PDF and CSV{% plural %}Statement of account, {{ n }} rows, as PDF and CSV{% endblocktrans %}{% if data.chain|length > 1 %} · {% blocktrans with n=data.chain|length %}over {{ n }} leases of the tenancy{% endblocktrans %}{% endif %}</li>
+      {% if data.sees_payments %}<li>{% trans "Payments, with references and who confirmed them (CSV)" %}</li>{% endif %}
+      {% if data.follow_ups %}<li>{% blocktrans count n=data.follow_ups|length %}{{ n }} follow-up (CSV){% plural %}{{ n }} follow-ups (CSV){% endblocktrans %}</li>{% endif %}
+      {% if data.letters %}<li>{% blocktrans count n=data.letters|length %}{{ n }} notice or demand letter, with signed copies where recorded{% plural %}{{ n }} notice and demand letters, with signed copies where recorded{% endblocktrans %}</li>{% endif %}
+      {% if data.move_out %}<li>{% trans "Move-out statement" %}</li>{% endif %}
+      {% if data.reports %}<li>{% blocktrans count n=data.reports|length %}{{ n }} condition report with its photos{% plural %}{{ n }} condition reports with their photos{% endblocktrans %}</li>{% endif %}
+      {% if data.documents %}<li>{% blocktrans count n=data.documents|length %}{{ n }} document from the lease and its tenants{% plural %}{{ n }} documents from the lease and its tenants{% endblocktrans %}</li>{% endif %}
+      <li>{% trans "record.json with each file's SHA-256, and a certificate under section 106B of the Evidence Act to fill in and sign" %}</li>
+    </ul>
+  </div></div>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Download" %}</h2>
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-sm btn-primary">{% trans "Download handover pack" %}</button>
+    </form>
+    <div class="small text-muted mt-2">{% trans "It holds tenants' personal details. Send it only to the advocate acting for you. Each download is recorded with the file's fingerprint." %}</div>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

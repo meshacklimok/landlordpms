@@ -11,7 +11,7 @@ from audit.models import AuditEvent
 from billing.models import ChargeType
 from billing.services import ensure_default_charge_types
 from leases import services
-from leases.models import Lease
+from leases.models import Lease, LeaseNotice
 from properties import services as property_services
 from properties.models import Unit
 from tenants import services as tenant_services
@@ -128,6 +128,34 @@ def test_notice_to_vacate(owner, unit, tenant):
     services.withdraw_notice(owner, lease)
     assert Lease.objects.get(pk=lease.pk).notice_given_on is None
     assert AuditEvent.objects.filter(action="lease.notice_withdraw").exists()
+
+
+def test_notice_rules_and_history(owner, unit, tenant):
+    lease = services.activate_lease(owner, draft(owner, unit, [tenant], end=None, notice_days=30))
+    given = TODAY - 2 * DAY
+    # Shorter than the notice period only when both sides agreed.
+    with pytest.raises(ValidationError) as exc:
+        services.give_notice(owner, lease, given_on=given, move_out_on=given + 10 * DAY)
+    assert "move_out_on" in exc.value.error_dict
+    first = services.give_notice(owner, lease, given_on=given, move_out_on=given + 10 * DAY, shorter_agreed=True,
+                                 given_by=LeaseNotice.GivenBy.LANDLORD, via=LeaseNotice.Via.EMAIL, reason="Sale")
+    assert lease.move_out_on == given + 10 * DAY and first.is_open
+    # A later notice replaces the open one and keeps it as history.
+    second = services.give_notice(owner, lease, given_on=TODAY)
+    first.refresh_from_db()
+    assert not first.is_open and first.withdraw_reason == "Replaced by a later notice"
+    assert services.open_notice(lease) == second and lease.move_out_on == TODAY + 30 * DAY
+    assert list(lease.notices.all()) == [second, first]
+    with pytest.raises(ValidationError):
+        services.give_notice(owner, lease, given_on=TODAY, via=LeaseNotice.Via.PORTAL)
+
+
+def test_notice_cannot_run_past_a_fixed_end(owner, unit, tenant):
+    lease = services.activate_lease(owner, draft(owner, unit, [tenant], end=TODAY + 10 * DAY, notice_days=30))
+    with pytest.raises(ValidationError):
+        services.give_notice(owner, lease, given_on=TODAY)
+    notice = services.give_notice(owner, lease, given_on=TODAY, move_out_on=TODAY + 10 * DAY, shorter_agreed=True)
+    assert notice.move_out_on == lease.end_date
 
 
 def test_closing_removes_charges_that_never_started(owner, unit, tenant):

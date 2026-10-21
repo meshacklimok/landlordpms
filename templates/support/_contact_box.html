@@ -4,4 +4,5 @@
   <a class="btn btn-sm btn-primary" href="{% url 'support:contact' %}">{% trans "Contact support" %}</a>
   <a class="btn btn-sm btn-outline-primary" href="{% url 'support:contact' %}?kind=IMPORT_HELP">{% trans "Import my data for me" %}</a>
   {% if support_whatsapp %}<a class="btn btn-sm btn-outline-success" href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">WhatsApp</a>{% endif %}
+  {% if support_whatsapp_2 %}<a class="btn btn-sm btn-outline-success" href="https://wa.me/{{ support_whatsapp_2 }}" rel="noopener" target="_blank">WhatsApp 2</a>{% endif %}
 </div></div>

@@ -8,7 +8,7 @@ from django.utils import timezone
 from django.utils.html import format_html
 
 from . import status
-from .models import Incident, IncidentUpdate, SupportRequest
+from .models import AppOpen, Incident, IncidentUpdate, SupportRequest
 
 
 class IncidentUpdateInline(admin.TabularInline):
@@ -69,4 +69,18 @@ class SupportRequestAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(AppOpen)
+class AppOpenAdmin(admin.ModelAdmin):
+    """Installed-app opens per day (D-102). Read-only counts."""
+
+    list_display = ["day", "organization", "audience", "platform", "count"]
+    list_filter = ["audience", "platform", "day"]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False

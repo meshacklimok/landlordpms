@@ -5,8 +5,9 @@
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
     <h1 class="h3 mb-0">{% trans "Maintenance" %}</h1>
     <span class="d-flex gap-2">
+      {% if can_performance %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'maintenance:performance' %}"><i class="bi bi-speedometer2" aria-hidden="true"></i> {% trans "Performance" %}</a>{% endif %}
       {% if to_assign %}<a class="btn btn-sm btn-warning" href="?status=NEW">{% blocktrans count n=to_assign %}{{ n }} to assign{% plural %}{{ n }} to assign{% endblocktrans %}</a>{% endif %}
-      {% if can_report %}<a class="btn btn-sm btn-primary" href="{% url 'maintenance:create' %}"><i class="bi bi-plus-lg"></i> {% trans "Report a problem" %}</a>{% endif %}
+      {% if can_report %}<a class="btn btn-sm btn-primary" href="{% url 'maintenance:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Report a problem" %}</a>{% endif %}
     </span>
   </div>
   <p class="small text-body-secondary">{% trans "Repairs and problems, from reporting to checking the work." %}</p>
@@ -17,15 +18,18 @@
     </div></a></div>
     <div class="col-6 col-md-3"><a class="card shadow-sm h-100 text-decoration-none" href="?overdue=1"><div class="card-body py-2">
       <div class="small text-body-secondary">{% trans "Overdue" %}</div><div class="h5 num mb-0{% if summary.overdue %} text-danger{% endif %}">{{ summary.overdue }}</div>
+      {% if late_to_start %}<div class="small text-danger">{% blocktrans count n=late_to_start %}{{ n }} not started in time{% plural %}{{ n }} not started in time{% endblocktrans %}</div>{% endif %}
     </div></a></div>
     <div class="col-12 col-md-6"><div class="card shadow-sm h-100"><div class="card-body py-2">
       <div class="small text-body-secondary">{% trans "Closed in the last 90 days" %}</div>
       <div class="h5 num mb-0">{{ summary.closed_recently }}{% if summary.avg_days_to_close is not None %} <span class="small fw-normal text-body-secondary">· {% blocktrans with d=summary.avg_days_to_close %}{{ d }} days to close on average{% endblocktrans %}</span>{% endif %}</div>
+      {% if summary.fixed_on_time is not None %}<div class="small text-body-secondary">{% blocktrans with p=summary.fixed_on_time %}{{ p }}% fixed on time{% endblocktrans %}{% if can_performance %} · <a href="{% url 'maintenance:performance' %}">{% trans "by supplier and staff" %}</a>{% endif %}</div>{% endif %}
     </div></div></div>
   </div>
 
-  <form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
     <div class="row g-2 align-items-end">
+      {% if many_properties %}
       <div class="col-6 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
         <select id="f-property" name="property" class="form-select">
@@ -33,6 +37,7 @@
           {% for p in properties %}<option value="{{ p.public_id }}" {% if p == f.property %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
         </select>
       </div>
+      {% endif %}
       <div class="col-6 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-status">{% trans "Status" %}</label>
         <select id="f-status" name="status" class="form-select">
@@ -59,14 +64,19 @@
       <div class="col-12 col-md-auto d-flex gap-3 pb-2">
         <div class="form-check"><input class="form-check-input" type="checkbox" name="mine" value="1" id="f-mine" {% if f.mine %}checked{% endif %}><label class="form-check-label small" for="f-mine">{% trans "Assigned to me" %}</label></div>
         <div class="form-check"><input class="form-check-input" type="checkbox" name="overdue" value="1" id="f-overdue" {% if f.overdue %}checked{% endif %}><label class="form-check-label small" for="f-overdue">{% trans "Overdue" %}</label></div>
+        <div class="form-check"><input class="form-check-input" type="checkbox" name="late" value="1" id="f-late" {% if f.late %}checked{% endif %}><label class="form-check-label small" for="f-late">{% trans "Late to start" %}</label></div>
       </div>
       {% if f.unit %}<input type="hidden" name="unit" value="{{ f.unit.public_id }}">{% endif %}
-      <div class="col-12 col-md-auto d-flex gap-2">
-        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+      {% if f.supplier %}<input type="hidden" name="supplier" value="{{ f.supplier.public_id }}">{% endif %}
+      {% if f.staff %}<input type="hidden" name="staff" value="{{ f.staff.public_id }}">{% endif %}
+      <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+        <noscript><button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button></noscript>
         {% if filtered %}<a class="btn btn-link text-body-secondary" href="{% url 'maintenance:list' %}">{% trans "Clear" %}</a>{% endif %}
       </div>
     </div>
     {% if f.unit %}<div class="small mt-2">{% blocktrans with unit=f.unit.code %}Unit {{ unit }} only.{% endblocktrans %}</div>{% endif %}
+    {% if f.supplier %}<div class="small mt-2">{% blocktrans with name=f.supplier.name %}Jobs of {{ name }} only.{% endblocktrans %}</div>{% endif %}
+    {% if f.staff %}<div class="small mt-2">{% blocktrans with name=f.staff %}Jobs of {{ name }} only.{% endblocktrans %}</div>{% endif %}
   </div></form>
 
   {% if page.object_list %}
@@ -95,16 +105,11 @@
   </div>
   <div class="d-flex flex-wrap justify-content-between small text-body-secondary mt-2">
     <span>{% blocktrans with a=page.start_index b=page.end_index n=page.paginator.count %}Showing {{ a }}–{{ b }} of {{ n }}{% endblocktrans %}</span>
-    {% if can_export %}<a href="?{{ csv_query }}"><i class="bi bi-download"></i> {% trans "Download CSV" %}</a>{% endif %}
+    {% if can_export %}<a href="?{{ csv_query }}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download CSV" %}</a>{% endif %}
   </div>
   {% include "partials/pager.html" %}
   {% else %}
-  <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-tools"></i></div>
-    {% if filtered %}<h2 class="h6">{% trans "No requests match" %}</h2>
-    {% else %}<h2 class="h6">{% trans "Nothing to fix right now" %}</h2>
-    <p class="small text-body-secondary mb-0">{% trans "Problems reported by staff or tenants appear here until the work is checked and closed." %}</p>{% endif %}
-  </div></div>
+  {% if filtered %}{% include "partials/empty_state.html" with icon="bi-tools" title=_("No requests match") %}{% else %}{% include "partials/empty_state.html" with icon="bi-tools" title=_("Nothing to fix right now") text=_("Problems reported by staff or tenants appear here until the work is checked and closed.") %}{% endif %}
   {% endif %}
 </div>
 {% endblock %}

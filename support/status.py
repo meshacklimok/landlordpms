@@ -1,14 +1,18 @@
 """What the public status page shows (D-061 item 2). Cached so the page cannot load the database."""
 
 import datetime
+import logging
 
 from django.core.cache import cache
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
-from core import health, jobs
+from core import jobs
+from ops import health
 
 from .models import Incident
+
+logger = logging.getLogger(__name__)
 
 CACHE_KEY = "status:page"
 CACHE_SECONDS = 60
@@ -52,6 +56,6 @@ def page() -> dict:
         data = build()
         try:
             cache.set(CACHE_KEY, data, CACHE_SECONDS)
-        except Exception:
-            pass
+        except Exception:  # the page still shows; the next visit builds it again
+            logger.warning("Could not cache the status page", exc_info=True)
     return data

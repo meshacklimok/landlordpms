@@ -56,10 +56,11 @@ def template_for(org, ntype: catalog.NotificationType, channel: str, language: s
             or overrides.get(catalog.EN) or ntype.bodies.get((channel, catalog.EN)))
 
 
-def render(text: str, context: dict) -> str:
+def render(text: str, context: dict, *, keep_lines: bool = False) -> str:
     """Fills bare `{name}` fields; a field with no value becomes empty. Extra spaces are collapsed.
 
     Anything else in braces is dropped rather than evaluated, even in text that skipped validation.
+    `keep_lines` (email) keeps line breaks, with at most one empty line in a row.
     """
     try:
         parsed = list(string.Formatter().parse(text))
@@ -71,4 +72,8 @@ def render(text: str, context: dict) -> str:
         if name and name.isidentifier() and not spec and not conversion:
             value = context.get(name)
             out.append("" if value is None else str(value))
-    return " ".join("".join(out).split())
+    if not keep_lines:
+        return " ".join("".join(out).split())
+    lines = [" ".join(line.split()) for line in "".join(out).splitlines()]
+    kept = [line for i, line in enumerate(lines) if line or (i and lines[i - 1])]
+    return "\n".join(kept).strip()

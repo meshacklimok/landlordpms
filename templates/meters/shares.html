@@ -1,0 +1,124 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Who pays what" %} · {{ meter.label }}{% endblock %}
+{% block content %}
+<div class="shares-page">
+<a href="{% url 'meters:detail' meter.public_id %}" class="small">← {{ meter.label }}</a>
+<h1 class="h4 mt-2 mb-1">{% trans "Who pays what" %} <span class="text-muted fs-6">· {{ meter.label }} · {{ property.name }}</span></h1>
+<p class="small text-muted mb-3">
+  {{ reading.read_on|date:"j M Y" }} · <span class="font-monospace">{{ reading.value }} {{ meter.unit_label }}</span>
+  {% if reading.usage is not None %}· {% blocktrans with prev=reading.previous.value u=reading.usage d=reading.days unit=meter.unit_label %}from {{ prev }}: {{ u }} {{ unit }} used over {{ d }} days{% endblocktrans %}{% endif %}
+  · {% blocktrans count n=served|length %}serves {{ n }} room{% plural %}serves {{ n }} rooms{% endblocktrans %}
+</p>
+
+{% if charged is not None %}
+{# ---- Approved: what each room was charged ---- #}
+<div class="card shadow-sm"><div class="card-body">
+  <p class="small mb-2">
+    {% if reading.split %}{% blocktrans with way=reading.get_split_display|lower rule=reading.get_vacant_share_display %}Divided {{ way }} · {{ rule }}.{% endblocktrans %}{% endif %}
+    {% if reading.bill_total %}{% blocktrans with bill=reading.bill_total|money %}Utility bill divided: {{ bill }}.{% endblocktrans %}{% endif %}
+    {% if reading.payer == "LANDLORD" %}<strong>{% trans "The landlord pays this meter; nothing was billed." %}</strong>{% endif %}
+  </p>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th scope="col">{% trans "Room" %}</th><th scope="col" class="text-end">{% trans "Charged" %}</th></tr></thead>
+    <tbody>
+    {% for row in charged %}
+      <tr><th scope="row">{{ row.unit.code }}</th>
+        <td class="text-end">
+          {% for c in row.charges %}<div>{{ c.amount|money }} <span class="small text-muted">· {{ c.service_start|date:"j M" }}–{{ c.service_end|date:"j M" }}</span></div>
+          {% empty %}<span class="badge text-bg-secondary">{% trans "Vacant" %}</span> {{ 0|money }}{% endfor %}
+        </td></tr>
+    {% endfor %}
+    </tbody>
+    <tfoot><tr><th scope="row">{% trans "Tenants pay" %}</th><td class="text-end fw-semibold">{{ charged_total|money }}</td></tr></tfoot>
+  </table></div>
+</div></div>
+
+{% elif not billable %}
+<p class="text-muted">{% trans "This reading has no use to divide: it starts the count, the meter is prepaid, or nothing was used." %}</p>
+
+{% else %}
+{# ---- Waiting: every way side by side ---- #}
+{% if scans_left is not None %}
+<form method="post" enctype="multipart/form-data" id="scan-bill" action="{% url 'meters:scan_bill' reading.public_id %}">{% csrf_token %}<input type="hidden" name="vacant" value="{{ vacant }}"></form>
+{% endif %}
+<form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <div class="row g-3 align-items-end">
+    <div class="col-sm-5">
+      <label class="form-label" for="bill">{% trans "Amount on the utility bill (optional)" %}</label>
+      <div class="input-group">
+        <span class="input-group-text">KES</span>
+        <input class="form-control{% if bill_error %} is-invalid{% endif %}" id="bill" name="bill" value="{{ bill }}" inputmode="decimal" autocomplete="off" aria-describedby="bill-help">
+      </div>
+      <div id="bill-help" class="form-text">{% if bill_error %}<span class="text-danger">{{ bill_error }}</span>{% else %}{% blocktrans with rate=meter.rate|money unit=meter.unit_label %}Leave empty to bill the use × {{ rate }} per {{ unit }}.{% endblocktrans %}{% endif %}</div>
+      {% if scans_left is not None %}
+      <div class="mt-2">
+        <label class="form-label small mb-1" for="bill-photo">{% trans "Or read it from a photo of the bill" %}</label>
+        <div class="d-flex flex-wrap gap-2">
+          <input class="form-control form-control-sm w-auto mw-100" type="file" id="bill-photo" name="photo" accept="image/jpeg,image/png,image/webp" form="scan-bill" required aria-describedby="bill-photo-help">
+          <button class="btn btn-sm btn-outline-secondary" form="scan-bill"{% if not scans_left %} disabled{% endif %}>{% trans "Read the bill" %}</button>
+        </div>
+        <div id="bill-photo-help" class="form-text">{% blocktrans count n=scans_left %}Read by OpenAI; the photo is not kept. {{ n }} photo scan left this month.{% plural %}Read by OpenAI; the photo is not kept. {{ n }} photo scans left this month.{% endblocktrans %}</div>
+      </div>
+      {% endif %}
+    </div>
+    <fieldset class="col-sm-5">
+      <legend class="form-label fs-6">{% trans "Empty rooms" %}</legend>
+      {% for value, label in vacant_choices %}
+      <div class="form-check"><input class="form-check-input" type="radio" name="vacant" id="vacant-{{ value }}" value="{{ value }}" {% if value == vacant %}checked{% endif %}><label class="form-check-label" for="vacant-{{ value }}">{{ label }}</label></div>
+      {% endfor %}
+    </fieldset>
+    <div class="col-sm-2"><button class="btn btn-outline-primary w-100">{% trans "Show" %}</button></div>
+  </div>
+</div></form>
+
+{% if meter.landlord_pays %}<div class="alert alert-info small">{% trans "The landlord pays this meter. The figures show each room's part of the use; approving bills nobody." %}</div>{% endif %}
+
+<div class="card shadow-sm"><div class="card-body">
+  <p class="small text-muted">{% blocktrans with total=total|money %}Bill to divide: {{ total }}. Pick the way that suits the building.{% endblocktrans %}</p>
+  {% if can_approve %}
+  <form method="post" id="approve">{% csrf_token %}
+    <input type="hidden" name="vacant" value="{{ vacant }}"><input type="hidden" name="bill" value="{% if not bill_error %}{{ bill }}{% endif %}">
+    {% if reading.flags %}
+    <div class="mb-2">{% for label in reading.flag_labels %}<span class="badge text-bg-danger me-1">{{ label }}</span>{% endfor %}</div>
+    <label class="form-label small" for="note">{% trans "Why it is right (needed)" %}</label>
+    <input class="form-control form-control-sm mb-3 mw-16r" id="note" name="note" required maxlength="300">
+    {% endif %}
+  </form>
+  {% endif %}
+  <div class="table-responsive">
+  <table class="table table-sm align-middle shares-table mb-0">
+    <thead><tr>
+      <th scope="col">{% trans "Room" %}</th>
+      {% for way in ways %}
+      <th scope="col" class="text-end">{{ way.label }}{% if way.split == meter.split %}<br><span class="badge text-bg-light border">{% trans "usual" %}</span>{% endif %}</th>
+      {% endfor %}
+    </tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <th scope="row">{{ row.unit.code }}
+          <div class="small fw-normal text-muted">{% with first=row.who %}{% for part in first.parts %}{{ part.tenant|default:"—" }}{% if part.days != reading.days %} ({% blocktrans count n=part.days %}{{ n }} day{% plural %}{{ n }} days{% endblocktrans %}){% endif %}{% if not forloop.last %}, {% endif %}{% empty %}<span class="badge text-bg-secondary">{% trans "Vacant" %}</span>{% endfor %}{% endwith %}</div>
+        </th>
+        {% for cell in row.cells %}
+        <td class="text-end font-monospace">{% if cell.way.available %}{{ cell.room.amount|money }}
+          {% if cell.way.split == "USAGE" %}<div class="small text-muted">{% blocktrans with u=cell.room.basis|floatformat:"-3" unit=meter.unit_label %}own meter {{ u }} {{ unit }}{% endblocktrans %}</div>
+          {% elif cell.way.split == "WEIGHTED" %}<div class="small text-muted">× {{ cell.room.weight|floatformat:"-2" }}</div>{% endif %}
+          {% else %}—{% endif %}</td>
+        {% endfor %}
+      </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr><th scope="row">{% trans "Tenants pay" %}</th>{% for way in ways %}<td class="text-end font-monospace fw-semibold">{% if way.available %}{{ way.charged|money }}{% else %}—{% endif %}</td>{% endfor %}</tr>
+      <tr><th scope="row">{% trans "Landlord pays" %}</th>{% for way in ways %}<td class="text-end font-monospace">{% if way.available %}{{ way.landlord|money }}{% else %}—{% endif %}</td>{% endfor %}</tr>
+      {% if can_approve %}
+      <tr><td></td>{% for way in ways %}<td class="text-end">{% if way.available %}<button class="btn btn-sm {% if way.split == meter.split %}btn-success{% else %}btn-outline-success{% endif %}" form="approve" name="split" value="{{ way.split }}">{% trans "Approve this way" %}</button>{% endif %}</td>{% endfor %}</tr>
+      {% endif %}
+    </tfoot>
+  </table>
+  </div>
+  {% for way in ways %}{% if way.reason %}<p class="small text-muted mt-2 mb-0">{{ way.label }}: {{ way.reason }}</p>{% endif %}{% endfor %}
+</div></div>
+{% endif %}
+</div>
+{% endblock %}

@@ -55,7 +55,7 @@
     <button class="btn btn-sm btn-outline-secondary text-nowrap">{% trans "Copy role" %}</button>
   </form>
   {% if not role.is_owner_role %}
-  <form method="post" action="{% url 'accounts:role_archive' role.public_id %}" onsubmit="return confirm(this.dataset.confirm)" data-confirm="{% trans 'Remove this role?' %}">{% csrf_token %}
+  <form method="post" action="{% url 'accounts:role_archive' role.public_id %}" data-confirm="{% trans 'Remove this role?' %}">{% csrf_token %}
     <button class="btn btn-sm btn-outline-danger">{% trans "Remove role" %}</button>
   </form>
   {% endif %}

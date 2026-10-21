@@ -3,7 +3,6 @@
 Anything outside the member's properties is a 404, never a 403.
 """
 
-import csv
 import datetime
 
 from django.contrib import messages
@@ -18,6 +17,8 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core import exports
+from core.ids import uuid_or_none
 from maintenance import services as maintenance
 from properties.models import Property
 from properties.views import _apply_errors
@@ -25,7 +26,7 @@ from reports.metrics import month_end
 from reports.views import _csv_response
 
 from . import forms, services
-from .models import Expense, ExpenseCategory, Supplier
+from .models import CostClass, Expense, ExpenseCategory, Supplier
 
 Status = Expense.Status
 PAGE_SIZE = 50
@@ -108,13 +109,13 @@ class ExpenseListView(CapabilityRequiredMixin, View):
 
     def csv(self, qs):
         response = _csv_response(f"expenses-{timezone.localdate():%Y-%m-%d}.csv")
-        writer = csv.writer(response)
+        writer = exports.writer(response)
         writer.writerow(["Number", "Date paid", "Property", "Category", "Description", "Supplier", "Amount",
-                         "Paid by", "Reference", "Status", "Receipt"])
+                         "Paid by", "Reference", "Repeats monthly", "Status", "Receipt"])
         for e in qs.order_by("paid_on", "pk"):
             writer.writerow([e.number, e.paid_on.isoformat(), e.property.name, e.category.name, e.description,
                              e.supplier.name if e.supplier else "", e.amount, e.get_method_display(), e.reference,
-                             e.get_status_display(), "yes" if e.receipt else ""])
+                             "yes" if e.is_recurring else "", e.get_status_display(), "yes" if e.receipt else ""])
         return response
 
 
@@ -163,6 +164,48 @@ class ExpenseCreateView(CapabilityRequiredMixin, View):
         return render(request, self.template_name, {"form": form})
 
 
+class ExpenseSplitView(ExpenseCreateView):
+    """Records one payment shared by several properties (D-197)."""
+
+    template_name = "expenses/split_form.html"
+
+    def form(self, request, data=None, files=None, initial=None):
+        m, org = request.membership, request.membership.organization
+        ids = [p.pk for p in services.recordable_properties(m)]
+        return forms.SplitExpenseForm(
+            data, files, initial=initial,
+            properties=Property.objects.filter(pk__in=ids).order_by("name"),
+            categories=services.categories(org),
+            suppliers=Supplier.objects.for_org(org).order_by("name"))
+
+    def post(self, request):
+        form = self.form(request, request.POST, request.FILES)
+        if form.is_valid():
+            data = dict(form.cleaned_data)
+            props = list(data.pop("properties"))
+            percents = form.percents()
+            for key in [k for k in data if k.startswith("percent_")]:
+                del data[key]
+            try:
+                made = services.record_split(request.membership, props, percents=percents, request=request, **data)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                waiting = made[0].status != Status.APPROVED
+                messages.success(request, _("Shared expense recorded as %(n)s shares.") % {"n": len(made)}
+                                 + (" " + _("It is waiting for approval.") if waiting else ""))
+                return redirect("expenses:detail", public_id=made[0].public_id)
+        if request.FILES:
+            form.add_error(None, _("Choose the receipt again."))
+        return render(request, self.template_name, {"form": form})
+
+    def get(self, request):
+        return render(request, self.template_name, {"form": self.form(
+            request, initial={"paid_on": timezone.localdate().isoformat()})})
+
+
 class ExpenseDetailView(CapabilityRequiredMixin, View):
     template_name = "expenses/detail.html"
     required_capability = "expenses.view"
@@ -174,6 +217,8 @@ class ExpenseDetailView(CapabilityRequiredMixin, View):
             "expense": expense, "currency": m.organization.currency,
             "can_approve": services.can_approve(m, expense), "can_void": services.can_void(m, expense),
             "can_add_receipt": services.can_add_receipt(m, expense), "receipt_form": forms.ReceiptForm(),
+            "can_edit": services.can_edit(m, expense),
+            "shares": services.split_group(expense) if expense.split_key else [],
             "can_suppliers": can(m, "contractors.manage"),
             "can_see_repair": (expense.maintenance_request is not None
                                and maintenance.sees(m, expense.maintenance_request)),
@@ -203,6 +248,57 @@ class ExpenseDetailView(CapabilityRequiredMixin, View):
         if request.POST.get("next") == "list":
             return redirect(f"{reverse('expenses:list')}?status={Status.SUBMITTED}")
         return redirect("expenses:detail", public_id=expense.public_id)
+
+
+class ExpenseEditView(CapabilityRequiredMixin, View):
+    """Corrects a live expense (D-123). The receipt is added on the expense page, not here."""
+
+    template_name = "expenses/edit.html"
+    required_capability = "expenses.view"
+
+    def form(self, request, expense, data=None):
+        m, org = request.membership, request.membership.organization
+        ids = {p.pk for p in services.recordable_properties(m)} | {expense.property_id}
+        form = forms.ExpenseForm(
+            data, initial=None if data else {
+                "property": str(expense.property.public_id), "category": str(expense.category.public_id),
+                "supplier": str(expense.supplier.public_id) if expense.supplier else "",
+                "description": expense.description, "amount": expense.amount,
+                "paid_on": expense.paid_on.isoformat(), "method": expense.method, "reference": expense.reference,
+                "is_recurring": expense.is_recurring},
+            properties=Property.objects.filter(pk__in=ids).order_by("name"),
+            categories=(services.categories(org) | ExpenseCategory.objects.filter(pk=expense.category_id))
+            .order_by("name"),
+            suppliers=Supplier.objects.for_org(org).order_by("name"))
+        del form.fields["receipt"]
+        return form
+
+    def editable(self, request, public_id) -> Expense:
+        expense = _get_expense(request, public_id)
+        if not services.can_edit(request.membership, expense):
+            raise Http404
+        return expense
+
+    def get(self, request, public_id):
+        expense = self.editable(request, public_id)
+        return render(request, self.template_name, {"form": self.form(request, expense), "expense": expense})
+
+    def post(self, request, public_id):
+        expense = self.editable(request, public_id)
+        form = self.form(request, expense, request.POST)
+        if form.is_valid():
+            data = dict(form.cleaned_data)
+            try:
+                services.update_expense(request.membership, expense, prop=data.pop("property"), request=request,
+                                        **data)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Expense %(n)s saved.") % {"n": expense.number})
+                return redirect("expenses:detail", public_id=expense.public_id)
+        return render(request, self.template_name, {"form": form, "expense": expense})
 
 
 class ReceiptView(CapabilityRequiredMixin, View):
@@ -302,7 +398,7 @@ class CategoryView(CapabilityRequiredMixin, View):
         services.ensure_categories(m.organization)
         cats = list(ExpenseCategory.all_objects.for_org(m.organization).order_by("archived_at", "name"))
         return render(request, self.template_name, {
-            "categories": cats, "can_manage": services.can_manage_categories(m),
+            "categories": cats, "can_manage": services.can_manage_categories(m), "cost_classes": CostClass.choices,
             "form": form or forms.CategoryForm()})
 
     def get(self, request):
@@ -317,7 +413,8 @@ class CategoryView(CapabilityRequiredMixin, View):
             form = forms.CategoryForm(request.POST)
             if form.is_valid():
                 try:
-                    services.create_category(m, name=form.cleaned_data["name"], request=request)
+                    services.create_category(m, name=form.cleaned_data["name"],
+                                             cost_class=form.cleaned_data["cost_class"] or CostClass.OTHER, request=request)
                 except ValidationError as exc:
                     _apply_errors(form, exc)
             if form.errors:
@@ -325,11 +422,15 @@ class CategoryView(CapabilityRequiredMixin, View):
             messages.success(request, _("Category added."))
             return redirect("expenses:categories")
         category = get_object_or_404(ExpenseCategory.all_objects.for_org(m.organization),
-                                     public_id=request.POST.get("category") or None)
+                                     public_id=uuid_or_none(request.POST.get("category")))
         try:
             if action == "rename":
                 services.rename_category(m, category, name=request.POST.get("name", ""), request=request)
                 messages.success(request, _("Category renamed."))
+            elif action == "class":
+                services.set_category_class(m, category, cost_class=request.POST.get("cost_class", ""),
+                                            request=request)
+                messages.success(request, _("Kind of cost saved."))
             elif action == "archive":
                 services.archive_category(m, category, request=request)
                 messages.success(request, _("Category archived."))

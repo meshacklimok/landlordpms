@@ -1,0 +1,298 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Terms of Service" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-46r">
+{% trans "Terms of Service" as legal_title %}{% include "support/_legal_head.html" %}
+<div class="card shadow-sm"><div class="card-body doc legal">
+
+<p><strong>Please read these terms carefully.</strong> They are a binding agreement. By ticking "I accept" when you
+create an account, by pressing "I accept" on a notice about new terms, or by using NyumbaPMS, you agree to them. If
+you accept for a company, partnership or other business, you confirm that you have authority to bind it, and "you"
+means that business. If you do not agree, do not use the service.</p>
+
+<h2 class="h6">1. Definitions</h2>
+<ul>
+  <li><strong>"We", "us", "our"</strong> means {{ legal_name }}{% if legal_registration %} ({{ legal_registration }}){% endif %}{% if legal_address %}, of {{ legal_address }}{% endif %}.</li>
+  <li><strong>"Service"</strong> means NyumbaPMS: the website at app.nyumbapms.com, the installable app, the tenant
+    portal, the USSD menu, the SMS, WhatsApp, email and push messages it sends, the assistant, and the API.</li>
+  <li><strong>"Organization"</strong> means the account a landlord, agency or property manager opens, and
+    <strong>"Owner"</strong> means the person who controls it.</li>
+  <li><strong>"Users"</strong> means everyone the Organization lets into the Service: owners, staff, property
+    owners and suppliers given access, and tenants using the portal.</li>
+  <li><strong>"Customer Data"</strong> means everything you and your Users put into the Service or that reaches it on
+    your behalf, including tenants' records, payment records from your M-Pesa or bank accounts, documents
+    and photos.</li>
+  <li><strong>"Plan"</strong> means the subscription plan, fees and limits shown on the Subscription page.</li>
+  <li><strong>"the Act"</strong> means the Data Protection Act, 2019 and the regulations made under it.</li>
+</ul>
+
+<h2 class="h6">2. The agreement</h2>
+<p>These terms, the <a href="{% url 'support:privacy' %}">Privacy Policy</a>, the Plan you choose and any order or
+written agreement signed by both of us form the whole agreement between us about the Service. If they conflict, a
+signed written agreement comes first, then these terms, then the Privacy Policy. This agreement replaces anything
+said or promised before you accepted it, and you have not relied on any statement that is not written in it. You
+must be at least 18 years old and able to enter into a binding contract.</p>
+<p><strong>Electronic acceptance.</strong> These terms are a contract made electronically. Ticking "I accept",
+pressing "I accept" on a notice, or using the Service after you have been told of these terms is your electronic
+signature and has the same effect as signing on paper, under the Kenya Information and Communications Act, 1998 and
+the Evidence Act. A record of the version you accepted, with the date and time, is kept in our audit log and may be
+used as evidence that you accepted them. You may not later say the agreement is invalid or unenforceable only
+because it is in electronic form. The agreement binds you and your heirs, successors and permitted assignees, and
+us and ours.</p>
+
+<h2 class="h6">3. The Service</h2>
+<p>NyumbaPMS helps landlords, property managers and their staff keep records of properties, units, tenants, leases,
+invoices, payments, deposits, expenses, meters, inspections and repairs; prepare letters, notices and statements;
+send messages to tenants; and give tenants a portal. It is a record-keeping and communication tool.
+<strong>It is not legal, tax, accounting or financial advice.</strong> Letters, notices, demand letters, tax figures,
+reports and anything else with legal or tax effect are prepared from what you enter and on your instructions. You
+must check them, and take advice from a qualified advocate or accountant, before relying on them or serving them.</p>
+
+<h2 class="h6">4. We never hold your money</h2>
+<p>Rent and other payments go straight from tenants to your own M-Pesa Paybill or Till
+or to your own bank account. We are not a bank, payment service provider, agent, escrow holder or debt collector. We
+never receive, hold or pass on your tenants' money, and we are not a party to any lease or tenancy. Payment records
+in the Service come from those providers or from what you and your staff type in. Any dispute about a payment,
+reversal or charge from those providers is between you, the tenant and that provider.</p>
+
+<h2 class="h6">5. Your account and security</h2>
+<ul>
+  <li>Give true, complete details and keep your phone number and email current: they are how you sign in and how we
+    send you notices.</li>
+  <li>Keep your password, sign-in codes and API keys secret. Each person must have their own login; accounts must
+    not be shared. Where your Organization requires two-step sign-in, every member must use it.</li>
+  <li>The Owner decides who joins the Organization and what each person may do, and is responsible for everything
+    done in it by its Users, as if done by the Owner.</li>
+  <li>Tell us at once if you think someone has used your account without permission or that your data is at risk.
+    We are not responsible for loss caused by your failure to keep your credentials safe.</li>
+</ul>
+
+<h2 class="h6">6. Your responsibilities as a landlord or manager</h2>
+<ul>
+  <li><strong>You are the data controller</strong> under the Act for the personal data you put in about tenants,
+    occupants, prospects, guarantors, property owners, suppliers and staff. You must have a lawful basis to collect
+    and use it, collect only what you need, keep it accurate, and tell the people concerned that you use NyumbaPMS
+    and its providers to manage it. If the law requires it, you must register with the Office of the Data
+    Protection Commissioner.</li>
+  <li>Take extra care with sensitive personal data as the Act defines it, which includes family details (for
+    example the names of a tenant's spouse, children or next of kin) and health information. Record it only where
+    you have a lawful reason and need it.</li>
+  <li>Send tenants only messages about their tenancy or messages they have agreed to receive, and honour STOP and
+    other opt-outs. You are responsible for the content of messages, letters and notices you send.</li>
+  <li>Follow the laws that apply to your properties and tenancies, including those on rent restriction, distress for
+    rent, notice periods and eviction. Do not use the Service to harass, threaten or unlawfully evict anyone, to
+    discriminate, or to demand money that is not owed.</li>
+  <li>Keep your own records for as long as the law requires you to (for tax purposes, usually at least five years).
+    You can export your records at any time.</li>
+  <li>Make sure what you enter is accurate. We are not responsible for wrong rent, balances, receipts or reports that
+    result from wrong or incomplete entries, imports or provider data.</li>
+</ul>
+
+<h2 class="h6">7. Acceptable use</h2>
+<p>You must not, and must not let anyone else:</p>
+<ul>
+  <li>use the Service for anything unlawful, fraudulent or misleading, or to send spam or messages people have not
+    agreed to;</li>
+  <li>upload malware, or material you have no right to share, or that is defamatory, obscene or infringes anyone's
+    rights;</li>
+  <li>try to get into accounts, data or systems you are not allowed into, test or bypass our security, or probe for
+    weaknesses, except with our written permission;</li>
+  <li>overload the Service, use it in a way that harms other customers, or go beyond the API limits we set;</li>
+  <li>copy, resell, sub-license, frame or rent out the Service, or reverse-engineer it except as the law allows; or</li>
+  <li>use the Service to build a competing product.</li>
+</ul>
+<p>Doing so may be an offence under the Computer Misuse and Cybercrimes Act, 2018, and we may report it.</p>
+
+<h2 class="h6">8. Other providers</h2>
+<p>Some features depend on other companies, including Safaricom (M-Pesa and Daraja), Paystack, Africa's Talking (SMS
+and USSD), Meta (WhatsApp), OpenAI (the assistant), email and push providers, and our hosting provider. Their own
+terms also apply to your use of them, and you may need your own account with them (for example your Paybill, your
+Daraja keys). Their fees are yours. We are not responsible for their acts, outages, fees,
+delays or changes, but we tell you on the <a href="{% url 'support:status' %}">status page</a> when they affect the
+Service. Registering your own SMS sender name is a paid extra, and the networks decide whether to approve it.</p>
+
+<h2 class="h6">9. The assistant</h2>
+<p>The assistant is off until an Owner switches it on. Its answers are written by an AI model from your records and
+our help pages, and <strong>can be incomplete or wrong</strong>. Check important figures on the reports before you
+rely on them. It cannot change anything unless a person confirms the change on screen, or a tenant confirms it by
+replying YES; you are responsible for what you confirm. Do not rely on it for legal or financial advice.</p>
+
+<h2 class="h6">10. Fees, trial and payment</h2>
+<ul>
+  <li><strong>Fees.</strong> The fees for your Plan are those on the Subscription page when you subscribe or renew.
+    They are in Kenya Shillings and exclude VAT and other taxes, which we add where the law requires and show on our
+    invoice.</li>
+  <li><strong>Trial.</strong> A new Organization gets a free trial for the period shown at sign-up. When it ends,
+    you move to the Free plan if your records fit its limits; if they do not, we send an invoice for the plan you
+    used, and the rules on late payment below apply.</li>
+  <li><strong>Renewal.</strong> Paid Plans renew for the same period (monthly or yearly) until cancelled. We send the
+    renewal invoice about 7 days before the period ends. You can cancel at any time; the cancellation takes effect
+    at the end of the period you have paid for.</li>
+  <li><strong>Late payment.</strong> If an invoice is not paid by the end of the period, your account is past due.
+    After 14 days of grace it becomes read-only: your data stays visible and exportable, but nothing new can be
+    created until the invoice is paid.</li>
+  <li><strong>Refunds.</strong> Fees and SMS credit are not refundable, except where the law requires it or where we
+    end the Service without you being at fault, in which case we refund fees paid for the unused part of the period
+    and unused SMS credit.</li>
+  <li><strong>Price changes.</strong> We give you at least 30 days' notice before raising the price of a Plan you are
+    on. The new price applies from your next renewal after the notice. If you do not agree, you may cancel before
+    then.</li>
+</ul>
+
+<h2 class="h6">11. Your data and our rights in the Service</h2>
+<ul>
+  <li><strong>Your data is yours.</strong> You keep all rights in Customer Data. You give us a limited licence to
+    host, copy, process, transmit and display it only as needed to provide, secure and support the Service, to follow
+    your instructions, and to meet the law.</li>
+  <li>We may create statistics from use of the Service that do not identify you, any person or any property (for
+    example counts of payments processed) and use them to run, improve and report on the Service.</li>
+  <li><strong>The Service is ours.</strong> We and our licensors own the Service, its software, design, text and the
+    NyumbaPMS name and marks. While your account is in good standing, we give you a non-exclusive, non-transferable
+    right to use the Service for your own property business under these terms. No other rights pass to you.</li>
+  <li>If you send us suggestions, we may use them without any duty to you.</li>
+</ul>
+
+<h2 class="h6">12. Processing personal data for you</h2>
+<p>This section is the contract the Act requires between a data controller (you) and a data processor (us) for the
+personal data in Customer Data. In it we agree:</p>
+<ul>
+  <li>to process that data only to provide the Service and on your documented instructions, which are these terms and
+    what you do in the Service, unless the law requires otherwise (in which case we tell you first, if the law
+    allows); and never to sell it or use it for advertising;</li>
+  <li>to make sure everyone we allow to process it is bound to keep it confidential, and that our staff reach it only
+    to support you or keep the Service running;</li>
+  <li>to keep the technical and organizational security measures described on our
+    <a href="{% url 'support:security' %}">security page</a>, and not to reduce their overall level;</li>
+  <li>to use only the sub-processors listed in the Privacy Policy, under written terms that protect the data at
+    least as well as these terms; to update that list before adding a new kind of sub-processor; and to remain
+    responsible to you for them. You may object on reasonable data protection grounds, and if we cannot address the
+    objection you may end the agreement;</li>
+  <li>to transfer data outside Kenya only as the Privacy Policy describes and with the safeguards the Act
+    requires;</li>
+  <li>to tell you without undue delay, and in any case within 48 hours, of becoming aware of a personal data breach
+    affecting your data, with the information we have, and to help you notify the Data Protection Commissioner and
+    the people affected;</li>
+  <li>to help you, taking into account what we can reasonably do, answer requests from people exercising their
+    rights, carry out data protection impact assessments, and deal with the Data Protection Commissioner;</li>
+  <li>to give you the information reasonably needed to show that we meet this section, and to answer reasonable
+    written questions about it; and</li>
+  <li>when the agreement ends, to let you export your data and then delete it as section 15 describes.</li>
+</ul>
+
+<h2 class="h6">13. Availability and changes to the Service</h2>
+<p>We work to keep the Service running, secure and backed up, but we do not promise it will always be available,
+uninterrupted or free from errors. Planned maintenance and incidents are shown on the
+<a href="{% url 'support:status' %}">status page</a>. We may change, improve or withdraw features. If we withdraw a
+feature that is a material part of your paid Plan, we give you reasonable notice and you may cancel and receive a
+refund for the unused part of the period. We will never remove your ability to export your data.</p>
+
+<h2 class="h6">14. Suspension</h2>
+<p>We may suspend all or part of your access, with notice where we can, if you seriously or repeatedly break these
+terms, if your use puts the Service, other customers or anyone's data at risk, if we must do so by law or by an
+order of a court or authority, or under section 10 for non-payment. We restore access once the reason has been
+dealt with.</p>
+
+<h2 class="h6">15. Ending the agreement</h2>
+<ul>
+  <li>You may stop using the Service at any time and ask us to close your Organization.</li>
+  <li>We may end the agreement on 30 days' written notice for any reason, or at once if you break these terms
+    seriously and do not put it right within 14 days of our notice (or at once if it cannot be put right), or if you
+    become insolvent.</li>
+  <li>After the account is closed, you have 30 days to export your data. We then delete Customer Data within 90
+    days, apart from what the law requires us to keep. Copies in backups expire on their own schedule, are kept
+    secure until then, and are not used except to restore the Service.</li>
+  <li>Sections that by their nature should continue, including 2, 4, 6, 11, 12, 16, 17, 18, 21, 22 and 23, and any
+    fee you owe, survive the end of the agreement. Ending it does not affect rights or duties that arose before it
+    ended.</li>
+</ul>
+
+<h2 class="h6">16. Warranties and what we do not promise</h2>
+<p>We will provide the Service with reasonable skill and care. Apart from that, and as far as the law allows, the
+Service is provided "as is" and "as available", and we give no other warranty or promise, express or implied,
+including that it is fit for a particular purpose, that it will meet every need you have, or that reports, figures,
+letters or assistant answers are free from errors. Nothing in these terms takes away rights you have under the
+Consumer Protection Act, 2012 or other law that cannot be excluded.</p>
+
+<h2 class="h6">17. Limits on our liability</h2>
+<ul>
+  <li>As far as the law allows, neither of us is liable to the other for loss of profit, rent, revenue, business,
+    goodwill or opportunity, or for any indirect or consequential loss, however it arises.</li>
+  <li>We are not liable for loss caused by: wrong or incomplete information you or your Users enter or import;
+    messages, notices or letters you choose to send; your failure to check outputs as section 3 asks; the acts or
+    outages of the providers in section 8; or anything outside our reasonable control.</li>
+  <li>Our total liability to you for all claims in any 12 months is limited to the greater of the fees you paid us in
+    the 12 months before the event giving rise to the claim and KES 10,000.</li>
+  <li>Nothing in these terms limits liability for death or personal injury caused by negligence, for fraud, or for
+    anything else that cannot be limited by law.</li>
+</ul>
+
+<h2 class="h6">18. Your indemnity</h2>
+<p>You will make good to us any loss, damages, fines, costs and reasonable legal fees we suffer because of a claim
+by a third party (including a tenant or the Data Protection Commissioner) that arises from Customer Data you had no
+right to process, messages or notices you sent, your breach of section 6 or 7, or your breach of the law. We will
+tell you promptly about such a claim, let you control its defence where the law allows, and help you at your
+cost.</p>
+
+<h2 class="h6">19. Events outside our control</h2>
+<p>We are not in breach of these terms if we are delayed or prevented from performing them by something outside our
+reasonable control, such as failures of power, internet, mobile networks, M-Pesa or other providers, natural events,
+epidemics, civil unrest, government action or attacks on our systems that we took reasonable steps to prevent. We
+will tell you and do what we reasonably can to limit the effect.</p>
+
+<h2 class="h6">20. Tenants using the portal</h2>
+<p>If you are a tenant invited to the portal by your landlord or manager, sections 5, 7 and 9 and sections 16 to 22
+apply to you, and you accept them by signing in to the portal or using it. Your landlord, not us, is responsible for your tenancy, your rent, your records and any message,
+notice or letter they send you. Questions about these go to your landlord. Using the portal is free for you.</p>
+
+<h2 class="h6">21. Changes to these terms</h2>
+<p>We may change these terms. If a change matters, we give the new version a new effective date and tell signed-in
+users, who are asked to read and accept it; for paid Plans we give at least 30 days' notice unless the change is
+required by law or for security. If you do not accept a change, you may cancel before it takes effect and receive a
+refund for the unused part of a paid period. If you keep using the Service after the change takes effect, you accept
+it.</p>
+
+<h2 class="h6">22. Law and disputes</h2>
+<ul>
+  <li>These terms are governed by the laws of Kenya.</li>
+  <li>If a dispute arises, either of us may give the other written notice of it, and senior people from both sides
+    will try in good faith to settle it within 30 days. If that fails, either of us may refer it to mediation in
+    Nairobi.</li>
+  <li>If it is not settled within 30 days of a referral to mediation, it shall be finally decided by arbitration
+    under the Arbitration Act, 1995, by a single arbitrator agreed by both of us or, failing agreement within 14 days,
+    appointed by the Chairperson of the Chartered Institute of Arbitrators (Kenya Branch). The seat is Nairobi and the
+    language English. The award is final and binding.</li>
+  <li>Nothing in this section stops either of us from asking a Kenyan court for urgent relief, from bringing a claim
+    within the jurisdiction of the Small Claims Court, or stops anyone from complaining to the Data Protection
+    Commissioner.</li>
+</ul>
+
+<h2 class="h6">23. General</h2>
+<ul>
+  <li><strong>Notices.</strong> We send notices to the Owner's email or phone number, or show them in the Service.
+    You send notices to the address below. A notice sent by email counts as received on the next working day.</li>
+  <li><strong>Transfer.</strong> You may not transfer this agreement without our written consent. We may transfer it
+    to a company that takes over the Service, if it agrees to be bound by these terms and the Privacy Policy, and we
+    tell you first.</li>
+  <li><strong>Severability.</strong> If a court or arbitrator finds part of these terms invalid, the rest stays in
+    force, and the invalid part is read as closely as possible to what was intended.</li>
+  <li><strong>No waiver.</strong> If either of us does not enforce a right at once, that does not give it up. A
+    waiver counts only if it is in writing.</li>
+  <li><strong>Remedies.</strong> Our rights under these terms are in addition to any rights the law gives us.</li>
+  <li><strong>Entire agreement and changes.</strong> This agreement is the whole agreement about the Service (see
+    section 2). It can be changed only as section 21 describes or by a written agreement signed by both of us.</li>
+  <li><strong>Interpretation.</strong> Headings are for convenience only. "Including" means including without
+    limitation. A reference to a law includes that law as amended or replaced.</li>
+  <li><strong>Authority.</strong> Each of us confirms that we have the power to enter into this agreement and that
+    doing so does not break any other agreement we are bound by.</li>
+  <li><strong>Relationship.</strong> We are independent parties. Nothing in these terms makes us partners, agents or
+    employees of each other, and nobody else has rights under them except as stated in section 20.</li>
+  <li><strong>Language.</strong> These terms are written in English. If a translation is offered, the English
+    version prevails.</li>
+</ul>
+
+<h2 class="h6">24. Contact</h2>
+<p class="mb-0">{{ legal_name }}{% if legal_address %}, {{ legal_address }}{% endif %}.
+{% if support_email %}<a href="mailto:{{ support_email }}">{{ support_email }}</a>{% else %}{% trans "Signed-in users can reach us from Help, Contact support." %}{% endif %}</p>
+</div></div>
+</div>
+{% endblock %}

@@ -7,9 +7,9 @@ from django.urls import reverse
 
 from accounts.tests.factories import make_org
 from audit.models import AuditEvent
-from core.sms import SmsResult
 from notifications import catalog, delivery, sms_hooks
 from notifications.models import ConsentRecord, Message
+from notifications.providers.sms import SmsResult
 from notifications.services import channel_allowed
 from tenants import services as tenant_services
 
@@ -57,7 +57,7 @@ def test_permanent_failure_is_not_retried(owner, tenant, monkeypatch):
                         now=noon)
 
     class Rejecting:
-        def send(self, to, body):
+        def send(self, to, body, sender_id=""):
             return SmsResult(ok=False, provider="africastalking", error="406 UserInBlacklist", permanent=True)
 
     monkeypatch.setattr(delivery, "get_sms_sender", Rejecting)

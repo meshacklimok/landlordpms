@@ -1,7 +1,11 @@
 {% load i18n %}
-<nav class="nav nav-pills small mb-3">
+<nav class="nav nav-pills small mb-3 report-nav">
+  <a class="nav-link" href="{% url 'reports:centre' %}">&larr; {% trans "All reports" %}</a>
   <a class="nav-link {% if section == 'pl' %}active{% endif %}" href="{% url 'reports:profit_loss' %}">{% trans "Profit and loss" %}</a>
+  <a class="nav-link {% if section == 'mom' %}active{% endif %}" href="{% url 'reports:month_on_month' %}">{% trans "Month on month" %}</a>
   <a class="nav-link {% if section == 'cash' %}active{% endif %}" href="{% url 'reports:cash_flow' %}">{% trans "Cash flow" %}</a>
   <a class="nav-link {% if section == 'ar' %}active{% endif %}" href="{% url 'reports:receivables' %}">{% trans "Aged receivables" %}</a>
+  {% if agency_tools %}<a class="nav-link {% if section == 'fees' %}active{% endif %}" href="{% url 'reports:fees' %}">{% trans "Management fees" %}</a>{% endif %}
   <a class="nav-link" href="{% url 'reports:income' %}">{% trans "Rental income pack" %}</a>
+  {% if can_export %}<a class="nav-link {% if section == 'books' %}active{% endif %}" href="{% url 'reports:accounting_export' %}">{% trans "For the accountant" %}</a>{% endif %}
 </nav>

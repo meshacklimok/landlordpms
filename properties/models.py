@@ -9,6 +9,7 @@ Occupancy is never stored: it comes from leases. A unit stores only its manual s
 """
 
 import re
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -60,6 +61,7 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         COMMERCIAL = "COMMERCIAL", _("Commercial")
         MIXED_USE = "MIXED_USE", _("Mixed-use")
         SINGLE_HOUSE = "SINGLE_HOUSE", _("Single house")
+        HOSTEL = "HOSTEL", _("Student hostel")
 
     # One managing organization only (D-017).
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="properties")
@@ -75,9 +77,13 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
     street = models.CharField(_("street / landmark"), max_length=200, blank=True)
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
-    # Agency office that runs this property (D-040): design-in only, same organization.
+    # Agency office that runs this property (D-040); its staff see it (D-127). Same organization.
     branch = models.ForeignKey("accounts.Branch", on_delete=models.PROTECT, null=True, blank=True,
                                related_name="properties")
+
+    # When water is supplied or rubbish is collected, for water vendors and garbage collectors (D-159).
+    service_days = models.CharField(_("service days"), max_length=120, blank=True,
+                                    help_text=_("e.g. Mon, Wed, Fri or Tuesdays 6am-10am. Customers see it in their portal."))
 
     # Who owns it and the agency's fee on rent collected (D-053).
     owner = models.ForeignKey(PropertyOwner, on_delete=models.PROTECT, null=True, blank=True,
@@ -86,6 +92,21 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         _("management fee (%)"), max_digits=5, decimal_places=2, null=True, blank=True,
         validators=[MinValueValidator(0), MaxValueValidator(100)],
         help_text=_("Taken from rent collected on the owner statement. Leave empty for no fee."))
+    # A flat fee for each month the property is managed, on top of the percentage (D-127).
+    management_fee_fixed = models.DecimalField(
+        _("fixed monthly fee"), max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=_("Taken every month the property is managed, whatever is collected. Leave empty for none."))
+    # What the property would sell for today, so the performance report can show its yield (D-164).
+    market_value = models.DecimalField(
+        _("estimated value"), max_digits=14, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)],
+        help_text=_("What it would sell for today. Used only to work out its yield on the performance report; "
+                    "leave empty if you do not know."))
+    # A hostel's public booking page /stay/<token>/ (D-189). Null when off; turning it on again issues a new token.
+    booking_token = models.CharField(max_length=32, null=True, blank=True, unique=True, editable=False)  # noqa: DJ001
+    booking_shared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+", editable=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -120,6 +141,50 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         return ", ".join(p for p in parts if p)
 
 
+class PropertyShare(TimeStampedModel):
+    """A co-owner's share of a jointly owned property (D-078).
+
+    A property with no shares is owned wholly by `Property.owner`. With shares, the rows are all of
+    its owners, their percentages add up to 100 and `Property.owner` is one of them: the main owner.
+    """
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="shares")
+    owner = models.ForeignKey(PropertyOwner, on_delete=models.PROTECT, related_name="shares")
+    percent = models.DecimalField(_("share (%)"), max_digits=5, decimal_places=2,
+                                  validators=[MinValueValidator(Decimal("0.01")), MaxValueValidator(100)])
+
+    class Meta:
+        ordering = ["-percent", "pk"]
+        constraints = [
+            models.UniqueConstraint("property", "owner", name="properties_share_property_owner_unique"),
+            models.CheckConstraint(condition=models.Q(percent__gt=0, percent__lte=100),
+                                   name="properties_share_percent_range"),
+        ]
+
+    def __str__(self):
+        return f"{self.owner} {format_percent(self.percent)}%"
+
+
+def format_percent(value: Decimal) -> str:
+    """50.00 as "50", 33.50 as "33.5"."""
+    text = f"{value:f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def owned_by(owner: PropertyOwner) -> models.Q:
+    """Properties this owner holds, alone or with others (D-078)."""
+    return models.Q(owner=owner) | models.Q(pk__in=PropertyShare.objects.filter(owner=owner).values("property_id"))
+
+
+def owner_ids_of(properties) -> models.QuerySet:
+    """Ids of every owner of these properties, co-owners included, for `pk__in` filters."""
+    return PropertyOwner.objects.filter(
+        models.Q(pk__in=properties.filter(owner__isnull=False).values("owner_id"))
+        | models.Q(pk__in=PropertyShare.objects.filter(property__in=properties).values("owner_id"))
+    ).values("pk")
+
+
 class Building(PublicIdModel, TimeStampedModel, ArchivableModel):
     """Optional grouping inside a large property (Case B)."""
 
@@ -140,19 +205,66 @@ class Building(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.name
 
 
+class Room(PublicIdModel, TimeStampedModel, ArchivableModel):
+    """A hostel room (D-188). It groups the beds that are let one by one, or is itself let whole.
+
+    - `let_whole` False: the room holds `capacity` BED_SPACE units, each let on its own.
+    - `let_whole` True: the room is one HOSTEL_ROOM unit, let to one booking that may have several students.
+    A room's way of being let is chosen when it is made and does not change, so a room is never let both ways.
+    """
+
+    class Gender(models.TextChoices):
+        ANY = "", _("Mixed or not set")
+        FEMALE = "F", _("Female")
+        MALE = "M", _("Male")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="rooms")
+    building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
+    code = models.CharField(_("room"), max_length=10, validators=[unit_code_validator])
+    gender = models.CharField(_("for"), max_length=1, choices=Gender.choices, blank=True, default="")
+    let_whole = models.BooleanField(_("let as a whole room"), default=False)
+    # Beds in the room, or students the whole room takes.
+    capacity = models.PositiveSmallIntegerField(_("beds"), default=1,
+                                                validators=[MinValueValidator(1), MaxValueValidator(50)])
+
+    objects = LiveManager()
+    all_objects = AllObjectsManager()
+
+    class Meta:
+        ordering = ["property__name", "code"]
+        constraints = [
+            models.UniqueConstraint("property", Upper("code"), name="properties_room_property_code_unique"),
+        ]
+
+    def __str__(self):
+        return f"{self.property.name} · {self.code}"
+
+    def save(self, *args, **kwargs):
+        self.code = clean_code(self.code)
+        super().save(*args, **kwargs)
+
+
 class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
     class Type(models.TextChoices):
-        APARTMENT = "APARTMENT", _("Apartment")
-        HOUSE = "HOUSE", _("House")
         BEDSITTER = "BEDSITTER", _("Bedsitter")
         STUDIO = "STUDIO", _("Studio")
+        APARTMENT = "APARTMENT", _("Apartment")
+        ONE_BEDROOM = "ONE_BEDROOM", _("1 bedroom")
+        TWO_BEDROOM = "TWO_BEDROOM", _("2 bedroom")
+        THREE_BEDROOM = "THREE_BEDROOM", _("3 bedroom")
+        FOUR_BEDROOM = "FOUR_BEDROOM", _("4 bedroom")
+        SINGLE = "SINGLE", _("Single room")
+        MAISONETTE = "MAISONETTE", _("Maisonette")
         SHOP = "SHOP", _("Shop")
         OFFICE = "OFFICE", _("Office")
+        OTHER = "OTHER", _("Other")
+        HOUSE = "HOUSE", _("House")
         WAREHOUSE = "WAREHOUSE", _("Warehouse")
         PARKING = "PARKING", _("Parking")
-        # Hostels: design-in only (D-040). Room/bed assignment and semester billing come later.
+        # Hostels (D-188): a bed is let on its own; a room let whole is one HOSTEL_ROOM unit.
         BED_SPACE = "BED_SPACE", _("Bed space")
-        OTHER = "OTHER", _("Other")
+        HOSTEL_ROOM = "HOSTEL_ROOM", _("Hostel room")
 
     class ManualStatus(models.TextChoices):
         NORMAL = "NORMAL", _("Normal")
@@ -165,6 +277,9 @@ class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
     # Must belong to the same property; checked in services.
     building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="units")
     code = models.CharField(_("unit code"), max_length=10, validators=[unit_code_validator])
+    # Hostels (D-188): the room a bed, or a whole-room let, belongs to. Null for everything else.
+    room = models.ForeignKey("Room", on_delete=models.PROTECT, null=True, blank=True, related_name="units",
+                             verbose_name=_("room"))
     unit_type = models.CharField(_("type"), max_length=20, choices=Type.choices, default=Type.APARTMENT)
     type_label = models.CharField(_("label"), max_length=60, blank=True, help_text=_("Optional, e.g. 2 bedroom"))
     manual_status = models.CharField(

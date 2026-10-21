@@ -1,29 +1,69 @@
 {% extends "base.html" %}{% load i18n %}
-{% block title %}{% trans "Water meters" %}{% endblock %}
+{% block title %}{% trans "Meters" %}{% endblock %}
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
-  <h1 class="h4 mb-0">{% trans "Water meters" %}</h1>
-  {% if to_approve %}<a class="btn btn-sm btn-warning" href="{% url 'meters:approvals' %}">{% blocktrans count n=to_approve %}{{ n }} reading to approve{% plural %}{{ n }} readings to approve{% endblocktrans %}</a>{% endif %}
+<div class="page-head align-items-end">
+  <div>
+    <div class="page-eyebrow">{{ month|date:"F Y" }}</div>
+    <h1 class="h4">{% trans "Meters" %}</h1>
+    <p class="lead-text">{% if totals.billed %}{% blocktrans with done=totals.read all=totals.billed %}{{ done }} of {{ all }} billed meters read this month.{% endblocktrans %}{% else %}{% trans "Water and electricity meters, by property." %}{% endif %}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2 align-items-center">
+    <span class="btn-group btn-group-sm" role="group" aria-label="{% trans 'Show' %}">
+      <a class="btn btn-outline-secondary{% if not utility %} active{% endif %}" href="{% querystring utility=None %}"{% if not utility %} aria-current="page"{% endif %}>{% trans "All" %}</a>
+      {% for key, label in utilities %}<a class="btn btn-outline-secondary{% if utility == key %} active{% endif %}" href="{% querystring utility=key %}"{% if utility == key %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}
+    </span>
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:water' %}"><i class="bi bi-droplet" aria-hidden="true"></i> {% trans "Water readings" %}</a>
+    {% if rows %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:usage' %}"><i class="bi bi-bar-chart" aria-hidden="true"></i> {% trans "Used this month" %}</a>{% endif %}
+  </div>
 </div>
+
+{% if totals.meters %}
+<div class="row row-cols-2 row-cols-lg-4 g-2 mb-4">
+  <div class="col"><div class="card stat stat-accent h-100" style="--accent: var(--chart-1)"><div class="card-body">
+    <div class="stat-label">{% trans "Read this month" %}</div>
+    <div class="stat-value">{{ totals.read }} <span class="fs-6 fw-normal text-muted">/ {{ totals.billed }}</span></div>
+    {% if totals.billed %}<div class="progress water-bar mt-2" role="progressbar" aria-label="{% trans 'Read this month' %}" aria-valuenow="{% widthratio totals.read totals.billed 100 %}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {% widthratio totals.read totals.billed 100 %}%"></div></div>{% endif %}
+  </div></div></div>
+  <div class="col"><div class="card stat stat-accent h-100" style="--accent: var(--chart-neutral)"><div class="card-body">
+    <div class="stat-label">{% trans "Still to read" %}</div>
+    <div class="stat-value">{{ totals.to_read }}</div>
+    <div class="stat-sub">{% trans "Billed meters not read yet" %}</div>
+  </div></div></div>
+  <div class="col"><div class="card stat stat-accent h-100" style="--accent: var(--bs-warning)"><div class="card-body">
+    <div class="stat-label">{% trans "Waiting for approval" %}</div>
+    <div class="stat-value">{{ totals.waiting }}</div>
+    <div class="stat-sub">{% if to_approve %}<a href="{% url 'meters:approvals' %}">{% blocktrans count n=to_approve %}Review {{ n }} reading{% plural %}Review {{ n }} readings{% endblocktrans %}</a>{% else %}{% trans "Nothing to review" %}{% endif %}</div>
+  </div></div></div>
+  <div class="col"><div class="card stat stat-accent h-100" style="--accent: var(--chart-3)"><div class="card-body">
+    <div class="stat-label">{% trans "Meters" %}</div>
+    <div class="stat-value">{{ totals.meters }}</div>
+    <div class="stat-sub">{% if totals.never %}{% blocktrans count n=totals.never %}{{ n }} never read{% plural %}{{ n }} never read{% endblocktrans %}{% else %}{% trans "All have a reading" %}{% endif %}</div>
+  </div></div></div>
+</div>
+{% endif %}
+
 {% for row in rows %}
-<div class="card shadow-sm mb-3" id="property-{{ row.property.public_id }}"><div class="card-body">
+<section class="card mb-3" id="property-{{ row.property.public_id }}" aria-labelledby="p-{{ row.property.public_id }}"><div class="card-body">
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-    <h2 class="h6 mb-0">{{ row.property.name }}{% if row.waiting %} <span class="badge text-bg-warning">{% blocktrans count n=row.waiting %}{{ n }} waiting{% plural %}{{ n }} waiting{% endblocktrans %}</span>{% endif %}</h2>
+    <h2 class="h6 mb-0 d-flex flex-wrap align-items-center gap-2" id="p-{{ row.property.public_id }}">{{ row.property.name }}{% if row.waiting %}<span class="wstate wstate-waiting">{% blocktrans count n=row.waiting %}{{ n }} waiting{% plural %}{{ n }} waiting{% endblocktrans %}</span>{% endif %}{% if row.meters %}{% if row.to_read %}<span class="wstate wstate-missing">{% blocktrans count n=row.to_read %}{{ n }} to read this month{% plural %}{{ n }} to read this month{% endblocktrans %}</span>{% else %}<span class="wstate wstate-approved">{% trans "All read this month" %}</span>{% endif %}{% endif %}</h2>
     <span class="d-flex gap-2">
       {% if row.can_record and row.meters %}<a class="btn btn-sm btn-primary" href="{% url 'meters:round' row.property.public_id %}">{% trans "Read meters" %}</a>{% endif %}
       {% if row.can_manage %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:create' row.property.public_id %}">{% trans "Add meter" %}</a>{% endif %}
     </span>
   </div>
   {% if row.meters %}
-  <div class="table-responsive"><table class="table table-sm align-middle mb-0 small">
-    <thead><tr><th>{% trans "Meter" %}</th><th>{% trans "Units" %}</th><th class="text-end">{% trans "Last reading" %}</th><th>{% trans "Date" %}</th></tr></thead>
+  {% if row.has_billed %}<div class="progress water-bar mb-3" role="progressbar" aria-label="{% trans 'Read this month' %}" aria-valuenow="{{ row.percent }}" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: {{ row.percent }}%"></div></div>{% endif %}
+  <div class="table-responsive"><table class="table align-middle mb-0 small water-table meter-table">
+    <thead><tr><th scope="col">{% trans "Meter" %}</th><th scope="col">{% trans "Units" %}</th><th scope="col" class="text-end">{% trans "Last reading" %}</th><th scope="col" class="text-end">{% trans "Used" %}</th><th scope="col">{% trans "Read on" %}</th><th scope="col"><span class="visually-hidden">{% trans "Action" %}</span></th></tr></thead>
     <tbody>
     {% for item in row.meters %}
       <tr>
-        <td><a href="{% url 'meters:detail' item.meter.public_id %}">{{ item.meter.label }}</a>{% if item.meter.is_prepaid %} <span class="badge text-bg-secondary">{% trans "Prepaid · not billed" %}</span>{% endif %}</td>
+        <td><a href="{% url 'meters:detail' item.meter.public_id %}">{{ item.meter.label }}</a> <span class="sub">{{ item.meter.get_utility_display }}{% if item.meter.is_prepaid %} · {% trans "Prepaid, not billed" %}{% endif %}</span></td>
         <td>{% for mu in item.meter.served.all %}{{ mu.unit.code }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
-        <td class="text-end font-monospace">{% if item.last %}{{ item.last.value }}{% else %}—{% endif %}</td>
-        <td>{% if item.last %}{{ item.last.read_on|date:"j M Y" }}{% if item.last.status == "SUBMITTED" %} <span class="badge text-bg-warning">{% trans "waiting" %}</span>{% endif %}{% else %}<span class="text-muted">{% trans "never read" %}</span>{% endif %}</td>
+        <td class="text-end num">{% if item.last %}{{ item.last.value }} {{ item.meter.unit_label }}{% else %}—{% endif %}</td>
+        <td class="text-end num">{% if item.used is not None %}{{ item.used }}{% else %}—{% endif %}</td>
+        <td>{% if item.last %}{{ item.last.read_on|date:"j M Y" }}{% if item.last.status == "SUBMITTED" %} <span class="wstate wstate-waiting">{% trans "waiting" %}</span>{% endif %}{% if not item.read_this_month and not item.meter.is_prepaid %} <span class="wstate wstate-missing">{% trans "not read this month" %}</span>{% endif %}{% else %}<span class="wstate">{% trans "never read" %}</span>{% endif %}</td>
+        <td class="text-end">{% if row.can_record and not item.read_this_month and not item.meter.is_prepaid %}<a class="btn btn-sm btn-outline-primary py-0" href="{% url 'meters:quick' item.meter.public_id %}">{% trans "Read" %}<span class="visually-hidden"> {{ item.meter.label }}</span></a>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>
@@ -31,8 +71,8 @@
   {% else %}
   <p class="small text-muted mb-0">{% trans "No meters on this property yet." %}</p>
   {% endif %}
-</div></div>
+</div></section>
 {% empty %}
-<p class="text-muted">{% trans "No water meters yet." %}</p>
+<div class="card"><div class="card-body text-center text-muted py-5"><i class="bi bi-speedometer2 fs-2 d-block mb-2" aria-hidden="true"></i>{% trans "No meters yet. Open a property to add its first meter." %}</div></div>
 {% endfor %}
 {% endblock %}

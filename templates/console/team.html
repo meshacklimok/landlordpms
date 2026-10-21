@@ -1,0 +1,32 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console team" %}{% endblock %}
+{% block console_title %}{% trans "Console team" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:team_activity' %}">{% trans "What each person did" %} &rarr;</a></p>
+<p class="small text-muted">{% trans "People you add here can open the console pages you choose, after signing in with two-step login. Landlords and tenants never see it. Owners signed in as superusers always have every page." %}</p>
+<a class="btn btn-sm btn-primary mb-3" href="{% url 'console:team_add' %}">{% trans "Add a person" %}</a>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Person" %}</th><th>{% trans "Role" %}</th><th>{% trans "Pages" %}</th><th>{% trans "Status" %}</th><th>{% trans "Last opened" %}</th><th></th></tr></thead>
+  <tbody>
+  {% for p in people %}
+    <tr>
+      <td>{{ p.user.full_name }}<div class="text-muted">{{ p.user.phone }}</div>{% if p.note %}<div class="text-muted">{{ p.note }}</div>{% endif %}</td>
+      <td>{{ p.get_role_display }}</td>
+      <td>{% for c in p.capabilities %}<span class="badge text-bg-light border">{{ c }}</span> {% endfor %}</td>
+      <td>{% if p.is_active %}{% trans "Active" %}{% else %}<span class="text-muted">{% trans "Switched off" %}</span>{% endif %}</td>
+      <td class="text-nowrap">{% if p.last_seen_at %}{{ p.last_seen_at|date:"j M H:i" }}{% else %}—{% endif %}</td>
+      <td class="text-end"><a href="{% url 'console:team_edit' p.pk %}">{% trans "Change" %}</a></td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nobody yet." %}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+
+<h2 class="h6 mt-4">{% trans "What each page shows" %}</h2>
+<dl class="row small">{% for code, text in labels.items %}<dt class="col-sm-3">{{ code }}</dt><dd class="col-sm-9">{{ text }}</dd>{% endfor %}</dl>
+
+<h2 class="h6 mt-4">{% trans "Recent changes and downloads" %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <tbody>{% for e in history %}<tr><td class="text-nowrap">{{ e.created_at|date:"j M H:i" }}</td><td>{{ e.actor.full_name }}</td><td>{{ e.action }}</td><td class="text-muted">{{ e.object_repr }}</td></tr>
+  {% empty %}<tr><td class="text-muted">—</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

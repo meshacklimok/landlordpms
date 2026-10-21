@@ -35,6 +35,8 @@ class PaymentAccount(PublicIdModel, TimeStampedModel, ArchivableModel):
     type = models.CharField(_("type"), max_length=20, choices=Type.choices)
     number = models.CharField(_("account number"), max_length=40, blank=True)
     display_name = models.CharField(_("display name"), max_length=80)
+    # When the owner said they had applied to Safaricom for Go-Live and were waiting (mpesa/setup.py, D-174).
+    safaricom_applied_at = models.DateTimeField(_("applied to Safaricom"), null=True, blank=True)
 
     objects = LiveManager()
     all_objects = AllObjectsManager()

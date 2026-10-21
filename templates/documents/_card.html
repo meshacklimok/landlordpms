@@ -1,0 +1,18 @@
+{% load i18n %}{# The Documents card on a property, unit, lease or tenant page. Needs `panel` from documents.services.panel. #}
+<section class="panel">
+  <div class="panel-head">
+    <h2>{% trans "Documents" %}{% if panel.count %}<span class="count">{{ panel.count }}</span>{% endif %}</h2>
+    <span class="d-flex gap-2">
+      {% if panel.count > panel.docs|length %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'documents:list' %}?{{ panel.query }}">{% trans "All" %}</a>{% endif %}
+      {% if panel.can_upload %}<a class="btn btn-outline-primary btn-sm" href="{% url 'documents:upload' %}?{{ panel.query }}"><i class="bi bi-upload" aria-hidden="true"></i>{% trans "Upload" %}</a>{% endif %}
+    </span>
+  </div>
+  <ul class="list-unstyled small mb-0">
+    {% for doc in panel.docs %}
+    <li class="d-flex justify-content-between gap-2 py-1">
+      <span><i class="bi bi-file-earmark me-1 text-body-secondary" aria-hidden="true"></i><a href="{% url 'documents:detail' doc.public_id %}">{{ doc.title|truncatechars:60 }}</a>{% if doc.lease and not doc.lease == lease %} <span class="text-body-secondary">· {{ doc.lease.number }}</span>{% endif %}</span>
+      <span class="text-nowrap text-body-secondary">{% include "documents/_expiry.html" %}{% if doc.shared_with_tenant %} <span class="badge text-bg-info">{% trans "Shared" %}</span>{% endif %} {{ doc.get_category_display }}</span>
+    </li>
+    {% empty %}<li class="text-body-secondary">{% trans "No documents yet. Keep signed agreements, ID copies and permits here." %}</li>{% endfor %}
+  </ul>
+</section>

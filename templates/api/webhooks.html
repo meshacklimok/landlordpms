@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Webhooks" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'accounts:staff' %}" class="small">← {% trans "Staff" %}</a>
+  <h1 class="h4 mt-2">{% trans "Webhooks" %}</h1>
+  <p class="small text-muted">{% blocktrans %}A webhook tells another program, such as your accounting software, when a payment is confirmed, an invoice is issued or a lease starts or ends. Within a few minutes, we send the details to an address on that program's server. It sends with your rights and waits if you leave or lose the right to manage the organization.{% endblocktrans %} <a href="{% url 'support:help_topic' 'staff-roles' %}#webhooks">{% trans "How webhooks work" %}</a></p>
+
+  {% if secret %}
+  <div class="alert alert-success" role="status">
+    <div class="fw-semibold mb-1">{% trans "Webhook added. Copy its signing secret now: it will not be shown again." %}</div>
+    <div class="input-group">
+      <input type="text" readonly class="form-control font-monospace" value="{{ secret }}" id="webhook-secret" aria-label="{% trans 'Signing secret' %}" data-webhook-secret data-select-on-focus>
+      <button type="button" class="btn btn-outline-secondary" data-copy="#webhook-secret" data-copied="{% trans 'Copied' %}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+    </div>
+    <div class="small mt-2">{% blocktrans %}Use it to check the <code>X-LPMS-Signature</code> header on every event.{% endblocktrans %} <a href="{% url 'api:webhook' created.public_id %}">{% trans "Open the webhook" %}</a></div>
+  </div>
+  {% endif %}
+
+  <div class="list-group mb-4">
+    {% for endpoint in endpoints %}
+    <a href="{% url 'api:webhook' endpoint.public_id %}" class="list-group-item list-group-item-action">
+      <div class="fw-semibold text-break">{{ endpoint.url }}
+        {% if endpoint.is_paused %}<span class="badge text-bg-warning">{% trans "Paused" %}</span>{% elif endpoint.blocked %}<span class="badge text-bg-secondary">{% trans "Waiting" %}</span>{% endif %}</div>
+      <div class="small text-muted">{{ endpoint.event_labels|join:", " }}
+        · {% if endpoint.last_success_at %}{% blocktrans with when=endpoint.last_success_at|timesince %}last delivered {{ when }} ago{% endblocktrans %}{% else %}{% trans "nothing delivered yet" %}{% endif %}</div>
+      {% if endpoint.blocked %}<div class="small text-warning-emphasis">{{ endpoint.blocked }}</div>{% endif %}
+    </a>
+    {% empty %}
+    <div class="list-group-item text-muted">{% trans "No webhooks yet." %}</div>
+    {% endfor %}
+  </div>
+
+  <h2 class="h6">{% trans "New webhook" %}</h2>
+  {% if endpoints|length >= max_endpoints %}
+  <p class="small text-muted">{% blocktrans %}You have {{ max_endpoints }} webhooks. Delete one to add another.{% endblocktrans %}</p>
+  {% else %}
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="mb-3">
+        <label class="form-label" for="{{ form.url.id_for_label }}">{{ form.url.label }}</label>
+        <input type="url" name="url" id="{{ form.url.id_for_label }}" maxlength="300" required inputmode="url" class="form-control{% if form.url.errors %} is-invalid{% endif %}" value="{{ form.url.value|default:'' }}">
+        <div class="form-text small">{{ form.url.help_text }}</div>
+        {% for e in form.url.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+      </div>
+      {% include "api/_webhook_events.html" %}
+      <button class="btn btn-primary btn-sm">{% trans "Add webhook" %}</button>
+    </form>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

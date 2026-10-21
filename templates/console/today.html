@@ -1,0 +1,48 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console today" %}{% endblock %}
+{% block console_title %}{% trans "Today" %}{% endblock %}
+{% block console %}
+{% with d=data %}
+<div class="row g-3">
+  {% if d.support %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Support waiting for a first reply" %} <span class="badge text-bg-{% if d.support.late %}danger{% else %}secondary{% endif %}">{{ d.support.count }}</span></h2>
+    {% if d.support.late %}<p class="small text-danger mb-2">{% blocktrans with n=d.support.late %}{{ n }} waiting over 24 hours{% endblocktrans %}</p>{% endif %}
+    <ul class="list-unstyled small mb-2">{% for i in d.support.items %}<li><a href="{% url 'console:support_item' i.public_id %}">{{ i.number }}</a> · {{ i.subject }} <span class="text-muted">{{ i.organization.name|default:"" }} · {{ i.created_at|timesince }}</span></li>{% empty %}<li class="text-muted">{% trans "All answered." %}</li>{% endfor %}</ul>
+    <a class="small" href="{% url 'console:support' %}">{% trans "All requests" %} &rarr;</a>
+  </div></div></div>
+  {% endif %}
+  {% if d.problems %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Problems" %} <span class="badge text-bg-{% if d.problems.total %}danger{% else %}success{% endif %}">{{ d.problems.total }}</span></h2>
+    <ul class="small mb-2">
+      <li>{% blocktrans with n=d.problems.messages %}{{ n }} failed messages{% endblocktrans %}</li>
+      <li>{% blocktrans with n=d.problems.webhooks %}{{ n }} failed webhook deliveries{% endblocktrans %}</li>
+      <li>{% blocktrans with n=d.problems.mpesa %}{{ n }} M-Pesa payments not matched for days{% endblocktrans %}</li>
+    </ul>
+    {% for l in d.problems.lines %}<p class="small text-danger mb-1">{{ l }}</p>{% endfor %}
+    <a class="small" href="{% url 'console:problems' %}">{% trans "Open the queue" %} &rarr;</a>
+  </div></div></div>
+  {% endif %}
+  {% if d.watch %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Landlords to call" %} <span class="badge text-bg-secondary">{{ d.watch.count }}</span></h2>
+    <ul class="list-unstyled small mb-2">{% for r in d.watch.items %}<li><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a> <span class="text-muted">{{ r.reasons|join:"; " }}</span></li>{% empty %}<li class="text-muted">{% trans "Nobody looks at risk." %}</li>{% endfor %}</ul>
+    <a class="small" href="{% url 'console:watchlist' %}">{% trans "Watchlist" %} &rarr;</a>
+  </div></div></div>
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "New in the last 3 days" %}</h2>
+    <ul class="list-unstyled small mb-2">{% for o in d.new_signups %}<li><a href="{% url 'console:organization' o.public_id %}">{{ o.name }}</a> <span class="text-muted">{{ o.created_at|timesince }}</span></li>{% empty %}<li class="text-muted">{% trans "No sign-ups." %}</li>{% endfor %}</ul>
+  </div></div></div>
+  {% endif %}
+  {% if d.follow_ups %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Follow-ups due" %} <span class="badge text-bg-{% if d.follow_ups.count %}warning{% else %}secondary{% endif %}">{{ d.follow_ups.count }}</span></h2>
+    <ul class="list-unstyled small mb-2">{% for n in d.follow_ups.items %}<li><strong>{{ n.organization.name }}</strong> · {{ n.body|truncatechars:90 }} <span class="text-muted">{{ n.follow_up_on|date:"j M" }}</span></li>{% empty %}<li class="text-muted">{% trans "Nothing due." %}</li>{% endfor %}</ul>
+    <a class="small" href="{% url 'console:owner_follow_ups' %}">{% trans "All follow-ups" %} &rarr;</a>
+  </div></div></div>
+  {% endif %}
+</div>
+{% if not d.sections %}<p class="text-muted">{% trans "Nothing to show for the pages you may open." %}</p>{% endif %}
+{% endwith %}
+{% endblock %}

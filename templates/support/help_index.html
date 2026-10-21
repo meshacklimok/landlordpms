@@ -1,21 +1,20 @@
 {% extends "base.html" %}{% load i18n %}
-{% block title %}{% trans "Help" %}{% endblock %}
-{% block scripts %}<script>
-document.getElementById("help-filter").addEventListener("input", function () {
-  var q = this.value.trim().toLowerCase();
-  document.querySelectorAll("#help-topics [data-text]").forEach(function (el) {
-    el.classList.toggle("d-none", q !== "" && el.dataset.text.indexOf(q) === -1);
-  });
-});
-</script>{% endblock %}
+{% block title %}{% trans "Help centre" %}{% endblock %}
 {% block content %}
-<h1 class="h4 mb-3">{% trans "Help" %}</h1>
-<input type="search" class="form-control mb-3" id="help-filter" placeholder="{% trans 'Search help topics' %}" aria-label="{% trans 'Search help topics' %}">
-<div class="row g-3 mb-3" id="help-topics">
-  {% for slug, title, summary in topics %}
-  <div class="col-md-6" data-text="{{ title|lower }} {{ summary|lower }}"><a class="card shadow-sm h-100 text-decoration-none text-reset" href="{% url 'support:help_topic' slug %}"><div class="card-body">
-    <h2 class="h6 mb-1">{{ title }}</h2><p class="small text-muted mb-0">{{ summary }}</p></div></a></div>
+<div class="mx-auto mw-56r">
+<header class="doc-head">
+  <p class="about-eyebrow">{% trans "Support" %}</p>
+  <h1 class="doc-title">{% trans "Help centre" %}</h1>
+  <p class="doc-lead">{% trans "Step-by-step guides for setting up and running your properties. Choose a topic, or search for what you need." %}</p>
+</header>
+<input type="search" class="form-control form-control-lg mb-4" id="help-filter" data-filter="#help-topics" placeholder="{% trans 'Search help topics' %}" aria-label="{% trans 'Search help topics' %}">
+<div class="row g-3 mb-4" id="help-topics">
+  {% for slug, title, summary, icon in cards %}
+  <div class="col-md-6" data-text="{{ title|lower }} {{ summary|lower }}"><a class="card shadow-sm h-100 text-decoration-none text-reset help-card" href="{% url 'support:help_topic' slug %}">
+    <span class="about-icon" aria-hidden="true"><i class="bi bi-{{ icon }}"></i></span>
+    <span><h2>{{ title }}</h2><p>{{ summary }}</p></span></a></div>
   {% endfor %}
 </div>
 {% include "support/_contact_box.html" %}
+</div>
 {% endblock %}

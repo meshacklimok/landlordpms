@@ -1,10 +1,10 @@
 {% extends "base.html" %}{% load i18n %}
-{% block title %}{% trans "Add a charge to all leases" %}{% endblock %}
+{% block title %}{% blocktrans with leases_l=vocab.leases|lower %}Add a charge to all {{ leases_l }}{% endblocktrans %}{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
   <a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
-  <h1 class="h4 mt-2">{% trans "Add a charge to all leases" %}</h1>
-  <p class="small text-muted">{% trans "For a fee every unit pays, such as garbage collection. It is added to every open lease here that does not have it yet, and billed with the rent. Change or end it on each lease." %}</p>
+  <h1 class="h4 mt-2">{% blocktrans with leases_l=vocab.leases|lower %}Add a charge to all {{ leases_l }}{% endblocktrans %}</h1>
+  <p class="small text-muted">{% blocktrans with unit_l=vocab.unit|lower lease_l=vocab.lease|lower rent_l=vocab.rent|lower %}For a fee every {{ unit_l }} pays, such as garbage collection. It is added to every open {{ lease_l }} here that does not have it yet, and billed with the {{ rent_l }}. Change or end it on each {{ lease_l }}.{% endblocktrans %}</p>
   <form method="post" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
     {% include "partials/form.html" %}
     {% if preview %}
@@ -25,12 +25,12 @@
       {% for lease, reason in skipped %}<li><span class="fw-medium">{{ lease.unit.code }}</span>{% if lease.primary_tenant %} · {{ lease.primary_tenant }}{% endif %} — {{ reason }}</li>{% endfor %}
     </ul>
     {% endif %}
-    <div class="d-flex gap-2">
+    <div class="d-flex flex-wrap gap-2">
       {% if to_add %}<button class="btn btn-primary flex-fill" name="action" value="apply">{% blocktrans count n=to_add|length %}Add to {{ n }} lease{% plural %}Add to {{ n }} leases{% endblocktrans %}</button>{% endif %}
       <button class="btn btn-outline-secondary flex-fill" name="action" value="preview">{% trans "Check again" %}</button>
     </div>
     {% else %}
-    <button class="btn btn-primary w-100" name="action" value="preview">{% trans "Show the leases" %}</button>
+    <button class="btn btn-primary w-100" name="action" value="preview">{% blocktrans with leases_l=vocab.leases|lower %}Show the {{ leases_l }}{% endblocktrans %}</button>
     {% endif %}
   </div></form>
 </div>

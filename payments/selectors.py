@@ -4,8 +4,8 @@ import datetime
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from django.db.models import Count, DecimalField, Exists, OuterRef, Q, Subquery, Sum, Value
-from django.db.models.functions import Coalesce
+from django.db.models import Count, DateField, DecimalField, Exists, Max, Min, OuterRef, Q, Subquery, Sum, Value
+from django.db.models.functions import Cast, Coalesce, TruncMonth
 
 from accounts.permissions import can
 from billing.models import LedgerEntry
@@ -92,6 +92,74 @@ def totals_by_state(payments) -> dict[str, Total]:
 
 
 # ---------------------------------------------------------------------------
+# Money received, for the list's charts (D-114)
+# ---------------------------------------------------------------------------
+
+DAILY_UP_TO = 62  # days: a shorter range is drawn day by day, a longer one month by month
+MONTHS_SHOWN = 36
+PLACES_SHOWN = 8
+
+
+@dataclass
+class Received:
+    """Confirmed payments in one currency that match the list's filters: over time, by method and by property."""
+
+    currency: str
+    daily: bool
+    periods: list[tuple[datetime.date, Decimal, int]]  # (day or month, amount, payments)
+    methods: list[tuple[str, Decimal, int]]  # (label, amount, payments), largest first
+    places: list[tuple[str, Decimal]]  # (property, amount), largest first; the rest folded into "Other"
+    trimmed: bool = False  # only the last MONTHS_SHOWN months are in `periods`
+    other_currencies: bool = False  # some matching payments are in another currency and are left out
+
+    @property
+    def total(self) -> Decimal:
+        return sum((amount for _label, amount, _n in self.methods), ZERO)
+
+
+def received(payments, currency: str, today: datetime.date, *, date_from=None, date_to=None,
+             other_label: str = "Other") -> Received | None:
+    """What the confirmed payments among `payments` add up to, for the charts above the list; None when none."""
+    confirmed = payments.filter(STATUS_FILTERS["confirmed"]).order_by()
+    qs = confirmed.filter(lease__currency=currency)
+    span = qs.aggregate(first=Min("paid_at"), last=Max("paid_at"))
+    if span["first"] is None:
+        return None
+    start = date_from or span["first"]
+    end = max(date_to or today, start)
+    daily = (end - start).days < DAILY_UP_TO
+    trimmed = False
+    periods: list[tuple[datetime.date, Decimal, int]] = []
+    if daily:
+        sums = {r["paid_at"]: (r["t"], r["n"]) for r in qs.values("paid_at").annotate(t=Sum("amount"), n=Count("pk"))}
+        day = start
+        while day <= end:
+            periods.append((day, *sums.get(day, (ZERO, 0))))
+            day += datetime.timedelta(days=1)
+    else:
+        sums = {r["m"]: (r["t"], r["n"]) for r in qs.annotate(m=Cast(TruncMonth("paid_at"), DateField()))
+                .values("m").annotate(t=Sum("amount"), n=Count("pk"))}
+        month, last = start.replace(day=1), end.replace(day=1)
+        while month <= last:
+            periods.append((month, *sums.get(month, (ZERO, 0))))
+            month = (month + datetime.timedelta(days=32)).replace(day=1)
+        if len(periods) > MONTHS_SHOWN:
+            periods, trimmed = periods[-MONTHS_SHOWN:], True
+    labels = dict(Payment.Method.choices)
+    methods = sorted(((str(labels.get(r["method"], r["method"])), r["t"], r["n"])
+                      for r in qs.values("method").annotate(t=Sum("amount"), n=Count("pk"))),
+                     key=lambda r: (-r[1], r[0]))
+    places = sorted(((r["lease__unit__property__name"], r["t"])
+                     for r in qs.values("lease__unit__property__name").annotate(t=Sum("amount"))),
+                    key=lambda r: (-r[1], r[0].lower()))
+    if len(places) > PLACES_SHOWN:
+        rest = sum((amount for _name, amount in places[PLACES_SHOWN - 1:]), ZERO)
+        places = [*places[:PLACES_SHOWN - 1], (other_label, rest)]
+    return Received(currency=currency, daily=daily, periods=periods, methods=methods, places=places,
+                    trimmed=trimmed, other_currencies=confirmed.exclude(lease__currency=currency).exists())
+
+
+# ---------------------------------------------------------------------------
 # Duplicates
 # ---------------------------------------------------------------------------
 
@@ -142,12 +210,13 @@ def for_lease(lease):
             .prefetch_related("allocations__invoice").order_by("-paid_at", "-pk"))
 
 
-def period_presets(today: datetime.date) -> list[tuple[str, datetime.date, datetime.date]]:
+def period_presets(today: datetime.date, year_first_month: int = 1) -> list[tuple[str, datetime.date, datetime.date]]:
     """Quick date ranges for the list: (label key, from, to)."""
     month_start = today.replace(day=1)
     last_month_end = month_start - datetime.timedelta(days=1)
     return [
         ("this_month", month_start, today),
         ("last_month", last_month_end.replace(day=1), last_month_end),
-        ("this_year", today.replace(month=1, day=1), today),
+        ("this_year", today.replace(month=year_first_month, day=1, year=today.year - (today.month < year_first_month)),
+         today),
     ]

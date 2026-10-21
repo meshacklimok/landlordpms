@@ -48,6 +48,8 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         MONTHLY = "MONTHLY", _("Monthly")
         QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
+        # A hostel semester of four months, billed in one invoice (D-188). Students who pay monthly use MONTHLY.
+        SEMESTER = "SEMESTER", _("Per semester (4 months)")
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     unit = models.ForeignKey("properties.Unit", on_delete=models.PROTECT, related_name="leases")
@@ -81,7 +83,11 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
 
     # Filled by lease actions (step 4).
     activated_at = models.DateTimeField(null=True, blank=True, editable=False)
+    # The open notice to vacate (D-106), copied from LeaseNotice so lists can filter on it.
     notice_given_on = models.DateField(null=True, blank=True, editable=False)
+    # Water vendors cut supply to an account that is behind; the day it was cut (D-159). Billing carries on.
+    supply_suspended_on = models.DateField(null=True, blank=True, editable=False)
+    move_out_on = models.DateField(null=True, blank=True, editable=False)
     ended_on = models.DateField(null=True, blank=True, editable=False)
     end_reason = models.TextField(blank=True, editable=False)
 
@@ -151,10 +157,14 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
 
     @property
     def move_out_by(self):
-        """The last day under a notice to vacate (doc 14 B1)."""
+        """The move-out day agreed under the open notice to vacate (doc 14 B1, D-106)."""
         if self.notice_given_on is None:
             return None
-        return self.notice_given_on + datetime.timedelta(days=self.notice_days)
+        return self.move_out_on or self.earliest_move_out(self.notice_given_on)
+
+    def earliest_move_out(self, given_on: datetime.date) -> datetime.date:
+        """The first day a notice given on `given_on` can take effect: the notice period after it."""
+        return given_on + datetime.timedelta(days=self.notice_days)
 
     def is_expiring(self, today: datetime.date) -> bool:
         return (self.status == self.Status.ACTIVE and self.end_date is not None
@@ -166,7 +176,8 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         return link.tenant if link else None
 
 
-MONTHS_PER_PERIOD = {Lease.Frequency.MONTHLY: 1, Lease.Frequency.QUARTERLY: 3, Lease.Frequency.YEARLY: 12}
+MONTHS_PER_PERIOD = {Lease.Frequency.MONTHLY: 1, Lease.Frequency.QUARTERLY: 3, Lease.Frequency.SEMESTER: 4,
+                     Lease.Frequency.YEARLY: 12}
 
 
 class LeaseTenant(TimeStampedModel):
@@ -225,6 +236,8 @@ class LeaseCharge(TimeStampedModel):
                                  default=Lease.Frequency.MONTHLY)
     active_from = models.DateField(_("from"))
     active_to = models.DateField(_("until"), null=True, blank=True)
+    # Garbage collectors: the amount is the price of one pickup, billed in arrears on the pickups made (D-161).
+    per_pickup = models.BooleanField(_("charged per pickup"), default=False)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
 
@@ -241,6 +254,82 @@ class LeaseCharge(TimeStampedModel):
 
     def is_active_on(self, day: datetime.date) -> bool:
         return self.active_from <= day and (self.active_to is None or day <= self.active_to)
+
+
+class Pickup(TimeStampedModel):
+    """One day's rubbish collection at a contract's pickup point: done, or missed (D-161)."""
+
+    class Outcome(models.TextChoices):
+        DONE = "DONE", _("Collected")
+        MISSED = "MISSED", _("Missed")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey(Lease, on_delete=models.PROTECT, related_name="pickups")
+    day = models.DateField(_("day"))
+    outcome = models.CharField(_("outcome"), max_length=6, choices=Outcome.choices)
+    note = models.CharField(_("note"), max_length=200, blank=True)
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+")
+
+    class Meta:
+        ordering = ["-day", "pk"]
+        constraints = [models.UniqueConstraint("lease", "day", name="leases_pickup_one_a_day")]
+
+    def __str__(self):
+        return f"{self.lease_id} {self.day} {self.outcome}"
+
+
+class LeaseNotice(TimeStampedModel):
+    """A notice to vacate, from either side (D-106).
+
+    Rows are kept: withdrawing or replacing a notice stamps it, so the lease shows every notice
+    given and when. At most one is open; the lease copies its dates.
+    """
+
+    class GivenBy(models.TextChoices):
+        TENANT = "TENANT", _("The tenant")
+        LANDLORD = "LANDLORD", _("The landlord or agent")
+
+    class Via(models.TextChoices):
+        IN_PERSON = "IN_PERSON", _("In person or by letter")
+        PHONE = "PHONE", _("Phone call")
+        MESSAGE = "MESSAGE", _("SMS or WhatsApp")
+        EMAIL = "EMAIL", _("Email")
+        PORTAL = "PORTAL", _("Tenant portal")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey(Lease, on_delete=models.PROTECT, related_name="notices")
+    given_by = models.CharField(_("given by"), max_length=10, choices=GivenBy.choices)
+    given_on = models.DateField(_("notice given on"))
+    move_out_on = models.DateField(_("move-out day"))
+    via = models.CharField(_("received"), max_length=10, choices=Via.choices, default=Via.IN_PERSON)
+    reason = models.CharField(_("reason"), max_length=500, blank=True)
+    # Both sides agreed in writing to less than the lease's notice period.
+    shorter_agreed = models.BooleanField(_("shorter notice agreed in writing"), default=False)
+    # The tenant who gave it from the portal; empty when staff recorded it.
+    tenant = models.ForeignKey("tenants.Tenant", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    recorded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="+")
+    withdrawn_at = models.DateTimeField(null=True, blank=True)
+    withdrawn_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                     related_name="+")
+    withdraw_reason = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        ordering = ["-given_on", "-pk"]
+        constraints = [
+            models.UniqueConstraint("lease", condition=Q(withdrawn_at__isnull=True),
+                                    name="leases_notice_one_open_per_lease"),
+            models.CheckConstraint(condition=Q(move_out_on__gte=F("given_on")),
+                                   name="leases_notice_move_out_after_given"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_given_by_display()} {self.given_on} → {self.move_out_on}"
+
+    @property
+    def is_open(self) -> bool:
+        return self.withdrawn_at is None
 
 
 class LeasePayer(TimeStampedModel):

@@ -1,0 +1,17 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console tools" %}{% endblock %}
+{% block console_title %}{% trans "Errors, product use and website visits" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "These open in their own sites. Each needs its own sign-in there. 'On' means this server is sending to it; the link is set in the server settings." %}</p>
+<div class="row g-3">
+  {% for t in tools %}
+  <div class="col-lg-4"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="d-flex justify-content-between"><h2 class="h6 mb-1">{{ t.name }}</h2>
+      <span class="badge {% if t.on %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if t.on %}{% trans "On" %}{% else %}{% trans "Not set up" %}{% endif %}</span></div>
+    <p class="small">{{ t.what }}</p>
+    {% if t.url %}<a class="btn btn-sm btn-outline-primary" href="{{ t.url }}" target="_blank" rel="noopener noreferrer">{% blocktrans with n=t.name %}Open {{ n }}{% endblocktrans %}</a>
+    {% else %}<p class="small text-muted mb-0">{% blocktrans with s=t.setting %}Set {{ s }} on the server to switch it on, or the matching *_DASHBOARD_URL to add the link.{% endblocktrans %}</p>{% endif %}
+  </div></div></div>
+  {% endfor %}
+</div>
+{% endblock %}

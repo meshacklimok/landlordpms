@@ -1,6 +1,6 @@
 """Statement imports and bank lines (D-064).
 
-A `StatementImport` is one uploaded CSV for one payment account: read into a preview first, then
+A `StatementImport` is one uploaded statement (CSV, Excel, PDF or a photo) for one payment account: read into a preview first, then
 applied. Applying a bank statement adds `BankTransaction` lines; an M-Pesa statement adds
 `mpesa.MpesaTransaction` rows instead, so M-Pesa money has one inbox.
 """
@@ -18,14 +18,21 @@ class StatementImport(PublicIdModel, TimeStampedModel):
         MPESA = "MPESA", _("M-Pesa statement")
 
     class Status(models.TextChoices):
+        MAPPING = "MAPPING", _("Waiting for the columns to be matched")
         PREVIEW = "PREVIEW", _("Checked, not imported")
         APPLIED = "APPLIED", _("Imported")
         DISCARDED = "DISCARDED", _("Discarded")
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    class Source(models.TextChoices):
+        FILE = "FILE", _("Statement file")
+        SCAN = "SCAN", _("Photo or scan")
+
     payment_account = models.ForeignKey("payments.PaymentAccount", on_delete=models.PROTECT,
                                         related_name="statement_imports")
     kind = models.CharField(max_length=5, choices=Kind.choices)
+    # A statement read from a photo or scan is never matched automatically: every line waits for a person (D-212).
+    source = models.CharField(max_length=5, choices=Source.choices, default=Source.FILE)
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PREVIEW)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     file_name = models.CharField(max_length=200, blank=True)
@@ -33,6 +40,8 @@ class StatementImport(PublicIdModel, TimeStampedModel):
     rows = models.JSONField(default=list, blank=True)
     # [[line number, message]] for lines that could not be read.
     errors = models.JSONField(default=list, blank=True)
+    # The uploaded file, kept only while the columns wait to be matched; emptied with the preview (D-212).
+    raw = models.BinaryField(null=True, blank=True, editable=False)
     new_count = models.PositiveIntegerField(default=0)
     duplicate_count = models.PositiveIntegerField(default=0)
     skipped_count = models.PositiveIntegerField(default=0)
@@ -52,6 +61,22 @@ class StatementImport(PublicIdModel, TimeStampedModel):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.created_at:%Y-%m-%d %H:%M}"
+
+
+class StatementFormat(TimeStampedModel):
+    """How one bank account's statements name their columns, saved when the landlord matched them by hand:
+    {field: the header text in the file}. Tried before the names we know (D-212)."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    payment_account = models.OneToOneField("payments.PaymentAccount", on_delete=models.CASCADE,
+                                           related_name="statement_format")
+    columns = models.JSONField(default=dict)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+
+    objects = ScopedQuerySet.as_manager()
+
+    def __str__(self):
+        return f"Columns for {self.payment_account}"
 
 
 class BankTransaction(PublicIdModel, TimeStampedModel):

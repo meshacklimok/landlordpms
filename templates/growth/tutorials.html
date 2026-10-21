@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Tutorials" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+{% trans "Tutorials" as t_title %}{% trans "Short step-by-step guides. Read them before you sign up, or follow them with your workspace open." as t_lead %}{% trans "Learn" as t_eyebrow %}
+{% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_title lead=t_lead %}
+<div class="pub-cards">
+{% for t in tutorials %}
+  <a class="pub-card" href="{% url 'growth:tutorial' t.slug %}">
+    <span class="pub-card-meta"><i class="bi bi-clock" aria-hidden="true"></i> {% blocktrans with m=t.minutes %}About {{ m }} minutes{% endblocktrans %} · {% blocktrans count n=t.steps|length %}{{ n }} step{% plural %}{{ n }} steps{% endblocktrans %}</span>
+    <h2 class="pub-card-title">{{ t.title }}</h2>
+    <p>{{ t.summary }}</p>
+    <span class="pub-card-go">{% trans "Start tutorial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+  </a>
+{% endfor %}
+</div>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Stuck on something not covered here?" %}</h2><p class="mb-0">{% trans "Ask us in a short call. No obligation." %}</p></div>
+  <a class="btn btn-primary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+</section>
+</div>
+{% endblock %}

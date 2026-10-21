@@ -1,0 +1,24 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Rent software for Kenyan landlords and agents" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+{% trans "Solutions" as t_eyebrow %}{% trans "Rent software for how Kenyans collect" as t_title %}{% trans "M-Pesa rent, meter billing, arrears, agents and landlords abroad. Pick the job you need done." as t_lead %}
+{% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_title lead=t_lead %}
+<div class="pub-cards">
+{% for s in solutions %}
+  <a class="pub-card" href="{% url 'growth:solution' s.slug %}">
+    <h2 class="pub-card-title">{{ s.title }}</h2>
+    <p>{{ s.description }}</p>
+    <span class="pub-card-go">{% trans "Read more" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+  </a>
+{% endfor %}
+</div>
+{% if not user.is_authenticated %}
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Try it with your own units" %}</h2><p class="mb-0">{% trans "The trial is free and nothing here needs a card." %}</p></div>
+  <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+</section>
+{% endif %}
+</div>
+{% endblock %}

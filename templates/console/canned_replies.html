@@ -1,0 +1,19 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Saved replies" %}{% endblock %}
+{% block console_title %}{% trans "Saved replies" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:support' %}">&larr; {% trans "Support" %}</a></p>
+<p class="small text-muted">{% trans "Answers you give often. On a support request, one click puts the text in the reply box, and you can change it before sending." %}</p>
+<form method="post" class="col-lg-6 p-0 mb-4 vstack gap-2">{% csrf_token %}
+  <label class="form-label small mb-0" for="title">{% trans "Title" %}</label>
+  <input class="form-control form-control-sm" id="title" name="title" maxlength="80" required>
+  <label class="form-label small mb-0" for="body">{% trans "Reply" %}</label>
+  <textarea class="form-control form-control-sm" id="body" name="body" rows="4" maxlength="2000" required></textarea>
+  <button class="btn btn-sm btn-primary align-self-start">{% trans "Save" %}</button>
+</form>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <tbody>{% for c in items %}<tr><td class="fw-semibold">{{ c.title }}</td><td style="white-space: pre-wrap">{{ c.body }}</td>
+    <td class="text-end"><form method="post">{% csrf_token %}<button name="delete" value="{{ c.pk }}" class="btn btn-sm btn-link text-danger p-0">{% trans "Delete" %}</button></form></td></tr>
+  {% empty %}<tr><td class="text-muted">{% trans "None yet." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

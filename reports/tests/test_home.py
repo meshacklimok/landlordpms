@@ -97,8 +97,8 @@ def test_a_scoped_member_sees_only_their_properties(owner, portfolio):
 
 def test_promises_and_broken_promises(owner, portfolio):
     lease = portfolio["overdue"]
-    followups.record_follow_up(owner, lease, outcome=FollowUp.Outcome.PROMISED, promised_on=D(2099, 1, 1))
-    FollowUp.objects.filter(lease=lease).update(promised_on=MAR)
+    # Follow-ups are append-only, down to the database (D-105): record the promise as made on MAR.
+    followups.record_follow_up(owner, lease, outcome=FollowUp.Outcome.PROMISED, promised_on=MAR, today=MAR)
     h = home.home(owner, today=MAR)
     assert keys(h)["promised"] == 1 and "call" not in keys(h)
     broken = home.home(owner, today=D(2025, 3, 2))
@@ -136,4 +136,6 @@ def test_the_caretaker_page_shows_counts_but_no_money_or_names(client, owner, po
 
 def test_an_empty_home_says_so(client, owner):
     client.force_login(owner.user)
-    assert "Nothing is waiting for you." in client.get("/").content.decode()
+    # A brand-new organization gets the guided welcome rather than empty figures (accounts HomeView).
+    page = client.get("/").content.decode()
+    assert "Let&#x27;s get your first rent collected." in page or "get your first rent collected" in page

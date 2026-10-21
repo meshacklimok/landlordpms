@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money billing %}
+{% extends "base.html" %}{% load i18n money billing reports %}
 {% block title %}{% trans "Aged receivables" %}{% endblock %}
 {% block content %}
 {% with cur=currency %}
@@ -8,6 +8,59 @@
 {% include "reports/_finance_filter.html" %}
 
 {% if rows %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Owed in total" %}</div>
+    <div class="stat-value num">{{ total.total|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=summary.leases %}{{ n }} lease owing{% plural %}{{ n }} leases owing{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Overdue" %}</div>
+    <div class="stat-value num">{{ summary.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with s=summary.overdue|share_of:total.total|percent %}{{ s }} of what is owed{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "More than 60 days late" %}</div>
+    <div class="stat-value">{{ summary.over_60_share|percent }}</div>
+    <div class="stat-sub">{% trans "the money least likely to come in" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Largest balance" %}</div>
+    <div class="stat-value num">{% with top=summary.largest.0 %}{{ top.balance|money:cur }}{% endwith %}</div>
+    <div class="stat-sub">{% with top=summary.largest.0 %}{{ top.lease.primary_tenant.name|default:top.lease.number }}{% endwith %}</div>
+  </div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  <div class="col-12 col-lg-5">
+    <div class="chart-card">
+      <h2>{% trans "How late the money is" %}</h2>
+      <p class="chart-sub">{% blocktrans with t=total.total|money:cur %}{{ t }} owed, by days past the due date.{% endblocktrans %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-aging" role="img" aria-label="{% trans 'What is owed by how late it is. The same figures are in the table below.' %}"></canvas></div>
+      <div class="table-responsive mt-2"><table class="table table-sm small mb-0"><tbody>
+        {% for key, label, amount, share in summary.shares %}
+        <tr>
+          <td><span class="chart-legend d-inline"><span class="key" data-color="{{ key|aging_chart_color }}"></span></span>{{ label }}</td>
+          <td class="text-end num text-nowrap">{{ amount|money:cur }}</td>
+          <td class="text-end text-muted">{{ share|percent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody></table></div>
+    </div>
+  </div>
+  {% if specs.places %}
+  <div class="col-12 col-lg-7">
+    <div class="chart-card">
+      <h2>{% trans "Who owes it, by property" %}</h2>
+      <p class="chart-sub">{% trans "Each property's balance split by how late it is. The figures are in the table below." %}</p>
+      <div class="chart-box"><canvas data-chart="chart-places" role="img" aria-label="{% trans 'What each property is owed by how late it is. The same figures are in the table below.' %}"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{{ specs.aging|json_script:"chart-aging" }}
+{% if specs.places %}{{ specs.places|json_script:"chart-places" }}{% endif %}
+
 <div class="table-responsive mb-3">
 <table class="table table-sm align-middle small">
   <thead><tr>
@@ -38,15 +91,48 @@
     <td>{% trans "Total" %}</td>
     {% for key, label in buckets %}<td class="text-end num text-nowrap">{{ total.buckets|bucket:key|money:cur }}</td>{% endfor %}
     <td class="text-end num text-nowrap">{{ total.total|money:cur }}</td>
+  </tr>
+  <tr class="text-body-secondary">
+    <td>{% trans "Share of total" %}</td>
+    {% for key, label, amount, share in summary.shares %}<td class="text-end">{{ share|percent }}</td>{% endfor %}
+    <td class="text-end">100%</td>
   </tr></tfoot>
+</table>
+</div>
+
+<h2 class="h6">{% trans "Largest balances" %}</h2>
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Lease" %}</th><th>{% trans "Tenant" %}</th><th class="text-end">{% trans "Owed" %}</th>
+    <th class="text-end">{% trans "Share of total" %}</th><th class="text-end">{% trans "More than 60 days late" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for lease_row in summary.largest %}
+    <tr>
+      <td>{% if can_arrears %}<a href="{% url 'leases:detail' lease_row.lease.public_id %}">{{ lease_row.lease.number }}</a>{% else %}{{ lease_row.lease.number }}{% endif %}
+        <span class="text-body-secondary">· {{ lease_row.lease.unit.property.name }} {{ lease_row.lease.unit.code }}</span></td>
+      <td>{{ lease_row.lease.primary_tenant.name|default:"—" }}</td>
+      <td class="text-end num text-nowrap">{{ lease_row.balance|money:cur }}</td>
+      <td class="text-end">{{ lease_row.balance|share_of:total.total|percent }}</td>
+      <td class="text-end num text-nowrap">{{ lease_row|over_60|money:cur }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
 </table>
 </div>
 {% else %}
 <div class="card shadow-sm mb-3"><div class="card-body text-center py-5">
-  <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle"></i></div>
+  <div class="display-6 text-success mb-2"><i class="bi bi-check2-circle" aria-hidden="true"></i></div>
   <h2 class="h6 mb-0">{% trans "Nothing is owed" %}</h2>
 </div></div>
 {% endif %}
 <p class="small text-body-secondary">{% trans "Payments pay the oldest amounts first. Days late count from the due date plus any grace days." %}</p>
 {% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
 {% endblock %}

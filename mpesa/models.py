@@ -121,6 +121,9 @@ class MpesaTransaction(TimeStampedModel):
     payer_phone = models.CharField(max_length=16, blank=True)
     payer_name = models.CharField(max_length=150, blank=True)
     raw_payload = models.JSONField(default=dict)
+    # When Safaricom's C2B confirmation for this receipt came: on arrival for C2B rows, and later for a payment
+    # request's receipt if Safaricom also confirms it that way (D-104). Empty: no C2B confirmation (yet).
+    c2b_confirmed_at = models.DateTimeField(null=True, blank=True)
 
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.RECEIVED)
     # Why it was flagged, ignored or left unmatched, or how the suggestion was found.
@@ -176,6 +179,10 @@ class StkRequest(PublicIdModel, TimeStampedModel):
                                      related_name="+")
     pay_link = models.ForeignKey("PayLink", on_delete=models.PROTECT, null=True, blank=True,
                                  related_name="requests")
+    # Started by the tenant from the USSD menu (D-084).
+    via_ussd = models.BooleanField(default=False)
+    # Started by the tenant through the assistant, on WhatsApp or in the portal (D-094).
+    via_assistant = models.BooleanField(default=False)
     phone = models.CharField(_("phone"), max_length=16)
     amount = models.DecimalField(_("amount"), max_digits=14, decimal_places=2)
     account_reference = models.CharField(max_length=12)
@@ -197,7 +204,8 @@ class StkRequest(PublicIdModel, TimeStampedModel):
             models.CheckConstraint(condition=models.Q(amount__gt=0), name="mpesa_stkrequest_amount_positive"),
             models.CheckConstraint(condition=~models.Q(status="PAID") | models.Q(transaction__isnull=False),
                                    name="mpesa_stkrequest_paid_has_transaction"),
-            models.CheckConstraint(condition=models.Q(requested_by__isnull=False) | models.Q(pay_link__isnull=False),
+            models.CheckConstraint(condition=models.Q(requested_by__isnull=False) | models.Q(pay_link__isnull=False)
+                                   | models.Q(via_ussd=True) | models.Q(via_assistant=True),
                                    name="mpesa_stkrequest_has_requester"),
         ]
         indexes = [models.Index(fields=["organization", "status"])]
@@ -245,3 +253,30 @@ class CodeCheck(models.Model):
 
     def __str__(self):
         return f"{self.payment_id} checked"
+
+
+class SetupVideo(models.Model):
+    """The Paybill setup video shown on the M-Pesa setup pages. One row, changed in Django admin (D-174).
+
+    Empty means no video is shown anywhere. `MPESA_SETUP_VIDEO_URL` in the environment is used only while this is empty."""
+
+    url = models.URLField(_("video link"), blank=True, max_length=300,
+                          help_text=_("An https link, e.g. a YouTube link. Leave empty to hide the video."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "setup video"
+        verbose_name_plural = "setup video"
+
+    def __str__(self):
+        return "Paybill setup video"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.url and not self.url.startswith("https://"):
+            raise ValidationError({"url": _("The link must start with https://")})
+
+    @classmethod
+    def get(cls) -> "SetupVideo":
+        return cls.objects.get_or_create(pk=1)[0]

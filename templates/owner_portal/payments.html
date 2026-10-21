@@ -1,0 +1,42 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Rent payments" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'owner_portal:account' account.public_id %}" class="small">← {{ owner.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Rent payments" %}</h1>
+  <p class="small text-muted">{% trans "Payments received on your properties. Tenant names are not shown." %}</p>
+
+  <form method="get" class="d-flex gap-2 mb-2" role="search">
+    {% if year %}<input type="hidden" name="year" value="{{ year }}">{% endif %}
+    <label class="visually-hidden" for="pay-q">{% trans "Find a payment by its M-Pesa code" %}</label>
+    <input id="pay-q" class="form-control form-control-sm" type="search" name="q" value="{{ query }}" maxlength="60" placeholder="{% trans 'M-Pesa code or reference' %}">
+    <button class="btn btn-outline-secondary btn-sm">{% trans "Find" %}</button>
+  </form>
+
+  {% if years %}
+  <nav class="d-flex flex-wrap gap-2 mb-3 small" aria-label="{% trans 'Year' %}">
+    <a class="btn btn-sm {% if not year %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?{% if query %}q={{ query|urlencode }}{% endif %}">{% trans "All" %}</a>
+    {% for y in years %}<a class="btn btn-sm {% if y == year %}btn-primary{% else %}btn-outline-secondary{% endif %}" href="?year={{ y }}{% if query %}&amp;q={{ query|urlencode }}{% endif %}">{{ y }}</a>{% endfor %}
+  </nav>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <ul class="list-unstyled small mb-0">
+      {% for payment in payments %}
+      <li class="d-flex justify-content-between gap-2 py-1">
+        <span>{{ payment.paid_at|date:"j M Y" }} · {{ payment.lease.unit.property.name }} · {{ payment.lease.unit.code }} · {{ payment.get_method_display }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</span>
+        <span class="text-nowrap">{{ payment.amount|money:currency }}</span>
+      </li>
+      {% empty %}<li class="text-muted">{% if query %}{% trans "No payment matches that code." %}{% else %}{% trans "No payments yet." %}{% endif %}</li>{% endfor %}
+    </ul>
+    {% if more %}<p class="small text-muted mt-2 mb-0">{% trans "Only the newest are shown. Pick a year, or download the CSV for all of them." %}</p>{% endif %}
+    {% if payments %}
+    <div class="d-flex justify-content-between border-top mt-2 pt-2 small fw-semibold">
+      <span>{% trans "Total" %}</span><span>{{ total|money:currency }}</span>
+    </div>
+    {% endif %}
+  </div></div>
+
+  {% if payments %}<a class="btn btn-outline-secondary btn-sm" href="?{% if year %}year={{ year }}&amp;{% endif %}{% if query %}q={{ query|urlencode }}&amp;{% endif %}download=csv">{% trans "Download CSV" %}</a>{% endif %}
+</div>
+{% endblock %}

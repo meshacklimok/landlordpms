@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Pricing" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+<header class="about-hero pub-center">
+  <p class="about-eyebrow">{% trans "Pricing" %}</p>
+  <h1 class="about-title">{% trans "Simple pricing, by the number of units" %}</h1>
+  <p class="about-lead">{% blocktrans with d=trial_days %}Start with a {{ d }}-day free trial. Plans depend only on how many units you manage; every plan has every feature.{% endblocktrans %}</p>
+</header>
+{% include "growth/_plans.html" %}
+
+{% include "growth/_compare.html" %}
+
+<section class="mt-5" aria-labelledby="inc-h">
+  <h2 id="inc-h" class="h4 fw-bold mb-1">{% trans "Every plan includes" %}</h2>
+  <p class="text-muted">{% trans "No features are held back for bigger plans." %}</p>
+  <div class="row g-3">
+    {% for icon, title, text in features %}
+    <div class="col-md-6 col-lg-4"><div class="card plan-card h-100"><div class="card-body">
+      <span class="plan-icon"><i class="bi bi-{{ icon }}" aria-hidden="true"></i></span>
+      <h3 class="h6 mt-2">{{ title }}</h3><p class="small text-muted mb-0">{{ text }}</p>
+    </div></div></div>
+    {% endfor %}
+  </div>
+</section>
+
+<p class="small text-muted mt-4">
+  {% if vat_registered %}{% trans "Prices are before VAT." %}{% else %}{% trans "Prices are in Kenya shillings." %}{% endif %}
+  {% blocktrans with p=sms_price|floatformat:2 %}SMS reminders are paid from a credit you top up, at KSh {{ p }} for each SMS part. Login codes and invitations are free.{% endblocktrans %}
+  {% trans "Viewers who can only look do not count as team members. Agencies with more units than the largest plan can ask us for a quote." %}</p>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Not sure which fits?" %}</h2><p class="mb-0">{% trans "Tell us what you manage and we will show you around." %}</p></div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+  </div>
+</section>
+<p class="small mt-3"><a href="{% url 'growth:faq' %}">{% trans "Questions about billing and payments?" %}</a></p>
+</div>
+{% endblock %}

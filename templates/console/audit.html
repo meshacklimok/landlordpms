@@ -1,0 +1,25 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Audit log" %}{% endblock %}
+{% block console_title %}{% trans "Audit log, all organizations" %}{% endblock %}
+{% block console %}
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+  <input name="action" class="form-control form-control-sm w-auto" placeholder="{% trans 'Action, e.g. login' %}" aria-label="{% trans 'Action' %}" value="{{ form.action.value|default:'' }}">
+  <input name="organization" class="form-control form-control-sm w-auto" placeholder="{% trans 'Organization' %}" aria-label="{% trans 'Organization' %}" value="{{ form.organization.value|default:'' }}">
+  <input name="actor" class="form-control form-control-sm w-auto" placeholder="{% trans 'Person or phone' %}" aria-label="{% trans 'Person or phone' %}" value="{{ form.actor.value|default:'' }}">
+  <input type="date" name="since" class="form-control form-control-sm w-auto" aria-label="{% trans 'From date' %}" value="{{ form.since.value|default:'' }}">
+  <input type="date" name="until" class="form-control form-control-sm w-auto" aria-label="{% trans 'To date' %}" value="{{ form.until.value|default:'' }}">
+  <button class="btn btn-sm btn-outline-secondary">{% trans "Filter" %}</button>
+  <a class="btn btn-sm btn-outline-secondary" href="?{{ query }}{% if query %}&{% endif %}format=csv">{% trans "Download CSV" %}</a>
+</form>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "When" %}</th><th>{% trans "Who" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Action" %}</th><th>{% trans "On" %}</th><th>IP</th></tr></thead>
+  <tbody>{% for e in page %}<tr>
+    <td class="text-nowrap">{{ e.created_at|date:"j M H:i" }}</td><td>{{ e.actor.full_name|default:"—" }}</td><td>{{ e.organization.name|default:"—" }}</td>
+    <td>{{ e.action }}</td><td class="text-muted">{{ e.object_repr }}</td><td class="text-muted">{{ e.ip|default:"" }}</td>
+  </tr>{% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nothing matches." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+<nav class="pager" aria-label="{% trans 'Pages' %}">
+  {% if page.has_previous %}<a class="pager-link" rel="prev" href="?{{ query }}&page={{ page.previous_page_number }}"><i class="bi bi-arrow-left" aria-hidden="true"></i>{% trans "Newer" %}</a>{% else %}<span></span>{% endif %}
+  {% if page.has_next %}<a class="pager-link" rel="next" href="?{{ query }}&page={{ page.next_page_number }}">{% trans "Older" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></a>{% endif %}
+</nav>
+{% endblock %}

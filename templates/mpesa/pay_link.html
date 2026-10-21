@@ -16,7 +16,7 @@
     {% endif %}
     <form method="post" novalidate>{% csrf_token %}
       {% include "partials/form.html" %}
-      <button class="btn btn-success w-100"><i class="bi bi-phone-vibrate"></i> {% trans "Send M-Pesa prompt" %}</button>
+      <button class="btn btn-success w-100"><i class="bi bi-phone-vibrate" aria-hidden="true"></i> {% trans "Send M-Pesa prompt" %}</button>
     </form>
     <p class="small text-body-secondary mt-3 mb-0">{% trans "Enter your PIN on the phone to pay. Nothing is paid if you cancel. You get a receipt by SMS." %}</p>
   </div></div>

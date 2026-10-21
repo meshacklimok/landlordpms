@@ -8,7 +8,11 @@ from .models import DarajaCredentials
 
 class AccountForm(forms.Form):
     type = forms.ChoiceField(label=_("Type"), choices=[(PaymentAccount.Type.PAYBILL, _("Paybill")),
-                                                        (PaymentAccount.Type.TILL, _("Till (Buy Goods)"))])
+                                                        (PaymentAccount.Type.TILL, _("Till (Buy Goods)"))],
+                             help_text=_("A Paybill is best: tenants type their unit's reference as the account "
+                                         "number, so each payment is matched at once, and you can send payment "
+                                         "requests and pay links. Till payments have no account number, so each "
+                                         "one waits in the inbox for you to match (D-100)."))
     number = forms.CharField(label=_("Number"), max_length=7)
     display_name = forms.CharField(label=_("Name"), max_length=80, required=False,
                                    help_text=_("e.g. Riverside rent Paybill"))
@@ -21,12 +25,14 @@ def _secret(label, help_text=""):
 
 
 class CredentialsForm(forms.Form):
-    environment = forms.ChoiceField(label=_("Environment"), choices=DarajaCredentials.Environment.choices)
+    environment = forms.ChoiceField(label=_("Keys from"), choices=[
+        (DarajaCredentials.Environment.PRODUCTION, _("Live (real money): use this once Safaricom approved you")),
+        (DarajaCredentials.Environment.SANDBOX, _("Sandbox (testing only, no real money)"))])
     shortcode = forms.CharField(label=_("Shortcode"), max_length=7, required=False,
-                                help_text=_("Leave blank to use the account number. A Till uses its store number."))
-    consumer_key = _secret(_("Consumer key"))
-    consumer_secret = _secret(_("Consumer secret"))
-    passkey = _secret(_("Passkey"), _("Only needed to request payments from a tenant's phone (Paybill)."))
+                                help_text=_("Leave blank to use your Paybill number. A Till uses its store number."))
+    consumer_key = _secret(_("Consumer key"), _("A long code on your app's page in Daraja."))
+    consumer_secret = _secret(_("Consumer secret"), _("Next to the consumer key. Keep it private."))
+    passkey = _secret(_("Passkey"), _("Safaricom sends it after Go-Live. Needed to request payments from a tenant's phone (Paybill)."))
 
 
 class StkRequestForm(forms.Form):
@@ -35,7 +41,7 @@ class StkRequestForm(forms.Form):
     phone = forms.CharField(label=_("Phone"), max_length=20,
                             help_text=_("The tenant gets a prompt to enter their M-Pesa PIN."))
     amount = forms.CharField(label=_("Amount (KES)"), max_length=12, help_text=_("Whole shillings."))
-    account = forms.ChoiceField(label=_("Paybill"), required=False)
+    account = forms.ChoiceField(label=_("Account"), required=False)
 
     def __init__(self, *args, accounts=(), phones=(), **kwargs):
         super().__init__(*args, **kwargs)

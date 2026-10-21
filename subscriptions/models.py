@@ -1,4 +1,4 @@
-"""Platform billing: the landlord pays LandlordPMS (doc 11 §22 flow A, D-060).
+"""Platform billing: the landlord pays NyumbaPMS (doc 11 §22 flow A, D-060).
 
 Nothing here links to rent invoices, payments or ledgers, and nothing in those apps links here.
 Other apps ask `subscriptions.entitlements`, never these models, what a plan allows.
@@ -14,6 +14,10 @@ from django.utils.translation import gettext_lazy as _
 
 from core.models import PublicIdModel, TimeStampedModel
 
+# One-off plans are no longer offered (D-146). The prices stay in the data and subscriptions already on one carry on;
+# set this to True to offer them again.
+ONE_OFF_OFFERED = False
+
 
 class Plan(TimeStampedModel):
     key = models.SlugField(max_length=30, unique=True)
@@ -24,6 +28,15 @@ class Plan(TimeStampedModel):
     # Before VAT (D-060 item 4).
     monthly_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     yearly_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    # Pay once for `one_off_years` of use (D-132); zero means the plan has no one-off price. After the years
+    # it renews at the yearly price.
+    one_off_price = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    one_off_years = models.PositiveSmallIntegerField(default=5)
+    # A short tag on the plan's card, such as "Most popular" or "Best value"; empty for none.
+    badge = models.CharField(max_length=30, blank=True)
+    # What the card lists under "Included", one per line. Empty means the standard list of product features.
+    features = models.TextField(blank=True, help_text=_("One feature per line, shown on this plan's card. "
+                                                       "Leave empty to show the standard list."))
     # Shown on the subscription page for owners to choose; Enterprise is set up by a Platform Admin.
     self_serve = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
@@ -37,10 +50,37 @@ class Plan(TimeStampedModel):
 
     @property
     def is_free(self) -> bool:
-        return not self.monthly_price and not self.yearly_price
+        return not self.monthly_price and not self.yearly_price and not self.one_off_price
+
+    @property
+    def has_one_off(self) -> bool:
+        return ONE_OFF_OFFERED and self.one_off_price > 0 and self.one_off_years > 0
+
+    @property
+    def feature_lines(self) -> list[str]:
+        """The lines typed in admin for this plan's card; empty means the card shows the standard list."""
+        return [line.strip() for line in self.features.splitlines() if line.strip()]
+
+    @property
+    def yearly_per_month(self) -> Decimal:
+        return (self.yearly_price / 12).quantize(Decimal("1"))
 
     def price(self, interval: str) -> Decimal:
+        if interval == Subscription.Interval.ONCE:
+            return self.one_off_price
         return self.yearly_price if interval == Subscription.Interval.YEARLY else self.monthly_price
+
+    def offers(self) -> list[tuple[str, Decimal, int]]:
+        """What the page shows: (interval, price, percent saved against paying monthly for the same time)."""
+        out = []
+        for interval, months in (("MONTHLY", 1), ("YEARLY", 12), ("ONCE", 12 * self.one_off_years)):
+            price = self.price(interval)
+            if price <= 0 or (interval == "ONCE" and not self.has_one_off):
+                continue
+            saved = 0 if interval == "MONTHLY" or not self.monthly_price else int(
+                max(Decimal("0"), 1 - price / (self.monthly_price * months)) * 100)
+            out.append((interval, price, saved))
+        return out
 
 
 class Subscription(TimeStampedModel):
@@ -53,6 +93,7 @@ class Subscription(TimeStampedModel):
     class Interval(models.TextChoices):
         MONTHLY = "MONTHLY", _("Monthly")
         YEARLY = "YEARLY", _("Yearly")
+        ONCE = "ONCE", _("One-off")
 
     organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT,
                                         related_name="subscription")
@@ -63,11 +104,135 @@ class Subscription(TimeStampedModel):
     # The paid period; empty on a trial and on Free.
     period_start = models.DateField(null=True, blank=True)
     period_end = models.DateField(null=True, blank=True)
-    # When PAST_DUE started, for the 14 days of grace.
+    # When PAST_DUE started, for the days of grace (BillingPolicy.grace_days).
     past_due_since = models.DateField(null=True, blank=True)
+    # A Platform Admin's extension of the grace (a dispute, a promise to pay): no lapse until after this day.
+    grace_until = models.DateField(null=True, blank=True)
+    # A change the landlord asked for that starts when the paid period ends (a cheaper plan, or Free = stop
+    # renewing). Empty for none.
+    next_plan = models.ForeignKey(Plan, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    next_interval = models.CharField(max_length=10, choices=Interval.choices, blank=True)
+    # A card saved at Paystack for renewals. We keep Paystack's reusable code (encrypted), never the card
+    # number; the last four digits, brand and expiry are only for showing which card it is.
+    card_code_encrypted = models.TextField(blank=True)
+    card_last4 = models.CharField(max_length=4, blank=True)
+    card_brand = models.CharField(max_length=30, blank=True)
+    card_expiry = models.CharField(max_length=7, blank=True)
+    # The landlord's choice: charge the saved card when a renewal invoice falls due.
+    auto_renew = models.BooleanField(default=False)
+    # This organization's own late-payment rules (D-198). Missing key = follow BillingPolicy; an integer = days
+    # after the due date; null = never stop; the "dunning_*" keys are true/false. Set by the owner in the console.
+    late_overrides = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"{self.organization} · {self.plan} · {self.get_status_display()}"
+
+    @property
+    def has_card(self) -> bool:
+        return bool(self.card_code_encrypted)
+
+
+class BillingPolicy(models.Model):
+    """The rules for trials, renewals and what happens when payment is late. One row, changed in Django admin.
+
+    A lapsed organization is never locked out of its records: it becomes read-only, so everything can still be
+    seen and downloaded, and paying (and only creating) is what is blocked (D-060, accounts.permissions)."""
+
+    trial_days = models.PositiveSmallIntegerField(_("trial days"), default=30)
+    repeat_trial_days = models.PositiveSmallIntegerField(
+        _("trial days for a repeat sign-up"), default=0,
+        help_text=_("When the phone number or email was already used by another organization's account or billing."))
+    invoice_lead_days = models.PositiveSmallIntegerField(
+        _("renewal invoice days ahead"), default=7, help_text=_("The renewal invoice is issued this many days "
+                                                                "before the paid period ends."))
+    grace_days = models.PositiveSmallIntegerField(
+        _("grace days"), default=14, help_text=_("Days after a payment is due before the account becomes "
+                                                 "read-only."))
+    reminder_days = models.CharField(
+        _("reminders before the end"), max_length=40, default="7,3,1", blank=True,
+        help_text=_("Days before a trial or paid period ends when the billing contact is emailed, e.g. 7,3,1."))
+    grace_reminder_days = models.CharField(
+        _("reminders while overdue"), max_length=40, default="1,7,12", blank=True,
+        help_text=_("Days after the due date when the billing contact is emailed, e.g. 1,7,12."))
+    # What stops working while a payment is overdue, in days after the due date. Empty = never stops (D-198).
+    # A single organization can follow its own days (Subscription.late_overrides). Platform messages (login
+    # codes, invoices, reminders to the landlord) are never stopped.
+    stop_sms_days = models.PositiveSmallIntegerField(
+        _("stop SMS after (days)"), null=True, blank=True, default=7,
+        help_text=_("Days overdue before the landlord's SMS to tenants and staff stop. Empty = never."))
+    stop_whatsapp_days = models.PositiveSmallIntegerField(
+        _("stop WhatsApp after (days)"), null=True, blank=True, default=7)
+    stop_email_days = models.PositiveSmallIntegerField(
+        _("stop email after (days)"), null=True, blank=True, default=14)
+    stop_scans_days = models.PositiveSmallIntegerField(
+        _("stop photo scans after (days)"), null=True, blank=True, default=7)
+    stop_assistant_days = models.PositiveSmallIntegerField(
+        _("stop the assistant after (days)"), null=True, blank=True, default=7)
+    # Sections where recording something new is paused (viewing stays), in days after the due date; empty = never.
+    stop_expenses_days = models.PositiveSmallIntegerField(_("pause expenses after (days)"), null=True, blank=True,
+                                                          default=10)
+    stop_meters_days = models.PositiveSmallIntegerField(_("pause meter readings and utilities after (days)"),
+                                                        null=True, blank=True, default=10)
+    stop_inspections_days = models.PositiveSmallIntegerField(_("pause inspections after (days)"), null=True,
+                                                             blank=True, default=10)
+    stop_documents_days = models.PositiveSmallIntegerField(_("pause documents after (days)"), null=True, blank=True,
+                                                           default=10)
+    stop_maintenance_days = models.PositiveSmallIntegerField(_("pause repairs after (days)"), null=True, blank=True)
+    stop_properties_days = models.PositiveSmallIntegerField(_("pause new properties and units after (days)"),
+                                                            null=True, blank=True, default=10)
+    stop_tenancy_days = models.PositiveSmallIntegerField(_("pause new tenants, leases and prospects after (days)"),
+                                                         null=True, blank=True)
+    stop_invoices_days = models.PositiveSmallIntegerField(_("pause invoicing after (days)"), null=True, blank=True)
+    stop_payments_days = models.PositiveSmallIntegerField(
+        _("pause recording payments by hand after (days)"), null=True, blank=True,
+        help_text=_("Rent that tenants pay through M-Pesa still posts."))
+    dunning_email = models.BooleanField(_("remind the landlord by email"), default=True)
+    dunning_sms = models.BooleanField(
+        _("remind the landlord by SMS"), default=True,
+        help_text=_("Sent from the platform's own sender, on the same days as the email reminders."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "billing policy"
+        verbose_name_plural = "billing policy"
+
+    def __str__(self):
+        return "Billing policy"
+
+    @classmethod
+    def get(cls) -> "BillingPolicy":
+        return cls.objects.get_or_create(pk=1)[0]
+
+    @staticmethod
+    def _days(text: str) -> list[int]:
+        return sorted({int(x) for x in (text or "").replace(" ", "").split(",") if x.isdigit()}, reverse=True)
+
+    @property
+    def reminder_list(self) -> list[int]:
+        return self._days(self.reminder_days)
+
+    @property
+    def grace_reminder_list(self) -> list[int]:
+        return self._days(self.grace_reminder_days)
+
+
+class SubscriptionReminder(models.Model):
+    """One reminder sent on one channel (email or SMS), so each is sent once."""
+
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="reminders")
+    kind = models.CharField(max_length=20)
+    channel = models.CharField(max_length=10, default="EMAIL")
+    # The day the reminder is about (trial end, period end or the day payment fell due).
+    for_date = models.DateField()
+    days = models.SmallIntegerField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint("subscription", "kind", "channel", "for_date", "days",
+                                               name="subscriptions_reminder_channel_once")]
+
+    def __str__(self):
+        return f"{self.kind} {self.days}"
 
 
 class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
@@ -101,6 +266,8 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
     price = models.DecimalField(max_digits=12, decimal_places=2)
     # Unused days of the previous paid period (D-060 item 5), a positive amount taken off.
     credit = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    # A discount agreed with the customer, taken off like the credit (migration 0010).
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
     net_amount = models.DecimalField(max_digits=12, decimal_places=2)
     vat_rate = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal("0"))
     vat_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
@@ -112,6 +279,9 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
     etims_reference = models.CharField(max_length=100, blank=True)
     void_reason = models.CharField(max_length=200, blank=True)
     voided_at = models.DateTimeField(null=True, blank=True)
+    # The landlord disputes this invoice: the account is not lapsed while it is open (set in admin).
+    disputed_at = models.DateTimeField(null=True, blank=True)
+    dispute_note = models.CharField(max_length=300, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="+")
 
@@ -134,10 +304,11 @@ class SubscriptionInvoice(PublicIdModel, TimeStampedModel):
 
 
 class SubscriptionPayment(PublicIdModel):
-    """Money received by LandlordPMS, for an invoice or an SMS top-up. Never deleted."""
+    """Money received by NyumbaPMS, for an invoice or an SMS top-up. Never deleted."""
 
     class Method(models.TextChoices):
         MPESA = "MPESA", _("M-Pesa")
+        PAYSTACK = "PAYSTACK", _("Paystack")
         BANK = "BANK", _("Bank transfer")
         OTHER = "OTHER", _("Other")
 
@@ -146,7 +317,7 @@ class SubscriptionPayment(PublicIdModel):
     invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
                                 related_name="payments")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
-    method = models.CharField(max_length=5, choices=Method.choices)
+    method = models.CharField(max_length=10, choices=Method.choices)
     reference = models.CharField(max_length=60, unique=True)
     paid_on = models.DateField()
     note = models.CharField(max_length=200, blank=True)
@@ -186,18 +357,91 @@ class PlatformSequence(models.Model):
 
 
 class SmsWallet(models.Model):
-    """The balance, kept on one row so it can be locked; the entries are the record."""
+    """The balance, kept on one row so it can be locked; the entries are the record. The mode says who pays
+    for the organization's SMS and the monthly figure what it gets (D-142)."""
+
+    class Mode(models.TextChoices):
+        SPONSORED = "SPONSORED", _("Sponsored: we pay, up to the monthly cap")
+        PREPAID = "PREPAID", _("Prepaid: the organization pays from its wallet")
+        BUNDLED = "BUNDLED", _("Bundled: a monthly allowance, then the wallet")
 
     organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="sms_wallet")
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0"))
+    mode = models.CharField(max_length=10, choices=Mode.choices, default=Mode.SPONSORED)
+    # SMS parts a month. Sponsored: the most we pay for (empty means no cap). Bundled: the parts included before
+    # the wallet is charged. Prepaid: not used.
+    monthly_cap = models.PositiveIntegerField(_("monthly parts"), null=True, blank=True, default=300,
+                                              help_text=_("Sponsored: the most SMS parts we pay for in a month "
+                                                          "(empty for no cap). Bundled: parts included each month."))
+    # The warning last sent this month (services.ALERT_*), so each is sent once; reset on a new month, a top-up
+    # and a change of terms.
+    alert_month = models.DateField(null=True, blank=True)
+    alert_level = models.PositiveSmallIntegerField(default=0)
+
+    class Access(models.TextChoices):
+        DEFAULT = "", _("Follow the platform setting")
+        ALLOWED = "ON", _("Allowed")
+        BLOCKED = "OFF", _("Not allowed")
+
+    # Whether this organization may use its own Africa's Talking account, and ask for its own sender name (D-200).
+    own_account = models.CharField(_("own SMS account"), max_length=3, choices=Access.choices, blank=True,
+                                   default=Access.DEFAULT)
+    own_sender = models.CharField(_("own sender name"), max_length=3, choices=Access.choices, blank=True,
+                                  default=Access.DEFAULT)
 
     def __str__(self):
         return f"{self.organization} {self.balance}"
 
 
+class SmsPolicy(models.Model):
+    """What a new organization's SMS starts with and whether the two do-it-yourself ways are open (D-200). One
+    row, changed in Django admin. Wallets that already exist keep their own terms."""
+
+    new_mode = models.CharField(_("new organizations start as"), max_length=10, choices=SmsWallet.Mode.choices,
+                                default=SmsWallet.Mode.SPONSORED)
+    new_monthly_parts = models.PositiveIntegerField(
+        _("monthly parts for new organizations"), null=True, blank=True, default=300,
+        help_text=_("Sponsored: the most parts we pay for in a month (empty for no cap). Bundled: parts included "
+                    "each month. Prepaid: not used."))
+    welcome_parts = models.PositiveIntegerField(
+        _("free welcome SMS (once)"), default=0,
+        help_text=_("SMS parts a new organization gets once, as credit in its wallet, to try the service. "
+                    "Worth this many parts at the SMS price. Only for Prepaid and Bundled; a sponsored "
+                    "organization does not need it. 0 for none."))
+    class WelcomeWhen(models.TextChoices):
+        START = "START", _("Straight away")
+        FIRST_TOP_UP = "FIRST_TOP_UP", _("With the first top-up")
+
+    welcome_when = models.CharField(
+        _("welcome SMS given"), max_length=12, choices=WelcomeWhen.choices, default=WelcomeWhen.START,
+        help_text=_("Straight away: free to try, but someone can make many accounts for the free SMS. With the "
+                    "first top-up: a bonus on their first purchase, so a made-up account gets nothing."))
+    own_account_default = models.BooleanField(
+        _("own Africa's Talking account allowed"), default=True,
+        help_text=_("Organizations may send through their own Africa's Talking account. Override per "
+                    "organization under SMS wallets."))
+    own_sender_default = models.BooleanField(
+        _("own sender name allowed"), default=True,
+        help_text=_("Organizations may ask for their own sender name on our account. Override per "
+                    "organization under SMS wallets."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SMS policy"
+        verbose_name_plural = "SMS policy"
+
+    def __str__(self):
+        return "SMS policy"
+
+    @classmethod
+    def get(cls) -> "SmsPolicy":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
 class SmsWalletEntry(models.Model):
     class Kind(models.TextChoices):
         TOP_UP = "TOP_UP", _("Top-up")
+        WELCOME = "WELCOME", _("Free welcome credit")
         MESSAGE = "MESSAGE", _("Message")
         ADJUSTMENT = "ADJUSTMENT", _("Adjustment")
 
@@ -206,6 +450,8 @@ class SmsWalletEntry(models.Model):
     # Signed: a top-up adds, a message takes away.
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     balance_after = models.DecimalField(max_digits=12, decimal_places=2)
+    # SMS parts a message used, whoever paid for them; zero for money entries.
+    segments = models.PositiveIntegerField(default=0)
     payment = models.OneToOneField(SubscriptionPayment, on_delete=models.PROTECT, null=True, blank=True,
                                    related_name="sms_top_up")
     message = models.OneToOneField("notifications.Message", on_delete=models.PROTECT, null=True, blank=True,
@@ -221,3 +467,109 @@ class SmsWalletEntry(models.Model):
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount}"
+
+
+# ---------------------------------------------------------------------------
+# Landlords paying online (D-126): our own Paybill through Daraja, and Paystack
+# ---------------------------------------------------------------------------
+
+
+class PlatformPaySwitch(models.Model):
+    """Which ways of paying online the subscription page offers. One row, changed in Django admin.
+
+    The keys stay in the environment; a way is offered only when its keys are set and it is on here,
+    so either can be turned off for a while without touching the server."""
+
+    mpesa_on = models.BooleanField(_("M-Pesa prompt and Paybill (Daraja)"), default=True)
+    paystack_on = models.BooleanField(_("Paystack (card or M-Pesa)"), default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "online payment switch"
+        verbose_name_plural = "online payment switch"
+
+    def __str__(self):
+        return "Online payments"
+
+    @classmethod
+    def get(cls) -> "PlatformPaySwitch":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class PlatformCheckout(PublicIdModel):
+    """One attempt to pay an invoice online: an M-Pesa prompt to the landlord's phone, or a Paystack
+    checkout page. The money itself arrives as a PlatformTransaction."""
+
+    class Provider(models.TextChoices):
+        MPESA = "MPESA", _("M-Pesa prompt")
+        PAYSTACK = "PAYSTACK", _("Paystack")
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", _("Waiting")
+        PAID = "PAID", _("Paid")
+        FAILED = "FAILED", _("Not paid")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    # Empty for an SMS top-up (D-142): the money goes to the organization's SMS wallet.
+    invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="checkouts")
+    provider = models.CharField(max_length=10, choices=Provider.choices)
+    # Daraja's CheckoutRequestID, or our Paystack reference.
+    reference = models.CharField(max_length=80, unique=True)
+    phone = models.CharField(max_length=20, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    result = models.CharField(max_length=300, blank=True)
+    # The landlord ticked "renew automatically with this card": a successful card payment saves the card.
+    save_card = models.BooleanField(default=False)
+    # Charged by the daily job to the saved card, not started by a person.
+    automatic = models.BooleanField(default=False)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.get_provider_display()} {self.invoice or 'SMS credit'} {self.get_status_display()}"
+
+
+class PlatformTransaction(models.Model):
+    """Money Safaricom or Paystack told us about, kept once per code exactly as received. APPLIED ones
+    became a SubscriptionPayment; UNMATCHED ones wait for a Platform Admin, who records the payment by
+    hand with the same code (that links them)."""
+
+    class Source(models.TextChoices):
+        STK = "STK", _("M-Pesa prompt")
+        C2B = "C2B", _("Paybill")
+        PAYSTACK = "PAYSTACK", _("Paystack")
+
+    class Status(models.TextChoices):
+        APPLIED = "APPLIED", _("Applied")
+        UNMATCHED = "UNMATCHED", _("Needs a person")
+
+    source = models.CharField(max_length=10, choices=Source.choices)
+    # The M-Pesa receipt, or PS<Paystack id>.
+    code = models.CharField(max_length=30, unique=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    currency = models.CharField(max_length=3, default="KES")
+    account = models.CharField(_("account typed"), max_length=60, blank=True)
+    phone = models.CharField(max_length=80, blank=True)
+    payer_name = models.CharField(max_length=150, blank=True)
+    paid_at = models.DateTimeField()
+    invoice = models.ForeignKey(SubscriptionInvoice, on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="+")
+    payment = models.OneToOneField(SubscriptionPayment, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="platform_transaction")
+    status = models.CharField(max_length=10, choices=Status.choices, db_index=True)
+    note = models.CharField(max_length=300, blank=True)
+    raw_payload = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+
+    def __str__(self):
+        return f"{self.code} {self.amount}"

@@ -16,6 +16,9 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+    # Our own port, so another project's service worker on 8000/8001 never takes over.
+    from django.core.management.commands.runserver import Command as RunServer
+    RunServer.default_port = "8005"
     execute_from_command_line(sys.argv)
 
 

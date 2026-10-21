@@ -10,8 +10,8 @@
   </form>
   <form method="post" class="mt-4">{% csrf_token %}
     <input type="hidden" name="action" value="archive">
-    <button class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Archive this building?" %}')">{% trans "Archive building" %}</button>
-    <div class="form-text">{% trans "Only possible once it has no active units." %}</div>
+    <button class="btn btn-outline-danger btn-sm" data-confirm="{% trans "Archive this building?" %}">{% trans "Archive building" %}</button>
+    <div class="form-text">{% blocktrans with units_l=vocab.units|lower %}Only possible once it has no active {{ units_l }}.{% endblocktrans %}</div>
   </form>
 </div>
 {% endblock %}

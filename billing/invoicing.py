@@ -83,6 +83,25 @@ def months_to_bill(org: Organization, today: datetime.date) -> list[datetime.dat
     return months
 
 
+def missed_months(org: Organization, today: datetime.date) -> list[datetime.date]:
+    """Past months to bill again after a lapse: from the month the organization went read-only to last month.
+
+    The daily job skips a lapsed organization, so those months were never billed. Billing is idempotent, so this
+    only ever adds what is missing; it looks back a year at most.
+    """
+    from audit.models import AuditEvent
+    since = timezone.now() - datetime.timedelta(days=366)
+    lapsed = (AuditEvent.objects.filter(organization=org, action="organization.read_only", created_at__gte=since)
+              .order_by("-created_at").values_list("created_at", flat=True).first())
+    if lapsed is None:
+        return []
+    months, month = [], month_start(timezone.localtime(lapsed).date())
+    while month < month_start(today):
+        months.append(month)
+        month = next_month(month)
+    return months
+
+
 def _fmt(day: datetime.date) -> str:
     return day.strftime("%d %b %Y")
 
@@ -203,26 +222,32 @@ def unbilled_meter_charges():
 def meter_lines(lease: Lease, months: list[datetime.date]) -> list[DraftLine]:
     """One line per unbilled meter charge of the lease billed in `months`, oldest reading first."""
     charges = (unbilled_meter_charges().filter(lease=lease, billing_month__in=months)
-               .order_by("service_start", "pk"))
-    if not charges:
-        return []
-    charge_type = metered_charge_type(lease.organization)
-    return [DraftLine(charge_type, c.description, c.amount, c.service_start, c.service_end, c.billing_month, c)
-            for c in charges]
+               .select_related("reading__meter").order_by("service_start", "pk"))
+    types = {}
+    lines = []
+    for c in charges:
+        utility = c.reading.meter.utility
+        if utility not in types:
+            types[utility] = metered_charge_type(lease.organization, utility=utility)
+        lines.append(DraftLine(types[utility], c.description, c.amount, c.service_start, c.service_end,
+                               c.billing_month, c))
+    return lines
 
 
-def metered_charge_type(org: Organization) -> ChargeType:
-    """The organization's system "Metered water" charge type, made on first use."""
-    qs = ChargeType.all_objects.for_org(org).filter(is_system=True, category=ChargeType.Category.METERED_WATER)
+def metered_charge_type(org: Organization, *, utility: str = "WATER") -> ChargeType:
+    """The organization's system "Metered water" or "Metered electricity" (D-070) charge type, made on first use."""
+    category = (ChargeType.Category.METERED_ELECTRICITY if utility == "ELECTRICITY"
+                else ChargeType.Category.METERED_WATER)
+    qs = ChargeType.all_objects.for_org(org).filter(is_system=True, category=category)
     found = qs.first()
     if found is not None:
         return found
-    name = _("Metered water")
+    name = str(category.label)
     taken = ChargeType.all_objects.for_org(org).filter(name__iexact=name).exists()
     try:
         with transaction.atomic():
             return ChargeType.objects.create(organization=org, name=name if not taken else f"{name} (meters)",
-                                             category=ChargeType.Category.METERED_WATER, is_system=True)
+                                             category=category, is_system=True)
     except IntegrityError:
         return qs.get()  # made at the same time
 
@@ -257,15 +282,62 @@ def _issue(invoice: Invoice, *, actor_user=None, today: datetime.date) -> None:
 
 
 def _lock_lease(lease: Lease) -> Lease:
-    return Lease.all_objects.select_for_update().select_related("organization").get(pk=lease.pk)
+    return Lease.all_objects.select_for_update(of=("self",)).select_related("organization").get(pk=lease.pk)
 
 
 def _billable(lease: Lease) -> bool:
     return lease.status != Lease.Status.DRAFT and lease.archived_at is None
 
 
+INCLUDE_ALL, INCLUDE_CHARGES, INCLUDE_METERS = "all", "charges", "meters"
+
+
+def _plan(lease: Lease, months: list[datetime.date], include: str) -> tuple[list[DraftLine], list[DraftLine]]:
+    """The rent/charge lines and the meter lines still to bill for `months`, limited to what `include` asks for."""
+    lines, metered = [], []
+    if include != INCLUDE_METERS:
+        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
+                                                meter_charge__isnull=True)
+                     .values_list("billing_month", "charge_type_id"))
+        lines = [ln for m in months for ln in lines_for_month(lease, m)
+                 if (ln.billing_month, ln.charge_type.pk) not in billed]
+    if include != INCLUDE_CHARGES:
+        metered = meter_lines(lease, months)
+    return lines, metered
+
+
+@dataclass
+class Preview:
+    lease: Lease
+    start: datetime.date
+    end: datetime.date
+    due: datetime.date
+    lines: list[DraftLine]
+    messages: list = field(default_factory=list)  # what each tenant would be sent, filled by the view
+
+    @property
+    def total(self) -> Decimal:
+        return sum((ln.amount for ln in self.lines), ZERO)
+
+
+def preview_lease_period(lease: Lease, month: datetime.date, *, include: str = INCLUDE_ALL, today=None,
+                         due_date=None) -> Preview | None:
+    """What `generate_lease_period` would issue for the lease, without issuing it."""
+    today = today or timezone.localdate()
+    if not _billable(lease):
+        return None
+    months = period_months(lease, month)
+    lines, metered = _plan(lease, months, include)
+    if not lines and not metered:
+        return None
+    dated = lines or metered
+    start = min(ln.service_start for ln in dated)
+    end = max(ln.service_end for ln in dated)
+    return Preview(lease, start, end, due_date or _due_date(lease, months[0], start, today), lines + metered)
+
+
 def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, today=None, due_date=None,
-                          request=None) -> Invoice | None:
+                          request=None, include: str = INCLUDE_ALL) -> Invoice | None:
     """Bills whatever is not billed yet of the period holding `month` for one lease, as one issued invoice.
 
     For a monthly lease the period is the month itself. Returns None when there is nothing new
@@ -278,12 +350,7 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
         if not _billable(lease):
             return None
         months = period_months(lease, month)
-        billed = set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
-                                                meter_charge__isnull=True)
-                     .values_list("billing_month", "charge_type_id"))
-        lines = [ln for m in months for ln in lines_for_month(lease, m)
-                 if (ln.billing_month, ln.charge_type.pk) not in billed]
-        metered = meter_lines(lease, months)
+        lines, metered = _plan(lease, months, include)
         if not lines and not metered:
             return None
         # The invoice covers the period's rent and charges; water alone covers its reading period.
@@ -320,6 +387,10 @@ def generate_lease_period(lease: Lease, month: datetime.date, *, actor=None, tod
                          "total": [None, str(invoice.total)],
                          **({} if actor else {"source": [None, "monthly job"]}),
                      })
+        # Rent paid ahead settles the new invoice at once.
+        from payments.services import auto_apply_credit
+        auto_apply_credit(lease)
+        invoice.refresh_from_db()
     return invoice
 
 
@@ -341,9 +412,51 @@ class RunResult:
         return sum((i.total for i in self.invoices), ZERO)
 
 
+def _targets(org: Organization, month: datetime.date, actor: Membership | None, leases=None):
+    qs = billable_leases(org, month).select_related("unit__property").order_by("pk")
+    if leases is not None:
+        qs = qs.filter(pk__in=[ls.pk for ls in leases])
+    return [ls for ls in qs if actor is None or can(actor, "invoices.generate", ls.unit.property)]
+
+
+def why_nothing(lease: Lease, month: datetime.date, include: str) -> str:
+    """Why a lease in scope has nothing new to bill for the period holding `month`."""
+    months = period_months(lease, month)
+    numbers = sorted(set(InvoiceLine.objects.filter(lease=lease, billing_month__in=months, is_void=False,
+                                                    invoice__number__gt="")
+                         .values_list("invoice__number", flat=True)))
+    if numbers and include != INCLUDE_METERS:
+        return _("Already billed on %(numbers)s.") % {"numbers": ", ".join(numbers)}
+    if include == INCLUDE_METERS:
+        return _("No approved meter reading is waiting to be billed.")
+    if billed_span(lease, month) is None:
+        return _("The lease does not cover this month.")
+    return _("No rent or charge falls in this period.")
+
+
+def preview_month(org: Organization, month: datetime.date, *, actor: Membership, leases=None,
+                  include: str = INCLUDE_ALL, due_date=None, today=None) -> tuple[list[Preview], list[tuple[Lease, str]]]:
+    """(what would be issued, (lease, reason) for leases in scope with nothing new to bill)."""
+    if not can(actor, "invoices.generate"):
+        raise PermissionDenied(_("You don't have permission to generate invoices."))
+    previews, nothing = [], []
+    for lease in _targets(org, month, actor, leases):
+        p = preview_lease_period(lease, month, include=include, today=today, due_date=due_date)
+        if p:
+            previews.append(p)
+        else:
+            nothing.append((lease, why_nothing(lease, month, include)))
+    return previews, nothing
+
+
 def generate_month(org: Organization, month: datetime.date, *, actor: Membership | None = None,
-                   today=None, request=None) -> RunResult:
-    """Bills the period holding `month` for every lease the actor may bill (every lease when run by the job)."""
+                   today=None, request=None, leases=None, include: str = INCLUDE_ALL, due_date=None,
+                   notify: bool = True) -> RunResult:
+    """Bills the period holding `month` for the leases the actor may bill (every lease when run by the job).
+
+    `leases` narrows it to some leases, `include` to rent and charges or to meters, `due_date` overrides
+    the lease's due day and `notify` False issues without messaging the tenants.
+    """
     from notifications import triggers  # notifications depends on billing, not the other way round
     if actor is not None:
         if actor.organization_id != org.pk:
@@ -353,18 +466,18 @@ def generate_month(org: Organization, month: datetime.date, *, actor: Membership
     elif not org.is_operational:
         return RunResult()
     result = RunResult()
-    for lease in billable_leases(org, month).select_related("unit__property").order_by("pk"):
-        if actor is not None and not can(actor, "invoices.generate", lease.unit.property):
-            continue
+    for lease in _targets(org, month, actor, leases):
         try:
-            invoice = generate_lease_period(lease, month, actor=actor, today=today, request=request)
+            invoice = generate_lease_period(lease, month, actor=actor, today=today, request=request,
+                                            include=include, due_date=due_date)
         except ValidationError as e:
             result.errors.append((lease, e.messages[0]))
             continue
         if invoice is not None:
             result.invoices.append(invoice)
             # Only the monthly run tells the tenant; a month billed again after a correction does not (D-044).
-            triggers.invoice_issued(invoice)
+            if notify:
+                triggers.invoice_issued(invoice)
     return result
 
 
@@ -402,12 +515,25 @@ def bill_meter_charges(org: Organization, *, today=None, lease: Lease | None = N
     return result
 
 
+def blocked_modules(org):
+    from subscriptions.services import blocked_modules as paused
+
+    return paused(org)
+
+
 def run_scheduled(today=None) -> dict[str, int]:
     """The daily job: bills this month and, within the lead days, next month, for every organization."""
     today = today or timezone.localdate()
     counts = {"organizations": 0, "invoices": 0, "errors": 0}
     for org in Organization.objects.filter(archived_at__isnull=True, status=Organization.Status.ACTIVE):
+        if "invoices" in blocked_modules(org):
+            continue  # paused for an overdue subscription (D-205); the months are caught up once it is paid
         counts["organizations"] += 1
+        for month in missed_months(org, today):
+            # Months the job skipped while the subscription had lapsed; the tenants are not messaged about them.
+            result = generate_month(org, month, today=today, notify=False)
+            counts["invoices"] += len(result.invoices)
+            counts["errors"] += len(result.errors)
         for month in months_to_bill(org, today):
             result = generate_month(org, month, today=today)
             counts["invoices"] += len(result.invoices)

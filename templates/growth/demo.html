@@ -1,0 +1,28 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Book a demo" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+<div class="pub-demo">
+  <div class="pub-demo-info">
+    <p class="about-eyebrow">{% trans "Book a demo" %}</p>
+    <h1 class="about-title">{% trans "See NyumbaPMS with your own units in mind." %}</h1>
+    <p class="about-lead">{% trans "A short walk through with your own situation in mind: about 20 minutes, no obligation. We will contact you to agree the time." %}</p>
+    <ul class="pub-checks pub-checks-lg">
+      <li>{% trans "About 20 minutes, by phone, video call or in person" %}</li>
+      <li>{% trans "Shaped around how you collect rent today" %}</li>
+      <li>{% trans "No obligation and no card needed" %}</li>
+    </ul>
+    <form method="post" action="{% url 'growth:demo_enter' %}" class="mt-4">{% csrf_token %}<button class="btn btn-outline-primary">{% trans "Try the live demo now" %}</button> <span class="text-muted small ms-2">{% trans "Sample landlord, 74 units, no sign-up." %}</span></form>
+    <p class="mt-3 mb-0">{% trans "Rather use your own data?" %} <a href="{% url 'accounts:register' %}">{% trans "Start the free trial" %}</a></p>
+  </div>
+  <div class="about-card pub-demo-form">
+    <h2 class="about-card-title mt-0 mb-3">{% trans "Request a demo" %}</h2>
+    <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+      <p class="small text-muted">{% trans "We use your details only to arrange the demo. See our" %} <a href="{% url 'support:privacy' %}" target="_blank">{% trans "Privacy Policy" %}</a>.</p>
+      <button class="btn btn-primary btn-lg w-100">{% trans "Request a demo" %}</button>
+    </form>
+  </div>
+</div>
+</div>
+{% endblock %}

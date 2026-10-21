@@ -1,0 +1,31 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Email owners" %}{% endblock %}
+{% block console_title %}{% trans "Email owners" %}{% endblock %}
+{% block console %}
+<div class="row g-4">
+  <div class="col-lg-7">
+    <p class="small text-muted">{% trans "Each owner gets their own copy, so no one sees anyone else's address. It goes from the platform address and replies come to support." %}</p>
+    <form method="post">{% csrf_token %}
+      {% for k, v in params.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      {% for m in picked %}<input type="hidden" name="m" value="{{ m }}">{% endfor %}
+      {% include "partials/form.html" %}
+      <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-primary"{% if not targets %} disabled{% endif %}>{% blocktrans with n=targets|length %}Send to {{ n }} owners{% endblocktrans %}</button>
+        <button class="btn btn-outline-secondary" name="test" value="1">{% trans "Send a test to me" %}</button>
+        <a class="btn btn-link" href="{% url 'console:owners' %}">{% trans "Back to owners" %}</a>
+      </div>
+    </form>
+  </div>
+  <div class="col-lg-5">
+    <h2 class="h6">{% blocktrans with n=targets|length %}Goes to {{ n }} owners{% endblocktrans %}</h2>
+    {% if no_email %}<p class="small text-muted">{% blocktrans with n=no_email %}{{ n }} more have no email and are skipped.{% endblocktrans %}</p>{% endif %}
+    {% if targets|length > cap %}<p class="small text-danger">{% blocktrans with c=cap %}Only the first {{ c }} are sent in one go.{% endblocktrans %}</p>{% endif %}
+    <div class="table-responsive" style="max-height:22rem"><table class="table table-sm small">
+      <tbody>{% for r in targets %}<tr><td>{{ r.user.full_name }}<div class="text-muted">{{ r.org.name }}</div></td><td class="text-break">{{ r.email }}</td></tr>
+      {% empty %}<tr><td class="text-muted">{% trans "No one has an email here." %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% if history %}<h2 class="h6 mt-3">{% trans "Recently sent" %}</h2>
+    <ul class="list-unstyled small">{% for e in history %}<li><a href="{% url 'console:owner_email_detail' e.pk %}">{{ e.subject }}</a> <span class="text-muted">· {{ e.created_at|date:"j M" }} · {{ e.sent }}/{{ e.recipients }}</span></li>{% endfor %}</ul>{% endif %}
+  </div>
+</div>
+{% endblock %}

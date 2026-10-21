@@ -1,0 +1,38 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ article.title }} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about pub-read">
+{% if preview %}<div class="alert alert-warning" role="status">{% if article.is_published %}{% trans "Preview of the saved text. This is how it looks to visitors." %}{% else %}{% trans "Draft preview. Visitors cannot see this article until you publish it." %}{% endif %} <a href="{% url 'console:article' article.pk %}">{% trans "Back to editing" %}</a></div>{% endif %}
+<nav aria-label="{% trans 'Breadcrumb' %}" class="pub-crumb"><a href="{% url 'growth:articles' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All articles" %}</a></nav>
+<header class="about-hero pub-read-head">
+  <p class="about-eyebrow">{{ article.get_category_display }} · {% blocktrans with m=article.minutes %}{{ m }} min read{% endblocktrans %}</p>
+  <h1 class="about-title">{{ article.title }}</h1>
+  <p class="about-lead">{{ article.summary }}</p>
+  <p class="small text-muted mb-0">{% if article.author %}{% blocktrans with name=article.author %}By {{ name }}{% endblocktrans %} · {% endif %}{% if article.published_at %}<time datetime="{{ article.published_at|date:'Y-m-d' }}">{{ article.published_at|date:"j F Y" }}</time>{% endif %}{% if article.updated_at.date != article.published_at.date and article.published_at %} · {% blocktrans with d=article.updated_at|date:"j F Y" %}Updated {{ d }}{% endblocktrans %}{% endif %}</p>
+</header>
+{% if toc %}
+<nav class="pub-toc" aria-label="{% trans 'In this article' %}">
+  <p class="small fw-semibold text-muted mb-1">{% trans "In this article" %}</p>
+  <ol>{% for anchor, text in toc %}<li><a href="#{{ anchor }}">{{ text }}</a></li>{% endfor %}</ol>
+</nav>
+{% endif %}
+<div class="pub-prose">{{ article_html }}</div>
+<div class="pub-share">
+  <span class="small text-muted">{% trans "Share this with another landlord:" %}</span>
+  <a class="btn btn-sm btn-outline-secondary" href="https://wa.me/?text={{ article.title|urlencode }}%20{{ share_url|urlencode }}" target="_blank" rel="noopener"><i class="bi bi-whatsapp" aria-hidden="true"></i> WhatsApp</a>
+  <input type="text" id="share-url" class="visually-hidden" value="{{ share_url }}" readonly tabindex="-1" aria-hidden="true">
+  <button type="button" class="btn btn-sm btn-outline-secondary" data-copy="#share-url"><i class="bi bi-link-45deg" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy link" %}</span></button>
+</div>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Want this handled for you?" %}</h2><p class="mb-0">{% trans "The trial is free and nothing here needs a card." %}</p></div>
+  {% if not user.is_authenticated %}<a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>{% endif %}
+</section>
+{% if others %}
+<section class="about-section" aria-labelledby="more-h">
+  <h2 id="more-h" class="about-h2 mb-3">{% trans "Keep reading" %}</h2>
+  <ul class="pub-links">{% for a in others %}<li><a href="{% url 'growth:article' a.slug %}">{{ a.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endfor %}</ul>
+</section>
+{% endif %}
+</div>
+{% endblock %}

@@ -5,24 +5,17 @@
 body:has(.wide) main.page { max-width: 1140px; }
 .min-w-0 { min-width: 0; }
 
-/* Summary tiles */
-.stat { border: 0; border-radius: .75rem; }
-.stat .stat-label { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color); }
-.stat .stat-value { font-size: 1.35rem; font-weight: 600; line-height: 1.25; }
-.stat .stat-sub { font-size: .8rem; color: var(--bs-secondary-color); }
-.stat-accent { border-left: 4px solid var(--accent, var(--bs-border-color)) !important; }
-
 /* Status pills (tabs) */
 .state-tabs { scrollbar-width: none; }
 .state-tabs::-webkit-scrollbar { display: none; }
-.state-tabs .nav-link { white-space: nowrap; color: var(--bs-body-color); border-radius: 999px; padding: .3rem .8rem; font-size: .875rem; }
-.state-tabs .nav-link.active { background: var(--bs-dark); color: #fff; }
+.state-tabs .nav-link { white-space: nowrap; color: var(--bs-body-color); border: 1px solid var(--bs-border-color); background: var(--bs-body-bg); border-radius: 999px; padding: .25rem .8rem; font-size: .85rem; }
+.state-tabs .nav-link:hover { background: var(--app-hover); border-color: var(--bs-primary-border-subtle); }
+.state-tabs .nav-link.active { background: var(--bs-primary-bg-subtle); border-color: var(--bs-primary-border-subtle); color: var(--bs-primary-text-emphasis); font-weight: 600; }
 .state-tabs .count { font-size: .75rem; opacity: .7; margin-left: .25rem; }
 
 /* Tables */
 .pay-table { margin-bottom: 0; }
-.pay-table th { font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; color: var(--bs-secondary-color);
-                font-weight: 500; background: var(--bs-tertiary-bg); white-space: nowrap; }
+.pay-table th { white-space: nowrap; }
 .pay-table td { vertical-align: middle; }
 .pay-table tr[data-href] { cursor: pointer; }
 .pay-table tr[data-href]:hover td { background: var(--bs-tertiary-bg); }
@@ -38,9 +31,10 @@ body:has(.wide) main.page { max-width: 1140px; }
 .method-BANK { background: #e8f0fe; color: #1a56db; }
 .method-CASH { background: #fef3e2; color: #9a5b00; }
 .method-CHEQUE { background: #f1ecfb; color: #6b3fc4; }
-
-/* Amount hero on the detail page */
-.hero-amount { font-size: 2rem; font-weight: 650; letter-spacing: -.01em; }
+[data-bs-theme=dark] .method-MPESA { background: #0f2a1b; color: #6fd394; }
+[data-bs-theme=dark] .method-BANK { background: #13213d; color: #8fb2fa; }
+[data-bs-theme=dark] .method-CASH { background: #2e2310; color: #f0b75a; }
+[data-bs-theme=dark] .method-CHEQUE { background: #241a3b; color: #b89bf0; }
 
 /* Activity timeline */
 .timeline { list-style: none; padding: 0; margin: 0; position: relative; }

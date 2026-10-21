@@ -1,0 +1,59 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Accounting export" %}{% endblock %}
+{% block content %}
+{% with cur=export.currency %}
+<h1 class="h4 mb-0">{% trans "For the accountant" %}</h1>
+<p class="small text-body-secondary">{{ export.label }} · {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %}</p>
+{% include "reports/_finance_links.html" with section="books" %}
+{% include "reports/_finance_filter.html" with can_export=False %}
+
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+      <h2 class="h6 mb-1">{% trans "Books for these months" %}</h2>
+      <p class="small text-body-secondary mb-0">{% blocktrans count n=export.journals|length %}{{ n }} journal entry{% plural %}{{ n }} journal entries{% endblocktrans %} ·
+        {% blocktrans count n=export.invoices|length %}{{ n }} invoice{% plural %}{{ n }} invoices{% endblocktrans %} ·
+        {% blocktrans count n=export.payments|length %}{{ n }} payment{% plural %}{{ n }} payments{% endblocktrans %} ·
+        {% blocktrans count n=export.expenses|length %}{{ n }} expense{% plural %}{{ n }} expenses{% endblocktrans %}</p>
+      <p class="small mb-0 {% if export.total_debit != export.total_credit %}text-danger{% else %}text-success{% endif %}">
+        {% blocktrans with d=export.total_debit|money:cur c=export.total_credit|money:cur %}Debits {{ d }}, credits {{ c }}{% endblocktrans %}</p>
+    </div>
+    <a class="btn btn-primary btn-sm" href="?{{ download_query }}"><i class="bi bi-file-earmark-zip" aria-hidden="true"></i> {% trans "Download ZIP" %}</a>
+  </div>
+</div></div>
+
+<div class="card shadow-sm mb-3"><div class="card-body small">
+  <h2 class="h6">{% trans "What is in the ZIP" %}</h2>
+  <ul class="mb-2">
+    <li><span class="fw-medium">journal.csv</span>: {% trans "a double-entry journal, one balanced entry per invoice, payment, deposit, expense and payment to an owner. It imports into QuickBooks Online as journal entries, and into Zoho Books, Wave or a spreadsheet." %}</li>
+    <li><span class="fw-medium">accounts.csv</span>: {% trans "every account used, a suggested account type, and its debits and credits for these months." %}</li>
+    <li><span class="fw-medium">invoices.csv, payments.csv, expenses.csv</span>: {% trans "the registers, to check against." %}</li>
+  </ul>
+  <p class="text-body-secondary mb-0">{% trans "Invoices are income when issued (accrual basis), unlike the profit and loss, which counts money when received. A void or reversal is its own entry on the day it happened, so months already closed do not change. Deposits are held for tenants and are not income. Account names stay the same between downloads, so the accountant maps them once." %}
+  {% if not export.whole_organization %}{% trans "Payments to owners are left out: they belong to an owner, not a property." %}{% endif %}</p>
+</div></div>
+
+<div class="card shadow-sm overflow-hidden mb-3">
+  <div class="card-header bg-body fw-medium">{% trans "Accounts" %}</div>
+  {% if accounts %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle small mb-0">
+      <thead><tr><th>{% trans "Account" %}</th><th class="d-none d-md-table-cell">{% trans "Type" %}</th>
+        <th class="text-end">{% trans "Debit" %}</th><th class="text-end">{% trans "Credit" %}</th><th class="text-end">{% trans "Net" %}</th></tr></thead>
+      <tbody>
+        {% for a in accounts %}
+        <tr><td>{{ a.name }}</td><td class="d-none d-md-table-cell text-body-secondary">{{ a.type }}</td>
+          <td class="text-end num">{{ a.debit|money:cur }}</td><td class="text-end num">{{ a.credit|money:cur }}</td>
+          <td class="text-end num">{{ a.net|money:cur }}</td></tr>
+        {% endfor %}
+      </tbody>
+      <tfoot class="fw-semibold"><tr><td>{% trans "Total" %}</td><td class="d-none d-md-table-cell"></td>
+        <td class="text-end num">{{ export.total_debit|money:cur }}</td><td class="text-end num">{{ export.total_credit|money:cur }}</td><td></td></tr></tfoot>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body small text-body-secondary">{% trans "Nothing was billed, paid or spent in these months." %}</div>
+  {% endif %}
+</div>
+{% endwith %}
+{% endblock %}

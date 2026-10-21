@@ -1,0 +1,68 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console growth" %}{% endblock %}
+{% block console_title %}{% trans "Growth, who uses the app, and where" %}{% endblock %}
+{% block console %}
+{% with t=data.totals c=data.churn %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Organizations" %}</div><div class="h4 mb-0">{{ t.organizations }}</div>
+    <div class="small">{% blocktrans with p=t.paying s=t.paying_share|default:0 %}{{ p }} paying ({{ s }}%){% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Tenants onboarded" %}</div><div class="h4 mb-0">{{ t.tenants }}</div>
+    <div class="small">{% blocktrans with a=t.active_tenants p=t.tenants_per_org %}{{ a }} active · {{ p }} per organization{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Units managed" %}</div><div class="h4 mb-0">{{ t.units }}</div>
+    <div class="small">{% blocktrans with a=t.avg_units m=t.median_units %}average {{ a }} per organization · typical {{ m }}{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Organizations that left" %}</div><div class="h4 mb-0">{% if c.rate is not None %}{{ c.rate }}%{% else %}—{% endif %}</div>
+    <div class="small">{% blocktrans with n=c.left e=c.ever %}{{ n }} of {{ e }} ever signed up{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+<p class="small text-muted">{% blocktrans with a=c.archived l=c.lapsed f=c.frozen %}"Left" counts organizations that were closed ({{ a }}), whose subscription lapsed ({{ l }}), or that are frozen ({{ f }}).{% endblocktrans %}
+  {% blocktrans with n=t.users %}{{ n }} people have accounts.{% endblocktrans %}</p>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">{% include "console/_chart.html" with spec="growth" title=_("How the app has grown") note=_("Running totals, month by month.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-5">{% include "console/_chart.html" with spec="new" title=_("Who signs up each month") note=_("Landlords, agencies and the rest, against those who left.") label=_("Monthly counts are in the table.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="roles" title=_("Who is on the app") note=_("People by the role they hold, caretakers, owners, agents and so on.") label=_("Counts are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="sizes" title=_("How big organizations are") note=_("By number of units.") label=_("Counts are in the table below.") %}</div>
+  <div class="col-lg-4">{% include "console/_chart.html" with spec="counties" title=_("Where it is used") note=_("Units by county, top twelve.") label=_("All counties are in the table below.") %}</div>
+</div>
+
+<h2 class="h6">{% trans "Month by month" %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "New organizations" %}</th><th class="text-end">{% trans "Total" %}</th><th class="text-end">{% trans "Growth" %}</th><th class="text-end">{% trans "Left" %}</th><th class="text-end">{% trans "New people" %}</th><th class="text-end">{% trans "New tenants" %}</th><th class="text-end">{% trans "New units" %}</th></tr></thead>
+  <tbody>{% for r in data.rows %}<tr><td>{{ r.month }}</td><td class="text-end">{{ r.orgs }}</td><td class="text-end">{{ r.total_orgs }}</td><td class="text-end">{% if r.pace is not None %}{{ r.pace }}%{% else %}—{% endif %}</td><td class="text-end">{{ r.left }}</td><td class="text-end">{{ r.users }}</td><td class="text-end">{{ r.tenants }}</td><td class="text-end">{{ r.units }}</td></tr>{% endfor %}</tbody>
+</table></div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <h2 class="h6">{% trans "People by role" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for name, n in data.roles %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% empty %}<tr><td class="text-muted">—</td></tr>{% endfor %}</tbody></table></div>
+    <h2 class="h6 mt-3">{% trans "Organizations by kind" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for name, n in data.types %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+  <div class="col-lg-3">
+    <h2 class="h6">{% trans "Size of organizations" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for name, n in data.buckets %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+    <h2 class="h6 mt-3">{% trans "Sign-up to paying" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for r in funnel %}<tr><td>{{ r.label }}</td><td class="text-end">{{ r.count }}{% if r.share is not None %} <span class="text-muted">({{ r.share }}%)</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    <h2 class="h6 mt-3">{% trans "Stuck, worth a call" %}</h2>
+    {% for s in stuck %}{% if s.count %}<p class="small mb-1"><strong>{% blocktrans with n=s.count l=s.label %}{{ n }} signed up but have not: {{ l }}{% endblocktrans %}</strong><br>{% for o in s.items %}{% if "organizations" in allowed %}<a href="{% url 'console:organization' o.public_id %}">{{ o.name }}</a>{% else %}{{ o.name }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if s.count > s.items|length %} …{% endif %}</p>{% endif %}{% endfor %}
+  </div>
+  <div class="col-lg-5">
+    <h2 class="h6">{% trans "By county" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "County" %}</th><th class="text-end">{% trans "Organizations" %}</th><th class="text-end">{% trans "Properties" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Leases" %}</th><th class="text-end">{% trans "Of units" %}</th></tr></thead>
+      <tbody>{% for r in geo.rows %}<tr><td>{{ r.county }}</td><td class="text-end">{{ r.organizations }}</td><td class="text-end">{{ r.properties }}</td><td class="text-end">{{ r.units }}</td><td class="text-end">{{ r.leases }}</td><td class="text-end">{% if r.share is not None %}{{ r.share }}%{% endif %}</td></tr>
+      {% empty %}<tr><td colspan="6" class="text-muted">{% trans "No properties yet." %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <p class="small text-muted">{% blocktrans with n=geo.counties %}In {{ n }} counties.{% endblocktrans %}{% if geo.missing %} {% blocktrans with m=geo.missing %}{{ m }} properties have no county set.{% endblocktrans %}{% endif %}</p>
+  </div>
+</div>
+{% endwith %}
+{% include "console/_specs.html" %}
+{% endblock %}

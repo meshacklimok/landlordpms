@@ -15,6 +15,7 @@ Manual = Unit.ManualStatus
 STATUS_FILTERS = {
     "vacant": (_("Available"), Q(is_occupied=False, manual_status=Manual.NORMAL)),
     "occupied": (_("Occupied"), Q(is_occupied=True)),
+    "notice": (_("Notice given"), Q(moving_out_on__isnull=False)),
     "reserved": (_("Reserved"), Q(is_occupied=False, manual_status=Manual.RESERVED)),
     "maintenance": (_("Under maintenance"), Q(is_occupied=False, manual_status=Manual.UNDER_MAINTENANCE)),
     "inactive": (_("Inactive"), Q(is_occupied=False, manual_status=Manual.INACTIVE)),

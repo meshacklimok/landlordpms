@@ -1,0 +1,13 @@
+{% extends "expenses/_base.html" %}{% load i18n %}
+{% block title %}{% blocktrans with n=expense.number %}Edit {{ n }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'expenses:detail' expense.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ expense.number }}</a>
+  <h1 class="h4 mt-2">{% blocktrans with n=expense.number %}Edit {{ n }}{% endblocktrans %}</h1>
+  <p class="small text-body-secondary">{% if expense.status == "APPROVED" %}{% trans "It stays approved. Every change is kept in the activity log." %}{% else %}{% trans "It stays waiting for approval. Every change is kept in the activity log." %}{% endif %}</p>
+  <form method="post" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Save" %}</button>
+  </div></form>
+</div>
+{% endblock %}

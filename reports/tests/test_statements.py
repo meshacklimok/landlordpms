@@ -57,8 +57,8 @@ def test_the_statement(owner, jane, january):
     (block,) = st.blocks
     assert (block.rentable, block.occupied) == (2, 2)
     a1, a2 = block.lines
-    assert (a1.tenant, a1.billed, a1.rent, a1.other, a1.balance) == (
-        "Tenant A1", money(21000), money(20000), money(1000), money(0))
+    assert (a1.tenant, a1.billed, a1.rent, a1.utilities, a1.other, a1.balance) == (
+        "Tenant A1", money(21000), money(20000), money(1000), money(0), money(0))
     assert (a2.billed, a2.collected, a2.balance) == (money(10000), money(0), money(10000))
     # The fee is on rent only: 10% of 20,000.
     assert (st.collected, st.fee, st.due, st.billed, st.balance) == (

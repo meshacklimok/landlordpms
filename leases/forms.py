@@ -4,8 +4,10 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from accounts.forms import PhoneField
+from tenants.forms import unit_label
 
-from .models import Lease
+from . import clauses
+from .models import Lease, LeaseNotice
 
 
 class DateInput(forms.DateInput):
@@ -41,16 +43,36 @@ class LeaseForm(forms.Form):
     notice_days = forms.IntegerField(label=_("Notice period (days)"), min_value=0, max_value=365, initial=30)
     terms = forms.CharField(label=_("Terms and notes"), required=False, widget=forms.Textarea(attrs={"rows": 3}))
 
-    def __init__(self, *args, tenants, with_tenants=True, **kwargs):
+    def __init__(self, *args, tenants, with_tenants=True, hostel=False, **kwargs):
         if "initial" in kwargs:
             kwargs["initial"] = _iso(kwargs["initial"])
         super().__init__(*args, **kwargs)
+        if hostel:
+            self._hostel()
         if with_tenants:
             self.fields["tenant"].queryset = tenants
             self.fields["co_tenants"].queryset = tenants
         else:
             del self.fields["tenant"]
             del self.fields["co_tenants"]
+
+    def _hostel(self):
+        """A hostel bills by the semester or by the month, and its booking usually ends with the semester (D-188)."""
+        if "tenant" in self.fields:
+            self.fields["tenant"].label = _("Main student")
+            self.fields["tenant"].help_text = _("Invoices and receipts are addressed to this student.")
+            self.fields["co_tenants"].label = _("Other students in the room")
+            self.fields["co_tenants"].help_text = _("Only for a room let whole to several students.")
+        self.fields["rent"].label = _("Hostel fee per month (KES)")
+        self.fields["rent"].help_text = _("A semester invoice is four months of this fee.")
+        self.fields["end_date"].help_text = _("Usually the last day of the semester or academic year.")
+        self.fields["billing_frequency"].help_text = _(
+            "Per semester sends one invoice for four months, counted from the start month. Monthly sends one "
+            "invoice a month, so a student can pay in instalments.")
+        self.fields["billing_frequency"].initial = Lease.Frequency.SEMESTER
+        self.fields["due_day"].label = _("Fee due day")
+        self.fields["due_day"].help_text = _("Day of the month the fee is due (1–28).")
+        self.fields["notice_days"].initial = 14
 
     def clean_billing_frequency(self):
         return self.cleaned_data["billing_frequency"] or Lease.Frequency.MONTHLY
@@ -120,7 +142,31 @@ class PayerForm(forms.Form):
 
 
 class NoticeForm(forms.Form):
+    """A notice to vacate from either side (D-106). Notices given in the portal are recorded there."""
+
+    given_by = forms.ChoiceField(label=_("Given by"), choices=LeaseNotice.GivenBy.choices,
+                                 initial=LeaseNotice.GivenBy.TENANT)
     given_on = forms.DateField(label=_("Notice given on"), widget=DateInput)
+    via = forms.ChoiceField(label=_("How"), initial=LeaseNotice.Via.IN_PERSON,
+                            choices=[c for c in LeaseNotice.Via.choices if c[0] != LeaseNotice.Via.PORTAL])
+    move_out_on = forms.DateField(label=_("Move out on"), widget=DateInput, required=False,
+                                  help_text=_("Leave blank for the end of the notice period."))
+    shorter_agreed = forms.BooleanField(label=_("Both sides agreed in writing to a shorter notice"), required=False)
+    reason = forms.CharField(label=_("Reason"), required=False, max_length=500,
+                             widget=forms.Textarea(attrs={"rows": 2}))
+
+
+class WithdrawNoticeForm(forms.Form):
+    reason = forms.CharField(label=_("Why is it withdrawn?"), required=False, max_length=300)
+
+
+class PortalNoticeForm(forms.Form):
+    """The tenant's own notice in the portal: the move-out day and, if they wish, why."""
+
+    move_out_on = forms.DateField(label=_("I will move out on"), widget=DateInput)
+    reason = forms.CharField(label=_("Reason (optional)"), required=False, max_length=500,
+                             widget=forms.Textarea(attrs={"rows": 2}))
+    confirm = forms.BooleanField(label=_("I understand that this is my notice to vacate and the office will be told."))
 
 
 class EndLeaseForm(forms.Form):
@@ -148,13 +194,50 @@ class TransferForm(forms.Form):
                                help_text=_("Defaults to this lease's end date."))
     rent = forms.DecimalField(label=_("Monthly rent (KES)"), max_digits=14, decimal_places=2, min_value=0,
                               required=False, help_text=_("Defaults to the new unit's listed rent."))
+    activate_now = forms.BooleanField(
+        label=_("Finish the move now"), required=False,
+        help_text=_("Activate the new lease straight away. Leave unticked to review the draft first."))
 
     def __init__(self, *args, units, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["unit"].queryset = units
-        self.fields["unit"].label_from_instance = lambda u: f"{u.property.name} · {u.code}"
+        self.fields["unit"].label_from_instance = unit_label
 
 
 class LeaseSearchForm(forms.Form):
     q = forms.CharField(required=False, max_length=100)
     status = forms.ChoiceField(required=False, choices=[("", _("All"))] + list(Lease.Status.choices))
+    property = forms.CharField(required=False, max_length=64)
+    ending = forms.BooleanField(required=False)
+
+
+class AgreementWordingForm(forms.Form):
+    """The conditions printed on tenancy agreements (D-187). Blank means the standard wording."""
+
+    clauses = forms.CharField(
+        label=_("Conditions"), required=False, max_length=clauses.MAX_LENGTH,
+        widget=forms.Textarea(attrs={"rows": 22, "spellcheck": "true"}),
+        help_text=_("One condition per block, blocks separated by a blank line. The first line of a block is its heading."))
+
+    def clean_clauses(self):
+        text = self.cleaned_data["clauses"].replace(chr(13) + chr(10), chr(10)).strip()
+        try:
+            clauses.check(text)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from None
+        return text
+
+
+class RolloverForm(forms.Form):
+    """Next term for a hostel's returning students (D-189)."""
+
+    start_date = forms.DateField(label=_("New term starts"), widget=DateInput)
+    end_date = forms.DateField(label=_("New term ends"), widget=DateInput)
+    rent = forms.DecimalField(label=_("New fee per month (KES)"), max_digits=14, decimal_places=2, min_value=0,
+                              required=False, help_text=_("Leave empty to keep each student's current fee."))
+
+    def clean(self):
+        data = super().clean()
+        if data.get("start_date") and data.get("end_date") and data["end_date"] < data["start_date"]:
+            self.add_error("end_date", _("The term cannot end before it starts."))
+        return data

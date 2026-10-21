@@ -12,6 +12,9 @@ Rules:
 - A draft can be changed freely and deleted (it was never issued, doc 11 §23).
   Once active, rent changes are added as new rows, never edited.
 - Recurring charges cannot be rent, deposit or late fee; they live inside the lease dates.
+- A notice to vacate is kept as history (LeaseNotice, D-106): one open per lease, copied to the
+  lease's notice_given_on/move_out_on. Staff record either side's notice; a tenant gives their own
+  in the portal (`portal_give_notice`).
 - Every change is audited.
 """
 
@@ -20,7 +23,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Exists, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -36,7 +39,7 @@ from properties.models import Property, Unit
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
-from .models import Lease, LeaseCharge, LeasePayer, LeaseRentChange, LeaseTenant
+from .models import Lease, LeaseCharge, LeaseNotice, LeasePayer, LeaseRentChange, LeaseTenant
 
 LEASE_FIELDS = ("start_date", "end_date", "billing_frequency", "due_day", "grace_days", "notice_days",
                 "deposit_amount", "terms")
@@ -66,7 +69,11 @@ def occupying_leases(today: datetime.date | None = None):
 
 
 def with_occupancy(units, today: datetime.date | None = None):
-    return units.annotate(is_occupied=Exists(occupying_leases(today).filter(unit=OuterRef("pk"))))
+    """`is_occupied`, and `moving_out_on`: the move-out day of an active lease under notice (D-106), else None."""
+    notice = (Lease.objects.filter(unit=OuterRef("pk"), status=Lease.Status.ACTIVE, move_out_on__isnull=False)
+              .order_by("move_out_on").values("move_out_on")[:1])
+    return units.annotate(is_occupied=Exists(occupying_leases(today).filter(unit=OuterRef("pk"))),
+                          moving_out_on=Subquery(notice))
 
 
 def sync_tenant_status(tenant: Tenant, today: datetime.date | None = None) -> str:
@@ -222,6 +229,31 @@ def open_successor(lease: Lease) -> Lease | None:
 # ---------------------------------------------------------------------------
 
 
+def _add_guardian_payers(lease: Lease, tenants, actor: Membership) -> None:
+    """In a hostel a student's parent or guardian usually pays, so their phone is matched to the lease (D-188).
+
+    Their phone is the student's emergency contact. A phone that is already a tenant's or a payer's is skipped.
+    """
+    if lease.organization.org_type != "HOSTEL":
+        return
+    own = {p for t in lease.lease_tenants.select_related("tenant") for p in (t.tenant.phone, t.tenant.alt_phone) if p}
+    for tenant in tenants:
+        if not tenant.emergency_contact_phone:
+            continue
+        try:
+            phone = normalize_phone(tenant.emergency_contact_phone)
+        except InvalidPhoneNumber:
+            continue
+        if phone in own:
+            continue
+        _payer, created = LeasePayer.objects.get_or_create(
+            lease=lease, phone=phone,
+            defaults={"organization": lease.organization, "created_by": actor.user,
+                      "name": (tenant.emergency_contact_name or _("Parent or guardian"))[:150]})
+        if created:
+            _audit("lease.payer_add", actor, lease, None, {"payer": [None, phone]})
+
+
 @transaction.atomic
 def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_date: datetime.date, rent,
                  end_date=None, deposit_amount=0, billing_frequency=Lease.Frequency.MONTHLY, due_day=1,
@@ -247,6 +279,7 @@ def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_
         LeaseTenant.objects.create(organization=lease.organization, lease=lease, tenant=t, is_primary=i == 0)
     LeaseRentChange.objects.create(organization=lease.organization, lease=lease, effective_from=start_date,
                                    amount=rent, reason=_("Initial rent"), created_by=actor.user)
+    _add_guardian_payers(lease, tenants, actor)
     _audit("lease.create", actor, lease, request, {
         **{k: [None, v] for k, v in _snapshot(lease).items() if v not in (None, "")},
         "unit": [None, unit.payment_reference], "rent": [None, str(rent)],
@@ -326,6 +359,7 @@ def add_lease_tenant(actor: Membership, lease: Lease, tenant: Tenant, request=No
     link = LeaseTenant.objects.create(organization=lease.organization, lease=lease, tenant=tenant,
                                       is_primary=not lease.lease_tenants.exists())
     _audit("lease.tenant_add", actor, lease, request, {"tenant": [None, tenant.name]})
+    _add_guardian_payers(lease, [tenant], actor)
     return link
 
 
@@ -662,6 +696,9 @@ def activate_lease(actor: Membership, lease: Lease, request=None) -> Lease:
         from billing import deposits  # billing depends on leases, not the other way round
 
         deposits.transfer_held(actor, prev, lease, entry_date=lease.start_date, request=request)
+    from prospects import services as prospects  # prospects depend on leases, not the other way round
+
+    prospects.lease_activated(actor, lease, request=request)
     _audit("lease.activate", actor, lease, request, {
         "status": [Lease.Status.DRAFT, Lease.Status.ACTIVE], "number": [None, lease.number],
         **({"previous_lease": [None, prev.number]} if prev else {}),
@@ -671,35 +708,140 @@ def activate_lease(actor: Membership, lease: Lease, request=None) -> Lease:
     return lease
 
 
-@transaction.atomic
-def give_notice(actor: Membership, lease: Lease, *, given_on: datetime.date, request=None) -> Lease:
-    """Records a notice to vacate (doc 14 B1). The lease stays active until it is ended."""
-    _require(actor, "leases.terminate", lease)
-    _lock(lease)
-    _require_active(lease)
+def open_notice(lease: Lease) -> LeaseNotice | None:
+    return lease.notices.filter(withdrawn_at__isnull=True).first()
+
+
+def _check_notice(lease: Lease, *, given_on: datetime.date, move_out_on: datetime.date | None,
+                  shorter_agreed: bool) -> datetime.date:
+    """The move-out day for a notice given on `given_on`; the notice period's end when none is chosen."""
     if given_on > timezone.localdate():
         raise ValidationError({"given_on": _("A notice cannot be dated in the future.")})
     if given_on < lease.start_date:
         raise ValidationError({"given_on": _("A notice cannot be dated before the lease started.")})
-    old = lease.notice_given_on
-    lease.notice_given_on = given_on
-    lease.save(update_fields=["notice_given_on", "updated_at"])
-    _audit("lease.notice", actor, lease, request, {
-        "notice_given_on": [str(old) if old else None, str(given_on)], "move_out_by": [None, str(lease.move_out_by)],
-    })
-    return lease
+    earliest = lease.earliest_move_out(given_on)
+    move_out_on = move_out_on or earliest
+    if move_out_on < given_on:
+        raise ValidationError({"move_out_on": _("The move-out day must be on or after the day notice was given.")})
+    if move_out_on < earliest and not shorter_agreed:
+        raise ValidationError({"move_out_on": _(
+            "The notice period is %(days)s days, so the earliest move-out day is %(day)s. If both sides agreed "
+            "in writing to a shorter notice, tick that box.") % {"days": lease.notice_days,
+                                                                  "day": earliest.strftime("%d %b %Y")}})
+    # A fixed-term lease ends by itself; a notice past its end needs a renewal, not a later date.
+    if lease.end_date and lease.end_date >= given_on and move_out_on > lease.end_date:
+        raise ValidationError({"move_out_on": _("The lease ends on %(day)s. Choose that day or earlier, or renew "
+                                                "the lease.") % {"day": lease.end_date.strftime("%d %b %Y")}})
+    return move_out_on
+
+
+def _record_notice(lease: Lease, *, user, given_by: str, given_on: datetime.date, move_out_on: datetime.date,
+                   via: str, reason: str, shorter_agreed: bool, tenant=None) -> tuple[LeaseNotice, LeaseNotice | None]:
+    """Stores the notice, replacing any open one, and copies its dates to the lease."""
+    old = open_notice(lease)
+    if old is not None:
+        old.withdrawn_at, old.withdrawn_by = timezone.now(), user
+        old.withdraw_reason = _("Replaced by a later notice")
+        old.save(update_fields=["withdrawn_at", "withdrawn_by", "withdraw_reason", "updated_at"])
+        _close_notice_letters(old, user)
+    notice = LeaseNotice.objects.create(
+        organization=lease.organization, lease=lease, given_by=given_by, given_on=given_on, move_out_on=move_out_on,
+        via=via, reason=(reason or "").strip()[:500], shorter_agreed=shorter_agreed, tenant=tenant,
+        recorded_by=user)
+    lease.notice_given_on, lease.move_out_on = given_on, move_out_on
+    lease.save(update_fields=["notice_given_on", "move_out_on", "updated_at"])
+    return notice, old
+
+
+def _close_notice_letters(notice: LeaseNotice, user) -> None:
+    """A withdrawn or replaced notice takes its letter with it (D-109)."""
+    from letters import notices as letters  # letters depend on leases, not the other way round
+
+    letters.notice_closed(notice, user=user, reason=notice.withdraw_reason)
+
+
+def _notice_changes(notice: LeaseNotice, old: LeaseNotice | None) -> dict:
+    return {
+        "notice_given_on": [str(old.given_on) if old else None, str(notice.given_on)],
+        "move_out_on": [str(old.move_out_on) if old else None, str(notice.move_out_on)],
+        "given_by": [old.given_by if old else None, notice.given_by], "via": [None, notice.via],
+        **({"shorter_agreed": [None, True]} if notice.shorter_agreed else {}),
+        **({"reason": [None, notice.reason]} if notice.reason else {}),
+    }
+
+
+def _after_notice(notice: LeaseNotice) -> None:
+    from notifications import triggers  # notifications depend on leases, not the other way round
+
+    transaction.on_commit(lambda: triggers.notice_given(notice))
 
 
 @transaction.atomic
-def withdraw_notice(actor: Membership, lease: Lease, request=None) -> Lease:
+def give_notice(actor: Membership, lease: Lease, *, given_on: datetime.date, move_out_on=None,
+                given_by=LeaseNotice.GivenBy.TENANT, via=LeaseNotice.Via.IN_PERSON, reason="", shorter_agreed=False,
+                request=None) -> LeaseNotice:
+    """Records a notice to vacate from either side (doc 14 B1, D-106). The lease stays active until it is ended.
+
+    A new notice replaces the open one; the old row is kept, stamped as replaced.
+    """
     _require(actor, "leases.terminate", lease)
     _lock(lease)
     _require_active(lease)
-    if lease.notice_given_on is None:
+    if given_by not in LeaseNotice.GivenBy.values:
+        raise ValidationError({"given_by": _("Choose who gave the notice.")})
+    if via not in LeaseNotice.Via.values or via == LeaseNotice.Via.PORTAL:
+        raise ValidationError({"via": _("Choose how the notice was given.")})
+    move_out_on = _check_notice(lease, given_on=given_on, move_out_on=move_out_on, shorter_agreed=shorter_agreed)
+    notice, old = _record_notice(lease, user=actor.user, given_by=given_by, given_on=given_on, move_out_on=move_out_on,
+                                 via=via, reason=reason, shorter_agreed=shorter_agreed)
+    _audit("lease.notice", actor, lease, request, _notice_changes(notice, old))
+    _after_notice(notice)
+    return notice
+
+
+@transaction.atomic
+def portal_give_notice(user, lease: Lease, *, move_out_on: datetime.date, reason="", request=None) -> LeaseNotice:
+    """A tenant gives notice from the portal, dated today, for at least the lease's notice period (D-106).
+
+    Changing or withdrawing it afterwards is for the office: the tenant is told to call.
+    """
+    from portal import selectors as portal  # the portal depends on leases, not the other way round
+
+    if lease.pk not in portal.own_lease_ids(user):
+        raise PermissionDenied("portal")
+    account = portal.live_accounts(user).filter(tenant__lease_links__lease=lease).select_related("tenant").first()
+    if account is None:
+        raise PermissionDenied("portal")
+    _lock(lease)
+    _require_active(lease)
+    if open_notice(lease) is not None:
+        raise ValidationError(_("Notice has already been given for this home. To change it, call the office."))
+    move_out_on = _check_notice(lease, given_on=timezone.localdate(), move_out_on=move_out_on, shorter_agreed=False)
+    notice, _old = _record_notice(lease, user=user, given_by=LeaseNotice.GivenBy.TENANT,
+                                  given_on=timezone.localdate(), move_out_on=move_out_on, via=LeaseNotice.Via.PORTAL,
+                                  reason=reason, shorter_agreed=False, tenant=account.tenant)
+    audit.record("lease.notice", actor=user, organization=lease.organization, obj=lease, request=request,
+                 changes={**_notice_changes(notice, None), "tenant": [None, account.tenant.name]})
+    _after_notice(notice)
+    return notice
+
+
+@transaction.atomic
+def withdraw_notice(actor: Membership, lease: Lease, *, reason="", request=None) -> Lease:
+    _require(actor, "leases.terminate", lease)
+    _lock(lease)
+    _require_active(lease)
+    notice = open_notice(lease)
+    if notice is None and lease.notice_given_on is None:
         return lease
+    if notice is not None:
+        notice.withdrawn_at, notice.withdrawn_by = timezone.now(), actor.user
+        notice.withdraw_reason = (reason or "").strip()[:300] or _("Withdrawn")
+        notice.save(update_fields=["withdrawn_at", "withdrawn_by", "withdraw_reason", "updated_at"])
+        _close_notice_letters(notice, actor.user)
     old = lease.notice_given_on
-    lease.notice_given_on = None
-    lease.save(update_fields=["notice_given_on", "updated_at"])
+    lease.notice_given_on = lease.move_out_on = None
+    lease.save(update_fields=["notice_given_on", "move_out_on", "updated_at"])
     _audit("lease.notice_withdraw", actor, lease, request, {"notice_given_on": [str(old), None]})
     return lease
 
@@ -810,3 +952,30 @@ def transfer_lease(actor: Membership, lease: Lease, *, unit: Unit, start_date: d
         end_date = lease.end_date
     return _start_successor(actor, lease, unit=unit, start_date=start_date, end_date=end_date, rent=rent,
                             action="lease.transfer_draft", request=request)
+
+
+# Archived leases (D-079) -----------------------------------------------------
+
+RESTORE_HOLD_DAYS = 30
+
+
+@transaction.atomic
+def restore_lease(actor: Membership, lease: Lease, request=None) -> None:
+    """Brings an archived lease back to the working lists, e.g. to record a late payment.
+
+    The daily job leaves it alone for RESTORE_HOLD_DAYS before archiving it again.
+    """
+    _require(actor, "leases.terminate", lease)
+    lease = Lease.all_objects.select_for_update().get(pk=lease.pk)
+    if not lease.is_archived:
+        return
+    lease.restore()
+    _audit("lease.restore", actor, lease, request, {"archived": [True, False]})
+
+
+def restored_by_hand_since(since: datetime.datetime) -> set[str]:
+    """Public ids of leases someone restored by hand after `since`."""
+    from audit.models import AuditEvent
+
+    return set(AuditEvent.objects.filter(action="lease.restore", object_type="leases.lease", actor__isnull=False,
+                                         created_at__gte=since).values_list("object_id", flat=True))

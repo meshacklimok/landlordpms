@@ -1,0 +1,33 @@
+{% extends "prospects/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Make tenant" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'prospects:detail' p.public_id %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {{ p.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Make tenant" %}</h1>
+  <p class="small text-body-secondary">{% trans "The prospect is marked as a tenant and you go on to draft the lease. Any hold stays until the lease is activated." %}</p>
+  <form method="post" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% if matches %}
+    <p class="small">{% trans "A tenant with this phone already exists. Use that record, or create a new one?" %}</p>
+    {% for t in matches %}
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="radio" name="tenant" value="{{ t.public_id }}" id="t-{{ t.public_id }}" {% if forloop.first %}checked{% endif %}>
+      <label class="form-check-label" for="t-{{ t.public_id }}">{{ t.name }} · {{ t.phone }} <span class="text-body-secondary">({{ t.get_status_display }})</span></label>
+    </div>
+    {% endfor %}
+    <div class="form-check mb-3">
+      <input class="form-check-input" type="radio" name="tenant" value="new" id="t-new">
+      <label class="form-check-label" for="t-new">{% blocktrans with name=p.name %}Create a new tenant: {{ name }}{% endblocktrans %}</label>
+    </div>
+    {% else %}
+    <input type="hidden" name="tenant" value="new">
+    <dl class="row small">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Name" %}</dt><dd class="col-sm-8">{{ p.name }}</dd>
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Phone" %}</dt><dd class="col-sm-8">{{ p.phone }}</dd>
+      {% if p.email %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Email" %}</dt><dd class="col-sm-8">{{ p.email }}</dd>{% endif %}
+    </dl>
+    <p class="small text-body-secondary">{% trans "You can add their ID number and next of kin on the tenant page." %}</p>
+    {% endif %}
+    <button class="btn btn-success">{% trans "Make tenant" %}</button>
+  </div></form>
+</div>
+{% endblock %}

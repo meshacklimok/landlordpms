@@ -12,12 +12,24 @@ from .models import JobRun
 # How often each job must succeed. The cron table in doc 18 runs them more often than this.
 JOBS: dict[str, datetime.timedelta] = {
     "send_due_messages": datetime.timedelta(minutes=30),
+    "send_webhooks": datetime.timedelta(minutes=30),
+    "maintenance_alerts": datetime.timedelta(hours=1),
+    "run_data_exports": datetime.timedelta(minutes=30),
+    "send_owner_emails": datetime.timedelta(minutes=30),
     "billing_daily": datetime.timedelta(hours=26),
     "mpesa_daily": datetime.timedelta(hours=26),
     "subscriptions_daily": datetime.timedelta(hours=26),
+    "reports_daily": datetime.timedelta(hours=26),
+    "monthly_reports": datetime.timedelta(days=35),  # on the 1st (D-194)
+    "send_owner_digest": datetime.timedelta(hours=26),
     "backup": datetime.timedelta(hours=26),
     "purge_otp_codes": datetime.timedelta(days=8),
     "purge_import_previews": datetime.timedelta(days=8),
+    "purge_assistant": datetime.timedelta(days=8),
+    "purge_sessions": datetime.timedelta(days=8),
+    "purge_messages": datetime.timedelta(days=8),
+    "reset_public_demo": datetime.timedelta(days=8),  # weekly: a fresh "Try the demo" organization (D-210)
+    "restore_test": datetime.timedelta(days=35),  # monthly (D-098 item 2)
 }
 KEEP_RUNS = datetime.timedelta(days=90)
 

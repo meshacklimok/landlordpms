@@ -107,3 +107,50 @@ def test_invoice_list_is_scoped_and_filtered(owner, lease):
     assert list(selectors.filter_invoices(qs, status="void")) == [mine]
     assert list(selectors.filter_invoices(qs, status="open")) == [theirs]
     assert Invoice.objects.count() == 2
+
+
+def test_invoice_totals_leave_out_drafts_and_void(owner, lease):
+    from payments import services as payment_services
+
+    bill(lease, JAN)
+    bill(lease, FEB)
+    void = bill(make_lease(owner, lease.unit.property, code="V1"), JAN)
+    invoicing.void_invoice(owner, void, reason="Wrong")
+    payment_services.record_payment(owner, lease, amount=20000, method="CASH", paid_at=D(2026, 1, 10))
+    totals = selectors.invoice_totals(selectors.visible_invoices(owner), D(2026, 3, 1))
+    assert (totals.count, totals.billed, totals.paid) == (2, Decimal("30000"), Decimal("20000"))
+    assert (totals.outstanding, totals.overdue_count, totals.overdue) == (Decimal("10000"), 1, Decimal("10000"))
+    assert totals.paid_share == Decimal("20000") / Decimal("30000")
+    assert selectors.invoice_totals(selectors.visible_invoices(make_org()), D(2026, 3, 1)).paid_share is None
+
+
+def test_arrears_summary(owner, lease):
+    other_prop = make_property(owner.organization, name="Baobab")
+    late = make_lease(owner, other_prop, code="B2", rent=5000)
+    bill(lease, JAN)
+    bill(late, JAN)
+    today = D(2026, 3, 20)
+    summary = selectors.arrears_summary(selectors.arrears(owner, today), today)
+    assert (summary.leases, summary.total, summary.overdue) == (2, Decimal("20000"), Decimal("20000"))
+    assert summary.average == Decimal("10000.00")
+    assert summary.over_60 == Decimal("20000") and summary.median_days >= 60
+    assert [(p.name, p.leases, p.total) for p in summary.by_property][1] == ("Baobab", 1, Decimal("5000"))
+    assert sum(share for *_r, share in summary.shares) == 1
+    empty = selectors.arrears_summary([], today)
+    assert empty.average is None and empty.median_days is None and all(s is None for *_r, s in empty.shares)
+
+
+def test_payment_record(owner, lease):
+    """D-110: issued invoices and confirmed payments over the lease's life; drafts and void ones are left out."""
+    from payments import services as payment_services
+    assert selectors.payment_record(lease).paid_share is None
+    bill(lease, JAN)
+    bill(lease, FEB)
+    invoicing.void_invoice(owner, bill(lease, MAR), reason="Wrong month")
+    payment_services.record_payment(owner, lease, amount=15000, method="CASH", paid_at=D(2026, 1, 4))
+    payment_services.record_payment(owner, lease, amount=5000, method="CASH", paid_at=D(2026, 2, 10))
+    r = selectors.payment_record(lease)
+    assert (r.invoices, r.billed, r.paid) == (2, Decimal("30000"), Decimal("20000"))
+    assert (r.payments, r.received, r.average_payment) == (2, Decimal("20000"), Decimal("10000.00"))
+    assert (r.first_paid, r.last_paid) == (D(2026, 1, 4), D(2026, 2, 10))
+    assert round(r.paid_share, 4) == Decimal("0.6667")

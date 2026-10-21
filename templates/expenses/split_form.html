@@ -1,0 +1,15 @@
+{% extends "expenses/_base.html" %}{% load i18n static %}
+{% block title %}{% trans "Record a shared expense" %}{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'js/split_expense.js' %}" defer></script>{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'expenses:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Expenses" %}</a>
+  <h1 class="h4 mt-2">{% trans "Record a shared expense" %}</h1>
+  <p class="small text-body-secondary">{% trans "For one payment that serves several properties, such as a caretaker or a security company. Each property gets its own share in its reports. The shares add up to exactly what you paid, so your cash totals do not change." %}</p>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <p class="small text-body-secondary">{% trans "Percentages are used only when you choose \"Percentages I type in\". The reference and receipt are kept on the first share." %}</p>
+    <button class="btn btn-primary">{% trans "Record shared expense" %}</button>
+  </div></form>
+</div>
+{% endblock %}

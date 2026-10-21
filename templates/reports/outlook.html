@@ -1,0 +1,90 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Rent outlook" %}{% endblock %}
+{% block content %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Rent outlook" %}</h1>
+<p class="small text-body-secondary">{% trans "The next six months as the leases stand today: the rent due, the rent that stops when leases end or tenants give notice, and what to expect to collect. Nothing here has happened yet." %}</p>
+
+<form method="get" data-autosubmit class="card shadow-sm mb-3 report-actions"><div class="card-body">
+  <div class="row g-2 align-items-end">
+    {% if properties|length > 1 %}
+    <div class="col-12 col-md">
+      <label class="form-label small text-body-secondary mb-1" for="f-property">{% trans "Property" %}</label>
+      <select id="f-property" name="property" class="form-select form-select-sm">
+        <option value="">{% trans "All your properties" %}</option>
+        {% for p in properties %}<option value="{{ p.public_id }}" {% if selected and p.pk == selected.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endif %}
+    <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+      <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
+      {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query }}">{% trans "Download CSV" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query|as_excel }}">{% trans "Download Excel" %}</a>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-print>{% trans "Print" %}</button>
+    </div>
+  </div>
+</div></form>
+
+{% if headline %}<ul class="highlights mb-3">{% for h in headline %}<li class="hl-note"><i class="bi bi-info-circle" aria-hidden="true"></i><span>{{ h }}</span></li>{% endfor %}</ul>{% endif %}
+
+{% if report.contracted_total %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Contracted rent, six months" %}</div><div class="stat-value num">{{ report.contracted_total|money:currency }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.months.0.leases %}{{ n }} leases in force this month{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Expected to collect" %}</div>
+    <div class="stat-value num">{% if report.expected_total is None %}—{% else %}{{ report.expected_total|money:currency }}{% endif %}</div>
+    <div class="stat-sub">{% if report.collection_rate is None %}{% trans "no rent billed in the last six months to base it on" %}{% else %}{% blocktrans with p=report.collection_rate|percent %}at the collection rate of the last six months, {{ p }}{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Rent that stops" %}</div><div class="stat-value num">{{ report.ending_total|money:currency }}</div>
+    <div class="stat-sub">{% blocktrans count n=report.ending|length %}{{ n }} lease ends or is under notice{% plural %}{{ n }} leases end or are under notice{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Empty units, asking rent" %}</div><div class="stat-value num">{{ report.empty_rent|money:currency }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.empty_units p=report.empty_priced %}a month, {{ n }} empty ({{ p }} with an asking rent){% endblocktrans %}</div></div></div></div>
+</div>
+
+{% if specs.months %}<div class="chart-card mb-3">
+  <h2>{% trans "Rent by month" %}</h2><p class="chart-sub">{% trans "Contracted rent, what to expect to collect from it, and the monthly rent of leases that stop after that month." %}</p>
+  <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Contracted rent, expected collection and rent ending by month. The same figures are in the table below.' %}"></canvas></div>
+</div>{{ specs.months|json_script:"chart-months" }}{% endif %}
+
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Leases" %}</th><th class="text-end">{% trans "Contracted rent" %}</th>
+    <th class="text-end">{% trans "Expected to collect" %}</th><th class="text-end">{% trans "Starting" %}</th><th class="text-end">{% trans "Rent ending" %}</th></tr></thead>
+  <tbody>{% for m in report.months %}<tr>
+    <td>{{ m.label }}</td><td class="text-end">{{ m.leases }}</td><td class="text-end num">{{ m.contracted|money:currency }}</td>
+    <td class="text-end num">{% if m.expected is None %}—{% else %}{{ m.expected|money:currency }}{% endif %}</td>
+    <td class="text-end num">{{ m.starting|money:currency }}</td>
+    <td class="text-end num">{% if m.ending %}{{ m.ending|money:currency }} <span class="text-body-secondary">({{ m.ending_leases }})</span>{% else %}—{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div>
+<p class="small text-body-secondary">{% trans "Rent is the monthly rent on each lease's due day, including rent changes already recorded. A lease past its end date that is still active counts as staying. Expected to collect is an estimate from past collection, not a promise." %}</p>
+
+<h2 class="h6 mt-4">{% trans "Leases ending or under notice" %}</h2>
+{% if report.ending %}
+<div class="table-responsive mb-2"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Property" %}</th><th>{% trans "Unit" %}</th>{% if report.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th>{% trans "Last day" %}</th><th>{% trans "Because" %}</th><th class="text-end">{% trans "Days" %}</th><th class="text-end">{% trans "Monthly rent" %}</th></tr></thead>
+  <tbody>{% for x in report.ending %}<tr>
+    <td><a href="{% url 'leases:detail' x.lease.public_id %}">{{ x.lease.number }}</a></td>
+    <td>{{ x.lease.unit.property.name }}</td><td>{{ x.lease.unit.code }}</td>
+    {% if report.show_tenants %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+    <td>{{ x.ends|date:"j M Y" }}</td>
+    <td>{% if x.why == "notice" %}{% trans "notice to vacate" %}{% elif x.why == "closed" %}{% trans "closed early" %}{% else %}{% trans "end date" %}{% endif %}</td>
+    <td class="text-end">{{ x.days }}</td><td class="text-end num">{{ x.rent|money:currency }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="small text-body-secondary">{% trans "No lease ends in the next six months." %}</p>{% endif %}
+{% if report.holding_over %}<p class="small">{% blocktrans with n=report.holding_over r=report.holding_over_rent|money:currency %}{{ n }} active lease(s) are past their end date, {{ r }} a month. They are counted as staying; renew or end them so this page stays true.{% endblocktrans %}
+  <a href="{% url 'reports:leases' %}">{% trans "See them" %}</a></p>{% endif %}
+{% else %}
+<p class="text-body-secondary">{% trans "No active leases yet, so there is nothing to look ahead at." %}</p>
+{% endif %}
+
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import DarajaCredentials, MpesaTransaction, StkRequest
+from .models import DarajaCredentials, MpesaTransaction, SetupVideo, StkRequest
 
 
 @admin.register(DarajaCredentials)
@@ -48,6 +48,24 @@ class StkRequestAdmin(admin.ModelAdmin):
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SetupVideo)
+class SetupVideoAdmin(admin.ModelAdmin):
+    """Paste the Paybill setup video link here. Empty hides the video everywhere."""
+
+    list_display = ["__str__", "url", "updated_at"]
+    fields = ["url"]
+
+    def changelist_view(self, request, extra_context=None):
+        SetupVideo.get()
+        return super().changelist_view(request, extra_context)
 
     def has_add_permission(self, request):
         return False

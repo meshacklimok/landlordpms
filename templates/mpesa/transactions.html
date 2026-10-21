@@ -6,7 +6,7 @@
   <p class="small text-body-secondary">{% trans "Every payment Safaricom sent us, and what happened to it." %}</p>
   {% include "mpesa/_nav.html" with section="transactions" %}
 
-  <form method="get" class="card shadow-sm mb-3"><div class="card-body">
+  <form method="get" data-autosubmit class="card shadow-sm mb-3"><div class="card-body">
     <div class="row g-2 align-items-end">
       <div class="col-12 col-md">
         <label class="form-label small text-body-secondary mb-1" for="f-q">{% trans "Search" %}</label>
@@ -28,8 +28,8 @@
         </select>
       </div>
       {% endif %}
-      <div class="col-12 col-md-auto d-flex gap-2">
-        <button class="btn btn-dark flex-grow-1">{% trans "Apply" %}</button>
+      <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-secondary flex-grow-1">{% trans "Apply" %}</button>
         {% if q or status or account %}<a class="btn btn-link text-body-secondary" href="{% url 'mpesa:transactions' %}">{% trans "Clear" %}</a>{% endif %}
       </div>
     </div>
@@ -69,7 +69,7 @@
   {% include "partials/pager.html" %}
   {% else %}
   <div class="card shadow-sm"><div class="card-body text-center py-5">
-    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-phone"></i></div>
+    <div class="display-6 text-body-tertiary mb-2"><i class="bi bi-phone" aria-hidden="true"></i></div>
     {% if q or status or account %}
       <h2 class="h6">{% trans "No transactions match" %}</h2>
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'mpesa:transactions' %}">{% trans "Clear filters" %}</a>

@@ -24,8 +24,12 @@ def test_public_pages_render(client, name):
     assert client.get(reverse(name)).status_code == 200
 
 
+def test_visitors_see_the_front_page_at_home(client):
+    assert client.get(reverse("accounts:home")).status_code == 200
+
+
 def test_app_pages_redirect_anonymous_to_login(client):
-    response = client.get(reverse("accounts:home"))
+    response = client.get(reverse("accounts:staff"))
     assert response.status_code == 302
     assert response["Location"].startswith(reverse("accounts:login"))
 
@@ -53,8 +57,16 @@ def test_caretaker_is_forbidden_from_admin_pages(client, url_name):
     assert client.get(reverse(url_name)).status_code == 403
 
 
-def test_onboarding_creates_org(client):
+def test_onboarding_needs_an_email(client):
     user = make_user()
+    client.login(username=user.phone, password=PASSWORD)
+    response = client.post(reverse("accounts:onboarding"), {"name": "Kamau Estates", "org_type": "COMPANY"})
+    assert response.url == reverse("accounts:email")
+    assert not Membership.objects.filter(user=user).exists()
+
+
+def test_onboarding_creates_org(client):
+    user = make_user(email="kamau@example.com")
     client.login(username=user.phone, password=PASSWORD)
     response = client.post(reverse("accounts:onboarding"), {"name": "Kamau Estates", "org_type": "COMPANY"})
     assert response.status_code == 302
@@ -117,3 +129,45 @@ def test_suspended_member_loses_access_on_next_request(client):
     services.set_member_active(owner, m, False)
     # The only membership is now inactive, so the user has no organization.
     assert client.get(reverse("accounts:staff"))["Location"] == reverse("accounts:onboarding")
+
+
+def _org_form(**overrides):
+    data = {"name": "Kamau Homes", "org_type": "COMPANY", "brand_name": "Kamau Homes Ltd",
+            "billing_phone": "0712 345678", "billing_email": "Office@Kamau.example", "document_footer": "P.O. Box 1",
+            "invoice_lead_days": "7", "late_fee_mode": "OFF", "financial_year_start_month": "7"}
+    data.update(overrides)
+    return data
+
+
+def test_owner_edits_the_organization_and_it_is_audited(client, owner):
+    from audit.models import AuditEvent
+
+    page = client.get(reverse("accounts:organization"))
+    assert page.status_code == 200
+    assert reverse("letters:settings") in page.content.decode()  # the other settings pages are listed
+    response = client.post(reverse("accounts:organization"), _org_form())
+    assert response.status_code == 302
+    org = Organization.objects.get(pk=owner.organization_id)
+    assert (org.name, org.org_type, org.display_name) == ("Kamau Homes", "COMPANY", "Kamau Homes Ltd")
+    assert org.billing_phone == "+254712345678" and org.billing_email == "office@kamau.example"
+    assert org.invoice_lead_days == 7 and not org.prorate_partial_months  # unticked box turns it off
+    assert org.financial_year_start_month == 7
+    event = AuditEvent.objects.get(action="organization.update")
+    assert event.changes["name"][1] == "Kamau Homes" and "invoice_lead_days" in event.changes
+    # Saving the same values again changes nothing and records nothing.
+    client.post(reverse("accounts:organization"), _org_form())
+    assert AuditEvent.objects.filter(action="organization.update").count() == 1
+
+
+def test_organization_form_rejects_bad_values(client, owner):
+    before = Organization.objects.get(pk=owner.organization_id).name
+    for bad in ({"name": "  "}, {"invoice_lead_days": "40"}, {"billing_phone": "12"}):
+        assert client.post(reverse("accounts:organization"), _org_form(**bad)).status_code == 400, bad
+    assert Organization.objects.get(pk=owner.organization_id).name == before
+
+
+def test_only_organization_managers_open_the_settings_page(client):
+    org = make_org().organization
+    login(client, add_member(org, "manager", all_properties=True))
+    assert client.get(reverse("accounts:organization")).status_code == 403
+    assert client.post(reverse("accounts:organization"), _org_form()).status_code == 403

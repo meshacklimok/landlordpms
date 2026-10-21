@@ -1,12 +1,29 @@
 {% extends "notifications/_base.html" %}{% load i18n %}
 {% block title %}{% trans "Notification settings" %}{% endblock %}
 {% block content %}
-<div class="mx-auto" style="max-width: 760px">
+<div class="mx-auto mw-760">
   <div class="mb-2">
     <h1 class="h3 mb-0">{% trans "Messages" %}</h1>
     <div class="small text-body-secondary">{% trans "Which notifications go out, and when." %}</div>
   </div>
   {% include "notifications/_tabs.html" with tab="settings" %}
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "What the balance shows" %}</h2>
+    <p class="small text-body-secondary">{% trans "How the balance in your messages is worked out. The wording itself, including whether a message shows the balance at all, is edited under Templates." %}</p>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="action" value="content">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="balance_includes_deposit" id="bal-dep" {% if content.balance_includes_deposit %}checked{% endif %}>
+        <label class="form-check-label small" for="bal-dep">{% trans "Count a deposit not yet paid as part of the balance" %}</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="balance_shows_credit" id="bal-cr" {% if content.balance_shows_credit %}checked{% endif %}>
+        <label class="form-check-label small" for="bal-cr">{% trans "Show a tenant who paid ahead as a credit (for example -1,000.00) instead of 0.00" %}</label>
+      </div>
+      <button class="btn btn-sm btn-primary mt-2">{% trans "Save" %}</button>
+    </form>
+  </div></div>
 
   <div class="card shadow-sm mb-4"><div class="card-body">
     <h2 class="h6 mb-1">{% trans "Quiet hours" %}</h2>
@@ -21,9 +38,23 @@
         <label class="form-label small mb-1" for="{{ quiet_form.end.id_for_label }}">{{ quiet_form.end.label }}</label>
         {{ quiet_form.end }}
       </div>
-      <div class="col-2 col-sm-auto"><button class="btn btn-dark">{% trans "Save" %}</button></div>
+      <div class="col-2 col-sm-auto"><button class="btn btn-primary">{% trans "Save" %}</button></div>
       {% if quiet_form.errors %}<div class="col-12 small text-danger">{% trans "Enter both times as HH:MM." %}</div>{% endif %}
       {% if quiet_off %}<div class="col-12 small text-body-secondary">{% trans "Quiet hours are off: messages go out at any time." %}</div>{% endif %}
+    </form>
+  </div></div>
+
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Email replies" %}</h2>
+    <p class="small text-body-secondary">{% trans "Tenants who have an email address also get invoices, receipts and reminders by email. When they reply, the reply goes to this address. Leave it empty if nobody reads replies." %}</p>
+    <form method="post" class="row g-2 align-items-end">{% csrf_token %}
+      <input type="hidden" name="action" value="reply_email">
+      <div class="col-10 col-sm-7">
+        <label class="form-label small mb-1" for="{{ reply_form.reply_email.id_for_label }}">{{ reply_form.reply_email.label }}</label>
+        {{ reply_form.reply_email }}
+      </div>
+      <div class="col-2 col-sm-auto"><button class="btn btn-primary">{% trans "Save" %}</button></div>
+      {% if reply_form.errors %}<div class="col-12 small text-danger">{% trans "Enter a valid email address, or leave it empty." %}</div>{% endif %}
     </form>
   </div></div>
 

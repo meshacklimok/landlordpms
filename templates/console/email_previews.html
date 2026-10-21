@@ -1,0 +1,13 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Email previews" %}{% endblock %}
+{% block console_title %}{% trans "How our emails look" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "Each email is drawn by the same code that sends it, with made-up names and amounts. Open one in a new tab, or send it to your own email to see it in Gmail, Outlook or Apple Mail on your phone, in light and dark." %}</p>
+<ul class="list-group col-lg-6 mb-4">
+  {% for s in samples %}<li class="list-group-item d-flex justify-content-between align-items-center">{{ s.label }}
+    <span class="d-flex gap-2">
+      <a class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener" href="{% url 'console:email_preview' s.key %}">{% trans "Open" %}</a>
+      <form method="post" action="{% url 'console:email_preview_send' s.key %}" class="m-0">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% trans "Send me a test" %}</button></form>
+    </span></li>{% endfor %}
+</ul>
+{% endblock %}

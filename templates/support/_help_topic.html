@@ -1,8 +1,18 @@
 {% extends "base.html" %}{% load i18n %}
-{% block title %}{{ topic_title }}{% endblock %}
+{% block title %}{{ topic_title }} · {% trans "Help" %}{% endblock %}
 {% block content %}
-<nav class="small mb-2"><a href="{% url 'support:help' %}">{% trans "Help" %}</a> / {{ topic_title }}</nav>
-<h1 class="h4 mb-3">{{ topic_title }}</h1>
-<div class="card shadow-sm mb-3"><div class="card-body small">{% block body %}{% endblock %}</div></div>
+<div class="mx-auto mw-46r">
+<nav class="small mb-3" aria-label="{% trans 'Breadcrumb' %}"><a href="{% url 'support:help' %}">{% trans "Help centre" %}</a> <span class="text-muted" aria-hidden="true">/</span> {{ topic_title }}</nav>
+<header class="doc-head">
+  <p class="about-eyebrow">{% trans "Help centre" %}</p>
+  <h1 class="doc-title">{{ topic_title }}</h1>
+  {% if topic_summary %}<p class="doc-lead">{{ topic_summary }}</p>{% endif %}
+</header>
+<article class="card shadow-sm mb-3"><div class="card-body doc">{% block body %}{% endblock %}</div></article>
+<nav class="doc-pager" aria-label="{% trans 'More help topics' %}">
+  {% if prev_topic %}<a class="doc-pager-link" href="{% url 'support:help_topic' prev_topic.0 %}" rel="prev"><span class="small text-muted">{% trans "Previous" %}</span><span>{{ prev_topic.1 }}</span></a>{% else %}<span></span>{% endif %}
+  {% if next_topic %}<a class="doc-pager-link text-end" href="{% url 'support:help_topic' next_topic.0 %}" rel="next"><span class="small text-muted">{% trans "Next" %}</span><span>{{ next_topic.1 }}</span></a>{% endif %}
+</nav>
 {% include "support/_contact_box.html" %}
+</div>
 {% endblock %}

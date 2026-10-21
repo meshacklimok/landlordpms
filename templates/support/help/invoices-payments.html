@@ -11,5 +11,13 @@
   <li>Nothing is deleted. A wrong invoice is voided; a wrong payment is reversed with a reason.</li>
   <li><a href="{% url 'billing:arrears' %}">Arrears</a> and the <a href="{% url 'billing:call_list' %}">call list</a>
     show who owes and who to call today.</li>
+  <li><strong>Late fees</strong> are off unless an owner switches them on in Settings, as a fixed amount or a
+    percentage of what is unpaid with a maximum. Each invoice that goes overdue gets one fee, which waits on
+    <a href="{% url 'billing:late_fees' %}">Late fees</a> until someone who issues invoices charges or skips it.
+    Charging sends the tenant an invoice for the fee.</li>
+  <li>For your accountant, <a href="{% url 'reports:accounting_export' %}">For the accountant</a> under Reports
+    downloads a ZIP for chosen months: a double-entry journal that imports into QuickBooks, Zoho Books or Wave, a
+    list of accounts with their totals, and the invoices, payments and expenses. It needs the "Export reports"
+    permission.</li>
 </ul>
 {% endblock %}

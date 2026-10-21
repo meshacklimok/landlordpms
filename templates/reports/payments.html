@@ -1,0 +1,73 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Payments received" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Payments received" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Payments dated {{ p }}. Only confirmed payments are money received. Payments reversed after confirming and payments turned down in review are shown apart and never counted as received.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.total %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Money received" %}</div><div class="stat-value num">{{ report.confirmed|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.confirmed_count %}{{ n }} confirmed payments{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Waiting for review now" %}</div><div class="stat-value">{{ report.waiting }}</div>
+    <div class="stat-sub">{{ report.waiting_amount|money:cur }}{% if report.oldest_waiting %} · {% blocktrans with d=report.oldest_waiting|date:"j M Y" %}oldest dated {{ d }}{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Reversed or rejected" %}</div><div class="stat-value num">{{ report.undone|money:cur }}</div>
+    <div class="stat-sub">{% trans "not counted as received" %}</div></div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  {% if specs.months %}<div class="col-12 col-lg-7"><div class="chart-card">
+    <h2>{% trans "Money received by month" %}</h2>
+    <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Confirmed payments by month. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{{ specs.months|json_script:"chart-months" }}{% endif %}
+  {% if specs.methods %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "How it was paid" %}</h2>
+    <div class="chart-box donut"><canvas data-chart="chart-methods" role="img" aria-label="{% trans 'Confirmed payments by method. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{{ specs.methods|json_script:"chart-methods" }}{% endif %}
+</section>
+
+<h2 class="h6">{% trans "By state" %}</h2>
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "State" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>{% for key, label, n, amount, url in states %}<tr><td>{% if n %}<a href="{{ url }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</td>
+    <td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<div class="row g-3">
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "Confirmed, by method" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Method" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "Share" %}</th></tr></thead>
+    <tbody>{% for label, n, amount, share in report.methods %}<tr><td>{{ label }}</td><td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td><td class="text-end">{{ share|percent }}</td></tr>{% endfor %}</tbody></table></div></div>
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "Confirmed, by account" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Account" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+    <tbody>{% for name, n, amount in report.accounts %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+<h2 class="h6 mt-3">{% trans "Payment statement" %}</h2>
+<p class="small text-body-secondary">{% trans "Every payment dated in this period, whatever its state, newest first." %}</p>
+<div class="table-responsive mb-2"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Lease" %}</th><th>{% trans "Unit" %}</th>{% if show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}<th>{% trans "Method" %}</th><th>{% trans "Reference" %}</th><th>{% trans "State" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>{% for p in shown_lines %}<tr>
+    <td class="text-nowrap">{{ p.paid_at|date:"j M Y" }}</td>
+    <td><a href="{% url 'payments:detail' p.public_id %}">{{ p.lease.number|default:"—" }}</a></td>
+    <td>{{ p.lease.unit.code }}, {{ p.lease.unit.property.name }}</td>
+    {% if show_tenants %}<td>{{ p.tenant.name|default:"—" }}</td>{% endif %}
+    <td>{{ p.get_method_display }}</td><td>{{ p.reference|default:"—" }}</td><td>{{ p.get_state_display }}</td>
+    <td class="text-end num text-nowrap">{{ p.amount|money:cur }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total %}The newest {{ n }} of {{ t }} payments are shown. Download the report for all of them.{% endblocktrans %}</p>{% endif %}
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No payments are dated in this period. Choose another period, or record payments to see this report." %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Your properties today" %}{% endblock %}
+{% block content %}{% with cur=currency %}
+<a href="{% url 'owner_portal:account' account.public_id %}" class="small">← {{ owner.name }}</a>
+<h1 class="h4 mt-1 mb-1">{% trans "Your properties today" %}</h1>
+<p class="small text-muted mb-3">{% trans "Live figures. Tenants are not named." %}</p>
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card"><div class="card-body p-2"><div class="small text-muted">{% trans "Units let" %}</div><div class="h5 mb-0">{{ live.let }} / {{ live.units }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card"><div class="card-body p-2"><div class="small text-muted">{% trans "Overdue rent" %}</div><div class="h5 mb-0 {% if live.owed %}text-danger{% endif %}">{{ live.owed|money:cur }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card"><div class="card-body p-2"><div class="small text-muted">{% trans "Over 60 days late" %}</div><div class="h5 mb-0">{{ live.over_60|money:cur }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card"><div class="card-body p-2"><div class="small text-muted">{% trans "Leases ending soon" %}</div><div class="h5 mb-0">{{ live.ending|length }}</div></div></div></div>
+</div>
+
+<div class="card mb-3"><div class="card-body p-2">
+  <h2 class="h6">{% trans "By property" %}</h2>
+  <div class="table-responsive"><table class="table table-sm small align-middle mb-0">
+    <thead><tr><th>{% trans "Property" %}</th><th class="text-end">{% trans "Let" %}</th><th class="text-end">{% trans "Empty" %}</th><th class="text-end">{% trans "Owing" %}</th><th class="text-end">{% trans "Overdue rent" %}</th><th class="text-end">{% trans "Repairs open" %}</th><th class="text-end">{% trans "Ending soon" %}</th></tr></thead>
+    <tbody>
+    {% for r in live.rows %}
+    <tr>
+      <td>{{ r.property.name }}</td>
+      <td class="text-end">{{ r.let }}/{{ r.units }} <span class="text-muted">({{ r.occupancy }}%)</span></td>
+      <td class="text-end">{% if r.empty_units %}<span title="{{ r.empty_units|join:', ' }}">{{ r.vacant }}</span>{% else %}0{% endif %}</td>
+      <td class="text-end">{{ r.owing_leases }}</td>
+      <td class="text-end text-nowrap {% if r.owed %}text-danger{% endif %}">{{ r.owed|money:cur }}</td>
+      <td class="text-end">{{ r.open_repairs }}</td>
+      <td class="text-end">{{ r.ending }}</td>
+    </tr>
+    {% empty %}<tr><td colspan="7" class="text-muted">{% trans "No properties at the moment." %}</td></tr>{% endfor %}
+    </tbody>
+  </table></div>
+</div></div>
+
+<div class="row g-3">
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body p-2">
+    <h2 class="h6">{% trans "Repairs not finished" %}</h2>
+    {% if live.repairs %}
+    <ul class="list-unstyled small mb-0">
+      {% for req in live.repairs %}<li class="py-1 border-bottom">{{ req.property.name }}, {{ req.where }}: {{ req.title }}
+        <span class="badge text-bg-light">{{ req.get_status_display }}</span>
+        <span class="text-muted">{% blocktrans with d=req.due_at|date:"d M" %}fix by {{ d }}{% endblocktrans %}</span></li>{% endfor %}
+    </ul>
+    {% else %}<p class="small text-muted mb-0">{% trans "None." %}</p>{% endif %}
+  </div></div></div>
+  <div class="col-lg-6"><div class="card h-100"><div class="card-body p-2">
+    <h2 class="h6">{% blocktrans with n=live.horizon_days %}Leases ending in {{ n }} days{% endblocktrans %}</h2>
+    {% if live.ending %}
+    <ul class="list-unstyled small mb-0">
+      {% for lease in live.ending %}<li class="py-1 border-bottom">{{ lease.unit.property.name }}, {{ lease.unit.code }}: {{ lease.end_date|date:"d M Y" }}</li>{% endfor %}
+    </ul>
+    {% else %}<p class="small text-muted mb-0">{% trans "None." %}</p>{% endif %}
+  </div></div></div>
+</div>
+{% endwith %}{% endblock %}

@@ -4,6 +4,9 @@ Units are live (not archived) units. Seats are usable members plus pending invit
 counting Viewers, who are free.
 """
 
+import contextvars
+from contextlib import contextmanager
+
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.utils import timezone
@@ -40,15 +43,44 @@ def over_limits(org, plan) -> list[str]:
             for k in ("units", "seats") if allowed[k] is not None and used[k] > allowed[k]]
 
 
+_batch: contextvars.ContextVar[dict | None] = contextvars.ContextVar("entitlements_batch", default=None)
+
+
+@contextmanager
+def batch(org):
+    """For a bulk import: reads the plan and the usage once, then `check` counts what `added` reports instead of
+    asking the database again for every row. Only the caller that creates the rows may call `added`."""
+    from .services import subscription_for
+
+    sub = subscription_for(org)
+    state = {"org": org.pk, "sub": sub, "used": usage(org)}
+    token = _batch.set(state)
+    try:
+        yield state
+    finally:
+        _batch.reset(token)
+
+
+def added(what: str, n: int = 1) -> None:
+    """A row the open `batch` created: later checks in the batch count it."""
+    state = _batch.get()
+    if state is not None:
+        state["used"][what] += n
+
+
 def check(org, what: str, adding: int = 1) -> None:
     """Raises ValidationError when adding `adding` more would go beyond the plan."""
     from .services import subscription_for
 
-    sub = subscription_for(org)
+    state = _batch.get()
+    if state is not None and state["org"] == org.pk:
+        sub, used_now = state["sub"], state["used"]
+    else:
+        sub, used_now = subscription_for(org), None
     limit = limits(sub.plan)[what]
     if limit is None:
         return
-    used = usage(org)[what]
+    used = (used_now if used_now is not None else usage(org))[what]
     if used + adding > limit:
         raise ValidationError(
             _("Your %(plan)s plan allows %(limit)s %(what)s and you have %(used)s. Choose a bigger plan on the "

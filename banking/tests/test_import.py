@@ -306,7 +306,7 @@ def test_an_mpesa_statement_adds_statement_transactions_without_alerts(owner, le
     assert matched.payer_phone == "+254712345678"
     unmatched = MpesaTransaction.objects.get(trans_id="QAB12CD302")
     assert unmatched.payer_phone == ""
-    assert not Message.objects.filter(type__in=["mpesa_unmatched", "payment_unmatched"]).exists()
+    assert not Message.objects.filter(type__in=["mpesa_unmatched", "mpesa_unmatched_email"]).exists()
 
     again = services.preview(owner, paybill, SimpleUploadedFile("mpesa.csv", (MPESA_HEADER + rows).encode()))
     assert (again.new_count, again.duplicate_count) == (0, 2)

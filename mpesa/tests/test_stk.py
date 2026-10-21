@@ -338,3 +338,30 @@ def test_request_page_hidden_from_caretaker_and_other_orgs(client, org, lease, c
     assert client.get(url).status_code in (403, 404)
     login(client, make_org(name="Other"))
     assert client.get(url).status_code == 404
+
+
+def test_a_receipt_of_another_account_is_never_moved_across(client, owner, lease, creds):
+    """A callback naming a receipt stored for another landlord's Paybill does not pay this request."""
+    other = make_org(name="Other")
+    other_creds = paybill(other, number="600999")
+    theirs, _ = c2b.receive(other_creds, {"TransID": "QST12AB34C", "TransAmount": "15000",
+                                          "TransTime": "20260203101500", "BusinessShortCode": "600999",
+                                          "BillRefNumber": "NOPE", "MSISDN": "254799000111"})
+    req = send(owner, lease)
+    post_hook(client, creds, callback(req))
+    req.refresh_from_db()
+    theirs.refresh_from_db()
+    assert req.status == Status.FAILED and "another account" in req.result_desc
+    assert theirs.organization == other.organization and not Payment.objects.filter(lease=lease).exists()
+
+
+def test_a_c2b_confirmation_through_another_account_does_not_confirm(owner, lease, creds):
+    req = send(owner, lease)
+    stk.receive(creds, callback(req))
+    other_creds = paybill(make_org(name="Other"), number="600999")
+    c2b.receive(other_creds, {"TransID": "QST12AB34C", "TransAmount": "15000", "TransTime": "20260203101500",
+                              "BusinessShortCode": "600999", "BillRefNumber": "", "MSISDN": "254712345602"})
+    assert MpesaTransaction.objects.get(trans_id="QST12AB34C").c2b_confirmed_at is None
+    c2b.receive(creds, {"TransID": "QST12AB34C", "TransAmount": "15000", "TransTime": "20260203101500",
+                        "BusinessShortCode": "600123", "BillRefNumber": "", "MSISDN": "254712345602"})
+    assert MpesaTransaction.objects.get(trans_id="QST12AB34C").c2b_confirmed_at is not None

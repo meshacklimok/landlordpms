@@ -3,16 +3,41 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-2 gap-2">
   <h1 class="h4 mb-0">{% trans "Who to call" %}</h1>
-  <form method="get" class="d-flex flex-wrap gap-2">
+  <form method="get" data-autosubmit class="d-flex flex-wrap gap-2">
     {{ filters.property }}
     {{ filters.grade }}
-    <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+    <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
   </form>
 </div>
 <p class="small text-muted mb-3">
   {% blocktrans with d=today|date:"j M Y" %}Everyone with rent overdue on {{ d }}. Broken promises come first, then the largest amounts.{% endblocktrans %}
   <a href="{% url 'billing:arrears' %}">{% trans "Arrears by age" %}</a>
 </p>
+
+{% if summary.total %}{% with cur=summary.currency %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Overdue in total" %}</div>
+    <div class="stat-value num">{{ summary.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=summary.total %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Still to call" %}</div>
+    <div class="stat-value num">{{ summary.to_call }}</div>
+    <div class="stat-sub">{% if summary.broken %}{% blocktrans count n=summary.broken %}{{ n }} broken promise{% plural %}{{ n }} broken promises{% endblocktrans %}{% else %}{% trans "No broken promises" %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Promised to pay" %}</div>
+    <div class="stat-value num">{{ summary.promised }}</div>
+    <div class="stat-sub">{% blocktrans with a=summary.promised_amount|money:cur %}{{ a }} on the way{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Called today" %}</div>
+    <div class="stat-value num">{{ summary.done }}</div>
+    <div class="stat-sub">{% blocktrans with n=summary.done t=summary.total %}{{ n }} of {{ t }} reached today{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+{% endwith %}{% endif %}
 
 {% if form.non_field_errors or form.errors %}
 <div class="alert alert-danger small">
@@ -21,8 +46,9 @@
 </div>
 {% endif %}
 
-<h2 class="h6">{% trans "To call" %} <span class="badge text-bg-secondary">{{ board.to_call|length }}</span></h2>
-{% include "billing/_call_rows.html" with rows=board.to_call empty=_("Nobody left to call.") %}
+<h2 class="h6">{% trans "To call" %} <span class="badge text-bg-secondary">{{ to_call.paginator.count }}</span></h2>
+{% include "billing/_call_rows.html" with rows=to_call.object_list empty=_("Nobody left to call.") %}
+{% include "partials/pager.html" %}
 
 <h2 class="h6 mt-4">{% trans "Promised to pay" %} <span class="badge text-bg-secondary">{{ board.promised|length }}</span></h2>
 {% include "billing/_call_rows.html" with rows=board.promised empty=_("No promises waiting.") %}

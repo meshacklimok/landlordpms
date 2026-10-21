@@ -1,0 +1,12 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Owner follow-ups" %}{% endblock %}
+{% block console_title %}{% trans "Owner follow-ups" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:owners' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All owners" %}</a>
+  · {% blocktrans with n=data.open d=data.due %}{{ n }} open notes, {{ d }} due now.{% endblocktrans %}</p>
+{% include "console/_follow_group.html" with title=_("Overdue") items=data.overdue tone="danger" %}
+{% include "console/_follow_group.html" with title=_("Today") items=data.today tone="warning" %}
+{% include "console/_follow_group.html" with title=_("Coming up") items=data.later tone="" %}
+{% include "console/_follow_group.html" with title=_("No date") items=data.undated tone="" %}
+{% if not data.open %}<p class="text-muted">{% trans "Nothing to follow up. Add a note with a date on an owner's page." %}</p>{% endif %}
+{% endblock %}

@@ -3,17 +3,19 @@
 import datetime
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from audit import services as audit
 from core.money import ZERO
 from leases.models import Lease, LeaseTenant
-from leases.services import sync_tenant_status
+from leases.services import RESTORE_HOLD_DAYS, restored_by_hand_since, sync_tenant_status
+from meters import reminders as meter_reminders
 from notifications import triggers
 from tenants.models import Tenant
 
-from . import deposits, invoicing
-from .models import InvoiceLine
+from . import deposits, invoicing, late_fees
+from .models import DepositEntry, InvoiceLine, LedgerEntry
 
 CLOSED = (Lease.Status.ENDED, Lease.Status.TERMINATED, Lease.Status.RENEWED)
 
@@ -49,7 +51,10 @@ def archive_settled_leases(today: datetime.date) -> int:
     """Closed leases whose tenants have left and whose money is settled leave the working lists."""
     archived = 0
     candidates = Lease.objects.filter(status__in=CLOSED, ended_on__lt=today).select_related("organization")
+    held_open = restored_by_hand_since(timezone.now() - datetime.timedelta(days=RESTORE_HOLD_DAYS))
     for lease in candidates:
+        if str(lease.public_id) in held_open:
+            continue  # someone restored it by hand to work on it (D-079)
         with transaction.atomic():
             lease = Lease.objects.select_for_update().filter(pk=lease.pk).first()
             if lease is None or not is_settled(lease):
@@ -61,10 +66,44 @@ def archive_settled_leases(today: datetime.date) -> int:
     return archived
 
 
+def _unsettled_archived_ids() -> set[int]:
+    """Archived leases where money moved again: something owed either way, a deposit held or a meter charge."""
+    archived = {"lease__archived_at__isnull": False}
+    ids = set(LedgerEntry.objects.filter(**archived).values("lease").annotate(s=Sum("amount")).exclude(s=0)
+              .values_list("lease", flat=True))
+    ids |= set(DepositEntry.objects.filter(**archived).values("lease").annotate(s=Sum("amount")).exclude(s=0)
+               .values_list("lease", flat=True))
+    ids |= set(invoicing.unbilled_meter_charges().filter(**archived).values_list("lease", flat=True))
+    return ids
+
+
+def restore_unsettled_leases() -> int:
+    """Archived leases that are no longer settled come back to the lists (D-079)."""
+    restored = 0
+    for pk in sorted(_unsettled_archived_ids()):
+        with transaction.atomic():
+            lease = Lease.all_objects.select_for_update(of=("self",)).select_related("organization").get(pk=pk)
+            if not lease.is_archived or is_settled(lease):
+                continue
+            lease.restore()
+            audit.record("lease.restore", actor=None, organization=lease.organization, obj=lease,
+                         changes={"archived": [True, False], "source": [None, "daily job"],
+                                  "balance": [None, str(invoicing.lease_balance(lease))],
+                                  "deposit_held": [None, str(deposits.held(lease))]})
+            restored += 1
+    return restored
+
+
 def run_daily(today: datetime.date | None = None) -> dict[str, int]:
     today = today or timezone.localdate()
     counts = invoicing.run_scheduled(today)
+    counts.update(late_fees.run_daily(today))
     counts["tenants_moved_out"] = sync_moved_out_tenants(today)
+    counts["leases_restored"] = restore_unsettled_leases()
     counts["leases_archived"] = archive_settled_leases(today)
     counts.update(triggers.send_reminders(today))
+    counts.update(meter_reminders.run_daily(today))
+    from prospects.services import offer_free_beds
+
+    counts.update(offer_free_beds(today))
     return counts

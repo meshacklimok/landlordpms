@@ -1,0 +1,6 @@
+{% comment %}Header band for public pages. Pass eyebrow, title, lead; add centered="1" to centre it.{% endcomment %}
+<header class="about-hero{% if centered %} pub-center{% endif %}">
+  {% if eyebrow %}<p class="about-eyebrow">{{ eyebrow }}</p>{% endif %}
+  <h1 class="about-title">{{ title }}</h1>
+  {% if lead %}<p class="about-lead">{{ lead }}</p>{% endif %}
+</header>

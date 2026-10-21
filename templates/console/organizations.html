@@ -1,0 +1,68 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console organizations" %}{% endblock %}
+{% block console_title %}{% trans "Organizations" %}{% endblock %}
+{% block console %}
+<form method="get" class="d-flex flex-wrap gap-2 mb-3">
+  <label class="visually-hidden" for="id_q">{% trans "Search" %}</label>
+  <input type="search" name="q" id="id_q" class="form-control form-control-sm w-auto" placeholder="{% trans 'Name or billing email' %}" value="{{ form.q.value|default:'' }}">
+  {{ form.status }}
+  <label class="visually-hidden" for="id_sort">{% trans "Sort by" %}</label>
+  <select name="sort" id="id_sort" class="form-select form-select-sm w-auto">
+    <option value="">{% trans "Sort: name" %}</option>
+    <option value="ever"{% if sort == "ever" %} selected{% endif %}>{% trans "Most rent collected, all time" %}</option>
+    <option value="month"{% if sort == "month" %} selected{% endif %}>{% trans "Most rent collected this month" %}</option>
+    <option value="risk"{% if sort == "risk" %} selected{% endif %}>{% trans "Most at risk first" %}</option>
+    <option value="units"{% if sort == "units" %} selected{% endif %}>{% trans "Most units" %}</option>
+    <option value="leases"{% if sort == "leases" %} selected{% endif %}>{% trans "Most leases" %}</option>
+    <option value="active"{% if sort == "active" %} selected{% endif %}>{% trans "Most recently active" %}</option>
+  </select>
+  <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:watchlist' %}">{% trans "Watchlist" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:chase' %}">{% trans "Payments to chase" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:organizations_export' %}{% if query %}?{{ query }}{% endif %}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download (CSV)" %}</a>
+</form>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr>
+    <th><span class="visually-hidden">{% trans "Pick" %}</span></th><th>{% trans "Organization" %}</th><th>{% trans "Health" %}</th><th>{% trans "Plan" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Leases" %}</th>
+    <th class="text-end">{% trans "Collected this month" %}</th><th class="text-end">{% trans "Collected, all time" %}</th><th class="text-end">{% trans "On time" %}</th><th class="text-end">{% trans "Matched itself" %}</th><th class="text-end">{% trans "Last active" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td>{% if request.user.is_superuser %}<input type="checkbox" form="bulk" name="o" value="{{ r.org.public_id }}" aria-label="{{ r.org.name }}">{% endif %}</td>
+      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}</td>
+      <td><span class="badge text-bg-{% if r.health == 'At risk' %}danger{% elif r.health == 'Watch' %}warning{% else %}success{% endif %}"{% if r.reasons %} title="{{ r.reasons|join:'; ' }}"{% endif %}>{% if r.health == 'At risk' %}{% trans "At risk" %}{% elif r.health == 'Watch' %}{% trans "Watch" %}{% else %}{% trans "Healthy" %}{% endif %}</span></td>
+      <td>{{ r.plan }} <span class="text-muted">{{ r.sub_status }}</span></td>
+      <td class="text-end">{{ r.units }}</td><td class="text-end">{{ r.leases }}</td>
+      <td class="text-end text-nowrap">{{ r.collected|money }}</td>
+      <td class="text-end text-nowrap">{{ r.ever|money }}</td>
+      <td class="text-end">{% if r.on_time is not None %}{{ r.on_time }}%{% else %}—{% endif %}</td>
+      <td class="text-end">{% if r.auto_share is not None %}{{ r.auto_share }}%{% else %}—{% endif %}</td>
+      <td class="text-end text-nowrap">{% if r.idle_days is None %}{% trans "Never" %}{% elif r.idle_days == 0 %}{% trans "Today" %}{% else %}{% blocktrans with d=r.idle_days %}{{ d }} days ago{% endblocktrans %}{% endif %}</td>
+    </tr>
+  {% empty %}<tr><td colspan="11" class="text-muted">{% trans "No organizations match." %}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% if request.user.is_superuser %}
+<form method="post" action="{% url 'console:organization_bulk' %}" id="bulk" class="card card-body shadow-sm small vstack gap-2 col-lg-8">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <h2 class="h6 mb-0">{% trans "Do something for the ones you ticked" %}</h2>
+  <div class="row g-2">
+    <div class="col-md-4"><label class="form-label mb-0" for="bulk_action">{% trans "Action" %}</label>
+      <select class="form-select form-select-sm" name="action" id="bulk_action">
+        <option value="note">{% trans "Add a note" %}</option>
+        <option value="sms">{% trans "Send a text to the owner" %}</option>
+        <option value="grace">{% trans "Give days before the subscription lapses" %}</option>
+      </select></div>
+    <div class="col-md-4"><label class="form-label mb-0" for="bulk_follow">{% trans "Follow up on (notes)" %}</label>
+      <input type="date" class="form-control form-control-sm" name="follow_up_on" id="bulk_follow"></div>
+    <div class="col-md-4"><label class="form-label mb-0" for="bulk_days">{% trans "Days (grace, 1 to 90)" %}</label>
+      <input type="number" min="1" max="90" class="form-control form-control-sm" name="days" id="bulk_days"></div>
+  </div>
+  <label class="form-label mb-0" for="bulk_text">{% trans "Note, message, or reason for the grace" %}</label>
+  <textarea class="form-control form-control-sm" name="text" id="bulk_text" rows="2" maxlength="300"></textarea>
+  <div><button class="btn btn-sm btn-primary">{% trans "Do it" %}</button>
+    <a class="btn btn-sm btn-link" href="{% url 'console:owner_email' %}">{% trans "Email owners instead" %}</a></div>
+</form>
+{% endif %}
+{% endblock %}

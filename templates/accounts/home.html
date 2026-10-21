@@ -1,8 +1,24 @@
 {% extends "base.html" %}{% load i18n access money reports %}
 {% block title %}{% trans "Home" %}{% endblock %}
 {% block content %}
-<h1 class="h4">{{ user.full_name }}</h1>
-<p class="text-muted">{{ organization.name }} · {{ membership.role.name }}</p>
+{# D-153: greeting and quick actions, then the month in four figures, then work and money side by side. #}
+<div class="home-head">
+  <div>
+    <p class="home-date">{% now "l j F Y" %}</p>
+    <h1 class="home-hello">{{ greeting }}, {{ user.full_name|default:user.phone }}</h1>
+    <p class="lead-text mb-0">{{ organization.name }} · {{ membership.role.name }}</p>
+  </div>
+  {% if membership|can:"dashboard.view_financial" %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:centre' %}"><i class="bi bi-bar-chart-line me-1" aria-hidden="true"></i>{% trans "Open the dashboard" %}</a>{% endif %}
+</div>
+
+{% if not welcome %}<nav class="home-actions" aria-label="{% trans 'Quick actions' %}">
+  {% if membership|can:"payments.record" %}<a class="home-action home-action-main" href="{% url 'payments:pick_lease' %}"><i class="bi bi-cash-coin" aria-hidden="true"></i>{% trans "Record a payment" %}</a>{% endif %}
+  {% if membership|can:"invoices.generate" %}<a class="home-action" href="{% url 'billing:generate' %}"><i class="bi bi-receipt" aria-hidden="true"></i>{% trans "Send invoices" %}</a>{% endif %}
+  {% if membership|can:"tenants.manage" %}<a class="home-action" href="{% url 'tenants:create' %}"><i class="bi bi-person-plus" aria-hidden="true"></i>{% trans "Add a tenant" %}</a>{% endif %}
+  {% if membership|can:"messages.send" %}<a class="home-action" href="{% url 'notifications:compose' %}"><i class="bi bi-chat-left-text" aria-hidden="true"></i>{% trans "Message a tenant" %}</a>{% endif %}
+  {% if membership|can:"maintenance.create" %}<a class="home-action" href="{% url 'maintenance:create' %}"><i class="bi bi-tools" aria-hidden="true"></i>{% trans "Report a repair" %}</a>{% endif %}
+  {% if membership|can:"expenses.submit" %}<a class="home-action" href="{% url 'expenses:create' %}"><i class="bi bi-wallet2" aria-hidden="true"></i>{% trans "Add an expense" %}</a>{% endif %}
+</nav>{% endif %}
 
 {% if suggest_mfa %}
 <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -11,111 +27,223 @@
 </div>
 {% endif %}
 
-{% if show_checklist %}
-<div class="card shadow-sm mb-3"><div class="card-body">
-  <h2 class="h6">{% trans "Get set up" %} <span class="text-muted fw-normal">{% blocktrans with n=checklist_done t=checklist_total %}{{ n }} of {{ t }} done{% endblocktrans %}</span></h2>
-  <ul class="list-unstyled mb-0">
-    {% for step in checklist %}<li class="py-1" data-step="{{ step.key }}">{% if step.done %}✅ {{ step.label }}{% else %}⬜ <a href="{{ step.url }}">{{ step.label }}</a>{% endif %}{% if step.optional %} <span class="text-muted small">({% trans "optional" %})</span>{% endif %}</li>{% endfor %}
-  </ul>
-  <p class="small text-muted mt-2 mb-0">{% blocktrans with url=help_url %}Stuck? Read <a href="{{ url }}">getting started</a>, or send us your spreadsheet and we will import it for you.{% endblocktrans %}</p>
-</div></div>
-{% endif %}
+{% if membership|can:"dashboard.view_financial" and home.started %}
+{% with c=board.current p=board.previous cur=board.currency %}
+<section class="home-figures" aria-label="{% trans 'This month' %}">
+  <div class="stat home-fig">
+    <div class="stat-label">{% blocktrans with m=c.label %}Collected, {{ m }}{% endblocktrans %}</div>
+    <div class="home-fig-row">
+      <div class="min-w-0">
+        <div class="stat-value text-nowrap">{{ c.collected|money:cur }}</div>
+        <div class="stat-note text-muted">{% if c.rate is None %}{% trans "No rent billed yet" %}{% else %}{% blocktrans with b=c.expected|money:cur %}of {{ b }} billed{% endblocktrans %}{% endif %}</div>
+      </div>
+      {% trans "Rent collected" as rate_label %}{% ring c.rate rate_label size="sm" %}
+    </div>
+    {% if p and p.rate is not None and c.rate is not None %}<div class="home-change">{% blocktrans with m=p.label r=p.rate|percent %}{{ r }} collected in {{ m }}{% endblocktrans %}</div>{% endif %}
+  </div>
 
-<section class="card shadow-sm mb-3" aria-labelledby="today-heading"><div class="card-body">
-  <h2 class="h6" id="today-heading">{% trans "Today" %}</h2>
-  {% if home.has_work %}
-  {% if home.tasks %}
-  <ul class="list-group list-group-flush mb-2">
-    {% for task in home.tasks %}
-    <li class="list-group-item px-0 d-flex align-items-center gap-2" data-task="{{ task.key }}">
-      <span class="badge rounded-pill text-bg-primary">{{ task.count }}</span>
-      <a href="{{ task.url }}">{{ task.label }}</a>
-      {% if task.detail %}<span class="small text-danger">{{ task.detail }}</span>{% endif %}
-    </li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% if home.expiring %}
-  <h3 class="h6 small text-muted mt-3 mb-1">{% blocktrans count n=home.expiring_count %}{{ n }} lease ends within 60 days{% plural %}{{ n }} leases end within 60 days{% endblocktrans %}</h3>
-  <ul class="list-unstyled small mb-2">
-    {% for lease in home.expiring %}
-    <li class="py-1"><a href="{% url 'leases:detail' lease.public_id %}">{{ lease.unit.code }} · {{ lease.unit.property.name }}</a>{% if membership|can:"tenants.view" and lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %} <span class="text-muted">· {% blocktrans with d=lease.end_date|date:"j M Y" %}ends {{ d }}{% endblocktrans %}</span></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% if home.reports %}
-  <h3 class="h6 small text-muted mt-3 mb-1">{% trans "Condition reports to finish" %}</h3>
-  <ul class="list-unstyled small mb-0">
-    {% for report in home.reports %}
-    <li class="py-1"><a href="{% url 'inspections:report' report.public_id %}">{{ report.get_kind_display }} · {{ report.unit.code }} · {{ report.unit.property.name }}</a> <span class="text-muted">· {{ report.inspected_on|date:"j M Y" }}</span></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-  {% else %}
-  <p class="text-muted mb-0">{% trans "Nothing is waiting for you." %}</p>
-  {% endif %}
-</div></section>
+  <div class="stat home-fig">
+    <div class="stat-label">{% trans "Still to collect this month" %}</div>
+    <div class="stat-value text-nowrap">{% if c.outstanding > 0 %}{{ c.outstanding|money:cur }}{% else %}{{ 0|money:cur }}{% endif %}</div>
+    {% if c.expected %}<div class="home-meter" aria-hidden="true"><span style="width: {{ c.rate|percent_number }}%"></span></div>{% endif %}
+    <div class="stat-note text-muted">{% if c.outstanding > 0 %}{% trans "Rent billed and not yet paid" %}{% elif c.expected %}{% trans "All of this month's rent is in" %}{% else %}{% trans "Nothing billed yet this month" %}{% endif %}</div>
+  </div>
 
-{% if home.summary %}
-{% with occ=home.summary.occupancy %}
-<section class="card shadow-sm mb-3" aria-labelledby="summary-heading"><div class="card-body">
-  <h2 class="h6" id="summary-heading">{% trans "Summary" %}</h2>
-  <dl class="row small mb-0">
-    <dt class="col-7 fw-normal text-muted">{% trans "Occupied" %}</dt>
-    <dd class="col-5 mb-1">{% if occ.rentable %}{% blocktrans with o=occ.occupied r=occ.rentable %}{{ o }} of {{ r }} units{% endblocktrans %}{% else %}{% trans "No units yet" %}{% endif %}</dd>
-    <dt class="col-7 fw-normal text-muted">{% trans "Vacant" %}</dt>
-    <dd class="col-5 mb-1">{{ occ.vacant }}{% if occ.reserved or occ.maintenance %} <span class="text-muted">{% blocktrans with r=occ.reserved u=occ.maintenance %}({{ r }} reserved, {{ u }} under repair){% endblocktrans %}</span>{% endif %}</dd>
-    <dt class="col-7 fw-normal text-muted">{% trans "Leases with rent overdue" %}</dt>
-    <dd class="col-5 mb-0">{{ home.summary.overdue_leases }}</dd>
-  </dl>
-</div></section>
+  <div class="stat home-fig{% if board.arrears.total %} stat-bad{% endif %}">
+    <div class="stat-label">{% trans "Overdue today" %}</div>
+    <div class="stat-value text-nowrap{% if board.arrears.total %} text-danger{% endif %}">{{ board.arrears.total|money:cur }}</div>
+    {% if board.arrears.total %}
+    <div class="home-aging" role="img" aria-label="{% trans 'Overdue by age' %}">{% for key, label, amount in board.arrears.buckets %}{% if amount %}<span class="{{ key|aging_color }}" style="width: {{ amount|share_of:board.arrears.total|percent_number }}%" title="{{ label }}: {{ amount|money:cur }}"></span>{% endif %}{% endfor %}</div>
+    <div class="stat-note text-muted">{% blocktrans count n=board.arrears.leases %}{{ n }} lease behind{% plural %}{{ n }} leases behind{% endblocktrans %}{% if membership|can:"invoices.view" %} · <a href="{% url 'billing:arrears' %}">{% trans "See all" %}</a>{% endif %}</div>
+    {% else %}<div class="stat-note text-muted">{% trans "Nobody is behind." %}</div>{% endif %}
+  </div>
+
+  <div class="stat home-fig">
+    <div class="stat-label">{% trans "Occupancy" %}</div>
+    <div class="home-fig-row">
+      <div class="min-w-0">
+        <div class="stat-value">{{ board.occupancy.rate|percent }}</div>
+        <div class="stat-note text-muted">{% blocktrans with k=board.occupancy.occupied n=board.occupancy.rentable %}{{ k }} of {{ n }} units let{% endblocktrans %}</div>
+        <div class="home-change">{% blocktrans count n=board.occupancy.vacant %}{{ n }} unit empty{% plural %}{{ n }} units empty{% endblocktrans %}</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="home-trend stat" aria-labelledby="trend-h">
+  <div class="home-trend-head"><h2 class="stat-label mb-0" id="trend-h">{% trans "Rent collected by month" %}</h2><span class="small text-muted">{% trans "Each bar is the month's collection rate" %}</span></div>
+  <ol class="home-bars">
+  {% for row in home.trend %}
+    <li{% if forloop.last %} class="now"{% endif %}><span class="home-bar" style="--h: {{ row.rate|percent_number }}%" title="{{ row.label }}: {{ row.collected|money:cur }} · {{ row.rate|percent }}"></span><span class="home-bar-m">{{ row.month|date:"M" }}</span><span class="visually-hidden">{{ row.label }}: {{ row.rate|percent }}</span></li>
+  {% endfor %}
+  </ol>
+</section>
 {% endwith %}
 {% endif %}
 
-<div class="row g-3">
-  {% if membership|can:"properties.view" %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Properties" %}</h2>
-    <a href="{% url 'properties:list' %}">{% trans "Properties, buildings and units" %}</a>
-  </div></div></div>
-  {% endif %}
-  {% if membership|can:"tenants.view" %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Tenants" %}</h2>
-    <a href="{% url 'tenants:list' %}">{% trans "Tenants and prospects" %}</a>
-  </div></div></div>
-  {% endif %}
-  {% if membership|can:"leases.view" %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Leases" %}</h2>
-    <a href="{% url 'leases:list' %}">{% trans "Leases, rent and charges" %}</a>
-    {% if membership|can:"charges.manage" %}<br><a class="small" href="{% url 'billing:charge_types' %}">{% trans "Charge types" %}</a>{% endif %}
-  </div></div></div>
-  {% endif %}
-  {% if membership|can:"dashboard.view_financial" %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Collections" %}</h2>
-    {% with c=board.current cur=board.currency %}
-    <dl class="row small mb-2">
-      <dt class="col-7 fw-normal text-muted">{% trans "Occupancy" %}</dt><dd class="col-5 mb-1">{{ board.occupancy.rate|percent }} <span class="text-muted">({{ board.occupancy.occupied }}/{{ board.occupancy.rentable }})</span></dd>
-      <dt class="col-7 fw-normal text-muted">{% blocktrans with m=c.label %}Rent collected, {{ m }}{% endblocktrans %}</dt><dd class="col-5 mb-1">{% if c.rate is None %}{% trans "No rent billed yet" %}{% else %}{{ c.rate|percent }}{% endif %}</dd>
-      <dt class="col-7 fw-normal text-muted">{% trans "Arrears today" %}</dt><dd class="col-5 mb-0 text-nowrap">{{ board.arrears.total|money:cur }}</dd>
-    </dl>
-    {% endwith %}
-    <a href="{% url 'reports:dashboard' %}">{% trans "Open the dashboard" %}</a>
-  </div></div></div>
-  {% endif %}
-  {% if show_staff %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Staff" %}</h2>
-    <a href="{% url 'accounts:staff' %}">{% trans "Manage staff and invitations" %}</a>
-  </div></div></div>
-  {% endif %}
-  {% if show_roles %}
-  <div class="col-12 col-md-6"><div class="card h-100"><div class="card-body">
-    <h2 class="h6">{% trans "Roles" %}</h2>
-    <a href="{% url 'accounts:roles' %}">{% trans "Edit what each role can do" %}</a>
-  </div></div></div>
-  {% endif %}
+{% if welcome %}
+<div class="welcome">
+  <section class="welcome-main" aria-labelledby="welcome-h">
+    <p class="welcome-kicker">{% blocktrans with n=checklist_done t=checklist_total %}Setup · {{ n }} of {{ t }} done{% endblocktrans %}</p>
+    <h2 class="welcome-title" id="welcome-h">{% trans "Let's get your first rent collected." %}</h2>
+    <p class="welcome-lead">{% blocktrans with n=minutes_left %}Six short steps, about {{ n }} minutes in all. Stop any time; this page remembers where you were.{% endblocktrans %}</p>
+    <div class="progress progress-thin" aria-hidden="true"><div class="progress-bar" style="width: {% widthratio checklist_done checklist_total 100 %}%"></div></div>
+
+    {% if next_step %}
+    <div class="welcome-next">
+      <span class="welcome-next-icon" aria-hidden="true"><i class="bi bi-{{ next_step.icon }}"></i></span>
+      <div class="welcome-kicker mb-1">{% trans "Do this next" %}</div>
+      <h3 class="welcome-next-title">{{ next_step.label }}</h3>
+      <p class="text-muted">{{ next_step.hint }}</p>
+      <a class="btn btn-primary btn-lg welcome-go" href="{{ next_step.url }}">{% trans "Start" %}<i class="bi bi-arrow-right ms-2" aria-hidden="true"></i></a>
+    </div>
+    {% endif %}
+
+    <ul class="welcome-perks" aria-label="{% trans 'What you get' %}">
+      <li><i class="bi bi-phone" aria-hidden="true"></i><b>{% trans "M-Pesa payments matched" %}</b><span>{% trans "Each payment finds its tenant and clears the invoice." %}</span></li>
+      <li><i class="bi bi-chat-left-text" aria-hidden="true"></i><b>{% trans "Bills and reminders sent" %}</b><span>{% trans "By SMS, email or WhatsApp, on the days you choose." %}</span></li>
+      <li><i class="bi bi-bar-chart-line" aria-hidden="true"></i><b>{% trans "Who owes, at a glance" %}</b><span>{% trans "Arrears and collection rate on this page." %}</span></li>
+    </ul>
+
+    <div class="welcome-help">
+      <a href="{{ help_url }}"><i class="bi bi-book me-1" aria-hidden="true"></i>{% trans "Read the getting-started guide" %}</a>
+      <span class="text-muted">{% trans "Already keep tenants in a spreadsheet? Send it to us and we will import it for you." %}</span>
+    </div>
+  </section>
+
+  <aside class="welcome-side" aria-labelledby="steps-h">
+    <div class="welcome-side-head"><h3 id="steps-h">{% trans "Your setup" %}</h3><span class="welcome-chip">{% blocktrans with n=checklist_done t=checklist_total %}{{ n }} of {{ t }}{% endblocktrans %}</span></div>
+    <ol class="welcome-steps">
+      {% for step in checklist %}
+      <li data-step="{{ step.key }}" class="{% if step.done %}is-done{% elif step == next_step %}is-next{% endif %}">
+        <span class="welcome-dot" aria-hidden="true">{% if step.done %}<i class="bi bi-check-lg"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
+        <span class="min-w-0">{% if step.done %}<span class="visually-hidden">{% trans "Done:" %} </span>{{ step.label }}{% else %}<a href="{{ step.url }}">{{ step.label }}</a>{% endif %}{% if step.optional %} <span class="text-muted small">({% trans "optional" %})</span>{% endif %}
+          {% if not step.done %}<span class="d-block small text-muted">{{ step.hint }}</span>{% endif %}</span>
+      </li>
+      {% endfor %}
+    </ol>
+  </aside>
 </div>
+{% else %}
+<div class="row g-3 mb-3">
+  <div class="col-lg-7 d-flex flex-column gap-3">
+    <section class="card" aria-labelledby="today-heading"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-baseline mb-2"><h2 class="h6 mb-0" id="today-heading">{% trans "Today" %}</h2>{% if home.tasks %}<span class="small text-muted">{% blocktrans count n=home.tasks|length %}{{ n }} thing waiting{% plural %}{{ n }} things waiting{% endblocktrans %}</span>{% endif %}</div>
+      {% if home.tasks or home.reports %}
+      {% if home.tasks %}
+      <ul class="home-tasks">
+        {% for task in home.tasks %}
+        <li data-task="{{ task.key }}"><a href="{{ task.url }}" class="home-task{% if task.urgent %} is-urgent{% endif %}">
+          <span class="home-task-icon" aria-hidden="true"><i class="bi bi-{{ task.icon }}"></i></span>
+          <span class="home-task-text"><span class="task-count">{{ task.count }}</span> {{ task.label }}{% if task.detail %} <span class="small text-danger">· {{ task.detail }}</span>{% endif %}</span>
+          <i class="bi bi-chevron-right home-task-go" aria-hidden="true"></i>
+        </a></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if home.reports %}
+      <h3 class="card-title-sm mt-3">{% trans "Condition reports to finish" %}</h3>
+      <ul class="list-unstyled small mb-0">
+        {% for report in home.reports %}
+        <li class="py-1"><a href="{% url 'inspections:report' report.public_id %}">{{ report.get_kind_display }} · {{ report.unit.code }} · {{ report.unit.property.name }}</a> <span class="text-muted">· {{ report.inspected_on|date:"j M Y" }}</span></li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% else %}
+      <p class="home-empty mb-0"><i class="bi bi-check2-circle" aria-hidden="true"></i>{% trans "Nothing is waiting for you." %}</p>
+      {% endif %}
+    </div></section>
+
+    {% if membership|can:"dashboard.view_financial" and membership|can:"invoices.view" and home.started %}
+    <section class="card" aria-labelledby="owe-heading"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-baseline mb-2"><h2 class="h6 mb-0" id="owe-heading">{% trans "Who owes the most" %}</h2>{% if home.debtors and membership|can:"arrears.follow_up" %}<a class="small" href="{% url 'billing:call_list' %}">{% trans "Call list" %}</a>{% endif %}</div>
+      {% if home.debtors %}
+      <ul class="home-owe">
+        {% for d in home.debtors %}
+        <li>
+          <a class="home-owe-who" href="{% url 'leases:detail' d.lease.public_id %}"><span class="home-unit">{{ d.lease.unit.code }}</span><span class="min-w-0"><b class="text-truncate d-block">{% if membership|can:"tenants.view" and d.lease.primary_tenant %}{{ d.lease.primary_tenant.name }}{% else %}{{ d.lease.number }}{% endif %}</b><span class="small text-muted">{{ d.lease.unit.property.name }} · {% blocktrans count n=d.days %}{{ n }} day late{% plural %}{{ n }} days late{% endblocktrans %}</span></span></a>
+          <span class="num fw-semibold text-danger text-nowrap">{{ d.overdue|money:board.currency }}</span>
+          {% if membership|can:"tenants.view" and d.lease.primary_tenant.phone %}<a class="btn btn-sm btn-outline-secondary home-owe-call" href="tel:{{ d.lease.primary_tenant.phone }}" aria-label="{% blocktrans with n=d.lease.primary_tenant.name %}Call {{ n }}{% endblocktrans %}"><i class="bi bi-telephone" aria-hidden="true"></i></a>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="home-empty mb-0"><i class="bi bi-check2-circle" aria-hidden="true"></i>{% trans "Nothing is overdue." %}</p>
+      {% endif %}
+    </div></section>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-5 d-flex flex-column gap-3">
+    {% if show_checklist and not welcome %}
+    <section class="card" aria-labelledby="setup-heading"><div class="card-body">
+      <h2 class="h6" id="setup-heading">{% trans "Get set up" %} <span class="text-muted fw-normal">{% blocktrans with n=checklist_done t=checklist_total %}{{ n }} of {{ t }} done{% endblocktrans %}</span></h2>
+      <div class="progress progress-thin mb-2" aria-hidden="true"><div class="progress-bar" style="width: {% widthratio checklist_done checklist_total 100 %}%"></div></div>
+      <ul class="list-unstyled mb-0">
+        {% for step in checklist %}<li class="py-1 d-flex gap-2" data-step="{{ step.key }}">{% if step.done %}<i class="bi bi-check-circle-fill step-done" aria-hidden="true"></i>{% else %}<i class="bi bi-circle step-todo" aria-hidden="true"></i>{% endif %}<span>{% if step.done %}<span class="visually-hidden">{% trans "Done:" %} </span>{{ step.label }}{% else %}<a href="{{ step.url }}">{{ step.label }}</a>{% endif %}{% if step.optional %} <span class="text-muted small">({% trans "optional" %})</span>{% endif %}</span></li>{% endfor %}
+      </ul>
+      <p class="small text-muted mt-2 mb-0">{% blocktrans with url=help_url %}Stuck? Read <a href="{{ url }}">getting started</a>, or send us your spreadsheet and we will import it for you.{% endblocktrans %}</p>
+    </div></section>
+    {% endif %}
+
+    {% if home.summary %}
+    {% with occ=home.summary.occupancy %}
+    <section class="card" aria-labelledby="summary-heading"><div class="card-body">
+      <h2 class="h6" id="summary-heading">{% trans "Summary" %}</h2>
+      <dl class="row small mb-0">
+        <dt class="col-7 fw-normal text-muted">{% trans "Occupied" %}</dt>
+        <dd class="col-5 mb-1">{% if occ.rentable %}{% blocktrans with o=occ.occupied r=occ.rentable %}{{ o }} of {{ r }} units{% endblocktrans %}{% else %}{% trans "No units yet" %}{% endif %}</dd>
+        <dt class="col-7 fw-normal text-muted">{% trans "Vacant" %}</dt>
+        <dd class="col-5 mb-1">{{ occ.vacant }}{% if occ.reserved or occ.maintenance %} <span class="text-muted">{% blocktrans with r=occ.reserved u=occ.maintenance %}({{ r }} reserved, {{ u }} under repair){% endblocktrans %}</span>{% endif %}</dd>
+        <dt class="col-7 fw-normal text-muted">{% trans "Leases with rent overdue" %}</dt>
+        <dd class="col-5 mb-0">{{ home.summary.overdue_leases }}</dd>
+      </dl>
+    </div></section>
+    {% endwith %}
+    {% endif %}
+
+    {% if membership|can:"payments.view" and home.started %}
+    <section class="card" aria-labelledby="paid-heading"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-baseline mb-2"><h2 class="h6 mb-0" id="paid-heading">{% trans "Latest payments" %}</h2><a class="small" href="{% url 'payments:list' %}">{% trans "All payments" %}</a></div>
+      {% if home.payments %}
+      <ul class="home-paid">
+        {% for pay in home.payments %}
+        <li>
+          <span class="home-paid-icon home-paid-{{ pay.method|lower }}" aria-hidden="true"><i class="bi bi-{% if pay.method == 'MPESA' %}phone{% elif pay.method == 'BANK' %}bank{% elif pay.method == 'CASH' %}cash{% else %}wallet2{% endif %}"></i></span>
+          <span class="min-w-0 flex-grow-1"><b class="d-block text-truncate">{{ pay.lease.unit.code }} · {{ pay.lease.unit.property.name }}</b><span class="small text-muted">{{ pay.get_method_display }} · {{ pay.paid_at|date:"j M" }}</span></span>
+          <span class="num fw-semibold text-nowrap">{{ pay.amount|money:organization.currency }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="small text-muted mb-0">{% trans "No payments confirmed yet." %}</p>
+      {% endif %}
+    </div></section>
+    {% endif %}
+
+    {% if home.collection %}
+    <section class="card" aria-labelledby="byprop-heading"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-baseline mb-2"><h2 class="h6 mb-0" id="byprop-heading">{% trans "This month by property" %}</h2><span class="small text-muted">{% trans "Lowest first" %}</span></div>
+      <ul class="home-props">
+        {% for row in home.collection %}
+        <li><div class="d-flex justify-content-between gap-2 small"><span class="text-truncate fw-semibold">{{ row.label }}</span><span class="text-muted text-nowrap">{{ row.rate|percent }}</span></div>
+          <div class="home-meter{% if row.rate is not None and row.rate < 0.5 %} is-low{% endif %}" aria-hidden="true"><span style="width: {{ row.rate|percent_number }}%"></span></div></li>
+        {% endfor %}
+      </ul>
+    </div></section>
+    {% endif %}
+
+    {% if home.expiring %}
+    <section class="card" aria-labelledby="ending-heading"><div class="card-body">
+      <h2 class="h6" id="ending-heading">{% blocktrans count n=home.expiring_count %}{{ n }} lease ends within 60 days{% plural %}{{ n }} leases end within 60 days{% endblocktrans %}</h2>
+      <ul class="list-unstyled small mb-0">
+        {% for lease in home.expiring %}
+        <li class="py-1"><a href="{% url 'leases:detail' lease.public_id %}">{{ lease.unit.code }} · {{ lease.unit.property.name }}</a>{% if membership|can:"tenants.view" and lease.primary_tenant %} · {{ lease.primary_tenant.name }}{% endif %} <span class="text-muted">· {% blocktrans with d=lease.end_date|date:"j M Y" %}ends {{ d }}{% endblocktrans %}</span></li>
+        {% endfor %}
+      </ul>
+    </div></section>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% endblock %}

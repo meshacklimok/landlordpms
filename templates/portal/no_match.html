@@ -1,0 +1,9 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "No tenancy found" %}{% endblock %}
+{% block heading %}{% trans "We could not find your tenancy" %}{% endblock %}
+{% block card %}
+<p>{% blocktrans with phone=phone %}Your phone number <strong>{{ phone }}</strong> is verified, but no landlord has it on a tenancy yet.{% endblocktrans %}</p>
+<p class="small text-muted">{% trans "Ask your landlord or the office to check the phone number on your tenant record. Once it matches, log in again and your account will open." %}</p>
+<a class="btn btn-primary w-100 mb-2" href="{% url 'accounts:home' %}">{% trans "Try again" %}</a>
+<form method="post" action="{% url 'accounts:logout' %}">{% csrf_token %}<button class="btn btn-outline-secondary w-100">{% trans "Log out" %}</button></form>
+{% endblock %}

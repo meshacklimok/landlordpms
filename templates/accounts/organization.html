@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Settings" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4">{% trans "Settings" %}</h1>
+  <p class="small text-muted">{% trans "Your organization's details and how rent is billed. Changes apply to letters and invoices made from now on; ones already issued do not change." %}</p>
+  <div class="card shadow-sm mb-4"><div class="card-body">
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+
+  {% if pages %}
+  <h2 class="h6">{% trans "Other settings" %}</h2>
+  <div class="list-group shadow-sm">
+    {% for page in pages %}
+    <a href="{{ page.url }}" class="list-group-item list-group-item-action">
+      <div class="fw-semibold">{{ page.label }}</div>
+      <div class="small text-muted">{{ page.hint }}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <h2 class="h6 mt-4">{% trans "Monthly report email" %}</h2>
+  <div class="card shadow-sm"><div class="card-body">
+    <p class="small mb-2">{% trans "On the 1st of each month we email you last month's figures for the properties you can see: what the records show, what stands out, and suggested next steps." %}</p>
+    <form method="post" action="{% url 'accounts:monthly_report_pref' %}">{% csrf_token %}
+      <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" role="switch" id="monthly_report" name="monthly_report"{% if monthly_report %} checked{% endif %}>
+        <label class="form-check-label" for="monthly_report">{% trans "Email me the monthly report" %}</label></div>
+      <button class="btn btn-outline-primary btn-sm">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+
+  {% if can_export %}
+  <h2 class="h6 mt-4" id="your-data">{% trans "Your data" %}</h2>
+  <div class="card shadow-sm"><div class="card-body">
+    <p class="small mb-2">{% trans "Download everything your organization has in NyumbaPMS as one ZIP: a spreadsheet (CSV) for each kind of record and every uploaded file. Passwords and payment credentials are left out." %}</p>
+    <p class="small text-muted">{% trans "We put it together in the background and text you when it is ready, usually within a few minutes. Only you can download it, while signed in, and the link expires. It holds your tenants' personal data, so keep it safe. Everyone who manages the organization gets an SMS when you ask for it." %}</p>
+    <form method="post" action="{% url 'accounts:organization_export' %}">{% csrf_token %}
+      <button class="btn btn-outline-primary">{% trans "Download all my data" %}</button>
+    </form>
+    {% include "accounts/_data_exports.html" with download="accounts:organization_export_download" %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}
