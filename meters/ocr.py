@@ -80,7 +80,9 @@ def used(org: Organization, today: datetime.date | None = None) -> int:
 
 
 def available(org: Organization) -> bool:
-    return client.can_read_images() and limit(org) > 0
+    from subscriptions import services as billing
+
+    return client.can_read_images() and limit(org) > 0 and not billing.blocked(org, "scans")
 
 
 def summary(org: Organization, today: datetime.date | None = None) -> dict:
@@ -92,7 +94,7 @@ def summary(org: Organization, today: datetime.date | None = None) -> dict:
     return {"available": available(org), "used": n, "limit": cap, "left": max(0, cap - n),
             "percent": min(100, round(n * 100 / cap)) if cap else 0,
             "notebook": by_kind.get(Scan.Kind.NOTEBOOK, 0), "bill": by_kind.get(Scan.Kind.BILL, 0),
-            "sheet": by_kind.get(Scan.Kind.SHEET, 0)}
+            "sheet": by_kind.get(Scan.Kind.SHEET, 0), "statement": by_kind.get(Scan.Kind.STATEMENT, 0)}
 
 
 def left(org: Organization) -> int:
@@ -104,13 +106,18 @@ def left(org: Organization) -> int:
 # ---------------------------------------------------------------------------
 
 
-def read_photo(actor: Membership, kind: str, prop, upload, instructions: str, schema: dict) -> tuple[dict, Scan]:
+def read_photo(actor: Membership, kind: str, prop, upload, instructions: str, schema: dict, *,
+               long_side: int = photos.LONG_SIDE, max_tokens: int = MAX_TOKENS) -> tuple[dict, Scan]:
     """Sends the photo and returns (what the model read, the unsaved scan), or raises ValidationError."""
     org = actor.organization
+    from subscriptions import services as billing
+
+    if billing.blocked(org, "scans"):
+        raise ValidationError(billing.blocked_message())
     if not available(org):
         raise ValidationError(_("Reading photos is not available."))
     try:
-        image, _w, _h = photos.process(upload)
+        image, _w, _h = photos.process(upload, long_side)
     except ValidationError as exc:
         raise ValidationError(" ".join(exc.messages)) from None
     scan = Scan(organization=org, user=actor.user, property=prop, kind=kind, model=settings.SCAN_MODEL)
@@ -121,7 +128,7 @@ def read_photo(actor: Membership, kind: str, prop, upload, instructions: str, sc
                                 "start again on the 1st.") % {"n": limit(org)})
     try:
         result = client.get_client().read_image(instructions=instructions, image=image.read(), schema=schema,
-                                                max_tokens=MAX_TOKENS)
+                                                max_tokens=max_tokens)
     except client.AssistantError:
         scan.status = Scan.Status.FAILED
         scan.save()

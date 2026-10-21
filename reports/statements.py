@@ -79,13 +79,14 @@ class Line:
     tenant: str = ""
     billed: Decimal = ZERO
     rent: Decimal = ZERO  # rent collected, with money not yet applied to an invoice
-    other: Decimal = ZERO
+    utilities: Decimal = ZERO  # water and electricity collected
+    other: Decimal = ZERO  # other charges collected
     deposit: Decimal = ZERO
     balance: Decimal = ZERO
 
     @property
     def collected(self) -> Decimal:
-        return self.rent + self.other
+        return self.rent + self.utilities + self.other
 
 
 @dataclass
@@ -111,6 +112,10 @@ class Block:
     @property
     def rent(self):
         return self._sum("rent")
+
+    @property
+    def utilities(self):
+        return self._sum("utilities")
 
     @property
     def other(self):
@@ -198,6 +203,10 @@ class Statement:
     @property
     def rent(self):
         return self._sum("rent")
+
+    @property
+    def utilities(self):
+        return self._sum("utilities")
 
     @property
     def other(self):
@@ -337,6 +346,7 @@ def build(org: Organization, owner: PropertyOwner | None, props, month: datetime
         part = _split(p, shares)
         row = line(p.lease_id)
         row.rent += part.rent + part.unapplied
+        row.utilities += part.utilities
         row.other += part.other
         row.deposit += part.deposit
 

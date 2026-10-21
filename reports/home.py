@@ -9,8 +9,9 @@ matches what the page then lists.
 import datetime
 import functools
 from dataclasses import dataclass, field
+from decimal import Decimal
 
-from django.db.models import Prefetch
+from django.db.models import Count, F, Prefetch, Sum
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import ngettext
@@ -19,6 +20,7 @@ from accounts.models import Membership
 from accounts.permissions import can
 from billing import followups, late_fees
 from billing import selectors as billing_selectors
+from billing.models import Invoice
 from documents import services as document_services
 from expenses import services as expense_services
 from inspections.models import ConditionReport
@@ -41,6 +43,13 @@ SHORT_LIST = 5
 TREND_MIN = 6
 # How far ahead a move-out under notice becomes a home task.
 MOVE_OUT_WITHIN_DAYS = 14
+# How far ahead "rent due soon" looks.
+DUE_SOON_DAYS = 7
+# A vacant unit is flagged once it stood empty this many days in the last 12 months; rent is "late for months in a
+# row" when each of the last LATE_RUN billed months was paid late, part paid or not paid.
+EMPTY_FLAG_DAYS = 60
+LATE_RUN = 3
+NUDGE_NAMES = 3
 
 # (icon, urgent) for each task key: urgent ones are drawn in the late colour and listed first (D-153).
 TASK_LOOK = {
@@ -91,6 +100,16 @@ class Home:
     trend: list[metrics.MonthFigures] = field(default_factory=list)
     # False until anything has been billed or paid: a new account sees its setup steps, not rows of KES 0.00.
     started: bool = False
+    # Rent falling due in the next DUE_SOON_DAYS days: (invoices, still unpaid), for those who may open invoices.
+    due_soon: tuple[int, object] | None = None
+    # Empty units and the asking rent they stand for; cash received this month by method (both only with the figures).
+    vacancy: metrics.VacancyLoss | None = None
+    methods: list[metrics.MethodTotal] = field(default_factory=list)
+    # Cash received so far this month against the same days of last month: (this, last, label of the days).
+    pace: tuple[Decimal, Decimal, str] | None = None
+    # Cash received this month less approved expenses paid in it: (cash, expenses). Needs expenses.view.
+    net: tuple[Decimal, Decimal] | None = None
+    nudges: list[dict] = field(default_factory=list)
 
     @property
     def has_work(self) -> bool:
@@ -262,6 +281,69 @@ def _recent_payments(m: Membership) -> list:
                 .order_by("-paid_at", "-confirmed_at", "-pk")[:SHORT_LIST])
 
 
+def _due_soon(m: Membership, today: datetime.date):
+    """Open invoices falling due in the coming week and not yet overdue: (count, amount still unpaid)."""
+    if not can(m, "invoices.view"):
+        return None
+    agg = (billing_selectors.visible_invoices(m)
+           .filter(status__in=Invoice.OPEN, due_date__gte=today, due_date__lte=today + datetime.timedelta(days=DUE_SOON_DAYS),
+                   overdue_after__gte=today)
+           .order_by().aggregate(n=Count("pk"), owed=Sum(F("total") - F("amount_paid"))))
+    return agg["n"] or 0, agg["owed"] or Decimal("0")
+
+
+def _pace(board: metrics.Dashboard, today: datetime.date) -> tuple[Decimal, Decimal, str] | None:
+    """Cash so far this month against the same days of last month, so a part-way month is not judged on a full one."""
+    if not board.is_current_month:
+        return None
+    last_month = metrics.add_months(board.month, -1)
+    days = min(today.day, metrics.month_end(last_month).day)
+    sc = board.scope
+
+    def cash(first, last):
+        return metrics._confirmed_payments(sc, first, last).aggregate(s=Sum("amount"))["s"] or Decimal("0")
+
+    label = f"1–{days} {last_month:%b}" if days > 1 else f"1 {last_month:%b}"
+    return (cash(board.month, today), cash(last_month, last_month + datetime.timedelta(days=days - 1)), label)
+
+
+def _net(m: Membership, board: metrics.Dashboard) -> tuple[Decimal, Decimal] | None:
+    if not can(m, "expenses.view"):
+        return None
+    spent = expense_services.approved(m.organization, board.scope.properties(), board.month,
+                                      metrics.month_end(board.month)).aggregate(s=Sum("amount"))["s"] or Decimal("0")
+    return board.current.cash, spent
+
+
+def nudges(membership: Membership, board: metrics.Dashboard) -> list[dict]:
+    """Units worth a look, from the unit-by-unit report: long empty, or rent late month after month.
+
+    Each is {key, count, units (a few codes), days, url}; none when nothing stands out, so a healthy portfolio
+    shows nothing.
+    """
+    from core import reportcache
+    from reports import units
+
+    report = reportcache.cached(membership, "units", (None,), lambda: units.unit_report(membership, today=board.day))
+    long_empty = sorted((r for r in report.rows if r.status == "vacant" and r.empty_days >= EMPTY_FLAG_DAYS),
+                        key=lambda r: -r.empty_days)
+    bad = {units.LATE, units.PART, units.UNPAID}
+    repeat_late = []
+    for r in report.rows:
+        billed = [c.state for c in r.cells if c.state not in (units.NONE, units.DUE)]
+        if r.status == "occupied" and len(billed) >= LATE_RUN and all(s in bad for s in billed[-LATE_RUN:]):
+            repeat_late.append(r)
+    url = reverse("reports:units") if can(membership, "dashboard.view_financial") else None
+    out = []
+    if long_empty:
+        out.append({"key": "long_empty", "count": len(long_empty), "days": EMPTY_FLAG_DAYS, "url": url,
+                    "units": [f"{r.unit.code}, {r.unit.property.name}" for r in long_empty[:NUDGE_NAMES]]})
+    if repeat_late:
+        out.append({"key": "repeat_late", "count": len(repeat_late), "days": LATE_RUN, "url": url,
+                    "units": [f"{r.unit.code}, {r.unit.property.name}" for r in repeat_late[:NUDGE_NAMES]]})
+    return out
+
+
 def home(membership: Membership, today: datetime.date | None = None) -> Home:
     today = today or timezone.localdate()
     out = Home()
@@ -290,6 +372,12 @@ def home(membership: Membership, today: datetime.date | None = None) -> Home:
             out.collection = [row for row in metrics.collection_by_property(board.scope, board.month)
                               if row.expected][:SHORT_LIST]
         out.payments = _recent_payments(membership)
+        out.due_soon = _due_soon(membership, today)
+        out.vacancy = metrics.vacancy_loss(board.scope, board.day)
+        out.pace = _pace(board, today)
+        out.net = _net(membership, board)
+        out.nudges = nudges(membership, board)
+        out.methods = metrics.cash_by_method(board.scope, board.month)
         used = [i for i, f in enumerate(board.trend) if f.expected or f.collected]
         out.started = bool(used or board.arrears.total or out.payments or board.occupancy.occupied)
         out.trend = board.trend[min(used[0], len(board.trend) - TREND_MIN):] if used else []

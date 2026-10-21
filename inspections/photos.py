@@ -18,7 +18,7 @@ LONG_SIDE = 1600
 JPEG_QUALITY = 82
 
 
-def process(upload) -> tuple[ContentFile, int, int]:
+def process(upload, long_side: int = LONG_SIDE) -> tuple[ContentFile, int, int]:
     """Returns (file, width, height) ready for ConditionPhoto.image, or raises ValidationError."""
     if upload is None:
         raise ValidationError({"image": _("Choose a photo.")})
@@ -36,7 +36,7 @@ def process(upload) -> tuple[ContentFile, int, int]:
                 img = flat
             elif img.mode != "RGB":
                 img = img.convert("RGB")
-            img.thumbnail((LONG_SIDE, LONG_SIDE))
+            img.thumbnail((long_side, long_side))
             out = io.BytesIO()
             img.save(out, "JPEG", quality=JPEG_QUALITY, optimize=True)
             width, height = img.size

@@ -58,3 +58,11 @@ def test_meters_the_landlord_pays_and_prepaid_ones_are_left_out(owner, prop):
     make_meter(owner, prop, [a1], label="Free", payer="LANDLORD")
     make_meter(owner, prop, [a2], label="Token", kind="PREPAID")
     assert reminders.unread_this_month(prop, D(2026, 3, 26)) == []
+
+
+def test_a_read_only_organization_gets_no_reminders(owner, prop, rooms):
+    from accounts.models import Organization
+
+    Organization.objects.filter(pk=owner.organization_id).update(status=Organization.Status.READ_ONLY)
+    assert reminders.run_daily(D(2026, 3, 26)) == {"meter_reminders": 0}
+    assert not sent().exists()

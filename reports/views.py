@@ -5,6 +5,8 @@ Thin views; reports.metrics and reports.income do the work.
 """
 
 
+import copy
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import FileResponse, Http404, HttpResponse
@@ -18,7 +20,9 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from audit import services as audit
 from billing import selectors as billing_selectors
-from core import charts, exports, reportcache
+from core import charts, exports, ratelimit, reportcache
+from core.money import format_money
+from core.net import client_ip
 from properties.models import Property
 
 from . import (
@@ -29,6 +33,7 @@ from . import (
     income,
     insights,
     metrics,
+    monthly,
     owners,
     patterns,
     snapshots,
@@ -68,6 +73,32 @@ def _dashboard(request):
 def _pct(value) -> str:
     return "" if value is None else f"{value * 100:.1f}"
 
+
+class MonthlyReportStopView(View):
+    """The link at the foot of the monthly report email: stops it for that member (D-194)."""
+
+    def _member(self, request, token):
+        if not ratelimit.hit(f"monthly_stop:ip:{client_ip(request)}", 30, 60):
+            return None, HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        member = monthly.membership_for_token(token)
+        if member is None:
+            return None, render(request, "reports/monthly_stop.html", {"unknown": True}, status=404)
+        return member, None
+
+    def get(self, request, token):
+        member, error = self._member(request, token)
+        return error or render(request, "reports/monthly_stop.html", {
+            "organization": member.organization.display_name, "stopped": not member.monthly_report})
+
+    def post(self, request, token):
+        member, error = self._member(request, token)
+        if error:
+            return error
+        if member.monthly_report:
+            member.monthly_report = False
+            member.save(update_fields=["monthly_report"])
+        return render(request, "reports/monthly_stop.html", {
+            "organization": member.organization.display_name, "stopped": True, "done": True})
 
 class DashboardView(CapabilityRequiredMixin, View):
     template_name = "reports/dashboard.html"
@@ -264,14 +295,17 @@ class IncomeView(CapabilityRequiredMixin, View):
 
 
 def _income_charts(pack) -> dict | None:
-    """What came in each month (rent, and the rest: other charges, deposits, not yet applied) against the rent
+    """What came in each month (rent, utilities, and the rest: other charges, deposits, not yet applied) against the rent
     billed, and rent by property (D-114). None when nothing was billed or received in the year."""
-    if not (pack.total.received or pack.total.rent_billed or pack.total.other_billed):
+    if not (pack.total.received or pack.total.rent_billed or pack.total.utilities_billed
+            or pack.total.other_billed):
         return None
     cur = pack.currency
     specs = {"months": charts.chart("bar", [f"{r.key:%b}" for r in pack.months], [
         charts.series(_("Rent received"), [r.rent_received for r in pack.months], "1"),
-        charts.series(_("Other money received"), [r.received - r.rent_received for r in pack.months], "2"),
+        charts.series(_("Utilities received"), [r.utilities_received for r in pack.months], "2"),
+        charts.series(_("Other money received"),
+                      [r.received - r.rent_received - r.utilities_received for r in pack.months], "3"),
         charts.series(_("Rent billed"), [r.rent_billed for r in pack.months], "4", type="line"),
     ], stacked=True, currency=cur, total=_("Received"))}
     places = sorted((r for r in pack.properties if r.rent_received or r.rent_billed),
@@ -333,13 +367,14 @@ class IncomeExportView(CapabilityRequiredMixin, View):
         writer.writerow([str(income.DISCLAIMER)])
         return response
 
-    MONEY_HEADER = ["Rent billed", "Other charges billed", "Received", "Rent received", "Other charges received",
-                    "Deposits received", "Not yet applied", "Taxable rent"]
+    MONEY_HEADER = ["Rent billed", "Utilities billed", "Other charges billed", "Received", "Rent received",
+                    "Utilities received", "Other charges received", "Deposits received", "Not yet applied",
+                    "Taxable rent"]
 
     @staticmethod
     def _money(row):
-        return [row.rent_billed, row.other_billed, row.received, row.rent_received, row.other_received,
-                row.deposit_received, row.unapplied, row.taxable]
+        return [row.rent_billed, row.utilities_billed, row.other_billed, row.received, row.rent_received,
+                row.utilities_received, row.other_received, row.deposit_received, row.unapplied, row.taxable]
 
     def _months(self, pack):
         yield ["Month", *self.MONEY_HEADER, "Rate", "Tax estimate"]
@@ -355,13 +390,13 @@ class IncomeExportView(CapabilityRequiredMixin, View):
 
     def _receipts(self, pack):
         yield ["Date paid", "Receipt", "Tenant", "Property", "Unit", "Method", "Reference", "Amount", "Rent",
-               "Other charges", "Deposit", "Not yet applied"]
+               "Utilities", "Other charges", "Deposit", "Not yet applied"]
         for part in pack.receipts:
             p = part.payment
             receipt = getattr(p, "receipt", None)
             yield [p.paid_at.isoformat(), receipt.number if receipt else "", p.tenant.name if p.tenant else "",
                    p.lease.unit.property.name, p.lease.unit.code, p.get_method_display(), p.reference, p.amount,
-                   part.rent, part.other, part.deposit, part.unapplied]
+                   part.rent, part.utilities, part.other, part.deposit, part.unapplied]
 
 
 # ---------------------------------------------------------------------------
@@ -649,12 +684,12 @@ class ProfitLossView(_FinanceView):
         return {"expense_slices": charts.fold(report.expense_categories, _("Other"))}
 
     def csv_rows(self, report):
-        yield ["Month", "Rent collected", "Other charges collected", "Not yet applied", "Income", "Expenses",
+        yield ["Month", "Rent collected", "Utilities collected", "Other charges collected", "Not yet applied", "Income", "Expenses",
                "Net operating income", "Rent billed", "Collection rate %", "Deposits received (not income)",
                "Expenses % of income", "Margin %"]
         for row in [*report.months, report.total]:
-            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.unapplied,
-                   row.income, row.expenses, row.noi, row.rent_billed, _pct(row.collection_rate), row.deposits,
+            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.utilities, row.other,
+                   row.unapplied, row.income, row.expenses, row.noi, row.rent_billed, _pct(row.collection_rate), row.deposits,
                    _pct(row.expense_ratio), _pct(row.margin)]
         if report.by_property:
             yield []
@@ -681,6 +716,75 @@ class ProfitLossView(_FinanceView):
         return specs
 
 
+class MonthOnMonthView(_FinanceView):
+    """Each month against the month before it: income, expenses, what was left, and how much of the rent billed
+    was collected. The same figures as the profit and loss, read as a change from one month to the next."""
+
+    template_name = "reports/month_on_month.html"
+    slug = "month-on-month"
+    FIGURES = ("rent_billed", "income", "expenses", "noi", "collection_rate")
+
+    def build(self, request, prop, *, compare=False):
+        # One extra month at the front, so the first month shown also has a month before it to compare with.
+        report = super().build(request, prop, compare=False)
+        today = timezone.localdate()
+        start, end = finance.period(request.GET.get("from", ""), request.GET.get("to", ""), today)
+        m = request.membership
+        first = metrics.add_months(start, -1)
+        wide = reportcache.cached(m, "money", (first, end, prop and prop.pk, False),
+                                  lambda: finance.money_report(m, first, end, prop))
+        report = copy.copy(report)  # the cached report is shared; keep the extra month on our own copy
+        report.lead = wide.months[0]
+        return report
+
+    def extra_context(self, report):
+        prior, rows = report.lead, []
+        for row in report.months:
+            changes = {}
+            for name in self.FIGURES:
+                changes[name] = metrics.Change(getattr(row, name), getattr(prior, name), prior.label)
+            rows.append((row, changes))
+            prior = row
+        return {"rows": rows, "lead": report.lead, "notes": self._notes(report, rows)}
+
+    @staticmethod
+    def _notes(report, rows) -> list:
+        """Best and worst month for what was left, and whether income is rising: read off the rows shown."""
+        from . import insights
+        cur, out = report.currency, []
+        if len(rows) < 2:
+            return out
+        months = [r for r, _c in rows]
+        best, worst = max(months, key=lambda r: r.noi), min(months, key=lambda r: r.noi)
+        if best.noi != worst.noi:
+            out.append(insights.Highlight(insights.GOOD, _("%(m)s left the most: %(amount)s.")
+                                          % {"m": best.label, "amount": format_money(best.noi, cur)}))
+            out.append(insights.Highlight(insights.BAD if worst.noi < 0 else insights.NOTE,
+                                          _("%(m)s left the least: %(amount)s.")
+                                          % {"m": worst.label, "amount": format_money(worst.noi, cur)}))
+        rises = sum(1 for _r, c in rows if c["income"].delta > 0)
+        out.append(insights.Highlight(insights.NOTE, _("Income rose in %(a)s of %(b)s months.")
+                                      % {"a": rises, "b": len(rows)}))
+        return out
+
+    def charts(self, report):
+        cur, months = report.currency, report.months
+        if len(months) < 2:
+            return {}
+        return {"months": charts.chart("bar", [r.label for r in months], [
+            charts.series(_("Income"), [r.income for r in months], "1"),
+            charts.series(_("Expenses"), [r.expenses for r in months], "2"),
+            charts.series(_("Net operating income"), [r.noi for r in months], "3", type="line"),
+        ], currency=cur)}
+
+    def csv_rows(self, report):
+        yield ["Month", "Rent billed", "Income", "Change in income %", "Expenses", "Change in expenses %",
+               "Net operating income", "Change in net operating income %", "Collection rate %"]
+        for row, ch in self.extra_context(report)["rows"]:
+            yield [row.key.strftime("%Y-%m"), row.rent_billed, row.income, _pct(ch["income"].ratio), row.expenses,
+                   _pct(ch["expenses"].ratio), row.noi, _pct(ch["noi"].ratio), _pct(row.collection_rate)]
+
+
 class CashFlowView(_FinanceView):
     template_name = "reports/cash_flow.html"
     slug = "cash-flow"
@@ -688,15 +792,16 @@ class CashFlowView(_FinanceView):
     def extra_context(self, report):
         t = report.total
         # (label, amount, chart colour), in the doughnut's order (D-114).
-        return {"money_in_parts": [(_("Rent"), t.rent, "1"), (_("Other charges"), t.other, "2"),
-                                   (_("Deposits"), t.deposits, "3"), (_("Not yet applied"), t.unapplied, "4")]}
+        return {"money_in_parts": [(_("Rent"), t.rent, "1"), (_("Utilities"), t.utilities, "2"),
+                                   (_("Other charges"), t.other, "3"), (_("Deposits"), t.deposits, "4"),
+                                   (_("Not yet applied"), t.unapplied, "5")]}
 
     def csv_rows(self, report):
-        yield ["Month", "Rent", "Other charges", "Deposits", "Not yet applied", "Money in", "Expenses",
+        yield ["Month", "Rent", "Utilities", "Other charges", "Deposits", "Not yet applied", "Money in", "Expenses",
                "Deposit refunds", "Payments to owners", "Money out", "Net cash"]
         for row in [*report.months, report.total]:
-            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.other, row.deposits,
-                   row.unapplied, row.money_in, row.expenses, row.refunds,
+            yield [row.key.strftime("%Y-%m") if row.key else row.label, row.rent, row.utilities, row.other,
+                   row.deposits, row.unapplied, row.money_in, row.expenses, row.refunds,
                    row.owner_payments if report.whole_organization else "", row.money_out, row.net]
         if report.by_property:
             yield []
@@ -858,6 +963,56 @@ class UnitsView(CapabilityRequiredMixin, View):
         writer.writerow(["Days", "Payments", "Amount", "Share %"])
         for p in report.pay_days:
             writer.writerow([p.label, p.count, p.amount, _pct(p.share)])
+        return response
+
+
+# ---------------------------------------------------------------------------
+# Hostel (D-192)
+# ---------------------------------------------------------------------------
+
+
+class HostelReportView(CapabilityRequiredMixin, View):
+    template_name = "reports/hostel.html"
+    required_capability = "reports.view_financial"
+
+    def get(self, request):
+        from . import hostel
+
+        m = request.membership
+        if m.organization.org_type != "HOSTEL":
+            raise Http404
+        prop, choices = _finance_filters(request)
+        rows = hostel.hostel_report(m, prop)
+        names = can(m, "tenants.view")
+        if request.GET.get("format") == "csv":
+            if not can(m, "reports.export"):
+                raise PermissionDenied("reports.export")
+            return self.csv(rows, names)
+        query = request.GET.copy()
+        query["format"] = "csv"
+        return render(request, self.template_name, {
+            "rows": rows, "properties": choices, "selected": prop, "many_properties": len(choices) > 1,
+            "show_names": names, "can_export": can(m, "reports.export"), "csv_query": query.urlencode(),
+            "currency": getattr(m.organization, "currency", "KES"), "ending_within": hostel.ENDING_WITHIN,
+        })
+
+    @staticmethod
+    def csv(rows, names: bool) -> HttpResponse:
+        response = _csv_response(f"hostel-{timezone.localdate().isoformat()}.csv")
+        writer = exports.writer(response)
+        writer.writerow(["Hostel", "Rooms", "Beds", "Taken", "Free", "Occupancy %", "Billed this term",
+                         "Paid this term", "Collection %", "Overdue", "Waiting", "Can be offered now"])
+        for r in rows:
+            writer.writerow([r.prop.name, r.rooms, r.beds, r.taken, r.free, _pct(r.occupancy), r.billed, r.paid,
+                             _pct(r.rate), r.owed, r.waiting_total, r.ready])
+        for r in rows:
+            writer.writerow([])
+            writer.writerow([f"{r.prop.name}: overdue"])
+            writer.writerow(["Student", "Parent or guardian", "Guardian phone", "Bed or room", "Invoice", "Due",
+                             "Owed", "Days late"])
+            for o in r.owing:
+                writer.writerow([o.student if names else "", o.guardian if names else "",
+                                 o.guardian_phone if names else "", o.unit, o.invoice, o.due, o.owed, o.days_late])
         return response
 
 

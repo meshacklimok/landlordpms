@@ -689,6 +689,8 @@ class WaterSessionView(CapabilityRequiredMixin, View):
             "counts": current.counts, **_months_around(month, today),
             "can_record": can(m, "meters.record", prop), "can_manage": can(m, "meters.manage", prop),
             "can_approve": can(m, "meters.approve", prop),
+            # The next meter still to read this month, for the big "Read next" button on a phone.
+            "next_to_read": current.to_read[0] if month == today.replace(day=1) and current.to_read else None,
             "scans": ocr.available(org) and can(m, "meters.record", prop),
             "has_meters": Meter.objects.filter(property=prop, utility=Meter.Utility.WATER).exists()})
 

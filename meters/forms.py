@@ -3,7 +3,7 @@ from django.utils.translation import gettext_lazy as _
 
 from billing.forms import DateInput
 
-from .models import Meter
+from .models import Meter, WaterPlan
 
 
 class MeterForm(forms.Form):
@@ -33,6 +33,12 @@ class MeterForm(forms.Form):
     vacant_share = forms.ChoiceField(label=_("Empty rooms on a shared meter"), choices=Meter.VacantShare.choices,
                                      initial=Meter.VacantShare.OCCUPIED, required=False)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # A prepaid meter is not billed, so its price, minimum and payer are not asked (ui.js reads show_when).
+        for name in ("rate", "minimum_charge", "payer"):
+            self.fields[name].show_when = f"kind:{Meter.Kind.POSTPAID}"
+
     def clean_payer(self):
         return self.cleaned_data.get("payer") or Meter.Payer.TENANTS
 
@@ -58,3 +64,15 @@ class RoundDateForm(forms.Form):
 
 class RejectForm(forms.Form):
     reason = forms.CharField(label=_("Why is it rejected?"), max_length=300)
+
+
+class WaterPlanForm(forms.Form):
+    """How a property charges for water (D-157). Each unit's own amount is posted as amount-<pk> boxes."""
+
+    method = forms.ChoiceField(label=_("Water is charged"), choices=WaterPlan.Method.choices,
+                               initial=WaterPlan.Method.METERED)
+    flat_amount = forms.CharField(label=_("Flat amount a month (KES)"), max_length=14, required=False,
+                                  help_text=_("What each let unit pays for water. A unit can have its own amount below."))
+    approve_clean = forms.BooleanField(label=_("Approve clean readings at once"), required=False,
+                                       help_text=_("A reading with no flag, recorded by someone who may approve, is "
+                                                   "approved as it is saved."))

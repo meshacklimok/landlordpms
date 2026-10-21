@@ -1,7 +1,7 @@
 """The reporting period shared by the report pages (D-132): a preset or a custom range of days.
 
 ?period=this_month|last_month|this_quarter|last_quarter|this_year|last_year|custom; custom reads ?from= and ?to=
-as dates. Missing or unreadable: this month. Always at most MAX_DAYS long and never the wrong way round.
+as dates. The year and the quarters start at the organization's financial year month (D-199). Missing or unreadable: this month. Always at most MAX_DAYS long and never the wrong way round.
 """
 
 import datetime
@@ -53,8 +53,16 @@ class Period:
         return {"period": self.key}
 
 
-def _quarter_start(day: datetime.date) -> datetime.date:
-    return datetime.date(day.year, 3 * ((day.month - 1) // 3) + 1, 1)
+def year_start(day: datetime.date, first_month: int = 1) -> datetime.date:
+    """First day of the financial year `day` falls in, when the year starts in `first_month` (1 is January)."""
+    return datetime.date(day.year if day.month >= first_month else day.year - 1, first_month, 1)
+
+
+def _quarter_start(day: datetime.date, first_month: int = 1) -> datetime.date:
+    """Quarters count from the start of the financial year."""
+    start = year_start(day, first_month)
+    months = (day.year - start.year) * 12 + day.month - start.month
+    return add_months(start, 3 * (months // 3))
 
 
 def _date(value: str | None) -> datetime.date | None:
@@ -64,26 +72,27 @@ def _date(value: str | None) -> datetime.date | None:
         return None
 
 
-def preset(key: str, today: datetime.date) -> Period | None:
+def preset(key: str, today: datetime.date, first_month: int = 1) -> Period | None:
     if key == "this_month":
         return Period(key, month_start(today), month_end(today))
     if key == "last_month":
         first = add_months(month_start(today), -1)
         return Period(key, first, month_end(first))
     if key == "this_quarter":
-        first = _quarter_start(today)
+        first = _quarter_start(today, first_month)
         return Period(key, first, month_end(add_months(first, 2)))
     if key == "last_quarter":
-        first = add_months(_quarter_start(today), -3)
+        first = add_months(_quarter_start(today, first_month), -3)
         return Period(key, first, month_end(add_months(first, 2)))
-    if key == "this_year":
-        return Period(key, datetime.date(today.year, 1, 1), datetime.date(today.year, 12, 31))
-    if key == "last_year":
-        return Period(key, datetime.date(today.year - 1, 1, 1), datetime.date(today.year - 1, 12, 31))
+    if key in ("this_year", "last_year"):
+        first = year_start(today, first_month)
+        if key == "last_year":
+            first = add_months(first, -12)
+        return Period(key, first, month_end(add_months(first, 11)))
     return None
 
 
-def from_request(params, today: datetime.date) -> Period:
+def from_request(params, today: datetime.date, first_month: int = 1) -> Period:
     key = (params.get("period") or "").strip()
     if key == "custom":
         start, end = _date(params.get("from")), _date(params.get("to"))
@@ -93,4 +102,4 @@ def from_request(params, today: datetime.date) -> Period:
             if (end - start).days + 1 > MAX_DAYS:
                 start = end - datetime.timedelta(days=MAX_DAYS - 1)
             return Period("custom", start, end)
-    return preset(key, today) or preset("this_month", today)
+    return preset(key, today, first_month) or preset("this_month", today)

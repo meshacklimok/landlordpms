@@ -4,8 +4,8 @@ from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from django.core.exceptions import PermissionDenied
-from django.http import Http404
-from django.shortcuts import render
+from django.http import Http404, HttpResponse
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -15,31 +15,44 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from accounts.portfolio import agency_tools
 from audit import services as audit
+from billing import selectors as billing_selectors
+from billing.models import LedgerEntry
 from core import charts, exports
+from leases.models import Lease
+from leases.services import visible_leases
+from payments.models import Payment
 
 from . import (
     behaviour,
     deposit_report,
+    expense_report,
     metrics,
     operations,
     outlook,
     performance,
     periods,
+    profitability,
     report_notes,
     scorecard,
     xlsx,
 )
+from .pdf import render_tenant_statement
 from .views import _csv_response, _finance_filters, _pct
+
+PAYMENT_PAGE_LIMIT = 200  # payments listed on the page; the download has them all
 
 
 def _period_context(request, prop):
     """The period chosen, and what the filter form and the links between pages need."""
     today = timezone.localdate()
-    period = periods.from_request(request.GET, today)
+    period = periods.from_request(request.GET, today, request.organization.financial_year_start_month)
     carry = dict(period.query())
     if prop is not None:
         carry["property"] = str(prop.public_id)
     return period, {"period": period, "presets": periods.PRESETS, "carry": carry, "today": today}
+
+
+from .pane import report_icon  # noqa: E402
 
 
 def report_groups(m) -> list:
@@ -50,7 +63,7 @@ def report_groups(m) -> list:
     financial = can(m, "reports.view_financial")
     # Fees and owner statements are for those who manage other people's property (D-150).
     owners = financial and agency_tools(m.organization)
-    return [
+    groups = [
         (_("Executive summary"), [
             ("reports:dashboard", _("Dashboard"), _("Rent, collections, arrears, occupancy and profit this month."),
              can(m, "dashboard.view_financial")),
@@ -58,6 +71,8 @@ def report_groups(m) -> list:
         (_("Rent and collections"), [
             ("reports:income", _("Rental income pack"), _("Rent received by month and property, for tax."),
              financial),
+            ("reports:month_on_month", _("Month on month"),
+             _("Each month against the one before: income, expenses, profit and collection."), financial),
             ("reports:units", _("Unit by unit"), _("Which units pay in time, and which stand empty."), financial),
             ("reports:outlook", _("Rent outlook"),
              _("Rent the leases say is due over the next six months, what ends, and what to expect to collect."),
@@ -69,6 +84,9 @@ def report_groups(m) -> list:
             ("reports:arrears", _("Arrears analysis"),
              _("Who owes, how late, who pays late again and again, and how much was recovered."),
              financial and can(m, "invoices.view")),
+            ("reports:tenant_statement", _("Tenant statement"),
+             _("Everything charged to and paid by one tenant, with the running balance."),
+             can(m, "invoices.view")),
         ]),
         (_("Properties and deposits"), [
             ("reports:scorecard", _("Property scorecard"),
@@ -80,6 +98,11 @@ def report_groups(m) -> list:
              _("Held, taken, returned and deducted, and deposits to settle on ended leases."), financial),
         ]),
         (_("Expenses and profit"), [
+            ("reports:expenses", _("Expenses report"),
+             _("What was spent, by category, property, supplier and month."), financial),
+            ("reports:profitability", _("True profitability"),
+             _("Rent, utilities and every cost of running each property, down to net operating income and what is still owed."),
+             financial),
             ("reports:profit_loss", _("Profit and loss"), _("Income, expenses and net operating income."),
              financial),
             ("reports:cash_flow", _("Cash flow"), _("Money in and out by month."), financial),
@@ -88,7 +111,7 @@ def report_groups(m) -> list:
         ]),
         (_("Payment transactions"), [
             ("reports:payments", _("Payments received"),
-             _("Confirmed, waiting, reversed and rejected payments, by method and account."),
+             _("Confirmed, waiting, reversed and rejected payments, by method and account, and each payment."),
              can(m, "payments.view")),
         ]),
         (_("Tenants and leases"), [
@@ -111,6 +134,23 @@ def report_groups(m) -> list:
              can(m, "reports.export")),
         ]),
     ]
+    if m.organization.org_type == "HOSTEL":  # D-192
+        groups[1][1].insert(3, ("reports:hostel", _("Hostel"),
+                                _("Beds taken and free, the term's collection, parents who owe, and the waitlist."),
+                                financial))
+    return groups
+
+
+class ReportPrintAllView(CapabilityRequiredMixin, View):
+    """Every report the member may open, one after another, to print or save as a single PDF."""
+
+    template_name = "reports/print_all.html"
+    required_capability = "reports.view_basic"
+
+    def get(self, request):
+        reports = [{"key": name.split(":", 1)[1], "url": reverse(name), "label": str(label), "group": str(title)}
+                   for title, items in report_groups(request.membership) for name, label, _text, ok in items if ok]
+        return render(request, self.template_name, {"reports": reports, "today": timezone.localdate()})
 
 
 class ReportCentreView(CapabilityRequiredMixin, View):
@@ -127,7 +167,8 @@ class ReportCentreView(CapabilityRequiredMixin, View):
         # The reader (D-148): every report the member may open, in order, read one at a time beside the list.
         # ?r= names the one on show by its address name without "reports:" (e.g. "arrears"); otherwise the first.
         reports = [{"key": name.split(":", 1)[1], "url": reverse(name), "label": str(label), "text": str(text),
-                    "group": str(title), "facts": facts.get(name, [])}
+                    "group": str(title), "facts": facts.get(name, []),
+                    "icon": report_icon(name.split(":", 1)[1])}
                    for title, items in groups for name, label, text, ok in items if ok]
         groups = [(title, [r for r in reports if r["group"] == str(title)]) for title, _items in groups]
         groups = [g for g in groups if g[1]]
@@ -300,6 +341,7 @@ class PaymentsReportView(_OperationsView):
     slug = "payments"
 
     def build(self, request, period, prop):
+        self.show_tenants = can(request.membership, "tenants.view")
         return operations.payments(request.membership, period.start, period.end, prop)
 
     def context(self, request, report, prop):
@@ -322,7 +364,12 @@ class PaymentsReportView(_OperationsView):
             query["property"] = str(prop.public_id)
         states = [(key, label, n, amount, reverse("payments:list") + "?" + urlencode({**query, "status": key}))
                   for key, label, n, amount in report.states]
-        return {"specs": specs, "states": states}
+        return {"specs": specs, "states": states, "show_tenants": self.show_tenants,
+                "shown_lines": report.lines[:PAYMENT_PAGE_LIMIT]}
+
+    @staticmethod
+    def _tenant(p) -> str:
+        return p.tenant.name if p.tenant_id else ""
 
     def csv_rows(self, report):
         rows = [["State", "Payments", "Amount"]]
@@ -334,7 +381,145 @@ class PaymentsReportView(_OperationsView):
         rows += [[], [_("Confirmed, by account")], ["Account", "Payments", "Amount"]]
         rows += [[name, n, a] for name, n, a in report.accounts]
         rows += [[], [_("Waiting for review now"), report.waiting, report.waiting_amount]]
+        show = self.show_tenants
+        head = ["Date", "Lease", "Unit", "Property"] + (["Tenant"] if show else []) + [
+            "Method", "Reference", "Account", "State", "Amount"]
+        rows += [[], [_("Every payment in the period")], head]
+        for p in report.lines:
+            rows.append([p.paid_at.isoformat(), p.lease.number, p.lease.unit.code, p.lease.unit.property.name,
+                         *([self._tenant(p)] if show else []), p.get_method_display(), p.reference,
+                         p.payment_account.display_name if p.payment_account_id else "",
+                         str(p.get_state_display()), p.amount])
         return rows
+
+
+class ExpensesReportView(_OperationsView):
+    template_name = "reports/expenses.html"
+    required_capability = "reports.view_financial"
+    slug = "expenses"
+
+    def build(self, request, period, prop):
+        return expense_report.expenses(request.membership, period.start, period.end, prop)
+
+    def context(self, request, report, prop):
+        cur = request.membership.organization.currency
+        specs = {}
+        if len(report.months) > 1:
+            specs["months"] = charts.chart("bar", [label for _m, label, _n, _a in report.months],
+                                           [charts.series(_("Spent"), [a for *_x, a in report.months], "2")],
+                                           currency=cur)
+        if report.by_category:
+            specs["categories"] = charts.doughnut(
+                _("Expenses"), charts.fold([(label, a) for label, _n, a, _s in report.by_category], _("Other")),
+                charts.SERIES, currency=cur)
+        change = None
+        if report.previous_total:
+            change = metrics.Change(report.total, report.previous_total, _("the period before"))
+        return {"specs": specs, "change": change, "shown_lines": report.lines[:expense_report.LIST_LIMIT],
+                "can_open": can(request.membership, "expenses.view")}
+
+    def csv_rows(self, report):
+        rows = []
+        for title, group in ((_("By category"), report.by_category), (_("By property"), report.by_property),
+                             (_("By supplier"), report.by_supplier), (_("By how it was paid"), report.by_method)):
+            rows += [[title], ["", "Expenses", "Amount", "Share %"]]
+            rows += [[label, n, a, _pct(share)] for label, n, a, share in group]
+            rows.append([])
+        rows += [[_("By month")], ["Month", "Expenses", "Amount"]]
+        rows += [[label, n, a] for _m, label, n, a in report.months]
+        rows += [[], [_("Every approved expense in the period")],
+                 ["Date", "Number", "Property", "Category", "Supplier", "What was paid for", "Paid by", "Reference",
+                  "Amount"]]
+        for e in report.lines:
+            rows.append([e.paid_on.isoformat(), e.number, e.property.name, e.category.name,
+                         e.supplier.name if e.supplier_id else "", e.description, e.get_method_display(),
+                         e.reference, e.amount])
+        return rows
+
+
+class TenantStatementView(CapabilityRequiredMixin, View):
+    """One tenant's account for a period: what was charged, what was paid, and the balance after each line.
+
+    Chosen by ?lease=<public id>; without one the page lists the tenants to choose from. The figures are the
+    lease account's own statement (billing.selectors.statement), so the two always agree.
+    """
+
+    template_name = "reports/tenant_statement.html"
+    required_capability = "invoices.view"
+    LEASE_LIMIT = 600
+
+    def get(self, request):
+        m = request.membership
+        today = timezone.localdate()
+        period = periods.from_request(request.GET, today, request.organization.financial_year_start_month)
+        carry = dict(period.query())
+        base = visible_leases(m, Lease.all_objects.exclude(status=Lease.Status.DRAFT))
+        base = base.select_related("unit__property").prefetch_related("lease_tenants__tenant")
+        value = request.GET.get("lease", "").strip()
+        lease = get_object_or_404(base, public_id=value) if value else None
+        choices = [] if lease else sorted(
+            base.order_by("-start_date")[:self.LEASE_LIMIT],
+            key=lambda ls: (ls.unit.property.name.lower(), ls.unit.code.lower()))
+        if lease is None:
+            return render(request, self.template_name, {"lease": None, "choices": choices, "carry": carry,
+                                                        "period": period, "presets": periods.PRESETS})
+        statement = billing_selectors.statement(lease, start=period.start, end=period.end)
+        aging = self._aging(lease, today)
+        last_payment = (Payment.objects.filter(lease=lease, status=Payment.Status.CONFIRMED)
+                        .order_by("-paid_at", "-pk").first())
+        fmt = request.GET.get("format")
+        if fmt == "pdf":
+            audit.record("reports.export", actor=request.user, organization=m.organization, request=request,
+                         changes={"report": [None, "tenant-statement"], "period": [None, period.label],
+                                  "format": [None, "pdf"]})
+            response = HttpResponse(render_tenant_statement(lease, lease.primary_tenant, statement, period.label,
+                                                            aging, last_payment), content_type="application/pdf")
+            response["Content-Disposition"] = (
+                f'inline; filename="statement-{lease.number or lease.public_id}-{period.end.isoformat()}.pdf"')
+            response["Cache-Control"] = "private, no-store"
+            return response
+        if fmt in ("csv", "xlsx"):
+            if not can(m, "reports.export"):
+                raise PermissionDenied("reports.export")
+            audit.record("reports.export", actor=request.user, organization=m.organization, request=request,
+                         changes={"report": [None, "tenant-statement"], "period": [None, period.label],
+                                  "format": [None, fmt]})
+            tenant = lease.primary_tenant
+            rows = [[_("Tenant"), tenant.name if tenant else ""], [_("Lease"), lease.number],
+                    [_("Unit"), f"{lease.unit.code}, {lease.unit.property.name}"],
+                    [_("Period"), period.start.isoformat(), period.end.isoformat()], [],
+                    ["Date", "Detail", "Charged", "Credited", "Balance"],
+                    [period.start.isoformat(), _("Brought forward"), "", "", statement["brought_forward"]]]
+            for row in statement["rows"]:
+                rows.append([row.entry.entry_date.isoformat(),
+                             " · ".join(x for x in (row.entry.get_kind_display(),
+                                                    row.entry.invoice.number if row.entry.invoice_id else "",
+                                                    row.entry.reason) if x),
+                             row.debit or "", row.credit or "", row.balance])
+            rows.append(["", _("Closing balance"), "", "", statement["closing"]])
+            name = f"tenant-statement-{lease.number or lease.public_id}-{period.start.isoformat()}"
+            if fmt == "xlsx":
+                return xlsx.response(f"{name}.xlsx", "statement", rows)
+            response = _csv_response(f"{name}.csv")
+            exports.writer(response).writerows(rows)
+            return response
+        query = request.GET.copy()
+        query["format"] = "csv"
+        return render(request, self.template_name, {
+            "lease": lease, "tenant": lease.primary_tenant, "statement": statement, "period": period,
+            "presets": periods.PRESETS, "carry": carry, "currency": lease.currency, "today": today,
+            "can_export": can(m, "reports.export"), "csv_query": query.urlencode(),
+            "pdf_query": request.GET.urlencode() + "&format=pdf" if request.GET else "format=pdf",
+            "aging": aging, "last_payment": last_payment,
+            "paid_in_period": statement["credits"], "open_account": can(m, "invoices.view")})
+
+    @staticmethod
+    def _aging(lease, today) -> list:
+        """What the tenant owes now, by how late: [(label, amount)], over the whole ledger, not just the period."""
+        entries = list(LedgerEntry.objects.filter(lease=lease).select_related("invoice")
+                       .order_by("entry_date", "pk"))
+        buckets = billing_selectors.lease_arrears(lease, entries, today).buckets
+        return [(str(label), buckets[key]) for key, label, _lo, _hi in billing_selectors.AGING_BUCKETS]
 
 
 class LeasesReportView(_OperationsView):
@@ -465,11 +650,14 @@ class ScorecardView(_OperationsView):
 
     def csv_rows(self, report):
         rows = [["Property", "Units", "Occupied", "Occupancy %", "Income", "Expenses", "Net operating income",
-                 "Net per unit", "Expenses % of income", "Collection %", "Move-outs", "Turnover %"]]
+                 "Net per unit", "Expenses % of income", "Collection %", "Move-outs", "Turnover %",
+                 "Health score (0-100)", "Health provisional"]]
         for r in (*report.rows, report.total):
             rows.append([r.property.name if r.property else "Total", r.units, r.occupied, _pct(r.occupancy),
                          r.income, r.expenses, r.noi, r.noi_per_unit or "", _pct(r.expense_ratio),
-                         _pct(r.collection), r.move_outs, _pct(r.turnover)])
+                         _pct(r.collection), r.move_outs, _pct(r.turnover),
+                         "" if r.health is None or r.health.score is None else r.health.score,
+                         "yes" if r.health and r.health.provisional else ""])
         return rows
 
 
@@ -523,6 +711,49 @@ class PerformanceView(_OperationsView):
             rows.append([r.name if r.property else "All", r.score.units, _pct(r.bridge.economic_occupancy),
                          r.bridge.vacancy, r.bridge.uncollected, r.score.noi, r.noi_per_unit_month or "",
                          _pct(r.score.expense_ratio), _pct(r.net_yield)])
+        return rows
+
+
+class ProfitabilityView(_OperationsView):
+    """What each property earns after everything it costs to run (D-192)."""
+
+    template_name = "reports/profitability.html"
+    required_capability = "reports.view_financial"
+    slug = "profitability"
+
+    def build(self, request, period, prop):
+        return profitability.profitability(request.membership, period.start, period.end, prop)
+
+    def context(self, request, report, prop):
+        cur = request.membership.organization.currency
+        labels = dict(profitability.CostClass.choices)
+        f = report.focus
+        costs = [(labels[k], v) for k, v in f.costs_with_fee.items()]
+        slices = charts.fold(costs, _("Other"))
+        specs = {}
+        if slices:
+            specs["costs"] = charts.doughnut(_("Costs"), slices, charts.SERIES, currency=cur)
+        if len(report.months) > 1:
+            specs["months"] = charts.chart("bar", report.months, [
+                charts.series(_("Income"), report.month_income, "1"),
+                charts.series(_("Costs"), [report.month_income[i] - report.month_noi[i]
+                                           for i in range(len(report.months))], "2"),
+                charts.series(_("Net operating income"), report.month_noi, "3", type="line")], currency=cur)
+        classes = [(k, labels[k], v) for k, v in f.costs_with_fee.items()]
+        return {"specs": specs, "cur": cur, "cost_rows": classes, "cost_slices": list(zip(slices, charts.SERIES,
+                                                                                         strict=False))}
+
+    def csv_rows(self, report):
+        labels = dict(profitability.CostClass.choices)
+        rows = [["Property", "Units", "Potential rent", "Lost to empty units", "Rent billed", "Rent collected",
+                 "Rent received", "Water and utilities received", "Other charges received", "Income",
+                 *[labels[k] for k in profitability.CLASSES], "Operating costs", "Net operating income",
+                 "Owed by tenants", "Overdue"]]
+        for p in (*report.rows, report.total):
+            costs = p.costs_with_fee
+            rows.append([p.name if p.property else "All", p.units, p.potential, p.vacancy, p.billed, p.collected,
+                         p.rent, p.utilities, p.other, p.income, *[costs[k] for k in profitability.CLASSES],
+                         p.operating_costs, p.noi, p.owed, p.overdue])
         return rows
 
 

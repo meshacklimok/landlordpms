@@ -136,4 +136,6 @@ def test_the_caretaker_page_shows_counts_but_no_money_or_names(client, owner, po
 
 def test_an_empty_home_says_so(client, owner):
     client.force_login(owner.user)
-    assert "Nothing is waiting for you." in client.get("/").content.decode()
+    # A brand-new organization gets the guided welcome rather than empty figures (accounts HomeView).
+    page = client.get("/").content.decode()
+    assert "Let&#x27;s get your first rent collected." in page or "get your first rent collected" in page

@@ -1,12 +1,14 @@
 from django.urls import path
 
-from . import ops_views, views
+from . import ops_views, views, web_api
 from .xlsx import also_excel
 
 app_name = "reports"
 
 urlpatterns = [
+    path("web-api/hostel/", web_api.HostelReportDataView.as_view(), name="web_hostel"),
     path("centre/", ops_views.ReportCentreView.as_view(), name="centre"),
+    path("print-all/", ops_views.ReportPrintAllView.as_view(), name="print_all"),
     path("maintenance/", ops_views.MaintenanceReportView.as_view(), name="maintenance"),
     path("payments/", ops_views.PaymentsReportView.as_view(), name="payments"),
     path("arrears/", ops_views.ArrearsReportView.as_view(), name="arrears"),
@@ -16,6 +18,9 @@ urlpatterns = [
     path("scorecard/", ops_views.ScorecardView.as_view(), name="scorecard"),
     path("outlook/", ops_views.OutlookView.as_view(), name="outlook"),
     path("performance/", ops_views.PerformanceView.as_view(), name="performance"),
+    path("profitability/", ops_views.ProfitabilityView.as_view(), name="profitability"),
+    path("expenses/", ops_views.ExpensesReportView.as_view(), name="expenses"),
+    path("tenant-statement/", ops_views.TenantStatementView.as_view(), name="tenant_statement"),
     path("deposits/", ops_views.DepositsReportView.as_view(), name="deposits"),
     path("delivery/", ops_views.DeliveryReportView.as_view(), name="delivery"),
     path("", views.DashboardView.as_view(), name="dashboard"),
@@ -30,9 +35,11 @@ urlpatterns = [
     path("owners/<uuid:public_id>/", views.OwnerAccountView.as_view(), name="owner_account"),
     path("income/", views.IncomeView.as_view(), name="income"),
     path("profit-loss/", also_excel(views.ProfitLossView.as_view()), name="profit_loss"),
+    path("month-on-month/", also_excel(views.MonthOnMonthView.as_view()), name="month_on_month"),
     path("cash-flow/", also_excel(views.CashFlowView.as_view()), name="cash_flow"),
     path("fees/", also_excel(views.FeesView.as_view()), name="fees"),
     path("units/", also_excel(views.UnitsView.as_view()), name="units"),
+    path("hostel/", also_excel(views.HostelReportView.as_view()), name="hostel"),
     path("receivables/", also_excel(views.ReceivablesView.as_view()), name="receivables"),
     path("accounting-export/", views.AccountingExportView.as_view(), name="accounting_export"),
     path("income/tax-residence/", views.TaxResidenceView.as_view(), name="tax_residence"),

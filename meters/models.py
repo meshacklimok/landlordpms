@@ -306,6 +306,7 @@ class Scan(models.Model):
         NOTEBOOK = "NOTEBOOK", _("Readings written down")
         BILL = "BILL", _("Utility bill")
         SHEET = "SHEET", _("Filled-in form")
+        STATEMENT = "STATEMENT", _("Bank statement")
 
     class Status(models.TextChoices):
         READ = "READ", _("Read")

@@ -74,12 +74,13 @@ def render_pack(pack: Pack) -> bytes:
     doc = brand.Doc(buf, pagesize=landscape(A4), leftMargin=14 * mm, rightMargin=14 * mm,
                     topMargin=14 * mm, bottomMargin=16 * mm,
                     title=f"{org.display_name} · " + _("Rental income %(year)s") % {"year": pack.year})
-    money_head = [_("Rent billed"), _("Other billed"), _("Received"), _("Rent received"), _("Other received"),
-                  _("Deposits"), _("Not applied"), _("Taxable rent")]
+    money_head = [_("Rent billed"), _("Utilities billed"), _("Other billed"), _("Received"), _("Rent received"),
+                  _("Utilities received"), _("Other received"), _("Deposits"), _("Not applied"), _("Taxable rent")]
 
     def money(row):
-        return [_n(row.rent_billed), _n(row.other_billed), _n(row.received), _n(row.rent_received),
-                _n(row.other_received), _n(row.deposit_received), _n(row.unapplied), _n(row.taxable)]
+        return [_n(row.rent_billed), _n(row.utilities_billed), _n(row.other_billed), _n(row.received),
+                _n(row.rent_received), _n(row.utilities_received), _n(row.other_received),
+                _n(row.deposit_received), _n(row.unapplied), _n(row.taxable)]
 
     story = [
         brand.letterhead(org.display_name, org=org, kind=_("Rental income pack"), number=str(pack.year),
@@ -107,14 +108,14 @@ def render_pack(pack: Pack) -> bytes:
         _p(_("Payments received"), TITLE),
     ]
     if pack.receipts:
-        rows = [[_("Date"), _("Receipt"), _("Tenant"), _("Property · unit"), _("Amount"), _("Rent"), _("Other"),
-                 _("Deposit"), _("Not applied")]]
+        rows = [[_("Date"), _("Receipt"), _("Tenant"), _("Property · unit"), _("Amount"), _("Rent"), _("Utilities"),
+                 _("Other"), _("Deposit"), _("Not applied")]]
         for part in pack.receipts:
             p = part.payment
             receipt = getattr(p, "receipt", None)
             rows.append([f"{p.paid_at:%d %b}", receipt.number if receipt else "", p.tenant.name if p.tenant else "",
                          f"{p.lease.unit.property.name} · {p.lease.unit.code}", _n(p.amount), _n(part.rent),
-                         _n(part.other), _n(part.deposit), _n(part.unapplied)])
+                         _n(part.utilities), _n(part.other), _n(part.deposit), _n(part.unapplied)])
         table = _table(rows, total=False)
         table.setStyle(TableStyle([("ALIGN", (1, 0), (3, -1), "LEFT")]))
         story.append(table)
@@ -138,6 +139,7 @@ def render_statement(st: Statement) -> bytes:
     summary = [
         [_("Summary"), ""],
         [_("Rent collected"), format_money(st.rent, c)],
+        [_("Utilities collected (water, electricity)"), format_money(st.utilities, c)],
         [_("Other charges collected"), format_money(st.other, c)],
         [_("Total collected"), format_money(st.collected, c)],
     ]
@@ -207,6 +209,59 @@ def render_statement(st: Statement) -> bytes:
             table.setStyle(TableStyle([("ALIGN", (0, 0), (3, -1), "LEFT")]))
             story += [Spacer(1, 3 * mm), table]
     story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}", SMALL) for note in st.notes]
+    if org.document_footer:
+        story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_tenant_statement(lease, tenant, statement: dict, period_label: str, aging: list, last_payment) -> bytes:
+    """One tenant's statement for a period, portrait A4: summary, ageing of what is owed now, then every line."""
+    org = lease.organization
+    c = lease.currency
+    buf = io.BytesIO()
+    who = tenant.name if tenant else lease.number
+    doc = brand.Doc(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm,
+                    bottomMargin=16 * mm,
+                    title=f"{org.display_name} · " + _("Statement for %(who)s") % {"who": who})
+    summary = [
+        [_("Summary"), ""],
+        [_("Brought forward"), format_money(statement["brought_forward"], c)],
+        [_("Charged in the period"), format_money(statement["debits"], c)],
+        [_("Paid, credited or voided"), "−" + format_money(statement["credits"], c)],
+        [_("Balance owed"), format_money(statement["closing"], c)],
+    ]
+    story = [
+        brand.letterhead(org.display_name, org=org, kind=_("Statement"), number=lease.number,
+                         lines=brand.org_lines(org)),
+        Spacer(1, 4 * mm),
+        _p(_("Statement for %(who)s") % {"who": who}, TITLE),
+        _p(_("%(unit)s, %(property)s. Period %(period)s. Drawn %(day)s.") % {
+            "unit": lease.unit.code, "property": lease.unit.property.name, "period": period_label,
+            "day": f"{timezone.localdate():%d %b %Y}"}, SMALL),
+        Spacer(1, 4 * mm),
+        _table(summary, first_width=80 * mm),
+    ]
+    if last_payment is not None:
+        story.append(_p(_("Last payment: %(amount)s on %(day)s.") % {
+            "amount": format_money(last_payment.amount, c), "day": f"{last_payment.paid_at:%d %b %Y}"}, SMALL))
+    owed = [(label, amount) for label, amount in aging if amount]
+    if statement["closing"] > 0 and owed:
+        story += [Spacer(1, 4 * mm), _p(_("What is owed now, by age"), TITLE),
+                  _table([[label for label, _a in aging], [format_money(a, c) for _l, a in aging]], total=False,
+                         header=True)]
+    rows = [[_("Date"), _("Detail"), _("Charged"), _("Credited"), _("Balance")],
+            [f"{statement['start']:%d %b %Y}" if statement["start"] else "", _("Brought forward"), "", "",
+             _n(statement["brought_forward"])]]
+    for row in statement["rows"]:
+        e = row.entry
+        detail = " · ".join(x for x in (str(e.get_kind_display()), e.invoice.number if e.invoice_id else "",
+                                        e.reason) if x)
+        rows.append([f"{e.entry_date:%d %b %Y}", _p(detail, SMALL), _n(row.debit), _n(row.credit), _n(row.balance)])
+    rows.append(["", _("Closing balance"), "", "", _n(statement["closing"])])
+    table = _table(rows, first_width=24 * mm)
+    table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "LEFT")]))
+    story += [Spacer(1, 6 * mm), _p(_("Every line"), TITLE), table]
     if org.document_footer:
         story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
     doc.build(story)

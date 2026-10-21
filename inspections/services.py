@@ -270,8 +270,8 @@ def complete(actor: Membership, report: ConditionReport, *, request=None) -> Con
     report = _draft(actor, report)
     missing = report.lines.filter(condition="").count()
     if missing:
-        raise ValidationError(_("Give every item a condition first (%(n)s left). Use \"Not checked\" "
-                                "for anything you could not see.") % {"n": missing})
+        raise ValidationError(_("Give every item a condition first (%(n)s left). Use \"Mark the rest as Good\" "
+                                "or \"Mark the rest as Not checked\" to fill them in one click.") % {"n": missing})
     if not report.lines.exists():
         raise ValidationError(_("Add at least one item to the report."))
     report.status = Status.COMPLETED

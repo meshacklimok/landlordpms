@@ -11,7 +11,6 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
-from notifications.email_html import send_branded
 from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -25,6 +24,7 @@ from core.ids import uuid_or_none
 from core.money import ZERO, format_money, round_money
 from core.numbering import next_number
 from notifications.delivery import notify
+from notifications.email_html import send_branded
 from notifications.providers.mail import MESSAGES, mailer_for
 from properties.models import Property, PropertyOwner, owner_ids_of
 

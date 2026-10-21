@@ -48,12 +48,54 @@ def payments(r, cur) -> list[Highlight]:
         if share is not None and len(r.methods) > 1:
             out.append(Highlight(NOTE, _("%(m)s was the most used way to pay: %(p)s of the money.")
                                  % {"m": label, "p": _pct(share)}))
+    confirmed = [x for x in getattr(r, "lines", []) if x.state == "confirmed"]
+    if len(confirmed) > 1:
+        top = max(confirmed, key=lambda x: x.amount)
+        out.append(Highlight(NOTE, _("The largest payment was %(amount)s on %(day)s.")
+                             % {"amount": format_money(top.amount, cur), "day": f"{top.paid_at:%d %b %Y}"}))
+        if r.confirmed_count:
+            out.append(Highlight(NOTE, _("The average payment was %(amount)s.")
+                                 % {"amount": format_money(r.confirmed / r.confirmed_count, cur)}))
     if r.waiting:
         out.append(Highlight(BAD, _("%(n)s payments are waiting for review (%(amount)s).")
                              % {"n": r.waiting, "amount": format_money(r.waiting_amount, cur)}))
     if r.undone:
         out.append(Highlight(NOTE, _("%(amount)s was reversed or rejected and is not counted.")
                              % {"amount": format_money(r.undone, cur)}))
+    return out
+
+
+def expenses(r, cur) -> list[Highlight]:
+    out = []
+    if not r.total:
+        return out
+    out.append(Highlight(NOTE, ngettext("%(amount)s spent in %(n)s expense.", "%(amount)s spent in %(n)s expenses.",
+                                        r.count) % {"amount": format_money(r.total, cur), "n": r.count}))
+    if r.previous_total:
+        change = (r.total - r.previous_total) / r.previous_total
+        if abs(change) >= Decimal("0.05"):
+            tone = BAD if change > 0 else GOOD
+            text = (_("Spending is up %(p)s on the period before.") if change > 0
+                    else _("Spending is down %(p)s on the period before.")) % {"p": _pct(abs(change))}
+            out.append(Highlight(tone, text))
+    if r.by_category and len(r.by_category) > 1:
+        label, _n, _a, share = r.by_category[0]
+        if share is not None:
+            out.append(Highlight(NOTE, _("%(c)s was the largest cost: %(p)s of the spending.")
+                                 % {"c": label, "p": _pct(share)}))
+    suppliers = [x for x in r.by_supplier if x[0] != "—"]
+    if suppliers:
+        label, _n, amount, _s = suppliers[0]
+        out.append(Highlight(NOTE, _("%(s)s was paid the most: %(amount)s.")
+                             % {"s": label, "amount": format_money(amount, cur)}))
+    if r.lines:
+        top = max(r.lines, key=lambda e: e.amount)
+        out.append(Highlight(NOTE, _("The largest single expense was %(amount)s, on %(day)s.")
+                             % {"amount": format_money(top.amount, cur), "day": f"{top.paid_on:%d %b %Y}"}))
+    if r.waiting:
+        out.append(Highlight(BAD, ngettext("%(n)s expense (%(amount)s) is waiting for approval and not counted.",
+                                           "%(n)s expenses (%(amount)s) are waiting for approval and not counted.",
+                                           r.waiting) % {"n": r.waiting, "amount": format_money(r.waiting_amount, cur)}))
     return out
 
 
@@ -127,5 +169,5 @@ def delivery(r, cur) -> list[Highlight]:
     return out
 
 
-NOTES = {"arrears": arrears, "payments": payments, "maintenance": maintenance, "leases": leases,
+NOTES = {"arrears": arrears, "payments": payments, "expenses": expenses, "maintenance": maintenance, "leases": leases,
          "utilities": utilities, "message-delivery": delivery}

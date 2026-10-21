@@ -77,6 +77,7 @@ class Month:
     label: str
     key: datetime.date | None = None
     rent: Decimal = ZERO
+    utilities: Decimal = ZERO
     other: Decimal = ZERO
     unapplied: Decimal = ZERO
     deposits: Decimal = ZERO
@@ -85,11 +86,12 @@ class Month:
     owner_payments: Decimal = ZERO
     expenses: Decimal = ZERO
 
-    FIELDS = ("rent", "other", "unapplied", "deposits", "rent_billed", "refunds", "owner_payments", "expenses")
+    FIELDS = ("rent", "utilities", "other", "unapplied", "deposits", "rent_billed", "refunds", "owner_payments",
+              "expenses")
 
     @property
     def income(self) -> Decimal:
-        return self.rent + self.other + self.unapplied
+        return self.rent + self.utilities + self.other + self.unapplied
 
     @property
     def noi(self) -> Decimal:
@@ -222,6 +224,7 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
         part = _split(p, shares)
         for row in (months[month_start(p.paid_at)], places[p.lease.unit.property_id]):
             row.rent += part.rent
+            row.utilities += part.utilities
             row.other += part.other
             row.deposits += part.deposit
             row.unapplied += part.unapplied

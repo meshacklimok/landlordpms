@@ -129,6 +129,26 @@ class ReportView(CapabilityRequiredMixin, View):
         messages.success(request, _("Report saved."))
         return self._back(report)
 
+    def _fill_rest(self, request, report, condition):
+        """Saves what was entered, then gives every item still blank the same condition (one click, not 13)."""
+        form = self._save(request, report)
+        if form.errors:
+            return self._render(request, report, details_form=form)
+        report.refresh_from_db()
+        blank = {ln.pk: (condition, ln.notes) for ln in report.lines.filter(condition="")}
+        if blank:
+            services.save_details(request.membership, report, lines=blank, request=request,
+                                  **{k: getattr(report, k) for k in ("inspected_on", "tenant_present", "tenant_comments",
+                                                                            "keys_handed", "notes")})
+            messages.success(request, _("The remaining items are set. Check them, then complete the report."))
+        return self._back(report)
+
+    def do_fill_good(self, request, report):
+        return self._fill_rest(request, report, Condition.GOOD)
+
+    def do_fill_not_checked(self, request, report):
+        return self._fill_rest(request, report, Condition.NOT_CHECKED)
+
     def do_complete(self, request, report):
         form = self._save(request, report)
         if form.errors:

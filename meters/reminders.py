@@ -40,7 +40,7 @@ def run_daily(today: datetime.date) -> dict[str, int]:
     if not in_window(today):
         return {"meter_reminders": 0}
     sent = 0
-    for org in Organization.objects.all():
+    for org in Organization.objects.filter(status=Organization.Status.ACTIVE):
         for prop in Property.objects.filter(organization=org):
             unread = unread_this_month(prop, today)
             if not unread:

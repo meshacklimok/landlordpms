@@ -30,7 +30,7 @@ def prop(owner):
     return make_property(owner.organization, name="Acacia Court")
 
 
-def lease(owner, prop, code, *, start=D(2025, 1, 1), end=None, status=None, ended=None):
+def lease(owner, prop, code, *, start=D(2025, 1, 1), end=None, status=None, ended=None):  # noqa: B008 - a fixed date, built once
     obj = make_lease(owner, prop, code=code, start=start)
     Lease.objects.filter(pk=obj.pk).update(end_date=end, ended_on=ended, **({"status": status} if status else {}))
     obj.refresh_from_db()

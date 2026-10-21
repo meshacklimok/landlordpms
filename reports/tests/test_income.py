@@ -101,14 +101,15 @@ def test_rates_read_as_percentages():
 def test_billed_and_received_by_month(owner, year_2025):
     pack = income.income_pack(owner, 2025)
     jan, feb, mar = pack.months[:3]
-    assert (jan.rent_billed, jan.other_billed) == (money(20000), money(1000))
-    assert (jan.received, jan.rent_received, jan.other_received) == (money(21000), money(20000), money(1000))
+    assert (jan.rent_billed, jan.utilities_billed, jan.other_billed) == (money(20000), money(1000), 0)
+    assert (jan.received, jan.rent_received, jan.utilities_received) == (money(21000), money(20000), money(1000))
     # 25,000 in Feb: Feb in full, and 4,000 of Mar split 20:1 between rent and water.
-    assert (feb.rent_received, feb.other_received) == (money("23809.52"), money("1190.48"))
+    assert (feb.rent_received, feb.utilities_received) == (money("23809.52"), money("1190.48"))
     assert (mar.rent_received, mar.unapplied, mar.taxable) == (money("16190.48"), money(33000), money("49190.48"))
     t = pack.total
-    assert (t.rent_billed, t.other_billed, t.received) == (money(60000), money(3000), money(96000))
-    assert (t.rent_received, t.other_received, t.unapplied) == (money(60000), money(3000), money(33000))
+    assert (t.rent_billed, t.utilities_billed, t.received) == (money(60000), money(3000), money(96000))
+    assert (t.rent_received, t.utilities_received, t.unapplied) == (money(60000), money(3000), money(33000))
+    assert (t.other_billed, t.other_received) == (0, 0)
 
 
 def test_the_resident_estimate_is_monthly_rent_times_the_rate(owner, year_2025):
@@ -213,7 +214,7 @@ def test_csv_and_pdf_exports(client, owner, year_2025):
     client.force_login(owner.user)
     months = client.get("/reports/income/2025/months/").content.decode("utf-8-sig")
     assert "2025-03,60000.00" not in months  # one row per month, not a running total
-    assert "Total,60000.00,3000.00,96000.00,60000.00,3000.00,0.00,33000.00,93000.00,,6975.00" in months
+    assert "Total,60000.00,3000.00,0.00,96000.00,60000.00,3000.00,0.00,0.00,33000.00,93000.00,,6975.00" in months
     assert "Confirm with your tax adviser" in months
     receipts = client.get("/reports/income/2025/receipts/").content.decode("utf-8-sig")
     assert receipts.count("\n2025-0") == 3

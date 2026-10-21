@@ -152,7 +152,7 @@ def outlook(membership, prop=None, *, today: datetime.date | None = None,
                 m.ending += rent
                 m.ending_leases += 1
         # A lease that starts later in the horizon adds to the month it first has rent due.
-        began = next((m for m, rent in zip(months, in_force) if rent is not None), None)
+        began = next((m for m, rent in zip(months, in_force, strict=False) if rent is not None), None)
         if began is not None and lease.start_date > today:
             began.starting += in_force[months.index(began)]
         if end is not None and today <= end <= horizon_end and any(r is not None for r in in_force):

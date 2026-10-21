@@ -40,8 +40,8 @@ def prop(org):
     return make_property(org, name="Acacia Court")
 
 
-def req(owner, prop, *, created=at(2), status=Request.Status.NEW, kind="PLUMBING", due=None, done=None, closed=None,
-        priority="NORMAL", n=[0]):
+def req(owner, prop, *, created=at(2), status=Request.Status.NEW, kind="PLUMBING", due=None, done=None, closed=None,  # noqa: B008 - a fixed date, built once
+        priority="NORMAL", n=[0]):  # noqa: B006 - the counter is meant to be shared between calls
     n[0] += 1
     r = Request.objects.create(
         organization=owner.organization, number=f"M-{n[0]}", property=prop, title="Leak", kind=kind,
@@ -70,6 +70,27 @@ def report(owner, **kw):
 def test_presets(key, start, end):
     p = periods.preset(key, D(2026, 3, 20))
     assert (p.start, p.end) == (start, end)
+
+
+@pytest.mark.parametrize("key,start,end", [
+    ("this_quarter", D(2026, 1, 1), D(2026, 3, 31)),
+    ("last_quarter", D(2025, 10, 1), D(2025, 12, 31)),
+    ("this_year", D(2025, 7, 1), D(2026, 6, 30)),
+    ("last_year", D(2024, 7, 1), D(2025, 6, 30)),
+])
+def test_presets_follow_a_july_financial_year(key, start, end):
+    p = periods.preset(key, D(2026, 3, 20), 7)
+    assert (p.start, p.end) == (start, end)
+
+
+def test_july_year_after_it_has_started_and_quarters_count_from_it():
+    today = D(2026, 8, 5)
+    assert (periods.preset("this_year", today, 7).start, periods.preset("this_year", today, 7).end) == (
+        D(2026, 7, 1), D(2027, 6, 30))
+    q = periods.preset("this_quarter", today, 7)
+    assert (q.start, q.end) == (D(2026, 7, 1), D(2026, 9, 30))
+    q = periods.preset("last_quarter", today, 7)
+    assert (q.start, q.end) == (D(2026, 4, 1), D(2026, 6, 30))
 
 
 def test_custom_period_is_swapped_capped_and_defaults_to_this_month():

@@ -62,12 +62,7 @@ def percent(rate: Decimal | None) -> str:
     return "—" if rate is None else f"{float(rate * 100):g}%"
 
 
-def _bucket(category: str) -> str:
-    if category == Category.RENT:
-        return "rent"
-    if category == Category.DEPOSIT:
-        return "deposit"
-    return "other"
+_bucket = ChargeType.bucket  # rent, deposit, utilities (water, electricity) or other charges
 
 
 @dataclass
@@ -75,9 +70,11 @@ class Row:
     label: str
     key: object = None
     rent_billed: Decimal = ZERO
+    utilities_billed: Decimal = ZERO
     other_billed: Decimal = ZERO
     received: Decimal = ZERO
     rent_received: Decimal = ZERO
+    utilities_received: Decimal = ZERO
     other_received: Decimal = ZERO
     deposit_received: Decimal = ZERO
     unapplied: Decimal = ZERO
@@ -95,6 +92,7 @@ class Row:
     def add_received(self, part: "Split") -> None:
         self.received += part.amount
         self.rent_received += part.rent
+        self.utilities_received += part.utilities
         self.other_received += part.other
         self.deposit_received += part.deposit
         self.unapplied += part.unapplied
@@ -102,10 +100,11 @@ class Row:
 
 @dataclass
 class Split:
-    """How one payment divides: rent, other charges, deposit and money not yet applied."""
+    """How one payment divides: rent, utilities, other charges, deposit and money not yet applied."""
 
     payment: Payment
     rent: Decimal = ZERO
+    utilities: Decimal = ZERO
     other: Decimal = ZERO
     deposit: Decimal = ZERO
     unapplied: Decimal = ZERO
@@ -186,7 +185,7 @@ def income_pack(membership: Membership, year: int) -> Pack:
         bucket = _bucket(r["charge_type__category"])
         if bucket == "deposit":
             continue
-        name = "rent_billed" if bucket == "rent" else "other_billed"
+        name = f"{bucket}_billed"
         for row in (months[r["month"]], prop_row(prop_objects[r["lease__unit__property"]])):
             setattr(row, name, getattr(row, name) + r["total"])
 
@@ -208,8 +207,8 @@ def income_pack(membership: Membership, year: int) -> Pack:
     for month, row in months.items():
         row.rate = rate_on(org.landlord_tax_residence, month)
         row.tax = round_money(row.taxable * row.rate) if row.rate is not None else None
-        for name in ("rent_billed", "other_billed", "received", "rent_received", "other_received",
-                     "deposit_received", "unapplied"):
+        for name in ("rent_billed", "utilities_billed", "other_billed", "received", "rent_received",
+                     "utilities_received", "other_received", "deposit_received", "unapplied"):
             setattr(total, name, getattr(total, name) + getattr(row, name))
     taxed = [row.tax for row in months.values() if row.tax is not None]
     total.tax = sum(taxed, ZERO) if taxed else None
@@ -242,9 +241,11 @@ def _split(payment: Payment, shares) -> Split:
             continue
         rent = round_money(a.amount * parts.get("rent", ZERO) / whole)
         deposit = round_money(a.amount * parts.get("deposit", ZERO) / whole)
+        utilities = round_money(a.amount * parts.get("utilities", ZERO) / whole)
         part.rent += rent
         part.deposit += deposit
-        part.other += a.amount - rent - deposit
+        part.utilities += utilities
+        part.other += a.amount - rent - deposit - utilities
     part.unapplied = payment.amount - applied
     return part
 

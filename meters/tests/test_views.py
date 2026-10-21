@@ -143,3 +143,17 @@ def test_the_list_shows_what_is_left_to_read_and_the_last_use(client, owner, pro
     assert used == {"W-A1": 30, "W-A2": None}
     detail = client.get(reverse("meters:detail", args=[m1.public_id])).content.decode()
     assert "Used last period" in detail
+
+
+def test_the_qr_page_has_its_script_and_a_big_reading_box(client, owner, meter):
+    caretaker = add_member(owner.organization, "caretaker", all_properties=True)
+    login(client, caretaker)
+    page = client.get(reverse("meters:quick", args=[meter.public_id])).content.decode()
+    assert "js/quick_read.js" in page and "data-quick-read" in page and "quick-input" in page
+
+
+def test_the_water_page_offers_the_next_meter_to_read(client, owner, prop, meter):
+    caretaker = add_member(owner.organization, "caretaker", all_properties=True)
+    login(client, caretaker)
+    page = client.get(reverse("meters:water_session", args=[prop.public_id])).content.decode()
+    assert "water-next" in page and reverse("meters:quick", args=[meter.public_id]) in page

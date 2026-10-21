@@ -133,3 +133,14 @@ class DailySnapshot(models.Model):
 
     def arrears(self):  # a method: the `property` field hides the decorator in this class body
         return self.d1_30 + self.d31_60 + self.d61_90 + self.d90
+
+
+class MonthlyReportSent(models.Model):  # noqa: DJ008 - a bookkeeping row never shown by name
+    """The monthly report emailed to a member for a month, so a second run does not send it again (D-194)."""
+
+    membership = models.ForeignKey("accounts.Membership", on_delete=models.CASCADE, related_name="+")
+    month = models.DateField()
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint("membership", "month", name="reports_monthly_sent_unique")]

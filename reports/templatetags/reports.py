@@ -1,7 +1,9 @@
 from django import template
+from django.utils.formats import date_format
 from django.utils.html import format_html, format_html_join
 from django.utils.translation import gettext as _
 
+from core.money import format_money
 from reports.finance import AGING_CHART_COLORS
 
 register = template.Library()
@@ -101,6 +103,28 @@ def state_class(state: str) -> str:
 @register.filter
 def state_mark(state: str) -> str:
     return _STATE_CELLS.get(state, _STATE_CELLS["none"])[1]
+
+
+@register.simple_tag
+def unit_months(cells, currency="KES"):
+    """The twelve month squares of one unit in the unit-by-unit grid. Built here, not in the template: a landlord with
+    100 units draws 1,200 of them, and each used to cost a dozen template lookups and two date formats (pilot
+    sizing, 2026-10-19). A month's name is worked out once, not once per unit."""
+    names = {}
+    out = []
+    for c in cells:
+        name = names.get(c.month)
+        if name is None:
+            name = names[c.month] = date_format(c.month, "M Y")
+        css, mark = _STATE_CELLS.get(c.state, _STATE_CELLS["none"])
+        label = c.label
+        detail = f"{name}: {label}"
+        if c.expected:
+            detail += f" · {format_money(c.collected, currency)} / {format_money(c.expected, currency)}"
+        out.append(format_html(
+            '<span class="unit-month {}" title="{}"><span aria-hidden="true">{}</span>'
+            '<span class="visually-hidden">{}: {}</span></span>', css, detail, mark, name, label))
+    return format_html_join("", "{}", ((o,) for o in out))
 
 
 @register.simple_tag

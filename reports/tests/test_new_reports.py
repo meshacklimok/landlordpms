@@ -116,3 +116,37 @@ def test_pages_and_csv(client, owner, prop, name):
     csv = client.get(reverse(f"reports:{name}"), {**query, "format": "csv"})
     assert csv.status_code == 200 and "Scope" in csv.content.decode("utf-8-sig")
     assert client.get(reverse("reports:centre")).status_code == 200
+
+
+def test_health_score_reweights_missing_parts():
+    from decimal import Decimal as D
+
+    from reports import health
+    full = health.points(collection=D("0.9"), occupancy=D("1"), overdue=D("0"), billed=D("100"), open_repairs=2,
+                         overdue_repairs=0, recent_repairs=2, income=D("100"), expenses=D("30"))
+    assert full.score == 97 and not full.provisional
+    # No rent billed, no income, no repairs: only occupancy (25%) is measurable, so there is no score.
+    bare = health.points(collection=None, occupancy=D("1"), overdue=None, billed=None, open_repairs=0,
+                         overdue_repairs=0, recent_repairs=0, income=D("0"), expenses=D("0"))
+    assert bare.score is None
+    # Expenses and repairs missing: re-weighted over the other 75%, marked provisional.
+    some = health.points(collection=D("0.8"), occupancy=D("0.8"), overdue=D("0"), billed=D("100"), open_repairs=0,
+                         overdue_repairs=0, recent_repairs=0, income=D("0"), expenses=D("0"))
+    assert some.score == 85 and some.provisional
+    heavy = health.points(collection=D("1"), occupancy=D("1"), overdue=D("200"), billed=D("100"), open_repairs=2,
+                          overdue_repairs=2, recent_repairs=2, income=D("100"), expenses=D("90"))
+    assert [p.points for p in heavy.parts] == [100, 100, 0, 0, 0]
+
+
+def test_scorecard_rows_carry_health(owner, prop):
+    make_lease(owner, prop, code="H2")
+    card = scorecard.scorecard(owner, START, END, today=TODAY)
+    assert all(r.health is not None for r in card.rows)
+
+
+def test_health_parts_link_to_their_records_only_when_allowed(owner, prop):
+    make_lease(owner, prop, code="H1")
+    row = scorecard.scorecard(owner, START, END, today=TODAY).rows[0]
+    urls = {p.key: p.url for p in row.health.parts}
+    assert urls["maintenance"].endswith(f"?property={prop.public_id}") and urls["expenses"].startswith("/")
+    assert urls["collection"] == ""

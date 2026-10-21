@@ -72,3 +72,36 @@ def test_a_report_page_steps_to_the_report_before_and_after(client, owner):
     assert f'{reverse("reports:centre")}?r=receivables' in page
     # Not inside the reader's frame, which has its own Previous and Next.
     assert 'class="report-steps' not in client.get(reverse("reports:receivables"), {"pane": "1"}).content.decode()
+
+
+def test_the_centre_page_may_frame_our_own_pages(client, owner):
+    """frame-src set on its own drops the default-src fallback, which blanked the reader's frame."""
+    csp = client.get(reverse("reports:centre"))["Content-Security-Policy"]
+    sources = next(p for p in csp.split("; ") if p.startswith("frame-src")).split()[1:]
+    assert "'self'" in sources
+
+
+def test_print_all_lists_every_report_the_member_may_open(client, owner):
+    page = client.get(reverse("reports:print_all")).content.decode()
+    assert f'src="{reverse("reports:dashboard")}?pane=1"' in page
+    assert f'src="{reverse("reports:arrears")}?pane=1"' in page
+    assert "print_all.js" in page
+
+
+def test_the_failed_box_can_say_why_and_offer_a_sign_in(client, owner):
+    page = client.get(reverse("reports:centre"), {"r": "arrears"}).content.decode()
+    for hook in ("data-reader-reason", "data-text-login=", "data-text-server=", "data-text-offline=", "data-reader-signin"):
+        assert hook in page
+    assert f'{reverse("accounts:login")}?next=' in page
+
+
+def test_every_report_draws_in_the_pane_with_and_without_a_period(client, owner):
+    """A report that errors inside the frame shows the failed box, so each one must render with and without a date range."""
+    page = client.get(reverse("reports:centre")).content.decode()
+    import json
+    import re
+    data = json.loads(re.search(r'id="reader-reports"[^>]*>(.*?)</script>', page, re.S).group(1))
+    assert data
+    for r in data:
+        for params in ({"pane": "1"}, {"pane": "1", "from": "2020-01", "to": "2030-12"}):
+            assert client.get(r["url"], params).status_code == 200, (r["key"], params)

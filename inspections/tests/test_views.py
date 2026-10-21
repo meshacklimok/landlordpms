@@ -42,6 +42,23 @@ def test_lease_page_starts_a_report_and_the_draft_is_filled_in(client, owner, pr
     assert b'form="details"' not in client.get(url).content
 
 
+def test_mark_the_rest_fills_only_blank_items_in_one_click(client, owner, prop):
+    lease = make_lease(owner, prop)
+    report = services.start(owner, lease, IN)
+    first, *others = list(report.lines.all())
+    login(client, owner)
+    url = reverse("inspections:report", args=[report.public_id])
+    data = {"action": "fill_good", "inspected_on": report.inspected_on.isoformat(), f"condition-{first.pk}": "DAMAGED",
+            f"note-{first.pk}": "cracked"}
+    assert client.post(url, data).status_code == 302
+    first.refresh_from_db()
+    assert (first.condition, first.notes) == ("DAMAGED", "cracked")
+    assert all(ln.condition == "GOOD" for ln in report.lines.exclude(pk=first.pk))
+    assert report.lines.filter(condition="").count() == 0
+    report.refresh_from_db()
+    assert report.status == ConditionReport.Status.DRAFT
+
+
 def test_an_unknown_kind_is_404(client, owner, prop):
     lease = make_lease(owner, prop)
     login(client, owner)

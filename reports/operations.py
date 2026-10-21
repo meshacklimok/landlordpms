@@ -38,6 +38,7 @@ from properties.models import Property
 from .metrics import rate
 
 REPEAT_AT = 3
+PAYMENT_LINE_LIMIT = 3000
 
 
 def bounds(start: datetime.date, end: datetime.date) -> tuple[datetime.datetime, datetime.datetime]:
@@ -292,6 +293,9 @@ class PaymentsReport:
     waiting_amount: Decimal
     oldest_waiting: datetime.date | None
     generated_at: datetime.datetime
+    # The payments themselves, dated in the period, newest first (the payment statement); LINE_LIMIT at most.
+    lines: list = field(default_factory=list)
+    lines_total: int = 0
 
     @property
     def confirmed(self) -> Decimal:
@@ -341,8 +345,11 @@ def payments(membership: Membership, start: datetime.date, end: datetime.date,
                 ok.values("payment_account__display_name").annotate(n=Count("pk"), a=Sum("amount")).order_by("-a")]
     wait = scoped.filter(status=S.PENDING_REVIEW).aggregate(n=Count("pk"), a=Sum("amount"),
                                                             oldest=Min("paid_at"))
+    lines = list(period.select_related("lease__unit__property", "tenant", "payment_account")
+                 .order_by("-paid_at", "-pk")[:PAYMENT_LINE_LIMIT])
     return PaymentsReport(start, end, states, methods, months, accounts, wait["n"], wait["a"] or ZERO, wait["oldest"],
-                          now or timezone.now())
+                          now or timezone.now(), lines=lines, lines_total=sum(v for k, v in agg.items()
+                                                                              if k.endswith("_n")))
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +484,7 @@ def _lease_analysis(base, active, start, end, today, lines) -> dict:
         changes[lease_id].append((day, amount))
     sizes = []
     for rows in changes.values():
-        for before, after in zip(rows, rows[1:]):
+        for before, after in zip(rows, rows[1:], strict=False):
             if start <= after[0] <= end and before[1] > 0:
                 sizes.append(after[1] / before[1] - 1)
     stale = []
@@ -499,8 +506,8 @@ def _lease_analysis(base, active, start, end, today, lines) -> dict:
             if before:
                 gaps.append((began - max(before)).days)
     return {
-        "stays": [(label, n) for (_lo, _hi, label), n in zip(STAY_BANDS, stays)],
-        "tenure": [(label, n) for (_lo, _hi, label), n in zip(STAY_BANDS, tenure)],
+        "stays": [(label, n) for (_lo, _hi, label), n in zip(STAY_BANDS, stays, strict=False)],
+        "tenure": [(label, n) for (_lo, _hi, label), n in zip(STAY_BANDS, tenure, strict=False)],
         "increases": len(sizes),
         "average_increase": (sum(sizes) / len(sizes)).quantize(Decimal("0.0001")) if sizes else None,
         "relets": len(gaps),
