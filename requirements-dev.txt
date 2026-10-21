@@ -1,6 +1,6 @@
 pytest==9.1.1
 pytest-django==4.14.0
-ruff==0.16.9
-pre-commit==4.6.2
-locust==2.46.6
+ruff==0.17.1
+pre-commit==4.7.0
+locust==2.46.7
 pip-audit==2.10.1
