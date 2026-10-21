@@ -1,0 +1,94 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{{ m.user.full_name }}{% endblock %}
+{% block console_title %}{{ m.user.full_name }} · {{ org.name }}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:owners' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All owners" %}</a>
+  · <a href="{% url 'console:organization' org.public_id %}">{% trans "Organization page" %}</a>
+  · <a href="{% url 'console:owner_email' %}?m={{ m.public_id }}">{% trans "Email this owner" %}</a></p>
+
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Plan" %}</div><div class="h5 mb-0">{{ row.plan }}</div><div class="small">{{ row.sub_status }}{% if row.value %} · KES {{ row.value }} {% trans "a month" %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Units" %}</div><div class="h5 mb-0">{{ row.units }}{% if row.limit %} / {{ row.limit }}{% endif %}</div><div class="small">{% blocktrans with p=row.properties l=row.leases %}{{ p }} properties · {{ l }} active leases{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Team" %}</div><div class="h5 mb-0">{{ row.team }}</div><div class="small">{% blocktrans with t=row.tenants %}{{ t }} tenants{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Last active" %}</div><div class="h5 mb-0">{% if row.idle_days is None %}{% trans "Never" %}{% elif row.idle_days == 0 %}{% trans "Today" %}{% else %}{% blocktrans with d=row.idle_days %}{{ d }} days ago{% endblocktrans %}{% endif %}</div><div class="small">{% blocktrans with d=m.created_at|date:"j M Y" %}Joined {{ d }}{% endblocktrans %}</div></div></div></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% blocktrans with s=row.score b=row.band_label %}Health score {{ s }} · {{ b }}{% endblocktrans %}</h2>
+    <ul class="list-unstyled small mb-0">{% for label, pts, mx in row.score_parts %}<li class="d-flex justify-content-between"><span>{{ label }}</span><span>{{ pts }} / {{ mx }}</span></li>{% endfor %}</ul>
+  </div></div></div>
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% blocktrans with a=row.steps_done b=row.steps_total %}Setup {{ a }} of {{ b }}{% endblocktrans %}</h2>
+    <ul class="list-unstyled small mb-0">{% for key, label, ok in row.steps %}<li>{% if ok %}<i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i><span class="visually-hidden">{% trans "Done" %}:</span>{% else %}<i class="bi bi-circle text-muted" aria-hidden="true"></i><span class="visually-hidden">{% trans "Not done" %}:</span>{% endif %} {{ label }}{% if key == row.stuck_at %} <span class="badge text-bg-warning">{% trans "stuck here" %}</span>{% endif %}</li>{% endfor %}</ul>
+  </div></div></div>
+</div>
+{% if row.tags %}<p>{% for t in row.tags %}<span class="badge text-bg-warning">{{ t }}</span> {% endfor %}</p>{% endif %}
+
+<div class="row g-3">
+  <div class="col-lg-5">
+    <form method="post" class="card shadow-sm mb-3" novalidate><div class="card-body">
+      <h2 class="h6">{% trans "Details" %}</h2>
+      {% csrf_token %}<input type="hidden" name="action" value="save">
+      {% include "partials/form.html" %}
+      <button class="btn btn-sm btn-primary">{% trans "Save" %}</button>
+      <p class="form-text small mb-0">{% trans "Changing the email marks it unverified. Changing the phone changes how they sign in." %}</p>
+    </div></form>
+
+    <form method="post" action="{% url 'console:organization_control' org.public_id %}" class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% blocktrans with s=org.get_status_display %}Account status: {{ s }}{% endblocktrans %}</h2>
+      {% csrf_token %}<input type="hidden" name="action" value="status">
+      <div class="d-flex flex-wrap gap-2 mb-2">
+        <select name="status" class="form-select form-select-sm w-auto" aria-label="{% trans 'New status' %}">{% for v, l in status_choices %}<option value="{{ v }}"{% if v == org.status %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+        <input name="reason" class="form-control form-control-sm w-auto flex-grow-1" required maxlength="200" placeholder="{% trans 'Reason (kept in the audit log)' %}" aria-label="{% trans 'Reason' %}">
+        <button class="btn btn-sm btn-outline-danger">{% trans "Change" %}</button>
+      </div>
+      <p class="form-text small mb-0">{% trans "Frozen stops the organization from using the app; nothing is deleted." %}</p>
+    </div></form>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Notes and follow-ups" %}</h2>
+      <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="note_add">
+        {% include "partials/form.html" with form=note_form %}
+        <button class="btn btn-sm btn-primary">{% trans "Add note" %}</button>
+      </form>
+      <ul class="list-unstyled small mb-0">
+      {% for n in notes %}
+        <li class="border-top py-2">
+          <div class="{% if n.done_at %}text-muted text-decoration-line-through{% endif %}" style="white-space:pre-wrap">{{ n.body }}</div>
+          <div class="text-muted">{{ n.author.full_name|default:"—" }} · {{ n.created_at|date:"j M Y" }}{% if n.follow_up_on %} · <span class="{% if not n.done_at and n.follow_up_on <= today %}text-danger fw-semibold{% endif %}">{% blocktrans with d=n.follow_up_on|date:"j M Y" %}follow up {{ d }}{% endblocktrans %}</span>{% endif %}{% if n.done_at %} · {% trans "done" %}{% endif %}</div>
+          <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="note" value="{{ n.pk }}">
+            {% if n.done_at %}<button class="btn btn-link btn-sm p-0" name="action" value="note_reopen">{% trans "Reopen" %}</button>{% else %}<button class="btn btn-link btn-sm p-0" name="action" value="note_done">{% trans "Mark done" %}</button>{% endif %}
+            · <button class="btn btn-link btn-sm p-0 text-danger" name="action" value="note_delete">{% trans "Delete" %}</button>
+          </form>
+          <details class="mt-1"><summary class="small">{% trans "Edit" %}</summary>
+            <form method="post" class="mt-1">{% csrf_token %}<input type="hidden" name="action" value="note_save"><input type="hidden" name="note" value="{{ n.pk }}">
+              <label class="visually-hidden" for="nb{{ n.pk }}">{% trans "Note" %}</label>
+              <textarea name="body" id="nb{{ n.pk }}" rows="3" maxlength="2000" class="form-control form-control-sm mb-1" required>{{ n.body }}</textarea>
+              <label class="visually-hidden" for="nf{{ n.pk }}">{% trans "Follow up on" %}</label>
+              <input type="date" name="follow_up_on" id="nf{{ n.pk }}" value="{{ n.follow_up_on|date:'Y-m-d' }}" class="form-control form-control-sm w-auto d-inline-block">
+              <button class="btn btn-sm btn-outline-primary">{% trans "Save note" %}</button>
+            </form>
+          </details>
+        </li>
+      {% empty %}<li class="text-muted">{% trans "No notes yet." %}</li>{% endfor %}
+      </ul>
+    </div></div>
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "History" %}</h2>
+      <ul class="list-unstyled small mb-0" style="max-height:24rem;overflow:auto">{% for e in timeline %}
+        <li class="border-top py-1"><span class="text-muted">{{ e.when|date:"j M Y H:i" }}</span>
+          <span class="badge text-bg-light border">{% if e.kind == "note" %}{% trans "note" %}{% elif e.kind == "email" %}{% trans "email" %}{% else %}{% trans "activity" %}{% endif %}</span>
+          {{ e.title }}{% if e.detail %} · {{ e.detail }}{% endif %}{% if e.who %} <span class="text-muted">· {{ e.who }}</span>{% endif %}</li>
+      {% empty %}<li class="text-muted">{% trans "Nothing yet." %}</li>{% endfor %}</ul>
+    </div></div>
+
+    <div class="card shadow-sm"><div class="card-body">
+      <h2 class="h6">{% trans "Emails we sent them" %}</h2>
+      <ul class="list-unstyled small mb-0">{% for x in emails %}<li><a href="{% url 'console:owner_email_detail' x.email_log.pk %}">{{ x.email_log.subject }}</a> · {{ x.email_log.created_at|date:"j M Y" }}{% if not x.ok %} · <span class="text-danger">{% trans "failed" %}</span>{% endif %}</li>{% empty %}<li class="text-muted">{% trans "None yet." %}</li>{% endfor %}</ul>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

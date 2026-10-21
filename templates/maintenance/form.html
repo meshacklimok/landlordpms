@@ -1,0 +1,30 @@
+{% extends "maintenance/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Report a problem" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'maintenance:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Maintenance" %}</a>
+  <h1 class="h4 mt-2">{% trans "Report a problem" %}</h1>
+  <p class="small text-body-secondary">{% trans "A photo helps whoever fixes it bring the right tools." %}
+    {% trans "With no connection, the report is kept on this phone and sent when you are back online." %}</p>
+  <div class="alert alert-warning small" data-offline-status hidden role="status"></div>
+  <div class="card shadow-sm mb-3" data-offline-list hidden
+       data-saved="{% trans 'No connection. The report is kept on this phone and will be sent when you are back online.' %}"
+       data-photos="{% trans 'Photos are not kept on the phone; add them on the request page once it is sent.' %}"
+       data-empty="{% trans 'No connection, and the report is not complete. Choose the property and say what is wrong.' %}"
+       data-full="{% trans 'No connection, and this phone has no room to keep the report.' %}"
+       data-typed="{% trans 'Typed {when}: {title} ({where})' %}"
+       data-waiting="{% trans 'waiting to send' %}"
+       data-fix="{% trans 'needs fixing' %}"
+       data-put-back="{% trans 'Put back in the form' %}"
+       data-discard="{% trans 'Discard' %}"
+       data-discard-confirm="{% trans 'Discard this report? It has not been sent.' %}">
+    <div class="card-body py-2"><div class="fw-semibold small">{% trans "Kept on this phone" %}</div></div>
+    <ul class="list-group list-group-flush"></ul>
+  </div>
+  <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate data-offline-report
+        data-sync-url="{% url 'maintenance:offline_report' %}" data-ping-url="{% url 'support:offline' %}"><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary">{% trans "Report" %}</button>
+  </div></form>
+</div>
+{% endblock %}

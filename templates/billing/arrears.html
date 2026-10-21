@@ -1,0 +1,106 @@
+{% extends "base.html" %}{% load i18n money billing reports %}
+{% block title %}{% trans "Arrears" %}{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h4 mb-0">{% trans "Arrears" %}</h1>
+  <div class="small d-flex flex-wrap column-gap-3 row-gap-1">
+  <a class="fw-semibold" href="{% url 'billing:call_list' %}">{% trans "Who to call" %}</a>
+  {% if can_late_fees %}<a href="{% url 'billing:late_fees' %}">{% trans "Late fees" %}</a>{% endif %}
+  <a href="?{% if not show_all %}all=1{% endif %}">{% if show_all %}{% trans "Only overdue" %}{% else %}{% trans "Include balances not yet due" %}{% endif %}</a>
+  </div>
+</div>
+<p class="small text-muted">{% trans "What each lease owes, aged by days past the due date plus grace days. Payments and credits clear the oldest amounts first." %}</p>
+{% if rows %}{% with cur=currency %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Owed in total" %}</div>
+    <div class="stat-value num">{{ summary.total|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=summary.leases %}{{ n }} lease{% plural %}{{ n }} leases{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Past due" %}</div>
+    <div class="stat-value num">{{ summary.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with s=summary.overdue|share_of:summary.total|percent %}{{ s }} of the total{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "More than 60 days late" %}</div>
+    <div class="stat-value num">{{ summary.over_60|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with s=summary.over_60|share_of:summary.total|percent %}{{ s }} of the total, the hardest to collect{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Average a lease owes" %}</div>
+    <div class="stat-value num">{{ summary.average|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=summary.median_days %}half are {{ n }} day late or more{% plural %}half are {{ n }} days late or more{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+
+<div class="row g-2 mb-3">
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body py-2 small">
+    <div class="fw-semibold mb-1">{% trans "How late the money is" %}</div>
+    <div class="progress-stacked mb-1" style="height: 10px">
+      {% for key, label, amount, share in summary.shares %}{% if amount > 0 %}
+      <div class="progress" role="progressbar" aria-label="{{ label }}" aria-valuenow="{{ share|percent_number }}" aria-valuemin="0" aria-valuemax="100" style="width: {{ share|percent_number }}%"><div class="progress-bar {{ key|aging_color }}"></div></div>
+      {% endif %}{% endfor %}
+    </div>
+    <div class="d-flex flex-wrap gap-3">
+      {% for key, label, amount, share in summary.shares %}<span><span class="d-inline-block rounded {{ key|aging_color }}" style="width: .7rem; height: .7rem"></span> {{ label }} <span class="text-body-secondary">{{ share|percent }}</span></span>{% endfor %}
+    </div>
+  </div></div></div>
+  {% if summary.by_property|length > 1 %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body py-2 small">
+    <div class="fw-semibold mb-1">{% trans "By property" %}</div>
+    <div class="table-responsive"><table class="table table-sm mb-0">
+      <thead><tr><th>{% trans "Property" %}</th><th class="text-end">{% trans "Leases" %}</th><th class="text-end">{% trans "Owed" %}</th><th class="text-end">{% trans "Share" %}</th><th class="text-end">{% trans "Over 60 days" %}</th></tr></thead>
+      <tbody>
+        {% for place in summary.by_property|slice:":6" %}
+        <tr><td>{{ place.name }}</td><td class="text-end">{{ place.leases }}</td><td class="text-end num text-nowrap">{{ place.total|money:cur }}</td>
+          <td class="text-end">{{ place.total|share_of:summary.total|percent }}</td><td class="text-end num text-nowrap">{{ place.over_60|money:cur }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table></div>
+  </div></div></div>
+  {% endif %}
+</div>
+{% endwith %}{% endif %}
+
+<div class="table-responsive">
+<table class="table table-sm align-middle">
+  <thead>
+    <tr>
+      <th>{% trans "Lease" %}</th>
+      {% for key, label, low, high in buckets %}<th class="text-end">{{ label }}</th>{% endfor %}
+      <th class="text-end">{% trans "Balance" %}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in page %}
+    <tr>
+      <td>
+        <a href="{% url 'billing:lease_account' row.lease.public_id %}">{{ row.lease.primary_tenant.name|default:row.lease.number }}</a>
+        <div class="small text-muted">{{ row.lease.unit.property.name }} · {{ row.lease.unit.code }} · {{ row.lease.number }}{% if row.lease.status != "ACTIVE" %} · {{ row.lease.get_status_display }}{% endif %}</div>
+      </td>
+      {% for key, label, low, high in buckets %}<td class="text-end text-nowrap">{% with v=row.buckets|bucket:key %}{% if v %}{{ v|money:row.lease.currency }}{% else %}<span class="text-muted">—</span>{% endif %}{% endwith %}</td>{% endfor %}
+      <td class="text-end text-nowrap fw-semibold">{{ row.balance|money:row.lease.currency }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="7" class="text-muted">{% trans "Nobody is behind." %}</td></tr>
+    {% endfor %}
+  </tbody>
+  {% if rows %}
+  <tfoot>
+    <tr class="fw-semibold">
+      <td>{% trans "Total" %}</td>
+      {% for key, label, low, high in buckets %}<td class="text-end text-nowrap">{{ totals|bucket:key|money }}</td>{% endfor %}
+      <td class="text-end text-nowrap">{{ totals.total|money }}</td>
+    </tr>
+    <tr class="small text-body-secondary">
+      <td>{% trans "Share of total" %}</td>
+      {% for key, label, amount, share in summary.shares %}<td class="text-end">{{ share|percent }}</td>{% endfor %}
+      <td class="text-end">100%</td>
+    </tr>
+  </tfoot>
+  {% endif %}
+</table>
+</div>
+{% include "partials/pager.html" %}
+{% endblock %}

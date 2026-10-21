@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Messages" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'portal:lease' lease.public_id %}" class="small">← {{ lease.unit.property.name }} · {{ lease.unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Messages" %}</h1>
+  <p class="small text-muted">{% blocktrans with org=lease.organization.name %}Write to {{ org }} here. They reply here and tell you by SMS. For anything urgent, call them.{% endblocktrans %}</p>
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <ul class="list-unstyled mb-0 d-flex flex-column gap-2" aria-live="polite">
+      {% for note in thread %}
+      <li class="d-flex {% if note.side == 'TENANT' %}justify-content-end{% endif %}">
+        <div class="rounded-3 px-3 py-2 small {% if note.side == 'TENANT' %}bg-primary-subtle{% else %}bg-body-secondary{% endif %}" style="max-width: 85%">
+          <div class="text-muted">{% if note.side == 'TENANT' %}{% trans "You" %}{% else %}{{ lease.organization.name }}{% endif %} · {{ note.created_at|date:"j M, H:i" }}</div>
+          <div style="white-space: pre-wrap">{{ note.body }}</div>
+        </div>
+      </li>
+      {% empty %}<li class="text-muted small">{% trans "No messages yet." %}</li>{% endfor %}
+    </ul>
+  </div></div>
+
+  {% if can_write %}
+  <form method="post" class="card shadow-sm mb-3" novalidate><div class="card-body">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Send" %}</button>
+  </div></form>
+  {% endif %}
+
+  {% if received %}
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Announcements and notes from the office" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for m in received %}
+      <li class="py-2 border-top"><div class="text-muted">{{ m.created_at|date:"j M Y" }}{% if m.subject %} · {{ m.subject }}{% endif %}</div>
+        <div style="white-space: pre-wrap">{{ m.body }}</div></li>
+      {% endfor %}
+    </ul>
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

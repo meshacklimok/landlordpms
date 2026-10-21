@@ -1,0 +1,39 @@
+{% extends "console/base.html" %}{% load i18n static %}
+{% block title %}{{ item.number }}{% endblock %}
+{% block scripts %}{{ block.super }}<script src="{% static 'js/console_canned.js' %}" defer></script>{% endblock %}
+{% block console_title %}{{ item.number }} · {{ item.subject }}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:support' %}">&larr; {% trans "All requests" %}</a></p>
+<div class="row g-3">
+  <div class="col-lg-7">
+    <p class="small text-muted mb-1">{{ item.get_kind_display }} · {{ item.created_at|date:"j M Y H:i" }} · {{ item.organization.name|default:"—" }} · {{ item.created_by.full_name }}</p>
+    <div class="border rounded p-3 mb-3" style="white-space: pre-wrap">{{ item.message }}</div>
+    {% for r in replies %}<div class="border rounded p-3 mb-2 small bg-body-tertiary" style="white-space: pre-wrap"><div class="text-muted mb-1">{{ r.sent_by.full_name }} · {{ r.created_at|date:"j M H:i" }} · {{ r.get_channel_display }}{% if not r.sent %} · <span class="text-danger">{% trans "not delivered" %}</span>{% endif %}</div>{{ r.body }}</div>{% endfor %}
+    {% if can_solve %}
+    <form method="post" class="vstack gap-2 mb-3">{% csrf_token %}<input type="hidden" name="action" value="reply">
+      <label class="form-label small mb-0" for="body">{% trans "Reply to the landlord" %}</label>
+      <textarea class="form-control form-control-sm" id="body" name="body" rows="4" maxlength="2000" required></textarea>
+      {% if canned %}<div class="d-flex flex-wrap gap-1 align-items-center small"><span class="text-muted">{% trans "Saved replies" %}:</span>{% for c in canned %}<button type="button" class="btn btn-sm btn-outline-secondary" data-canned="body" data-text="{{ c.body }}">{{ c.title }}</button>{% endfor %}</div>{% endif %}
+      <div class="small text-muted">{% trans "Goes by email if they gave one, otherwise by SMS. The request then waits on them." %}</div>
+      <button class="btn btn-sm btn-primary align-self-start">{% trans "Send reply" %}</button>
+    </form>
+    {% endif %}
+    {% if item.page %}<p class="small text-muted mb-0">{% trans "Sent from" %}: {{ item.page }}</p>{% endif %}
+    {% if item.attachment_name %}<p class="small text-muted">{% blocktrans with n=item.attachment_name %}Attachment: {{ n }} (open it in the admin){% endblocktrans %}</p>{% endif %}
+  </div>
+  <div class="col-lg-5">
+    {% if can_solve %}
+    <form method="post" class="vstack gap-2">{% csrf_token %}
+      <label class="form-label small mb-0" for="status">{% trans "Status" %}</label>
+      <select class="form-select form-select-sm" id="status" name="status">{% for v, l in statuses %}<option value="{{ v }}"{% if item.status == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+      <label class="form-label small mb-0" for="internal_note">{% trans "Our note (the landlord does not see it)" %}</label>
+      <textarea class="form-control form-control-sm" id="internal_note" name="internal_note" rows="6" maxlength="5000">{{ item.internal_note }}</textarea>
+      <button class="btn btn-sm btn-primary align-self-start">{% trans "Save" %}</button>
+    </form>
+    {% else %}
+    <p class="small"><strong>{{ item.get_status_display }}</strong></p>
+    <p class="small text-muted">{% trans "You can read requests but not change them." %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

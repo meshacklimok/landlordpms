@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "How it was served" %} · {{ letter.number }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'letters:notices' lease.public_id %}" class="small">← {% trans "Notice and demand letters" %} · {{ lease }}</a>
+  <h1 class="h4 mt-2">{% blocktrans with number=letter.number %}How {{ number }} was served{% endblocktrans %}</h1>
+  <p class="small text-muted">{{ letter.get_kind_display }} · {% blocktrans with day=letter.issued_at|date:"j M Y" %}issued {{ day }}{% endblocktrans %}.
+    {% if letter.kind == "DEMAND" %}{% blocktrans with n=letter.facts.pay_within_days %}The tenant's {{ n }} days to pay count from the day it was served.{% endblocktrans %}{% endif %}</p>
+  {% if letter.is_served %}<div class="alert alert-secondary small">{% trans "This letter's service was already recorded. Saving changes it; the old and new details are kept in the audit trail." %}{% if letter.proof %} {% trans "A new signed copy is added alongside the old one." %}{% endif %}</div>{% endif %}
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <button class="btn btn-sm btn-primary">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+</div>
+{% endblock %}

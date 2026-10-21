@@ -1,0 +1,34 @@
+{% extends "maintenance/_base.html" %}{% load i18n %}
+{% block title %}{% trans "Maintenance targets" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <a href="{% url 'maintenance:performance' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Performance" %}</a>
+  <h1 class="h4 mt-2">{% trans "Maintenance targets" %}</h1>
+  <p class="small text-body-secondary">{% trans "How soon work should start, and how soon it should be fixed, for each priority. Staff and suppliers are measured against these, and staff are told when a job goes late. Changes apply to new requests and to priority changes; times already set on requests stay." %}</p>
+  <form method="post" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
+    {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-3">
+        <thead><tr>
+          <th>{% trans "Priority" %}</th>
+          <th>{% trans "Start within" %}</th>
+          <th>{% trans "Fix within" %}</th>
+        </tr></thead>
+        <tbody>
+          {% for row in form.rows %}
+          <tr>
+            <th class="fw-medium">{{ row.label }}</th>
+            <td><div class="input-group input-group-sm flex-nowrap minw-11r">{{ row.respond }}{{ row.respond_unit }}</div>
+              {% for e in row.respond.errors %}<div class="small text-danger">{{ e }}</div>{% endfor %}</td>
+            <td><div class="input-group input-group-sm flex-nowrap minw-11r">{{ row.fix }}{{ row.fix_unit }}</div>
+              {% for e in row.fix.errors %}<div class="small text-danger">{{ e }}</div>{% endfor %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="small text-body-secondary">{% trans "Times run day and night, weekends included. Defaults: Emergency 4 hours and 24 hours, High 1 day and 3 days, Normal 2 days and 7 days, Low 7 days and 30 days." %}</p>
+    <button class="btn btn-primary btn-sm">{% trans "Save" %}</button>
+  </div></form>
+</div>
+{% endblock %}

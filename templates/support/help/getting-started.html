@@ -1,0 +1,40 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>A few steps get you from an empty workspace to your first rent invoice. The checklist on your
+<a href="{% url 'accounts:home' %}">home page</a> shows which are done.</p>
+<ol>
+  <li><strong>Add a property</strong> on <a href="{% url 'properties:list' %}">Properties</a>: its name, where it is
+    and, if you manage it for someone, its owner.</li>
+  <li><strong>Add units</strong> with their rent. Many units at once? Use <a href="{% url 'imports:list' %}">Import</a>.</li>
+  <li><strong>Add tenants</strong> on <a href="{% url 'tenants:list' %}">Tenants</a>. A phone number is enough to start.</li>
+  <li><strong>Start a lease</strong> from the unit page: tenant, start date, rent, due day and deposit.</li>
+  <li><strong>Set up how tenants pay</strong>: connect your M-Pesa Paybill or Till, or add a payment instruction.</li>
+  <li><strong>Issue invoices</strong>: the daily job bills each lease a few days before the month starts, or press
+    Generate on <a href="{% url 'billing:invoices' %}">Invoices</a>.</li>
+</ol>
+<p>Then invite your caretaker or accountant from <a href="{% url 'accounts:staff' %}">Staff</a> so they can help.</p>
+<h2 class="h6 mt-3">Put it on your phone's home screen</h2>
+<p>NyumbaPMS installs like an app, with its own icon, and opens without the browser bar.</p>
+<ul>
+  <li><strong>Android (Chrome) and computers (Chrome, Edge)</strong>: choose <strong>Install the app</strong> at the
+    top of the page, or Install in the browser's menu.</li>
+  <li><strong>iPhone (Safari)</strong>: tap Share, then <strong>Add to Home Screen</strong>.</li>
+</ul>
+<p>It still needs a connection: nothing about your tenants or money is kept on the phone, so a lost or shared phone
+holds none of it. Without a connection you see a "You are offline" page. The exceptions are a meter round or a repair
+report typed without a connection: it is kept on the phone until it is sent (see Water and electricity, and
+Maintenance). Payments are never kept on the phone; record them once you are back online. Tenants can install it
+the same way.</p>
+<h2 class="h6 mt-4">Alerts on your phone</h2>
+<p>Staff can get a short alert on their phone when something needs them: a payment to review, an M-Pesa payment
+that was not matched, a repair reported or given to them, a new enquiry. Open <strong>Notifications</strong> (the bell),
+then <strong>Turn on</strong> under "Alerts on this phone", and allow notifications when the browser asks. On an
+iPhone, install the app first (Add to Home Screen) and open it from there.</p>
+<ul>
+  <li>An alert only says what kind of thing happened, never names, units or amounts, because others can see a lock
+    screen. Tap it to open your notifications.</li>
+  <li>During your organization's quiet hours alerts wait in the bell and are not sent to the phone.</li>
+  <li>Logging out turns alerts off on that phone. <strong>Turn off everywhere</strong> turns them off on all your
+    devices, for example after losing a phone.</li>
+</ul>
+{% endblock %}

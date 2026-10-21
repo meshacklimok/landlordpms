@@ -1,0 +1,71 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{{ invoice.number|default:_("Draft invoice") }}{% endblock %}
+{% block content %}
+<a href="{% url 'billing:invoices' %}" class="back-link"><i class="bi bi-chevron-left" aria-hidden="true"></i>{% trans "Invoices" %}</a>
+<div class="detail-head">
+  <div class="min-w-0">
+    <h1 class="h4">{{ invoice.number|default:_("Draft invoice") }} {% include "billing/_invoice_status.html" %}</h1>
+    <p class="facts"><span>{{ lease.primary_tenant.name|default:"—" }}</span><span>{{ lease.unit.property.name }}</span><span>{{ vocab.unit }} {{ lease.unit.code }}</span><span><a href="{% url 'billing:lease_account' lease.public_id %}">{{ lease.number }}</a></span></p>
+  </div>
+  <div class="detail-actions">
+    {% if can_send %}<a href="{% url 'notifications:compose' %}?invoice={{ invoice.public_id }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-send" aria-hidden="true"></i>{% blocktrans with w=vocab.tenant|lower %}Send to {{ w }}{% endblocktrans %}</a>{% endif %}
+    <a href="{% url 'billing:invoice_pdf' invoice.public_id %}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-filetype-pdf" aria-hidden="true"></i>PDF</a>
+  </div>
+</div>
+
+{% if invoice.status == "VOID" %}
+<div class="alert alert-secondary small">{% blocktrans with on=invoice.voided_at|date:"j M Y" %}Voided on {{ on }}{% endblocktrans %}{% if invoice.void_reason %}: {{ invoice.void_reason }}{% endif %}</div>
+{% endif %}
+
+<div class="detail-grid">
+  <aside class="detail-aside" aria-label="{% trans 'Invoice details' %}">
+    <section class="panel">
+      <dl class="kv">
+        <dt>{% trans "Period" %}</dt><dd>{{ invoice.period_start|date:"j M Y" }} – {{ invoice.period_end|date:"j M Y" }}</dd>
+        <dt>{% trans "Issued" %}</dt><dd>{{ invoice.issue_date|date:"j M Y"|default:"—" }}</dd>
+        <dt>{% trans "Due" %}</dt><dd>{{ invoice.due_date|date:"j M Y" }}<div class="small text-body-secondary">{% blocktrans with d=invoice.overdue_after|date:"j M Y" %}overdue after {{ d }}{% endblocktrans %}</div></dd>
+      </dl>
+    </section>
+    {% if entries %}
+    <section class="panel">
+      <div class="panel-head"><h2>{% trans "Ledger" %}</h2></div>
+      <ul class="list-unstyled small mb-0">
+        {% for e in entries %}<li class="d-flex justify-content-between gap-2 py-1"><span>{{ e.entry_date|date:"j M Y" }} · {{ e.get_kind_display }}</span><span class="num text-nowrap">{{ e.amount|money:e.currency }}</span></li>{% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+  </aside>
+
+  <div class="min-w-0">
+    <section class="panel">
+      <div class="table-responsive"><table class="table table-sm mb-0">
+        <thead><tr><th>{% trans "Item" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+        <tbody>
+          {% for line in lines %}
+          <tr><td>{{ line.description }}{% if line.service_start %}<div class="small text-muted">{{ line.service_start|date:"j M" }} – {{ line.service_end|date:"j M Y" }}</div>{% endif %}</td><td class="text-end text-nowrap num">{{ line.amount|money:invoice.currency }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          {% if invoice.tax_total %}<tr><td>{% trans "Tax" %}</td><td class="text-end num">{{ invoice.tax_total|money:invoice.currency }}</td></tr>{% endif %}
+          <tr class="fw-semibold"><td>{% trans "Total" %}</td><td class="text-end text-nowrap num">{{ invoice.total|money:invoice.currency }}</td></tr>
+          {% if invoice.amount_paid %}<tr><td>{% trans "Paid" %}</td><td class="text-end text-nowrap num">{{ invoice.amount_paid|money:invoice.currency }}</td></tr>{% endif %}
+          {% if invoice.status != "VOID" %}<tr class="fw-semibold"><td>{% trans "Outstanding" %}</td><td class="text-end text-nowrap num">{{ invoice.outstanding|money:invoice.currency }}</td></tr>{% endif %}
+        </tfoot>
+      </table></div>
+    </section>
+
+    {% if can_void %}
+    <section class="panel danger-zone">
+      <div class="panel-head"><h2>{% trans "Void this invoice" %}</h2></div>
+      <p class="small text-muted">{% trans "The number is kept and the amount is credited back. The month can then be billed again." %}</p>
+      <form method="post" novalidate>{% csrf_token %}
+        {% with form=void_form %}{% include "partials/form.html" %}{% endwith %}
+        <button class="btn btn-outline-danger">{% trans "Void invoice" %}</button>
+      </form>
+    </section>
+    {% elif invoice.amount_paid and invoice.status != "VOID" %}
+    <p class="small text-muted">{% trans "An invoice with payments cannot be voided. Reverse the payments first." %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

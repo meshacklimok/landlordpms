@@ -1,0 +1,24 @@
+# Pull requests that keep pinned packages and GitHub Actions up to date (D-107). Security fixes come as soon as an
+# advisory is published; ordinary updates weekly, grouped so they arrive as one or two pull requests.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Africa/Nairobi
+    open-pull-requests-limit: 5
+    groups:
+      python-minor:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      timezone: Africa/Nairobi
+    groups:
+      actions:
+        patterns: ["*"]

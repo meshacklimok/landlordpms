@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Invoices" %}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="h4">{% trans "Invoices" %}</h1>
+    <p class="lead-text">{% blocktrans count n=page.paginator.count %}{{ n }} match{% plural %}{{ n }} matches{% endblocktrans %}</p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{% url 'billing:arrears' %}">{% trans "Arrears" %}</a>
+    {% if can_generate %}<a class="btn btn-primary btn-sm" href="{% url 'billing:generate' %}"><i class="bi bi-receipt" aria-hidden="true"></i>{% trans "Bill a month" %}</a>{% endif %}
+  </div>
+</div>
+<form method="get" data-autosubmit class="filter-bar" role="search">
+  <div class="filter-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Search invoice, lease, unit or tenant' %}" aria-label="{% trans 'Search' %}"></div>
+  <select name="status" class="form-select" aria-label="{% trans 'Status' %}">
+    <option value="">{% trans "All" %}</option>
+    {% for value, label in status_filters %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <div class="form-check align-self-center mb-0">
+    <input class="form-check-input" type="checkbox" name="overdue" value="1" id="overdue" {% if overdue %}checked{% endif %}>
+    <label class="form-check-label" for="overdue">{% trans "Overdue only" %}</label>
+  </div>
+  <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
+</form>
+{% if totals.count %}{% with cur=currency %}
+<div class="row g-2 mb-1">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Billed" %}</div>
+    <div class="stat-value num">{{ totals.billed|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=totals.count %}{{ n }} invoice{% plural %}{{ n }} invoices{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Paid" %}</div>
+    <div class="stat-value num">{{ totals.paid|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with s=totals.paid_share|percent %}{{ s }} of what was billed{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Still to pay" %}</div>
+    <div class="stat-value num">{{ totals.outstanding|money:cur }}</div>
+    <div class="stat-sub">{% trans "billed less paid" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Overdue" %}</div>
+    <div class="stat-value num {% if totals.overdue %}text-danger{% endif %}">{{ totals.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=totals.overdue_count %}{{ n }} invoice past its grace days{% plural %}{{ n }} invoices past their grace days{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+<p class="small text-body-secondary mb-3">{% if filtered %}{% trans "Totals for the invoices matching your search, not counting drafts or void invoices." %}{% else %}{% trans "Totals for all invoices, not counting drafts or void invoices." %}{% endif %}</p>
+{% endwith %}{% endif %}
+{% if page %}
+<ul class="item-list">
+  {% for invoice in page %}
+  <li><a href="{% url 'billing:invoice' invoice.public_id %}" class="item">
+    <span class="item-mark square" aria-hidden="true"><i class="bi bi-receipt"></i></span>
+    <span class="item-main">
+      <span class="item-title">{{ invoice.number|default:_("Draft") }} · {{ invoice.lease.primary_tenant.name|default:"—" }}</span>
+      <span class="item-meta d-block">{{ invoice.lease.unit.property.name }} · {{ invoice.lease.unit.code }} · {{ invoice.period_start|date:"j M" }} – {{ invoice.period_end|date:"j M Y" }} · {% blocktrans with d=invoice.due_date|date:"j M Y" %}due {{ d }}{% endblocktrans %}</span>
+    </span>
+    <span class="item-end text-end">
+      <span class="d-block text-nowrap fw-semibold">{{ invoice.total|money:invoice.currency }}</span>
+      {% include "billing/_invoice_status.html" %}
+    </span>
+  </a></li>
+  {% endfor %}
+</ul>
+{% else %}
+{% if q or status or overdue %}{% trans "No invoices match your search." as t %}{% include "partials/empty_state.html" with icon="bi-search" title=t %}
+{% else %}{% trans "No invoices yet" as t %}{% trans "They are issued each month for active leases." as x %}{% include "partials/empty_state.html" with icon="bi-receipt" title=t text=x %}{% endif %}
+{% endif %}
+{% include "partials/pager.html" %}
+{% endblock %}

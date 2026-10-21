@@ -1,0 +1,99 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Tenant statement" %}{% endblock %}
+{% block content %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Tenant statement" %}</h1>
+<p class="small text-body-secondary">{% trans "Everything charged to one tenant and everything they paid, with the balance after each line." %}</p>
+
+<form method="get" data-autosubmit class="card shadow-sm mb-3 report-actions"><div class="card-body">
+  <div class="row g-2 align-items-end">
+    <div class="col-12 col-md-5">
+      <label class="form-label small text-body-secondary mb-1" for="f-lease">{% trans "Tenant" %}</label>
+      {% if lease %}
+      <input type="hidden" name="lease" value="{{ lease.public_id }}">
+      <div id="f-lease" class="form-control form-control-sm bg-body-tertiary">{{ tenant.name|default:"—" }} · {{ lease.unit.code }}, {{ lease.unit.property.name }}</div>
+      {% else %}
+      <select id="f-lease" name="lease" class="form-select form-select-sm">
+        <option value="">{% trans "Choose a tenant…" %}</option>
+        {% for l in choices %}<option value="{{ l.public_id }}">{{ l.primary_tenant.name|default:"—" }} · {{ l.unit.code }}, {{ l.unit.property.name }}{% if l.status != "ACTIVE" %} ({{ l.get_status_display }}){% endif %}</option>{% endfor %}
+      </select>
+      {% endif %}
+    </div>
+    <div class="col-12 col-md-3">
+      <label class="form-label small text-body-secondary mb-1" for="f-period">{% trans "Period" %}</label>
+      <select id="f-period" name="period" class="form-select form-select-sm">
+        {% for key, label in presets %}<option value="{{ key }}" {% if period.key == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    </div>
+    {% if period.key == "custom" %}
+    <div class="col-6 col-md-2"><label class="form-label small text-body-secondary mb-1" for="f-from">{% trans "From" %}</label>
+      <input type="date" id="f-from" name="from" value="{{ period.start|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+    <div class="col-6 col-md-2"><label class="form-label small text-body-secondary mb-1" for="f-to">{% trans "To" %}</label>
+      <input type="date" id="f-to" name="to" value="{{ period.end|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+    {% endif %}
+    <div class="col-12 col-md-auto d-flex flex-wrap gap-2">
+      <noscript><button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button></noscript>
+      {% if lease %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:tenant_statement' %}?period={{ period.key }}">{% trans "Another tenant" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="?{{ pdf_query }}" target="_blank" rel="noopener">{% trans "Download PDF" %}</a>
+      {% if can_export %}<a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query }}">{% trans "Download CSV" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="?{{ csv_query|as_excel }}">{% trans "Download Excel" %}</a>{% endif %}
+      <button type="button" class="btn btn-sm btn-outline-secondary" data-print>{% trans "Print" %}</button>{% endif %}
+    </div>
+  </div>
+</div></form>
+
+{% if lease %}
+{% with cur=currency %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-secondary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Brought forward" %}</div><div class="stat-value num">{{ statement.brought_forward|money:cur }}</div>
+    <div class="stat-sub">{% trans "owed at the start of the period" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Charged" %}</div><div class="stat-value num">{{ statement.debits|money:cur }}</div>
+    <div class="stat-sub">{% trans "in this period" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Paid or credited" %}</div><div class="stat-value num">{{ statement.credits|money:cur }}</div>
+    <div class="stat-sub">{% if last_payment %}{% blocktrans with d=last_payment.paid_at|date:"j M Y" %}last payment {{ d }}{% endblocktrans %}{% else %}{% trans "no payment yet" %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 {% if statement.closing > 0 %}accent-danger{% else %}accent-success{% endif %}"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Balance owed" %}</div><div class="stat-value num">{{ statement.closing|money:cur }}</div>
+    <div class="stat-sub">{% trans "at the end of the period" %}</div></div></div></div>
+</div>
+{% if statement.closing > 0 %}<div class="card shadow-sm mb-3"><div class="card-body py-2">
+  <div class="small text-body-secondary mb-1">{% trans "What is owed now, by how late it is" %}</div>
+  <div class="d-flex flex-wrap gap-4">{% for label, amount in aging %}<div><div class="small text-body-secondary">{{ label }}</div><div class="num fw-semibold">{{ amount|money:cur }}</div></div>{% endfor %}</div>
+</div></div>{% endif %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+    <div><div class="fw-semibold">{{ tenant.name|default:"—" }}</div>
+      <div class="small text-body-secondary">{{ lease.unit.code }}, {{ lease.unit.property.name }}{% if lease.number %} · {{ lease.number }}{% endif %}</div></div>
+    <div class="text-md-end small text-body-secondary">{% trans "Statement for" %} {{ period.label }}<br>
+      {% if open_account %}<a class="d-print-none" href="{% url 'billing:lease_account' lease.public_id %}">{% trans "Open the lease account" %} →</a>{% endif %}</div>
+  </div>
+  <div class="table-responsive"><table class="table table-sm small mb-0">
+    <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Detail" %}</th><th class="text-end">{% trans "Charged" %}</th><th class="text-end">{% trans "Credited" %}</th><th class="text-end">{% trans "Balance" %}</th></tr></thead>
+    <tbody>
+      <tr class="text-body-secondary"><td>{{ period.start|date:"j M Y" }}</td><td>{% trans "Brought forward" %}</td><td></td><td></td><td class="text-end num text-nowrap">{{ statement.brought_forward|money:cur }}</td></tr>
+      {% for row in statement.rows %}<tr>
+        <td class="text-nowrap">{{ row.entry.entry_date|date:"j M Y" }}</td>
+        <td>{{ row.entry.get_kind_display }}{% if row.entry.invoice %} · {{ row.entry.invoice.number }}{% endif %}{% if row.entry.reason %}<div class="text-body-secondary">{{ row.entry.reason }}</div>{% endif %}{% if row.lines %}<ul class="list-unstyled mb-0 text-body-secondary">{% for l in row.lines %}<li class="d-flex justify-content-between gap-3"><span>{{ l.description }}</span><span class="text-nowrap">{{ l.amount|money:cur }}</span></li>{% endfor %}</ul>{% endif %}</td>
+        <td class="text-end num text-nowrap">{% if row.debit %}{{ row.debit|money:cur }}{% endif %}</td>
+        <td class="text-end num text-nowrap">{% if row.credit %}{{ row.credit|money:cur }}{% endif %}</td>
+        <td class="text-end num text-nowrap">{{ row.balance|money:cur }}</td></tr>
+      {% empty %}<tr><td colspan="5" class="text-body-secondary">{% trans "Nothing was charged or paid in this period." %}</td></tr>{% endfor %}
+    </tbody>
+    <tfoot><tr class="fw-semibold"><td colspan="4">{% trans "Closing balance" %}</td><td class="text-end num text-nowrap {% if statement.closing > 0 %}text-danger{% endif %}">{{ statement.closing|money:cur }}</td></tr></tfoot>
+  </table></div>
+  <dl class="row small mt-3 mb-0 mw-760">
+    <dt class="col-8 fw-normal text-body-secondary">{% trans "Rent charged" %}</dt><dd class="col-4 text-end num">{{ statement.charged.rent|money:cur }}</dd>
+    <dt class="col-8 fw-normal text-body-secondary">{% trans "Water and electricity charged" %}</dt><dd class="col-4 text-end num">{{ statement.charged.utilities|money:cur }}</dd>
+    <dt class="col-8 fw-normal text-body-secondary">{% trans "Other charges and fees" %}</dt><dd class="col-4 text-end num">{{ statement.charged.other|money:cur }}</dd>
+    {% if statement.charged.deposit %}<dt class="col-8 fw-normal text-body-secondary">{% trans "Deposit charged" %}</dt><dd class="col-4 text-end num">{{ statement.charged.deposit|money:cur }}</dd>{% endif %}
+    {% if statement.other_debits %}<dt class="col-8 fw-normal text-body-secondary">{% trans "Balances brought in, adjustments and reversed payments" %}</dt><dd class="col-4 text-end num">{{ statement.other_debits|money:cur }}</dd>{% endif %}
+    <dt class="col-8 fw-normal text-body-secondary">{% trans "Paid, credited or voided" %}</dt><dd class="col-4 text-end num">−{{ statement.credits|money:cur }}</dd>
+  </dl>
+</div></div>
+{% endwith %}
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "Choose a tenant to see their statement." %}</div></div>
+{% endif %}
+{% endblock %}

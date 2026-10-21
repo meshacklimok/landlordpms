@@ -1,0 +1,31 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Income and expenses" %}{% endblock %}
+{% block console_title %}{% trans "Income and expenses" %}{% endblock %}
+{% block console %}
+{% with d=data %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <p class="small text-muted mb-0">{% trans "What landlords paid us, and what it cost to run. SMS and assistant use come from the providers' charges; the rest from what you entered on the Money page." %}</p>
+  <div class="d-flex gap-2"><a class="btn btn-sm btn-outline-secondary" href="{% url 'console:money' %}">{% trans "Enter an expense" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="?format=csv">{% trans "Download CSV" %}</a></div>
+</div>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Income, 12 months" %}</div><div class="h4 mb-0">{{ d.income_total|money }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Expenses, 12 months" %}</div><div class="h4 mb-0">{{ d.expenses_total|money }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "Left over, 12 months" %}</div><div class="h4 mb-0{% if d.net_total < 0 %} text-danger{% endif %}">{{ d.net_total|money }}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body"><div class="small text-muted">{% trans "This month" %}</div><div class="h4 mb-0{% if d.this_month.net < 0 %} text-danger{% endif %}">{{ d.this_month.net|money }}</div>
+    <div class="small">{% blocktrans with i=d.this_month.income|money e=d.this_month.expenses|money %}{{ i }} in, {{ e }} out{% endblocktrans %}</div></div></div></div>
+</div>
+{% include "console/_chart.html" with spec="statement" title=_("Income, expenses and what is left") note=_("Month by month.") label=_("The same figures are in the tables below.") %}
+<h2 class="h6 mt-3">{% trans "By month" %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Income" %}</th><th class="text-end">{% trans "Expenses" %}</th><th class="text-end">{% trans "Left over" %}</th></tr></thead>
+  <tbody>{% for r in d.table %}<tr><td>{{ r.month }}</td><td class="text-end">{{ r.income|money }}</td><td class="text-end">{{ r.expenses|money }}</td><td class="text-end{% if r.net < 0 %} text-danger{% endif %}">{{ r.net|money }}</td></tr>{% endfor %}</tbody>
+</table></div>
+<h2 class="h6 mt-3">{% trans "What the expenses were" %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th>{% trans "Expense" %}</th><th class="text-end">{% trans "12 months" %}</th></tr></thead>
+  <tbody>{% for r in d.rows %}<tr><td>{{ r.name }}{% if r.tracked %} <span class="badge text-bg-light border">{% trans "worked out for you" %}</span>{% endif %}</td><td class="text-end">{{ r.total|money }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endwith %}
+{% include "console/_specs.html" %}
+{% endblock %}

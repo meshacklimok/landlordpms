@@ -1,0 +1,52 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Failures queue" %}{% endblock %}
+{% block console_title %}{% trans "Failures queue" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:health' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Platform health" %}</a>
+  · {% blocktrans with w=data.window %}Failures from the last {{ w }} days. A retry sends the message or webhook again now; if it fails again it stays here.{% endblocktrans %}</p>
+{% if not total %}<p class="text-muted">{% trans "Nothing failed. All clear." %}</p>{% endif %}
+
+{% if data.messages %}
+<div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+  <h2 class="h6 mb-0">{% blocktrans with n=data.message_count %}Failed messages ({{ n }}){% endblocktrans %}</h2>
+  {% if "fix" in allowed %}<form method="post">{% csrf_token %}<input type="hidden" name="what" value="messages"><button class="btn btn-sm btn-outline-primary">{% trans "Retry all shown" %}</button></form>{% endif %}
+</div>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "When" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Channel" %}</th><th>{% trans "To" %}</th><th>{% trans "Reason" %}</th><th></th></tr></thead>
+  <tbody>{% for m in data.messages %}<tr>
+    <td class="text-nowrap">{{ m.created_at|date:"j M H:i" }}</td>
+    <td><a href="{% url 'console:organization' m.organization.public_id %}">{{ m.organization.name }}</a></td>
+    <td>{{ m.channel }} · {{ m.type }}</td><td class="text-break">{{ m.to|default:"—" }}</td>
+    <td class="text-break">{{ m.error|default:_("No reason given") }}</td>
+    <td>{% if "fix" in allowed %}<form method="post">{% csrf_token %}<input type="hidden" name="what" value="message"><input type="hidden" name="id" value="{{ m.pk }}"><button class="btn btn-sm btn-outline-secondary">{% trans "Retry" %}</button></form>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>{% endif %}
+
+{% if data.webhooks %}
+<div class="d-flex flex-wrap gap-2 align-items-center mt-3">
+  <h2 class="h6 mb-0">{% blocktrans with n=data.webhook_count %}Failed webhook deliveries ({{ n }}){% endblocktrans %}</h2>
+  {% if "fix" in allowed %}<form method="post">{% csrf_token %}<input type="hidden" name="what" value="webhooks"><button class="btn btn-sm btn-outline-primary">{% trans "Retry all shown" %}</button></form>{% endif %}
+</div>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "When" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Event" %}</th><th>{% trans "Answer" %}</th><th>{% trans "Reason" %}</th><th></th></tr></thead>
+  <tbody>{% for d in data.webhooks %}<tr>
+    <td class="text-nowrap">{{ d.created_at|date:"j M H:i" }}</td>
+    <td><a href="{% url 'console:organization' d.organization.public_id %}">{{ d.organization.name }}</a></td>
+    <td>{{ d.event }}</td><td>{{ d.last_status_code|default:"—" }}</td>
+    <td class="text-break">{{ d.last_error|default:_("No reason given") }}{% if d.endpoint.paused_at %} <span class="badge text-bg-warning">{% trans "endpoint paused" %}</span>{% endif %}</td>
+    <td>{% if "fix" in allowed %}<form method="post">{% csrf_token %}<input type="hidden" name="what" value="webhook"><input type="hidden" name="id" value="{{ d.public_id }}"><button class="btn btn-sm btn-outline-secondary">{% trans "Retry" %}</button></form>{% endif %}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>{% endif %}
+
+{% if data.mpesa %}
+<h2 class="h6 mt-3">{% blocktrans with n=data.mpesa_count %}M-Pesa payments waiting over two days ({{ n }}){% endblocktrans %}</h2>
+<p class="small text-muted">{% trans "These need the landlord to match them. Open the organization to see more, or message the owner." %}</p>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Paid" %}</th><th>{% trans "Organization" %}</th><th class="text-end">{% trans "Amount" %}</th><th>{% trans "Account reference" %}</th><th>{% trans "Status" %}</th></tr></thead>
+  <tbody>{% for t in data.mpesa %}<tr>
+    <td class="text-nowrap">{{ t.paid_at|date:"j M H:i" }}</td>
+    <td><a href="{% url 'console:organization' t.organization.public_id %}">{{ t.organization.name }}</a></td>
+    <td class="text-end">{{ t.amount }}</td><td class="text-break">{{ t.bill_ref|default:"—" }}</td><td>{{ t.get_status_display }}</td>
+  </tr>{% endfor %}</tbody>
+</table></div>{% endif %}
+{% endblock %}

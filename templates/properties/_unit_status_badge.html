@@ -1,0 +1,3 @@
+{% load i18n %}
+<span class="badge {% if u.is_occupied %}text-bg-success{% elif u.manual_status == 'NORMAL' %}text-bg-info{% elif u.manual_status == 'INACTIVE' %}text-bg-secondary{% else %}text-bg-warning{% endif %}">{{ u.get_effective_status_display }}</span>
+{% if u.moving_out_on %}<span class="badge text-bg-warning" title="{% translate 'Notice to vacate given' %}">{% blocktranslate with day=u.moving_out_on|date:"j M" %}Leaving {{ day }}{% endblocktranslate %}</span>{% endif %}

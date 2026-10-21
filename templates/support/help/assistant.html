@@ -1,0 +1,59 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p><strong>Ask</strong> answers questions about your own properties in plain words, for example "Who owes more than
+30 days at Acacia Court?", "How much rent did we collect in March?", "Which units are vacant?" or "Which repairs are
+late?". It also answers questions about using the app, such as "How do I record a cash payment?", from these help
+pages, with a link to the page to use. You can ask in English or Swahili.</p>
+<ul>
+  <li>It answers only from what your role can see, on the properties you can see. If your role cannot see invoices,
+    it cannot tell you who owes.</li>
+  <li>It never changes anything by itself. Ask it to record a payment, message a tenant or assign a repair and it
+    shows a card with exactly what would be done. Nothing happens until you press <strong>Confirm</strong>; press
+    <strong>Dismiss</strong> if anything is wrong and ask again.</li>
+  <li>Confirming does the same as the page would, with your role's permissions. A payment you cannot confirm still
+    waits for review. A message's text can be edited on the card first. A card can be used once and expires after
+    30 minutes.</li>
+  <li>Under each answer, "Pages used" links to the leases, units and repairs it looked at. Check important figures
+    there before acting on them.</li>
+  <li>A follow-up question remembers the last few questions. "New conversation" starts again.</li>
+  <li>Each person can ask 30 questions a day. Your recent questions are listed on the page and kept for 90 days.</li>
+</ul>
+<h2 class="h6 mt-4">Teaching it your own rules</h2>
+<p>An owner can write down how your organization does things under <strong>What the assistant knows</strong> in the
+Ask settings: office hours, how deposits are refunded, house rules, when rubbish is collected, who to see about
+what. Each entry is a question or topic and its answer, for all properties or one.</p>
+<ul>
+  <li>The assistant uses an entry from the next question. Change or remove it on the same page; every change is in
+    the activity log.</li>
+  <li>Staff get entries on the properties they can see. Tick <strong>Tenants can be told this</strong> for entries
+    tenants may get when they ask in the portal or on WhatsApp; leave it off for notes for staff only.</li>
+  <li>Phone numbers, emails and long numbers cannot be saved in an entry, because the assistant never passes them
+    on. Say where to find them instead.</li>
+  <li>Up to 100 entries. Entries are sent to OpenAI with the questions they answer.</li>
+</ul>
+<h2 class="h6 mt-4">Switching it on</h2>
+<p>It is off until an owner switches it on, at the bottom of the Ask page. To answer, the question and the names and
+figures used to answer it (tenants, properties, units, amounts, dates and repair titles) are sent to OpenAI, which
+runs the GPT model. Phone numbers, emails, ID numbers, notes, documents and photos are never sent. An owner can
+switch it off at any time.</p>
+<h2 class="h6 mt-4">Answering tenants</h2>
+<p>An owner can switch on "Answer tenants" in the same settings. It is separate from the staff assistant. Tenants
+then get an Ask page in the tenant portal, and, where WhatsApp is set up, answers when they message your WhatsApp
+number from the phone on their tenant record.</p>
+<ul>
+  <li>Tenants get answers about their own homes only: rent and due day, what they owe, how to pay, their last
+    payments with receipt numbers, and their repairs. WhatsApp messages from numbers that match no tenant get no
+    reply.</li>
+  <li>A tenant on an active lease can also ask it to report a repair, or to send an M-Pesa prompt to their own
+    phone where M-Pesa prompts are set up. Nothing is done until the tenant confirms: in the portal they press
+    Confirm on a card (it lapses after 30 minutes); on WhatsApp they reply YES (or NDIYO) within 10 minutes, and any
+    other message cancels it.</li>
+  <li>Repairs reported this way show "Assistant" as the source, and count with USSD repairs (5 a day). M-Pesa
+    prompts count with USSD prompts (5 a phone a day, one every 2 minutes) and show "from the assistant".</li>
+  <li>If the tenant has set a USSD PIN, balances and payments are not given on WhatsApp; repairs and prompts still
+    work.</li>
+  <li>Each phone, and each portal user, can ask 10 questions a day. STOP and START on WhatsApp still work as before
+    and are not answered.</li>
+  <li>Tenants' questions are kept for 90 days and are not shown to staff.</li>
+</ul>
+{% endblock %}

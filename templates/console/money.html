@@ -1,0 +1,63 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console money" %}{% endblock %}
+{% block console_title %}{% trans "What the app earns, costs and leaves you" %}{% endblock %}
+{% block console %}
+{% with d=data %}
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Net profit, this month" %}</div>
+    <div class="h4 mb-0 {% if d.this_month.net < 0 %}text-danger{% endif %}">{{ d.this_month.net|money }}</div>
+    <div class="small">{% blocktrans with r=d.this_month.received|money c=d.this_month.costs|money %}{{ r }} in, {{ c }} out{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Net profit, last 12 months" %}</div>
+    <div class="h4 mb-0 {% if d.net_total < 0 %}text-danger{% endif %}">{{ d.net_total|money }}</div>
+    <div class="small">{% if d.margin is not None %}{% blocktrans with m=d.margin %}{{ m }}% of what came in{% endblocktrans %}{% else %}{% trans "Nothing has come in yet" %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Received, 12 months" %}</div><div class="h4 mb-0">{{ d.received_total|money }}</div>
+    <div class="small">{% trans "Subscriptions and SMS top-ups" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Costs, 12 months" %}</div><div class="h4 mb-0">{{ d.costs_total|money }}</div>
+    <div class="small">{% if d.cost_per_paying %}{% blocktrans with c=d.cost_per_paying|money %}{{ c }} a month per paying customer{% endblocktrans %}{% endif %}</div>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">{% include "console/_chart.html" with spec="money" title=_("Received, costs and net profit") note=_("Month by month. Costs include repeating ones in every month they apply to.") label=_("The same figures are in the table below.") %}</div>
+  <div class="col-lg-5">{% include "console/_chart.html" with spec="costs" title=_("Where the money goes") note=_("Costs by category, 12 months.") label=_("Category totals are in the table.") %}</div>
+  <div class="col-lg-6">{% include "console/_chart.html" with spec="profit" title=_("Profit so far") note=_("Adds each month's net profit to the last.") label=_("Running total.") %}</div>
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Month by month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Costs" %}</th><th class="text-end">{% trans "Net" %}</th><th class="text-end">{% trans "So far" %}</th></tr></thead>
+      <tbody>{% for m in d.months %}{% with i=forloop.counter0 %}<tr><td>{{ m }}</td>
+        <td class="text-end">{{ d.received|slice:i|last|default:0|money }}</td><td class="text-end">{{ d.costs|slice:i|last|default:0|money }}</td>
+        <td class="text-end">{{ d.net|slice:i|last|default:0|money }}</td><td class="text-end">{{ d.cumulative|slice:i|last|default:0|money }}</td></tr>{% endwith %}{% endfor %}</tbody>
+    </table></div>
+    <h2 class="h6 mt-3">{% trans "Costs by category" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><tbody>{% for name, amount in d.categories %}<tr><td>{{ name }}</td><td class="text-end">{{ amount|money }}</td></tr>{% empty %}<tr><td class="text-muted">{% trans "No costs entered yet." %}</td></tr>{% endfor %}</tbody></table></div>
+  </div>
+</div>
+
+<h2 class="h5">{% if editing %}{% trans "Change this entry" %}{% else %}{% trans "Enter something you paid" %}{% endif %}</h2>
+<form method="post" class="col-lg-6 p-0 mb-4"{% if editing %} action="{% url 'console:expense' editing.pk %}"{% endif %}>{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+  {% if editing %}<button class="btn btn-outline-danger" name="delete" value="1" formnovalidate>{% trans "Delete" %}</button> <a class="btn btn-link" href="{% url 'console:money' %}">{% trans "Cancel" %}</a>{% endif %}
+</form>
+
+<h2 class="h5">{% trans "What you have entered" %}</h2>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Paid" %}</th><th>{% trans "Category" %}</th><th>{% trans "Paid to" %}</th><th class="text-end">{% trans "Amount" %}</th><th>{% trans "Repeats" %}</th><th>{% trans "Note" %}</th><th></th></tr></thead>
+  <tbody>{% for e in expenses %}<tr>
+    <td class="text-nowrap">{{ e.spent_on|date:"j M Y" }}</td><td>{{ e.get_category_display }}</td><td>{{ e.vendor }}</td>
+    <td class="text-end text-nowrap">{{ e.amount|money }}</td>
+    <td>{{ e.get_repeat_display }}{% if e.ends_on %} {% blocktrans with d=e.ends_on|date:"M Y" %}until {{ d }}{% endblocktrans %}{% endif %}</td>
+    <td class="text-muted">{{ e.note }}</td><td class="text-end"><a href="{% url 'console:expense' e.pk %}">{% trans "Change" %}</a></td>
+  </tr>{% empty %}<tr><td colspan="7" class="text-muted">{% trans "Nothing yet. Enter hosting, AI, email, SMS and subscription payments to see your net profit." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endwith %}
+{% include "console/_specs.html" %}
+{% endblock %}

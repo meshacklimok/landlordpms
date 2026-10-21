@@ -1,0 +1,51 @@
+{% extends "base.html" %}{% load i18n money reports access %}
+{% block title %}{% trans "Month on month" %}{% endblock %}
+{% block content %}
+{% with cur=report.currency %}
+<h1 class="h4 mb-0">{% trans "Month on month" %}</h1>
+<p class="small text-body-secondary">{{ report.label }} · {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %} · {% trans "cash basis" %} · {% trans "each month against the month before" %}</p>
+{% include "reports/_finance_links.html" with section="mom" %}
+{% include "reports/_finance_filter.html" %}
+{% if notes %}<ul class="highlights mb-3">{% for h in notes %}<li class="hl-{{ h.tone }}"><i class="bi bi-{{ h.icon }}" aria-hidden="true"></i><span>{{ h.text }}</span></li>{% endfor %}</ul>{% endif %}
+
+{% if specs.months %}
+<section class="mb-3"><div class="chart-card">
+  <h2>{% trans "Income, expenses and net operating income" %}</h2>
+  <div class="chart-box h-lg"><canvas data-chart="chart-mom" role="img" aria-label="{% trans 'Income, expenses and net operating income by month. The same figures are in the table below.' %}"></canvas></div>
+</div></section>
+{{ specs.months|json_script:"chart-mom" }}
+{% endif %}
+
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Month" %}</th>
+    <th class="text-end">{% trans "Rent billed" %}</th>
+    <th class="text-end">{% trans "Income" %}</th><th class="text-end">{% trans "Change" %}</th>
+    <th class="text-end">{% trans "Expenses" %}</th><th class="text-end">{% trans "Change" %}</th>
+    <th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Change" %}</th>
+    <th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Change" %}</th>
+  </tr></thead>
+  <tbody>{% for row, ch in rows %}<tr>
+    <td class="text-nowrap">{{ row.label }}</td>
+    <td class="text-end num text-nowrap">{{ row.rent_billed|money:cur }}</td>
+    <td class="text-end num text-nowrap">{{ row.income|money:cur }}</td><td class="text-end">{% include "reports/_change.html" with c=ch.income bare=True %}</td>
+    <td class="text-end num text-nowrap">{{ row.expenses|money:cur }}</td><td class="text-end">{% include "reports/_change.html" with c=ch.expenses bare=True down_good=True %}</td>
+    <td class="text-end num text-nowrap {% if row.noi < 0 %}text-danger{% endif %}">{{ row.noi|money:cur }}</td><td class="text-end">{% include "reports/_change.html" with c=ch.noi bare=True %}</td>
+    <td class="text-end">{{ row.collection_rate|percent }}</td><td class="text-end">{% include "reports/_change.html" with c=ch.collection_rate bare=True kind="pts" %}</td>
+  </tr>{% endfor %}</tbody>
+</table>
+</div>
+<p class="small text-body-secondary">{% blocktrans with l=lead.label %}The first month is compared with {{ l }}. A change is shown as a percent of the month before; collection is shown in percentage points. A fall in expenses is shown as good news.{% endblocktrans %}</p>
+
+<h2 class="h6">{% trans "Notes" %}</h2>
+<ul class="small text-body-secondary">{% for note in report.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if specs.months %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

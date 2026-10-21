@@ -1,0 +1,21 @@
+{% load i18n money %}
+<div class="card shadow-sm mb-3"><div class="card-body p-2">
+  <h2 class="h6">{{ title }}</h2>
+  <div class="table-responsive"><table class="table table-sm small align-middle mb-0">
+    <thead><tr>
+      <th>{{ name }}</th><th class="text-end">{% trans "Rent collected" %}</th><th class="text-end">{% trans "Fees" %}</th>
+      <th class="text-end">{% trans "Of rent" %}</th><th class="text-end">{% trans "Of all fees" %}</th>
+    </tr></thead>
+    <tbody>{% for row in rows %}
+    <tr>
+      <td>{{ row.label }}{% if row.note %} <span class="text-muted">({{ row.note }})</span>{% endif %}</td>
+      <td class="text-end num text-nowrap">{{ row.rent_total|money:currency }}</td>
+      <td class="text-end num text-nowrap">{{ row.fee_total|money:currency }}</td>
+      <td class="text-end text-muted">{% if row.fee_rate is not None %}{{ row.fee_rate }}%{% else %}—{% endif %}</td>
+      <td class="text-end text-muted">{% if row.share is not None %}{{ row.share }}%{% else %}—{% endif %}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="text-muted">{% trans "No fees in these months." %}</td></tr>
+    {% endfor %}</tbody>
+  </table></div>
+</div></div>

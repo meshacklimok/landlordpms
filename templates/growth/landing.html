@@ -1,0 +1,221 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block title %}NyumbaPMS · {% trans "Rent collection and property management for Kenya" %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about land">
+
+{# 1. Hero: the outcome in a few words, two ways in, what it works with, and a picture of the product #}
+<header class="land-hero">
+  <div class="land-hero-text">
+    <p class="land-pill"><span class="land-pill-dot" aria-hidden="true"></span>{% trans "Rent software made for Kenya" %}</p>
+    <h1 class="about-title">{% trans "Collect rent." %} <span class="land-accent">{% trans "Know who owes." %}</span> {% trans "Stop chasing." %}</h1>
+    <p class="about-lead">{% trans "NyumbaPMS bills your tenants, matches their M-Pesa payments to the right unit, reminds them by SMS, and shows you the figures, from one phone or computer." %}</p>
+    {% if invited %}<div class="alert alert-success small mt-3 mb-0" data-referral-applied>{{ invited }}</div>{% endif %}
+    <div class="land-cta-row">
+      <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% blocktrans with d=trial_days %}Start your {{ d }}-day free trial{% endblocktrans %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+      <form method="post" action="{% url 'growth:demo_enter' %}" class="d-inline">{% csrf_token %}<button class="btn btn-outline-primary btn-lg"><i class="bi bi-play-circle" aria-hidden="true"></i> {% trans "Try the demo" %}</button></form>
+      <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}"><i class="bi bi-calendar-event" aria-hidden="true"></i> {% trans "Book a demo" %}</a>
+    </div>
+    <p class="small text-muted mt-2 mb-0">{% trans "Try the demo opens a full sample landlord with 74 units. No sign-up, nothing is sent to anyone." %}</p>
+    <ul class="land-assure">
+      <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "No card needed" %}</li>
+      <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Rent goes to your own Paybill" %}</li>
+      <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Every feature on every plan" %}</li>
+      <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Import your spreadsheet" %}</li>
+    </ul>
+  </div>
+
+  <div class="land-hero-visual">
+    <figure class="land-preview" aria-label="{% trans 'Example of the rent overview. Sample data.' %}">
+      <div class="land-preview-bar"><span></span><span></span><span></span><b>{% trans "This month" %}</b><em>{% trans "Sample data" %}</em></div>
+      <div class="land-preview-body">
+        <div class="land-preview-top">
+          <div><p class="land-k">{% trans "Collected" %}</p><p class="land-v">KSh 412,500</p><p class="land-s">{% trans "of KSh 480,000 billed" %}</p></div>
+          <div class="land-ring" role="img" aria-label="86%"><svg viewBox="0 0 36 36" aria-hidden="true"><circle class="t" cx="18" cy="18" r="15.9" pathLength="100"/><circle class="v" cx="18" cy="18" r="15.9" pathLength="100" stroke-dasharray="86 100"/></svg><span>86%</span></div>
+        </div>
+        <div class="land-meter" aria-hidden="true"><span style="width:86%"></span></div>
+        <p class="land-k mt-3">{% trans "Payments matched today" %}</p>
+        <ul class="land-rows">
+          <li><span class="land-unit">A3</span><span>Wanjiku M.</span><span class="land-amt">15,000</span><span class="land-tag ok">{% trans "Matched" %}</span></li>
+          <li><span class="land-unit">B1</span><span>Otieno K.</span><span class="land-amt">12,500</span><span class="land-tag ok">{% trans "Matched" %}</span></li>
+          <li><span class="land-unit">C4</span><span>{% trans "Unknown reference" %}</span><span class="land-amt">9,000</span><span class="land-tag wait">{% trans "Inbox" %}</span></li>
+        </ul>
+        <p class="land-k mt-3">{% trans "Call today" %}</p>
+        <ul class="land-rows">
+          <li><span class="land-unit">B2</span><span>Achieng R.</span><span class="land-amt">18,000</span><span class="land-tag late">{% trans "6 days late" %}</span></li>
+        </ul>
+      </div>
+    </figure>
+    <div class="land-float" aria-hidden="true">
+      <span class="land-float-icon"><i class="bi bi-phone"></i></span>
+      <div><b>{% trans "M-Pesa · KSh 15,000" %}</b><span>{% trans "Matched to A3 · receipt sent" %}</span></div>
+    </div>
+  </div>
+</header>
+
+<div class="land-works" aria-labelledby="works-h">
+  <p id="works-h" class="land-works-h">{% trans "Works with what you and your tenants already use" %}</p>
+  <ul>{% for icon, label in works_with %}<li><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ label }}</li>{% endfor %}</ul>
+</div>
+
+{# 2. Facts, not invented customer numbers #}
+<ul class="land-facts">
+{% for icon, big, small in facts %}
+  <li><i class="bi bi-{{ icon }}" aria-hidden="true"></i><div><b>{{ big }}</b><span>{{ small }}</span></div></li>
+{% endfor %}
+</ul>
+
+{# 3. The problem and the answer, side by side #}
+<section class="land-section" aria-labelledby="swap-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Why landlords switch" %}</p><h2 id="swap-h" class="about-h2">{% trans "Month end without the chasing" %}</h2></div>
+  <div class="land-swap">
+    <div class="land-swap-col land-swap-before">
+      <p class="land-swap-h"><i class="bi bi-x-circle" aria-hidden="true"></i>{% trans "Today" %}</p>
+      <ul>{% for before, after in swaps %}<li>{{ before }}</li>{% endfor %}</ul>
+    </div>
+    <div class="land-swap-col land-swap-after">
+      <p class="land-swap-h"><i class="bi bi-check-circle-fill" aria-hidden="true"></i>{% trans "With NyumbaPMS" %}</p>
+      <ul>{% for before, after in swaps %}<li>{{ after }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+</section>
+
+{# 3b. What waiting for rent costs, worked out from the visitor's own figures #}
+<section class="land-section" aria-labelledby="calc-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Try your numbers" %}</p><h2 id="calc-h" class="about-h2">{% trans "How much rent sits unpaid while you chase?" %}</h2>
+    <p class="mt-2 mb-0 text-muted">{% trans "Worked out only from what you type. Nothing is saved or sent." %}</p></div>
+  <form class="land-calc" data-land-calc>
+    <div class="land-calc-fields">
+      <div><label class="form-label" for="calc-units">{% trans "Units you manage" %}</label><input class="form-control" id="calc-units" type="number" inputmode="numeric" min="1" max="100000" value="30"></div>
+      <div><label class="form-label" for="calc-rent">{% trans "Average rent per unit (KSh)" %}</label><input class="form-control" id="calc-rent" type="number" inputmode="numeric" min="0" step="500" value="15000"></div>
+      <div><label class="form-label" for="calc-late">{% trans "Tenants who pay after the due date (%)" %}</label><input class="form-control" id="calc-late" type="number" inputmode="numeric" min="0" max="100" value="30"></div>
+    </div>
+    <div class="land-calc-out" aria-live="polite">
+      <p class="land-k">{% trans "Rent waiting every month" %}</p>
+      <p class="land-calc-big" data-calc-out>KSh 0</p>
+      <p class="land-s" data-calc-note></p>
+      <a class="btn btn-primary" href="{% url 'accounts:register' %}">{% trans "Start your free trial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
+  </form>
+</section>
+
+{# 4. The four jobs as tabs, each with a picture of that part of the product #}
+<section class="land-section" id="features" aria-labelledby="feat-h">
+  <div class="land-head land-head-center"><p class="about-eyebrow">{% trans "What it does" %}</p><h2 id="feat-h" class="about-h2">{% trans "Everything from the M-Pesa message to the year-end figures" %}</h2></div>
+  <div class="land-tabs" role="tablist" aria-label="{% trans 'Features' %}">
+  {% for anchor, eyebrow, heading, intro, points in blocks %}
+    <button class="land-tab{% if forloop.first %} active{% endif %}" id="tab-{{ anchor }}" type="button" role="tab" data-bs-toggle="tab" data-bs-target="#{{ anchor }}" aria-controls="{{ anchor }}" aria-selected="{% if forloop.first %}true{% else %}false{% endif %}"{% if not forloop.first %} tabindex="-1"{% endif %}>{{ eyebrow }}</button>
+  {% endfor %}
+  </div>
+  <div class="tab-content land-panes">
+  {% for anchor, eyebrow, heading, intro, points in blocks %}
+    <div class="tab-pane fade{% if forloop.first %} show active{% endif %} land-pane" id="{{ anchor }}" role="tabpanel" aria-labelledby="tab-{{ anchor }}" tabindex="0">
+      <div class="land-pane-text">
+        <h3 class="land-pane-h">{{ heading }}</h3>
+        <p class="land-block-intro">{{ intro }}</p>
+        <ul class="land-checks">
+        {% for icon, point in points %}<li><i class="bi bi-{{ icon }}" aria-hidden="true"></i><span>{{ point }}</span></li>{% endfor %}
+        </ul>
+      </div>
+      {% include "growth/_landing_mock.html" %}
+    </div>
+  {% endfor %}
+  </div>
+</section>
+
+{# 5. Who it is for #}
+<section class="land-section" aria-labelledby="who-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Built for you" %}</p><h2 id="who-h" class="about-h2">{% trans "Whether you have six units or six hundred" %}</h2></div>
+  <div class="land-who">
+  {% for icon, who, what, slug in audiences %}
+    <a class="land-who-card" href="{% url 'growth:solution' slug %}"><span class="about-icon" aria-hidden="true"><i class="bi bi-{{ icon }}"></i></span><div><h3 class="about-card-title">{{ who }}</h3><p>{{ what }}</p><span class="pub-card-go">{% trans "See how" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span></div></a>
+  {% endfor %}
+  </div>
+</section>
+
+{# 6. What is different here #}
+<section class="land-band" aria-labelledby="ke-h">
+  <div class="land-band-head"><p class="about-eyebrow">{% trans "Made for Kenya" %}</p><h2 id="ke-h" class="about-h2">{% trans "Built around how Kenya actually pays" %}</h2>
+    <p class="mt-2 mb-0">{% trans "Most rent software is made for cheques and card payments. This one starts from M-Pesa, SMS and a caretaker with a phone." %}</p></div>
+  <ul class="land-ke">
+    <li><i class="bi bi-phone" aria-hidden="true"></i><div><b>{% trans "Paybill and Till" %}</b>{% trans "Matched to the unit by reference." %}</div></li>
+    <li><i class="bi bi-telephone" aria-hidden="true"></i><div><b>{% trans "Basic phones" %}</b>{% trans "Tenants use a short code, no app." %}</div></li>
+    <li><i class="bi bi-whatsapp" aria-hidden="true"></i><div><b>{% trans "SMS and WhatsApp" %}</b>{% trans "Where tenants already answer." %}</div></li>
+    <li><i class="bi bi-wifi-off" aria-hidden="true"></i><div><b>{% trans "Offline readings" %}</b>{% trans "Caretakers read meters with no signal." %}</div></li>
+    <li><i class="bi bi-person-vcard" aria-hidden="true"></i><div><b>{% trans "Your sender name" %}</b>{% trans "SMS can come from your own name." %}</div></li>
+    <li><i class="bi bi-cash-coin" aria-hidden="true"></i><div><b>{% trans "Shillings, by units" %}</b>{% trans "One simple price, every feature." %}</div></li>
+  </ul>
+</section>
+
+{# 7. The long tail #}
+<section class="land-section" aria-labelledby="more-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "And more" %}</p><h2 id="more-h" class="about-h2">{% trans "Plus everything else a landlord ends up needing" %}</h2></div>
+  <ul class="land-more">
+  {% for icon, label in more %}<li><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ label }}</li>{% endfor %}
+  </ul>
+  <p class="mt-3 mb-0"><a class="pub-more" href="{% url 'growth:how_it_works' %}">{% trans "See how it works, and what is not built yet" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a></p>
+</section>
+
+{# 7b. Pages for the specific job a visitor came to get done #}
+<section class="land-section" aria-labelledby="jobs-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Pick your job" %}</p><h2 id="jobs-h" class="about-h2">{% trans "Start with the problem you have today" %}</h2></div>
+  <div class="pub-cards">
+  {% for s in solutions %}
+    <a class="pub-card" href="{% url 'growth:solution' s.slug %}">
+      <h3 class="pub-card-title">{{ s.title }}</h3>
+      <p>{{ s.description }}</p>
+      <span class="pub-card-go">{% trans "Read more" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+    </a>
+  {% endfor %}
+  </div>
+</section>
+
+{# 8. Start #}
+<section class="land-section" aria-labelledby="start-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Getting started" %}</p><h2 id="start-h" class="about-h2">{% trans "Up and running in an afternoon" %}</h2></div>
+  <ol class="land-steps">
+    <li><span class="land-step-n" aria-hidden="true">1</span><h3 class="pub-timeline-title">{% trans "Add your properties" %}</h3><p>{% trans "Type them in, or upload a spreadsheet you already have." %}</p></li>
+    <li><span class="land-step-n" aria-hidden="true">2</span><h3 class="pub-timeline-title">{% trans "Connect M-Pesa" %}</h3><p>{% trans "Use your own Paybill or Till, or record cash and bank payments by hand." %}</p></li>
+    <li><span class="land-step-n" aria-hidden="true">3</span><h3 class="pub-timeline-title">{% trans "Watch it work" %}</h3><p>{% trans "Invoices go out, payments match, and the arrears list tells you who to call." %}</p></li>
+  </ol>
+  <p class="mt-3 mb-0"><a class="pub-more" href="{% url 'growth:tutorials' %}">{% trans "Follow a tutorial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a></p>
+</section>
+
+{# 9. Pricing #}
+<section class="land-section" id="pricing" aria-labelledby="price-h">
+  <div class="land-head land-head-center"><p class="about-eyebrow">{% trans "Pricing" %}</p><h2 id="price-h" class="about-h2">{% trans "Pricing that grows with you" %}</h2>
+    <p class="mt-2 mb-0 text-muted">{% trans "By the number of units. Every plan has every feature." %}</p></div>
+  {% include "growth/_plans.html" %}
+  <p class="mt-3 mb-0 text-center"><a class="pub-more" href="{% url 'growth:pricing' %}">{% trans "See pricing in full" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a></p>
+</section>
+
+{# 10. Questions #}
+<section class="land-section land-faq-wrap" aria-labelledby="faq-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Questions" %}</p><h2 id="faq-h" class="about-h2">{% trans "Answers before you sign up" %}</h2>
+    <p class="mt-2 mb-3 text-muted">{% trans "Something else on your mind? Book a demo and ask us directly." %}</p>
+    <a class="pub-more" href="{% url 'growth:faq' %}">{% trans "Read every question" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a></div>
+  <div class="land-faq">
+  {% for question, answer in faq %}
+    <details class="pub-faq-item"><summary>{{ question }}<i class="bi bi-plus-lg" aria-hidden="true"></i></summary><p>{{ answer }}</p></details>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="land-final" aria-labelledby="final-h">
+  <h2 id="final-h" class="land-final-h">{% trans "Stop chasing rent this month." %}</h2>
+  <p>{% blocktrans with d=trial_days %}{{ d }} days free, every feature switched on, no card needed. Or ask us to walk you through it.{% endblocktrans %}</p>
+  <div class="land-cta-row justify-content-center">
+    <a class="btn btn-lg land-btn-on-deep" href="{% url 'accounts:register' %}">{% trans "Start free trial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    <form method="post" action="{% url 'growth:demo_enter' %}" class="d-inline">{% csrf_token %}<button class="btn btn-lg land-btn-ghost">{% trans "Try the demo" %}</button></form>
+    <a class="btn btn-lg land-btn-ghost" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+    {% if support_whatsapp %}<a class="btn btn-lg land-btn-ghost" href="https://wa.me/{{ support_whatsapp }}?text={{ wa_text }}" rel="noopener"><i class="bi bi-whatsapp" aria-hidden="true"></i> {% trans "Chat on WhatsApp" %}</a>{% endif %}
+  </div>
+</section>
+</div>
+{% if not user.is_authenticated %}
+<div class="land-sticky" data-land-sticky hidden>
+  <a class="btn btn-primary" href="{% url 'accounts:register' %}">{% blocktrans with d=trial_days %}Start your {{ d }}-day free trial{% endblocktrans %}</a>
+</div>
+{% endif %}
+<script src="{% static 'js/landing.js' %}" defer></script>
+{% endblock %}

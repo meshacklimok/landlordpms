@@ -1,0 +1,41 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Refer a landlord" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-1">{% trans "Refer a landlord" %}</h1>
+<p class="text-muted">{% if policy.is_discount %}{% blocktrans with p=policy.discount_percent %}When a landlord you invite is up and running, you get {{ p }}% off your next plan invoice.{% endblocktrans %}{% else %}{% blocktrans with d=policy.reward_days %}When a landlord you invite is up and running, you get {{ d }} free days.{% endblocktrans %}{% endif %}
+{% if policy.reward_referred_too %}{% if policy.referred_is_discount %}{% blocktrans with p=policy.referred_discount_percent %}They get {{ p }}% off their first plan invoice.{% endblocktrans %}{% else %}{% blocktrans with d=policy.referred_reward_days %}They get {{ d }} free days.{% endblocktrans %}{% endif %}{% endif %}
+{% if policy.require_referrer_paid %}{% trans "You earn your reward once you have paid for a plan yourself." %}{% endif %}</p>
+{% if referrer_must_pay %}<div class="alert alert-warning small">{% trans "You earn rewards once you have paid for a plan yourself. Referrals made before that are kept and rewarded when you do." %}</div>{% endif %}
+<div class="card shadow-sm mb-3"><div class="card-body">
+  <h2 class="h6 text-muted">{% trans "Your link" %}</h2>
+  <div class="input-group input-group-sm mb-2">
+    <input type="text" readonly class="form-control font-monospace" value="{{ link }}" id="referral-link" aria-label="{% trans 'Your referral link' %}" data-referral-link data-select-on-focus>
+    <button type="button" class="btn btn-outline-secondary" data-copy="#referral-link" data-copied="{% trans 'Copied' %}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+  </div>
+  <p class="small text-muted">{% trans "Your code:" %} <strong id="referral-code">{{ code }}</strong>
+    <button type="button" class="btn btn-sm btn-link py-0" data-copy="#referral-code" aria-label="{% trans 'Copy your code' %}"><i class="bi bi-clipboard" aria-hidden="true"></i></button></p>
+  <a class="btn btn-success btn-sm" target="_blank" rel="noopener" href="https://wa.me/?text={{ share_text|urlencode }}"><i class="bi bi-whatsapp" aria-hidden="true"></i> {% trans "Share on WhatsApp" %}</a>
+</div></div>
+<div class="row g-3 mb-3">
+  <div class="col-6"><div class="card shadow-sm"><div class="card-body"><div class="h4 mb-0">{{ referrals|length }}</div><div class="small text-muted">{% trans "Signed up" %}</div></div></div></div>
+  {% if policy.is_discount %}
+  <div class="col-6"><div class="card shadow-sm"><div class="card-body"><div class="h4 mb-0">{{ credits_waiting }}</div><div class="small text-muted">{% trans "Discounts waiting for your next invoice" %}</div></div></div></div>
+  {% else %}
+  <div class="col-6"><div class="card shadow-sm"><div class="card-body"><div class="h4 mb-0">{{ days_earned }}</div><div class="small text-muted">{% trans "Free days earned" %}</div></div></div></div>
+  {% endif %}
+</div>
+{% if referrals %}
+<div class="card shadow-sm"><div class="table-responsive"><table class="table table-sm mb-0">
+  <thead><tr><th>{% trans "Signed up" %}</th><th>{% trans "Status" %}</th><th class="text-end">{% trans "Reward" %}</th></tr></thead>
+  <tbody>{% for r in referrals %}<tr><td>{{ r.created_at|date:"j M Y" }}</td><td>{% if r.status == "REWARDED" %}{% trans "You were rewarded." %}{% elif r.status == "SIGNED_UP" %}{% if referrer_must_pay %}{% trans "Waiting for you to pay for a plan" %}{% elif policy.require_payment %}{% trans "Waiting for them to set up and pay for their first plan" %}{% else %}{% trans "Waiting for them to set up" %}{% endif %}{% else %}{% trans "Counted, but no reward could be given" %}{% endif %}</td><td class="text-end">{% if r.reward_percent %}{{ r.reward_percent }}%{% elif r.reward_days %}{% blocktrans count d=r.reward_days %}{{ d }} day{% plural %}{{ d }} days{% endblocktrans %}{% endif %}</td></tr>{% endfor %}</tbody>
+</table></div></div>
+<p class="small text-muted mt-2">{% trans "We do not show the names of the businesses you referred." %}</p>
+{% endif %}
+<div class="small text-muted mt-3">
+  {% if minimums %}<p class="mb-1">{% trans "A referral counts once the landlord you invited has added at least:" %}
+  {% for key, n in minimums.items %}{% if key == "properties" %}{% blocktrans count n=n %}{{ n }} property{% plural %}{{ n }} properties{% endblocktrans %}{% elif key == "units" %}{% blocktrans count n=n %}{{ n }} unit{% plural %}{{ n }} units{% endblocktrans %}{% elif key == "tenants" %}{% blocktrans count n=n %}{{ n }} tenant{% plural %}{{ n }} tenants{% endblocktrans %}{% elif key == "leases" %}{% blocktrans count n=n %}{{ n }} lease{% plural %}{{ n }} leases{% endblocktrans %}{% else %}{% blocktrans count n=n %}{{ n }} rent invoice{% plural %}{{ n }} rent invoices{% endblocktrans %}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if policy.require_payment %}, {% trans "and paid for their first plan" %}{% endif %}.</p>
+  {% elif policy.require_payment %}<p class="mb-1">{% trans "A referral counts once the landlord you invited has paid for their first plan." %}</p>{% endif %}
+  <p>{% if policy.is_discount %}{% trans "Each discount comes off one plan invoice." %}{% else %}{% trans "Days are added to your trial or paid period." %}{% endif %}
+  {% blocktrans with n=yearly_cap %}You can be rewarded for up to {{ n }} referrals a year. Signing up with your own second workspace or phone number does not count.{% endblocktrans %}</p>
+</div>
+{% endblock %}

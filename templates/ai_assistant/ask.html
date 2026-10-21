@@ -1,0 +1,107 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Ask" %}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <div class="mb-3">
+    <h1 class="h3 mb-0">{% trans "Ask" %}</h1>
+    <div class="small text-body-secondary">{% trans "Ask about rent, arrears, vacant units, leases and repairs. Answers come only from what your role can see." %}</div>
+  </div>
+
+  {% if not platform_on %}
+  <div class="alert alert-secondary small">{% trans "The assistant is not set up on this service yet." %}</div>
+  {% elif not is_on %}
+  <div class="alert alert-secondary small">
+    {% if can_switch %}{% trans "The assistant is off for your organization. You can switch it on below." %}
+    {% else %}{% trans "The assistant is off for your organization. An owner can switch it on." %}{% endif %}
+  </div>
+  {% else %}
+  {% if turns %}
+  <div class="d-flex flex-column gap-3 mb-3" data-conversation>
+    {% for turn in turns %}
+    <div class="align-self-end bg-body-secondary rounded-3 px-3 py-2 small mw-85p">{{ turn.q }}</div>
+    <div class="card shadow-sm{% if not turn.ok %} border-warning{% endif %}"><div class="card-body py-2 small">
+      <div>{{ turn.a|linebreaksbr }}</div>
+      {% if turn.links %}
+      <div class="mt-2 text-body-secondary">{% trans "Pages used:" %}
+        {% for label, url in turn.links %}<a href="{{ url }}" class="me-2">{{ label }}</a>{% endfor %}
+      </div>
+      {% endif %}
+    </div></div>
+    {% for card in turn.cards %}
+    <div class="card shadow-sm border-primary" id="p-{{ card.id }}" data-proposal="{{ card.kind }}"><div class="card-body py-2 small">
+      <div class="fw-semibold mb-1">{{ card.title }}</div>
+      <dl class="row mb-2">
+        {% for label, value in card.lines %}<dt class="col-4 fw-normal text-body-secondary">{{ label }}</dt><dd class="col-8 mb-1">{{ value }}</dd>{% endfor %}
+      </dl>
+      {% if card.state == "done" %}
+        {% if card.text %}<p class="border rounded-2 p-2 mb-2">{{ card.text }}</p>{% endif %}
+        <div class="text-success">{{ card.result }} <a href="{{ card.url }}">{% trans "Open" %}</a></div>
+      {% elif card.state == "dismissed" %}
+        {% if card.text %}<p class="border rounded-2 p-2 mb-2">{{ card.text }}</p>{% endif %}
+        <div class="text-body-secondary">{% trans "Dismissed. Nothing was done." %}</div>
+      {% elif card.expired %}
+        {% if card.text %}<p class="border rounded-2 p-2 mb-2">{{ card.text }}</p>{% endif %}
+        <div class="text-body-secondary">{% trans "This has expired. Ask again if it is still needed." %}</div>
+      {% else %}
+      <form method="post" action="{% url 'ai_assistant:confirm' %}">{% csrf_token %}
+        <input type="hidden" name="id" value="{{ card.id }}">
+        {% if card.kind == "message" %}
+        <label class="form-label small mb-1" for="text-{{ card.id }}">{% trans "Message" %}</label>
+        <textarea id="text-{{ card.id }}" name="text" class="form-control form-control-sm mb-2" rows="3" maxlength="459">{{ card.text }}</textarea>
+        {% endif %}
+        <div class="text-body-secondary mb-2">{% trans "Nothing is done until you confirm. Check the details first." %}</div>
+        <button class="btn btn-primary btn-sm" name="action" value="confirm">{% trans "Confirm" %}</button>
+        <button class="btn btn-outline-secondary btn-sm" name="action" value="dismiss">{% trans "Dismiss" %}</button>
+      </form>
+      {% endif %}
+    </div></div>
+    {% endfor %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <form method="post" class="card shadow-sm mb-2"><div class="card-body">{% csrf_token %}
+    <label class="form-label small" for="question">{% if turns %}{% trans "Ask a follow-up question" %}{% else %}{% trans "Your question" %}{% endif %}</label>
+    <textarea id="question" name="question" class="form-control mb-2" rows="2" maxlength="{{ max_length }}" required
+              placeholder="{% trans 'Who owes more than 30 days at Acacia Court?' %}"></textarea>
+    <button class="btn btn-primary">{% trans "Ask" %}</button>
+  </div></form>
+  {% if turns %}
+  <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="action" value="new">
+    <button class="btn btn-sm btn-link px-0">{% trans "New conversation" %}</button></form>
+  {% endif %}
+  <p class="small text-body-secondary">{% blocktrans with n=user_daily %}Check important figures on their page before acting on them. You can ask {{ n }} questions a day. The assistant can propose a payment, a message or a repair assignment, but nothing happens until you press Confirm.{% endblocktrans %}</p>
+
+  {% if recent %}
+  <details class="mb-4"><summary class="small">{% trans "Your recent questions" %}</summary>
+    <ul class="list-group list-group-flush small mt-2">
+      {% for q in recent %}<li class="list-group-item px-0">{{ q.question }} <span class="text-body-secondary">· {{ q.created_at|date:"j M, H:i" }}{% if q.status != "ANSWERED" %} · {{ q.get_status_display }}{% endif %}</span></li>{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% endif %}
+
+  {% if can_switch and platform_on %}
+  <div class="card shadow-sm mt-4" id="settings"><div class="card-body">
+    <h2 class="h6 mb-1">{% trans "Settings" %}</h2>
+    <p class="small mb-2">{% trans "To answer, the question and the names and figures used to answer it (tenants, properties, units, amounts, dates and repair titles) are sent to OpenAI, which runs the GPT model. Phone numbers, emails, ID numbers, notes, documents and photos are never sent. Questions are kept for 90 days." %}</p>
+    <form method="post" action="{% url 'ai_assistant:switch' %}">{% csrf_token %}
+      {% if is_on %}<input type="hidden" name="on" value="0"><button class="btn btn-outline-danger btn-sm">{% trans "Switch the assistant off" %}</button>
+      {% else %}<input type="hidden" name="on" value="1"><button class="btn btn-primary btn-sm">{% trans "Switch the assistant on" %}</button>{% endif %}
+    </form>
+    <h3 class="h6 mt-4 mb-1" id="knowledge">{% trans "What the assistant knows" %}</h3>
+    <p class="small mb-2">{% trans "Add your own rules and practices, such as office hours, deposit refunds or house rules, for the assistant to answer from. Choose for each one whether tenants can be told it." %}</p>
+    <a href="{% url 'ai_assistant:knowledge' %}" class="btn btn-outline-secondary btn-sm">{% if knowledge_count %}{% blocktrans count n=knowledge_count %}{{ n }} entry{% plural %}{{ n }} entries{% endblocktrans %}{% else %}{% trans "Add entries" %}{% endif %}</a>
+    {% if tenants_available %}
+    <h3 class="h6 mt-4 mb-1" id="tenants">{% trans "Answer tenants" %}</h3>
+    <p class="small mb-2">{% if tenants_whatsapp %}{% trans "Tenants can ask on the Ask page of the tenant portal, and by messaging your WhatsApp number from the phone on their tenant record." %}{% else %}{% trans "Tenants can ask on the Ask page of the tenant portal." %}{% endif %}
+      {% trans "They get answers about their own rent, balance, how to pay, receipts and repairs. They can also ask to report a repair or to get an M-Pesa prompt on their own phone, which happens only after they confirm. Their question and their own figures are sent to OpenAI, which runs the GPT model. If a tenant has set a USSD PIN, balances and payments are not given on WhatsApp. Tenants' questions are kept for 90 days and are not shown to staff." %}</p>
+    <form method="post" action="{% url 'ai_assistant:switch' %}">{% csrf_token %}<input type="hidden" name="which" value="tenants">
+      {% if tenants_on %}<input type="hidden" name="on" value="0"><button class="btn btn-outline-danger btn-sm">{% trans "Stop answering tenants" %}</button>
+      {% else %}<input type="hidden" name="on" value="1"><button class="btn btn-primary btn-sm">{% trans "Answer tenants" %}</button>{% endif %}
+    </form>
+    {% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

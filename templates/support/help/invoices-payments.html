@@ -1,0 +1,23 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Each lease is billed once a month (or each quarter or year) with its rent and charges.</p>
+<ul>
+  <li><strong>Invoices</strong> are issued a few days before the month and sent to the tenant by SMS. The due date
+    is the lease's due day; after the grace days it is overdue.</li>
+  <li><strong>Payments</strong> go against the oldest invoice first. Payments from M-Pesa are recorded for you; record
+    cash, bank or cheque payments on <a href="{% url 'payments:list' %}">Payments</a>.</li>
+  <li>If your role cannot confirm payments, the payment waits for someone who can.</li>
+  <li>Every confirmed payment gets a numbered <strong>receipt</strong> and the tenant gets a link to it.</li>
+  <li>Nothing is deleted. A wrong invoice is voided; a wrong payment is reversed with a reason.</li>
+  <li><a href="{% url 'billing:arrears' %}">Arrears</a> and the <a href="{% url 'billing:call_list' %}">call list</a>
+    show who owes and who to call today.</li>
+  <li><strong>Late fees</strong> are off unless an owner switches them on in Settings, as a fixed amount or a
+    percentage of what is unpaid with a maximum. Each invoice that goes overdue gets one fee, which waits on
+    <a href="{% url 'billing:late_fees' %}">Late fees</a> until someone who issues invoices charges or skips it.
+    Charging sends the tenant an invoice for the fee.</li>
+  <li>For your accountant, <a href="{% url 'reports:accounting_export' %}">For the accountant</a> under Reports
+    downloads a ZIP for chosen months: a double-entry journal that imports into QuickBooks, Zoho Books or Wave, a
+    list of accounts with their totals, and the invoices, payments and expenses. It needs the "Export reports"
+    permission.</li>
+</ul>
+{% endblock %}

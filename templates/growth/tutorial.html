@@ -1,0 +1,31 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ tutorial.title }} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about pub-read">
+<nav aria-label="{% trans 'Breadcrumb' %}" class="pub-crumb"><a href="{% url 'growth:tutorials' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All tutorials" %}</a></nav>
+<header class="about-hero pub-read-head">
+  <p class="about-eyebrow">{% blocktrans with m=tutorial.minutes %}Tutorial · About {{ m }} minutes{% endblocktrans %}</p>
+  <h1 class="about-title">{{ tutorial.title }}</h1>
+  <p class="about-lead">{{ tutorial.summary }}</p>
+</header>
+<ol class="pub-timeline">
+{% for title, body in tutorial.steps %}
+  <li class="pub-timeline-item"><span class="about-step-n" aria-hidden="true">{{ forloop.counter }}</span><div><h2 class="pub-timeline-title">{{ title }}</h2><p>{{ body }}</p></div></li>
+{% endfor %}
+</ol>
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% if user.is_authenticated %}{% trans "Need more detail?" %}{% else %}{% trans "Ready to try it?" %}{% endif %}</h2>
+    <p class="mb-0">{% if user.is_authenticated %}{% trans "More detail is in the help centre." %}{% else %}{% trans "The trial is free and nothing here needs a card." %}{% endif %}</p></div>
+  <div class="d-flex flex-wrap gap-2">
+  {% if user.is_authenticated %}<a class="btn btn-primary" href="{% url 'support:help_topic' tutorial.help %}">{% trans "Open the help topic" %}</a>
+  {% else %}<a class="btn btn-primary" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+  <a class="btn btn-outline-secondary" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>{% endif %}
+  </div>
+</section>
+<section class="about-section" aria-labelledby="more-h">
+  <h2 id="more-h" class="about-h2 mb-3">{% trans "More tutorials" %}</h2>
+  <ul class="pub-links">{% for t in others %}<li><a href="{% url 'growth:tutorial' t.slug %}">{{ t.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endfor %}</ul>
+</section>
+</div>
+{% endblock %}

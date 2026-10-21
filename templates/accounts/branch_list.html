@@ -1,0 +1,33 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Branches" %}{% endblock %}
+{% block content %}
+<a href="{% url 'accounts:organization' %}" class="small">← {% trans "Settings" %}</a>
+<h1 class="h4 mt-2">{% trans "Branches" %}</h1>
+<p class="small text-muted">{% trans "Your offices. Choose a branch on each property it runs, then give staff the branch on their page under Staff: they see every property in it, including ones added later. The fee report shows each branch's income." %}</p>
+<div class="row g-3">
+  <div class="col-md-7">
+    <div class="list-group">
+      {% for branch in branches %}
+      <a class="list-group-item list-group-item-action{% if branch.archived_at %} text-muted{% endif %}" href="{% url 'accounts:branch' branch.public_id %}">
+        <div class="d-flex justify-content-between gap-2">
+          <span class="fw-semibold">{{ branch.name }}{% if branch.archived_at %} <span class="badge text-bg-light border">{% trans "Archived" %}</span>{% endif %}</span>
+          <span class="small text-muted text-nowrap">{% blocktrans count n=branch.property_count %}{{ n }} property{% plural %}{{ n }} properties{% endblocktrans %} · {% blocktrans count n=branch.member_count %}{{ n }} staff{% plural %}{{ n }} staff{% endblocktrans %}</span>
+        </div>
+        {% if branch.phone or branch.email %}<div class="small text-muted">{{ branch.phone }}{% if branch.phone and branch.email %} · {% endif %}{{ branch.email }}</div>{% endif %}
+      </a>
+      {% empty %}
+      <div class="list-group-item small text-muted">{% trans "No branches yet. With one office you do not need any." %}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-md-5">
+    <div class="card"><div class="card-body">
+      <h2 class="h6">{% trans "Add a branch" %}</h2>
+      <form method="post" novalidate>{% csrf_token %}
+        {% include "partials/form.html" %}
+        <button class="btn btn-primary w-100">{% trans "Add branch" %}</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

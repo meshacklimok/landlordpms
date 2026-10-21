@@ -1,0 +1,47 @@
+{% load i18n %}{% comment %}
+Fields of a form with Bootstrap classes. Errors and help text are tied to their field (aria-describedby), a field with an
+error is marked aria-invalid, and when fields have errors a summary at the top links to each one (ui.js focuses it, D-141).
+{% endcomment %}{% for error in form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ error }}</div>{% endfor %}
+{% with n=form.errors|length nf=form.non_field_errors|length %}{% if n > 1 or n == 1 and not nf %}
+<div class="alert alert-danger error-summary" role="alert" tabindex="-1" data-error-summary>
+  <strong>{% trans "Please check the fields below." %}</strong>
+  <ul>{% for field in form_fields|default:form %}{% if field.errors and not field.is_hidden %}<li><a href="#{% firstof field.id_for_label field.auto_id %}">{{ field.label }}</a>: {{ field.errors.0 }}</li>{% endif %}{% endfor %}</ul>
+</div>
+{% endif %}{% endwith %}
+{% for field in form_fields|default:form %}
+  {% if field.field.heading %}<h2 class="h6 text-uppercase text-muted mt-4 mb-3">{{ field.field.heading }}</h2>{% endif %}
+  {% if field.is_hidden %}{{ field }}{% elif field.field.widget.input_type == "checkbox" and not field.field.widget.allow_multiple_selected %}
+  <div class="form-check mb-3">
+    <input type="checkbox" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-check-input{% if field.errors %} is-invalid{% endif %}" {% if field.value %}checked{% endif %}{% include "partials/_field_aria.html" %}>
+    <label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% if field.errors %}<div class="invalid-feedback" id="{{ field.id_for_label }}-error">{% for e in field.errors %}{{ e }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
+    {% if field.help_text %}<div class="form-text small" id="{{ field.id_for_label }}-help">{{ field.help_text|safe }}</div>{% endif %}
+  </div>
+  {% elif field.field.widget.allow_multiple_selected and field.field.widget.input_type != "select" and field.field.widget.input_type != "file" %}
+  <fieldset class="form-group mb-3"{% include "partials/_field_aria.html" %}>
+    <legend class="form-label" id="{{ field.auto_id }}">{{ field.label }}</legend>
+    <div class="border rounded p-2 bg-body mh-14r">{% for cb in field %}<div class="form-check">{{ cb.tag }} <label class="form-check-label" for="{{ cb.id_for_label }}">{{ cb.choice_label }}</label></div>{% empty %}<span class="text-muted small">—</span>{% endfor %}</div>
+    {% if field.errors %}<div class="invalid-feedback d-block" id="{{ field.auto_id }}-error">{% for e in field.errors %}{{ e }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
+    {% if field.help_text %}<div class="form-text small" id="{{ field.auto_id }}-help">{{ field.help_text|safe }}</div>{% endif %}
+  </fieldset>
+  {% else %}
+  <div class="mb-3"{% if field.field.show_when %} data-show-when="{{ field.field.show_when }}"{% endif %}>
+    <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {% if field.field.widget.input_type == "select" %}
+      <select name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-select{% if field.errors %} is-invalid{% endif %}"{% include "partials/_field_aria.html" %}>
+        {% for value, label in field.field.choices %}<option value="{{ value }}" {% if value|stringformat:"s" == field.value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+    {% elif field.widget_type == "textarea" %}
+      <textarea name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control{% if field.errors %} is-invalid{% endif %}" rows="{{ field.field.widget.attrs.rows|default:3 }}"{% include "partials/_field_aria.html" %}>{{ field.value|default_if_none:"" }}</textarea>
+    {% elif field.field.widget.input_type == "file" %}
+      <input type="file" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control{% if field.errors %} is-invalid{% endif %}"{% if field.field.widget.attrs.accept %} accept="{{ field.field.widget.attrs.accept }}"{% endif %}{% if field.field.widget.allow_multiple_selected %} multiple{% endif %}{% if field.field.required %} required{% endif %}{% include "partials/_field_aria.html" %}>
+    {% else %}
+      {% if field.field.widget.input_type == "password" %}<div class="input-group has-validation">{% endif %}
+      <input type="{{ field.field.widget.input_type }}" name="{{ field.html_name }}" id="{{ field.id_for_label }}" class="form-control{% if field.errors %} is-invalid{% endif %}" {% if field.value and field.field.widget.input_type != "password" %}value="{{ field.value }}"{% endif %}{% for k, v in field.field.widget.attrs.items %} {{ k }}="{{ v }}"{% endfor %}{% if field.field.widget.input_type == "number" and not field.field.widget.attrs.inputmode %} inputmode="decimal"{% endif %}{% if field.field.required %} required{% endif %}{% include "partials/_field_aria.html" %}>
+      {% if field.field.widget.input_type == "password" %}<button type="button" class="btn btn-outline-secondary" data-toggle-password aria-controls="{{ field.id_for_label }}" aria-pressed="false" aria-label="{% trans 'Show password' %}" data-show-text="{% trans 'Show password' %}" data-hide-text="{% trans 'Hide password' %}"><i class="bi bi-eye" aria-hidden="true"></i></button></div>{% endif %}
+    {% endif %}
+    {% if field.errors %}<div class="invalid-feedback d-block" id="{{ field.id_for_label }}-error">{% for e in field.errors %}{{ e }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</div>{% endif %}
+    {% if field.help_text %}<div class="form-text small" id="{{ field.id_for_label }}-help">{{ field.help_text|safe }}</div>{% endif %}
+  </div>
+  {% endif %}
+{% endfor %}

@@ -1,0 +1,46 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{{ vocab.properties }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="h4">{% if show_archived %}{% trans "Archived" %} {{ vocab.properties|lower }}{% else %}{{ vocab.properties }}{% endif %}</h1>
+    <p class="lead-text">{% blocktrans count n=page.paginator.count %}{{ n }} property{% plural %}{{ n }} properties{% endblocktrans %}</p>
+  </div>
+  {% if can_manage and not show_archived %}<a class="btn btn-primary" href="{% url 'properties:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i>{% trans "Add" %} {{ vocab.property|lower }}</a>{% endif %}
+</div>
+<form method="get" data-autosubmit class="filter-bar" role="search">
+  <div class="filter-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Search name, code or area' %}" aria-label="{% trans 'Search' %}"></div>
+  {% if branches %}
+  <select name="branch" class="form-select" aria-label="{% trans 'Branch' %}" data-autosubmit>
+    <option value="">{% trans "All branches" %}</option>
+    {% for b in branches %}<option value="{{ b.public_id }}"{% if b == branch %} selected{% endif %}>{{ b.name }}</option>{% endfor %}
+  </select>
+  {% endif %}
+  {% if show_archived %}<input type="hidden" name="archived" value="on">{% endif %}
+  <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
+</form>
+{% if page %}
+<ul class="item-list">
+  {% for p in page %}
+  <li><a href="{% url 'properties:detail' p.public_id %}" class="item">
+    <span class="item-mark square" aria-hidden="true"><i class="bi bi-buildings"></i></span>
+    <span class="item-main">
+      <span class="item-title">{{ p.name }} <span class="code-tag">{{ p.code }}</span></span>
+      <span class="item-meta d-block">{{ p.get_category_display }}{% if p.address_line %} · {{ p.address_line }}{% endif %}{% if branches and p.branch %} · {{ p.branch.name }}{% endif %}</span>
+    </span>
+    <span class="item-end text-nowrap">{% blocktrans count n=p.unit_count %}{{ n }} unit{% plural %}{{ n }} units{% endblocktrans %}</span>
+  </a></li>
+  {% endfor %}
+</ul>
+{% else %}
+{% if q or branch %}{% trans "No properties match your search." as t %}{% include "partials/empty_state.html" with icon="bi-search" title=t %}
+{% elif show_archived %}{% trans "No archived properties." as t %}{% include "partials/empty_state.html" with icon="bi-archive" title=t %}
+{% else %}{% trans "No properties yet" as t %}{% trans "Add a property first, then its units, then your tenants." as x %}{% include "partials/empty_state.html" with icon="bi-buildings" title=t text=x %}
+{% if can_manage %}<p class="text-center mt-3"><a class="btn btn-primary" href="{% url 'properties:create' %}">{% blocktrans with property_l=vocab.property|lower %}Add your first {{ property_l }}{% endblocktrans %}</a></p>{% endif %}{% endif %}
+{% endif %}
+{% include "partials/pager.html" %}
+{% if can_manage %}
+<p class="small mt-3 d-flex flex-wrap gap-3">{% if show_archived %}<a href="{% url 'properties:list' %}">{% blocktrans with properties_l=vocab.properties|lower %}Back to active {{ properties_l }}{% endblocktrans %}</a>{% else %}<a href="?archived=on">{% blocktrans with properties_l=vocab.properties|lower %}Show archived {{ properties_l }}{% endblocktrans %}</a>{% endif %}
+  {% if agency_tools %}<a href="{% url 'properties:owners' %}">{% trans "Owners" %}</a>{% endif %}</p>
+{% endif %}
+{% endblock %}

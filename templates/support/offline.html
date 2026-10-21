@@ -1,0 +1,32 @@
+{% load i18n static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="{{ theme_color }}">
+  <meta name="robots" content="noindex">
+  <title>{% trans "No connection" %} · {{ name }}</title>
+  <link rel="icon" href="{% static 'icons/favicon-32.png' %}">
+  <style>
+    /* Kept on its own (the phone may have nothing else cached); the same colours as static/css/app.css. */
+    :root { color-scheme: light dark; --canvas: #f3f5f2; --text: #17201b; --muted: #59615c; --btn: #146c4a; --btn-text: #fff; }
+    @media (prefers-color-scheme: dark) { :root { --canvas: #0f1411; --text: #dfe5e0; --muted: #a3aca6; --btn: #6fd3a1; --btn-text: #05281a; } }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px;
+           background: var(--canvas); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 360px; text-align: center; }
+    img { width: 64px; height: 64px; }
+    h1 { font-size: 1.25rem; margin: 16px 0 8px; }
+    p { color: var(--muted); line-height: 1.5; margin: 0 0 16px; }
+    button { font: inherit; padding: 8px 20px; border: 0; border-radius: 10px; background: var(--btn); color: var(--btn-text); }
+  </style>
+</head>
+<body>
+<main>
+  <img src="{% static 'icons/icon-192.png' %}" alt="">
+  <h1>{% trans "You are offline" %}</h1>
+  <p>{% trans "This page needs a connection. Nothing is saved on this phone, so your records are safe. Check your data or Wi-Fi and try again." %}</p>
+  <button type="button" data-reload>{% trans "Try again" %}</button>
+</main>
+<script src="{% static 'js/ui.js' %}"></script>
+</body>
+</html>

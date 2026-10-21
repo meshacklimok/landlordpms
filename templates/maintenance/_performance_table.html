@@ -1,0 +1,41 @@
+{% load i18n money %}
+<div class="card shadow-sm overflow-hidden mb-3">
+  <div class="card-header bg-body fw-medium">{{ heading }}</div>
+  {% if rows %}
+  <div class="table-responsive">
+    <table class="table pay-table align-middle mb-0 small">
+      <thead><tr>
+        <th>{% trans "Name" %}</th>
+        <th class="text-end">{% trans "Jobs" %}</th>
+        <th class="text-end">{% trans "Started on time" %}</th>
+        <th class="text-end">{% trans "Fixed on time" %}</th>
+        <th class="text-end d-none d-md-table-cell">{% trans "Hours to start" %}</th>
+        <th class="text-end d-none d-md-table-cell">{% trans "Days to fix" %}</th>
+        <th class="text-end">{% trans "Open" %}</th>
+        <th class="text-end d-none d-lg-table-cell">{% trans "Reopened" %}</th>
+        <th class="text-end d-none d-lg-table-cell">{% trans "Due moved" %}</th>
+        {% if with_costs %}<th class="text-end d-none d-md-table-cell">{% trans "Cost" %}</th>{% endif %}
+      </tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td><a href="{% url 'maintenance:list' %}?status=all&amp;{{ param }}={{ r.public_id }}{% if property %}&amp;property={{ property.public_id }}{% endif %}">{{ r.name }}</a>
+            <div class="text-body-secondary">{% blocktrans with n=r.finished %}{{ n }} finished{% endblocktrans %}</div></td>
+          <td class="text-end num">{{ r.jobs }}</td>
+          <td class="text-end num">{% if r.respond_on_time is not None %}<span class="{% if r.respond_on_time < 80 %}text-danger{% endif %}">{{ r.respond_on_time }}%</span><div class="text-body-secondary">{{ r.respond_met }}/{{ r.respond_met|add:r.respond_missed }}</div>{% else %}—{% endif %}</td>
+          <td class="text-end num">{% if r.fix_on_time is not None %}<span class="{% if r.fix_on_time < 80 %}text-danger{% endif %}">{{ r.fix_on_time }}%</span><div class="text-body-secondary">{{ r.fix_met }}/{{ r.fix_met|add:r.fix_missed }}</div>{% else %}—{% endif %}</td>
+          <td class="text-end num d-none d-md-table-cell">{% if r.avg_hours_to_respond is not None %}{{ r.avg_hours_to_respond }}{% else %}—{% endif %}</td>
+          <td class="text-end num d-none d-md-table-cell">{% if r.avg_days_to_fix is not None %}{{ r.avg_days_to_fix }}{% else %}—{% endif %}</td>
+          <td class="text-end num">{{ r.open }}{% if r.overdue %}<div class="text-danger">{% blocktrans with n=r.overdue %}{{ n }} overdue{% endblocktrans %}</div>{% endif %}</td>
+          <td class="text-end num d-none d-lg-table-cell">{{ r.reopened }}</td>
+          <td class="text-end num d-none d-lg-table-cell">{{ r.due_moved }}</td>
+          {% if with_costs %}<td class="text-end num d-none d-md-table-cell">{{ r.cost|money:currency }}{% if r.cost %}<div class="text-body-secondary">{% blocktrans with c=r.cost_per_job|money:currency %}{{ c }} a job{% endblocktrans %}</div>{% endif %}</td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body small text-body-secondary">{{ empty }}</div>
+  {% endif %}
+</div>

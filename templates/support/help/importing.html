@@ -1,0 +1,22 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Already have your tenants in a book or a spreadsheet? Bring them in on <a href="{% url 'imports:list' %}">Import</a>
+instead of typing them again.</p>
+<ol>
+  <li>Pick what you are bringing in. <strong>Tenants moving in</strong> is the quickest: each line is a tenant, the unit
+    they live in, the rent and the day they moved in, and it creates the tenant and their lease together.</li>
+  <li>Download the <strong>Excel sheet</strong> (your vacant units are already filled in), or <strong>print the form</strong>
+    and fill it in by hand. You can also use your own spreadsheet if its columns have the same names, or a CSV file.</li>
+  <li>Upload the Excel or CSV file, or take a <strong>photo of the filled form</strong>. We read the handwriting for you.</li>
+  <li>Check the preview. Every row is checked and any problem is shown; nothing is saved yet. For a photo, compare each
+    row with your paper and tick the box to confirm.</li>
+  <li>Import the rows that are fine and fix the rest. You can undo an import for 24 hours.</li>
+</ol>
+<p>New leases are saved as drafts for you to check and activate, unless you choose to issue them at once. For tenants
+who moved in long ago, give the first day of the month you start using NyumbaPMS, then add what they still owe under
+<em>Opening balances</em>.</p>
+<p>If you only need units or tenants without leases, use those lists. Import units first, then tenants (or moving in),
+then opening balances.</p>
+<p>Rather have us do it? <a href="{% url 'support:contact' %}?kind=IMPORT_HELP">Send us your spreadsheet</a> in any shape
+and we will import it for you.</p>
+{% endblock %}

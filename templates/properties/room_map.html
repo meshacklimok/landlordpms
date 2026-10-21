@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Room map" %}{% endblock %}
+{% block content %}
+<a href="{% url 'properties:detail' property.public_id %}" class="small">← {{ property.name }}</a>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-2 mb-3">
+  <h1 class="h4 mb-0">{% trans "Room map" %}</h1>
+  {% if can_manage_units %}<a class="btn btn-primary btn-sm" href="{% url 'properties:rooms_create' property.public_id %}"><i class="bi bi-plus-lg" aria-hidden="true"></i>{% trans "Add rooms" %}</a>{% endif %}
+</div>
+<p class="text-muted small">{% blocktrans with t=taken f=free %}{{ t }} beds taken, {{ f }} free.{% endblocktrans %}</p>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:waitlist' property.public_id %}">{% trans "Waitlist" %}{% if waiting %} <span class="badge text-bg-secondary">{{ waiting }}</span>{% endif %}</a>
+  {% if can_rollover %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:rollover' property.public_id %}">{% trans "Next term" %}</a>{% endif %}
+</div>
+{% if can_manage_units %}
+<section class="panel"><div class="panel-head"><h2>{% trans "Booking page" %}</h2></div>
+  {% if booking_url %}
+  <p class="small mb-2">{% trans "Students open this link, see what is free and ask for a bed. When nothing suits them they join the waitlist." %}</p>
+  <div class="input-group input-group-sm mb-2"><input class="form-control" readonly value="{{ booking_url }}" aria-label="{% trans 'Booking link' %}"></div>
+  <form method="post" action="{% url 'properties:booking_link' property.public_id %}" class="d-flex gap-2">{% csrf_token %}
+    <button class="btn btn-outline-secondary btn-sm" name="action" value="on">{% trans "New link" %}</button>
+    <button class="btn btn-outline-danger btn-sm" name="action" value="off">{% trans "Turn off" %}</button>
+  </form>
+  {% else %}
+  <form method="post" action="{% url 'properties:booking_link' property.public_id %}">{% csrf_token %}
+    <button class="btn btn-primary btn-sm" name="action" value="on">{% trans "Turn on booking page" %}</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+{% for r in rooms %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>{% blocktrans with c=r.room.code %}Room {{ c }}{% endblocktrans %}
+      {% if r.room.gender %}<span class="badge text-bg-light">{{ r.room.get_gender_display }}</span>{% endif %}
+      {% if r.room.building %}<span class="small text-muted">{{ r.room.building.name }}</span>{% endif %}
+      <span class="count">{{ r.taken }}/{{ r.units|length }}</span></h2>
+    {% if can_manage_units %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:room' r.room.public_id %}">{% trans "Edit" %}</a>{% endif %}
+  </div>
+  <ul class="item-list">
+    {% for u in r.units %}
+    <li><a href="{% url 'properties:unit' u.public_id %}" class="item">
+      <span class="item-main"><span class="item-title">{{ u.code }}</span>
+        <span class="item-meta d-block">{% if u.occupant %}{{ u.occupant }}{% else %}{% trans "Free" %}{% endif %} · {% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></span></span>
+      <span class="item-end">{% include "properties/_unit_status_badge.html" with u=u %}</span>
+    </a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% empty %}
+<p class="text-muted">{% trans "No rooms yet." %}</p>
+{% endfor %}
+{% endblock %}

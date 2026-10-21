@@ -1,0 +1,7 @@
+{% load i18n %}
+<nav class="month-step" aria-label="{% trans 'Choose month' %}">
+  <a href="?month={{ previous|date:'Y-m' }}" rel="prev" aria-label="{% trans 'Previous month' %}"><i class="bi bi-chevron-left" aria-hidden="true"></i></a>
+  <span class="month-step-now" aria-current="date">{{ month|date:"F Y" }}</span>
+  {% if next %}<a href="?month={{ next|date:'Y-m' }}" rel="next" aria-label="{% trans 'Next month' %}"><i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+  {% else %}<span class="month-step-off" aria-hidden="true"><i class="bi bi-chevron-right"></i></span>{% endif %}
+</nav>

@@ -1,0 +1,268 @@
+"""The rental income pack (D-050) and the owner statement (D-053) as A4 PDFs, drawn with ReportLab.
+
+Drawn on request from the live figures; nothing is stored.
+"""
+
+import io
+from xml.sax.saxutils import escape
+
+from django.utils import timezone
+from django.utils.translation import gettext as _
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+
+from core import brand
+from core.money import format_money
+from properties.models import format_percent
+
+from .income import Pack
+from .statements import Statement
+
+BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=9, leading=12, textColor=brand.INK)
+SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=10, textColor=brand.MUTED)
+HEAD = ParagraphStyle("head", parent=BODY, fontName="Helvetica-Bold", fontSize=15, leading=19)
+TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize=11, leading=15, keepWithNext=1,
+                       textColor=brand.PRIMARY)
+GRID = TableStyle([
+    ("FONT", (0, 0), (-1, -1), "Helvetica", 8),
+    ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 8),
+    ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+    ("BACKGROUND", (0, 0), (-1, 0), brand.TINT),
+    ("LINEBELOW", (0, 0), (-1, 0), 0.8, brand.PRIMARY),
+    ("LINEBELOW", (0, 1), (-1, -1), 0.3, brand.LINE),
+    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    ("TOPPADDING", (0, 0), (-1, -1), 3),
+    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+])
+
+
+def _p(text, style=BODY):
+    return Paragraph(escape(str(text)), style)
+
+
+def _n(value) -> str:
+    return "" if value is None else f"{value:,.2f}"
+
+
+def _table(rows, total=True, first_width=None, header=True):
+    table = Table(rows, colWidths=[first_width] + [None] * (len(rows[0]) - 1), repeatRows=1 if header else 0,
+                  hAlign="LEFT")
+    style = TableStyle(GRID.getCommands())
+    if not header:
+        # A block of plain rows: no tinted heading row, the lines between rows start at the top.
+        style.add("BACKGROUND", (0, 0), (-1, 0), colors.white)
+        style.add("FONT", (0, 0), (-1, 0), "Helvetica", 8)
+        style.add("LINEBELOW", (0, 0), (-1, 0), 0.3, brand.LINE)
+    if total:
+        style.add("FONT", (0, -1), (-1, -1), "Helvetica-Bold", 8)
+        style.add("LINEABOVE", (0, -1), (-1, -1), 0.8, brand.INK)
+        style.add("BACKGROUND", (0, -1), (-1, -1), brand.TINT)
+    table.setStyle(style)
+    return table
+
+
+def render_pack(pack: Pack) -> bytes:
+    org = pack.organization
+    c = pack.currency
+    t = pack.total
+    buf = io.BytesIO()
+    doc = brand.Doc(buf, pagesize=landscape(A4), leftMargin=14 * mm, rightMargin=14 * mm,
+                    topMargin=14 * mm, bottomMargin=16 * mm,
+                    title=f"{org.display_name} · " + _("Rental income %(year)s") % {"year": pack.year})
+    money_head = [_("Rent billed"), _("Utilities billed"), _("Other billed"), _("Received"), _("Rent received"),
+                  _("Utilities received"), _("Other received"), _("Deposits"), _("Not applied"), _("Taxable rent")]
+
+    def money(row):
+        return [_n(row.rent_billed), _n(row.utilities_billed), _n(row.other_billed), _n(row.received),
+                _n(row.rent_received), _n(row.utilities_received), _n(row.other_received),
+                _n(row.deposit_received), _n(row.unapplied), _n(row.taxable)]
+
+    story = [
+        brand.letterhead(org.display_name, org=org, kind=_("Rental income pack"), number=str(pack.year),
+                         lines=brand.org_lines(org)),
+        Spacer(1, 2 * mm),
+        _p(_("Drawn %(day)s.") % {"day": f"{timezone.localdate():%d %b %Y}"}, SMALL),
+        Spacer(1, 4 * mm),
+        _table([
+            [_("Summary"), ""],
+            [_("Tax residence"), pack.residence_label],
+            [_("Rent received, with money not yet applied"), format_money(t.taxable, c)],
+            [_("Rate"), ", ".join(f"{span} {rate}" for span, rate in pack.rates)],
+            [_("Tax estimate"), format_money(t.tax, c) if t.tax is not None else "—"],
+        ], total=False, first_width=80 * mm),
+        Spacer(1, 6 * mm),
+        _p(_("By month"), TITLE),
+        _table([[_("Month"), *money_head, _("Rate"), _("Tax estimate")]]
+               + [[row.label, *money(row), row.rate_label, _n(row.tax)] for row in pack.months]
+               + [[t.label, *money(t), "", _n(t.tax)]]),
+        Spacer(1, 6 * mm),
+        _p(_("By property"), TITLE),
+        _table([[_("Property"), *money_head]] + [[row.label, *money(row)] for row in pack.properties]
+               + [[t.label, *money(t)]], first_width=60 * mm),
+        Spacer(1, 6 * mm),
+        _p(_("Payments received"), TITLE),
+    ]
+    if pack.receipts:
+        rows = [[_("Date"), _("Receipt"), _("Tenant"), _("Property · unit"), _("Amount"), _("Rent"), _("Utilities"),
+                 _("Other"), _("Deposit"), _("Not applied")]]
+        for part in pack.receipts:
+            p = part.payment
+            receipt = getattr(p, "receipt", None)
+            rows.append([f"{p.paid_at:%d %b}", receipt.number if receipt else "", p.tenant.name if p.tenant else "",
+                         f"{p.lease.unit.property.name} · {p.lease.unit.code}", _n(p.amount), _n(part.rent),
+                         _n(part.utilities), _n(part.other), _n(part.deposit), _n(part.unapplied)])
+        table = _table(rows, total=False)
+        table.setStyle(TableStyle([("ALIGN", (1, 0), (3, -1), "LEFT")]))
+        story.append(table)
+    else:
+        story.append(_p(_("No payments in this year.")))
+    story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}") for note in pack.notes]
+    if org.document_footer:
+        story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_statement(st: Statement) -> bytes:
+    """The monthly owner statement (D-053), portrait A4."""
+    org = st.organization
+    c = st.currency
+    buf = io.BytesIO()
+    doc = brand.Doc(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm,
+                    bottomMargin=16 * mm,
+                    title=f"{org.display_name} · " + _("Owner statement %(month)s") % {"month": st.label})
+    summary = [
+        [_("Summary"), ""],
+        [_("Rent collected"), format_money(st.rent, c)],
+        [_("Utilities collected (water, electricity)"), format_money(st.utilities, c)],
+        [_("Other charges collected"), format_money(st.other, c)],
+        [_("Total collected"), format_money(st.collected, c)],
+    ]
+    if st.has_fee:
+        summary.append([_("Less management fee"), format_money(st.fee, c)])
+    summary += [
+        [_("Less expenses"), format_money(st.expenses, c)],
+    ]
+    if st.joint:
+        summary += [[_("Due on the properties"), format_money(st.whole_due, c)],
+                    [_("Less other owners' shares"), format_money(st.others_share, c)]]
+    summary.append([_("Due to the owner"), format_money(st.due, c)])
+    summary_table = _table(summary, first_width=80 * mm)
+    paid = []
+    if st.shows_remittances:
+        paid = [[_("Paid to the owner"), format_money(st.remitted, c)]]
+        paid += [["  " + _("%(day)s, %(method)s %(ref)s") % {
+            "day": f"{r.paid_on:%d %b %Y}", "method": r.get_method_display(), "ref": r.reference},
+            format_money(r.amount, c)] for r in st.remittances]
+        paid.append([_("Still to pay"), format_money(st.remaining, c)])
+    story = [
+        brand.letterhead(org.display_name, org=org, kind=_("Owner statement"), number=st.label,
+                         lines=brand.org_lines(org)),
+        Spacer(1, 4 * mm),
+        _p(_("Owner statement for %(month)s") % {"month": st.label}, TITLE),
+        _p(_("To: %(owner)s. Drawn %(day)s.") % {"owner": st.recipient, "day": f"{timezone.localdate():%d %b %Y}"},
+           SMALL),
+        Spacer(1, 4 * mm),
+        summary_table,
+    ]
+    extra = [[_("Rent and charges billed for the month"), format_money(st.billed, c)],
+             [_("Owed by tenants at month end"), format_money(st.balance, c)]]
+    if st.deposit:
+        extra.insert(0, [_("Deposits received (held, not included)"), format_money(st.deposit, c)])
+    if paid:
+        story += [Spacer(1, 3 * mm), _table(paid, first_width=80 * mm, header=False)]
+    story += [Spacer(1, 3 * mm), _table(extra, total=False, first_width=80 * mm, header=False)]
+    head = [_("Unit"), _("Tenant"), _("Billed"), _("Collected"), _("Deposit"), _("Owed at month end")]
+    for block in st.blocks:
+        title = block.property.name
+        if block.rentable:
+            title += " · " + _("%(o)s of %(r)s units occupied") % {"o": block.occupied, "r": block.rentable}
+        if block.fee_label:
+            title += " · " + _("fee %(fee)s") % {"fee": block.fee_label}
+        if block.joint:
+            title += " · " + _("owned jointly: %(pct)s%% share") % {"pct": format_percent(block.share)}
+        rows = [head] + [[line.lease.unit.code, line.tenant, _n(line.billed), _n(line.collected), _n(line.deposit),
+                          _n(line.balance)] for line in block.lines]
+        rows.append([_("Total"), "", _n(block.billed), _n(block.collected), _n(block.deposit), _n(block.balance)])
+        table = _table(rows, first_width=22 * mm)
+        table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "LEFT")]))
+        story += [Spacer(1, 6 * mm), _p(title, TITLE), table]
+        if block.fee_label:
+            story.append(_p(_("Management fee: %(fee)s (%(how)s) on rent collected of %(rent)s.") % {
+                "fee": format_money(block.fee, c), "how": block.fee_label, "rent": format_money(block.rent, c)},
+                SMALL))
+        if block.joint:
+            story.append(_p(_("Due on the property: %(whole)s. The owner's %(pct)s%% share: %(due)s.") % {
+                "whole": format_money(block.whole_due, c), "pct": format_percent(block.share),
+                "due": format_money(block.due, c)}, SMALL))
+        if block.expenses:
+            rows = [[_("Expense"), _("Date paid"), _("Category"), _("Paid to"), _("Amount")]]
+            rows += [[e.description[:60], f"{e.paid_on:%d %b}", e.category.name[:30],
+                      (e.supplier.name if e.supplier else "")[:30], _n(e.amount)] for e in block.expenses]
+            rows.append([_("Expenses"), "", "", "", _n(block.expense_total)])
+            table = _table(rows, first_width=70 * mm)
+            table.setStyle(TableStyle([("ALIGN", (0, 0), (3, -1), "LEFT")]))
+            story += [Spacer(1, 3 * mm), table]
+    story += [Spacer(1, 6 * mm), _p(_("Notes"), TITLE)] + [_p(f"• {note}", SMALL) for note in st.notes]
+    if org.document_footer:
+        story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_tenant_statement(lease, tenant, statement: dict, period_label: str, aging: list, last_payment) -> bytes:
+    """One tenant's statement for a period, portrait A4: summary, ageing of what is owed now, then every line."""
+    org = lease.organization
+    c = lease.currency
+    buf = io.BytesIO()
+    who = tenant.name if tenant else lease.number
+    doc = brand.Doc(buf, pagesize=A4, leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm,
+                    bottomMargin=16 * mm,
+                    title=f"{org.display_name} · " + _("Statement for %(who)s") % {"who": who})
+    summary = [
+        [_("Summary"), ""],
+        [_("Brought forward"), format_money(statement["brought_forward"], c)],
+        [_("Charged in the period"), format_money(statement["debits"], c)],
+        [_("Paid, credited or voided"), "−" + format_money(statement["credits"], c)],
+        [_("Balance owed"), format_money(statement["closing"], c)],
+    ]
+    story = [
+        brand.letterhead(org.display_name, org=org, kind=_("Statement"), number=lease.number,
+                         lines=brand.org_lines(org)),
+        Spacer(1, 4 * mm),
+        _p(_("Statement for %(who)s") % {"who": who}, TITLE),
+        _p(_("%(unit)s, %(property)s. Period %(period)s. Drawn %(day)s.") % {
+            "unit": lease.unit.code, "property": lease.unit.property.name, "period": period_label,
+            "day": f"{timezone.localdate():%d %b %Y}"}, SMALL),
+        Spacer(1, 4 * mm),
+        _table(summary, first_width=80 * mm),
+    ]
+    if last_payment is not None:
+        story.append(_p(_("Last payment: %(amount)s on %(day)s.") % {
+            "amount": format_money(last_payment.amount, c), "day": f"{last_payment.paid_at:%d %b %Y}"}, SMALL))
+    owed = [(label, amount) for label, amount in aging if amount]
+    if statement["closing"] > 0 and owed:
+        story += [Spacer(1, 4 * mm), _p(_("What is owed now, by age"), TITLE),
+                  _table([[label for label, _a in aging], [format_money(a, c) for _l, a in aging]], total=False,
+                         header=True)]
+    rows = [[_("Date"), _("Detail"), _("Charged"), _("Credited"), _("Balance")],
+            [f"{statement['start']:%d %b %Y}" if statement["start"] else "", _("Brought forward"), "", "",
+             _n(statement["brought_forward"])]]
+    for row in statement["rows"]:
+        e = row.entry
+        detail = " · ".join(x for x in (str(e.get_kind_display()), e.invoice.number if e.invoice_id else "",
+                                        e.reason) if x)
+        rows.append([f"{e.entry_date:%d %b %Y}", _p(detail, SMALL), _n(row.debit), _n(row.credit), _n(row.balance)])
+    rows.append(["", _("Closing balance"), "", "", _n(statement["closing"])])
+    table = _table(rows, first_width=24 * mm)
+    table.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "LEFT")]))
+    story += [Spacer(1, 6 * mm), _p(_("Every line"), TITLE), table]
+    if org.document_footer:
+        story += [Spacer(1, 4 * mm), _p(org.document_footer, SMALL)]
+    doc.build(story)
+    return buf.getvalue()

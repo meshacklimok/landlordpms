@@ -1,0 +1,26 @@
+{% load i18n %}{# A report's own page: back to all reports, and the report before and after it (D-148) #}
+<nav class="report-steps d-print-none" aria-label="{% trans 'Reports' %}">
+  <a class="report-steps-all" href="{% url 'reports:centre' %}?r={{ steps.key }}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+  <div class="report-steps-go">
+    <span class="report-steps-count">{% blocktrans with n=steps.position total=steps.total %}{{ n }} of {{ total }}{% endblocktrans %}</span>
+    {% if steps.previous %}<a class="btn btn-sm btn-outline-secondary" href="{{ steps.previous.url }}" rel="prev" title="{{ steps.previous.label }}"><i class="bi bi-chevron-left" aria-hidden="true"></i><span class="label-sm-up"> {% trans "Previous" %}</span><span class="visually-hidden">: {{ steps.previous.label }}</span></a>
+    {% else %}<span class="btn btn-sm btn-outline-secondary disabled" aria-hidden="true"><i class="bi bi-chevron-left"></i><span class="label-sm-up"> {% trans "Previous" %}</span></span>{% endif %}
+    {% if steps.next %}<a class="btn btn-sm btn-outline-secondary" href="{{ steps.next.url }}" rel="next" title="{{ steps.next.label }}"><span class="label-sm-up">{% trans "Next" %}: </span><span class="report-steps-name">{{ steps.next.label }}</span> <i class="bi bi-chevron-right" aria-hidden="true"></i></a>
+    {% else %}<span class="btn btn-sm btn-outline-secondary disabled" aria-hidden="true"><span class="label-sm-up">{% trans "Next" %} </span><i class="bi bi-chevron-right"></i></span>{% endif %}
+  </div>
+</nav>
+{# The side menu behind the floating "Jump to" button: every report (ui.js adds the button) #}
+<div class="offcanvas offcanvas-start report-sheet d-print-none" tabindex="-1" id="report-menu" aria-label="{% trans 'Jump to' %}" data-report-sheet>
+  <div class="offcanvas-header">
+    <a class="app-brand p-0" href="{% url 'accounts:home' %}" id="report-menu-title">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{% trans 'Close' %}"></button>
+  </div>
+  <div class="offcanvas-body">
+    {% for title, items in steps.menu %}
+    <div class="app-nav-label">{{ title }}</div>
+    <ul class="app-nav">
+      {% for r in items %}<li><a class="app-nav-link{% if r.current %} active{% endif %}" href="{{ r.url }}"{% if r.current %} aria-current="page"{% endif %}><i class="bi {{ r.icon }}" aria-hidden="true"></i>{{ r.label }}</a></li>{% endfor %}
+    </ul>
+    {% endfor %}
+  </div>
+</div>

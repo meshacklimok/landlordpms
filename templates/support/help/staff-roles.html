@@ -1,0 +1,62 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Invite people from <a href="{% url 'accounts:staff' %}">Staff</a>. They get an SMS link and choose a password.</p>
+<ul>
+  <li>A <strong>role</strong> decides what someone can do: Owner, Manager, Accountant, Caretaker, Leasing agent,
+    Maintenance or Viewer. Copy a role to make your own on <a href="{% url 'accounts:roles' %}">Roles</a>.</li>
+  <li>You can limit a person to some properties, or to <strong>branches</strong>: they then see every property in
+    those branches, including ones added later. Set up branches on
+    <a href="{% url 'accounts:branches' %}">Branches</a> and choose each property's branch on its edit page.</li>
+  <li>Viewers can only look, and do not count against your plan's team members.</li>
+  <li>Everyone can turn on two-step login on their <a href="{% url 'accounts:security' %}">security page</a>.</li>
+</ul>
+<h2 class="h6 mt-4" id="api">API keys</h2>
+<p>An API key lets another program, such as your accounting software, read your data. The owner makes keys on
+  <a href="{% url 'api:keys' %}">Staff → API keys</a>, choosing what each key may read: properties and units, tenants,
+  leases, invoices or payments. Under "May change" a key can also be allowed to record payments, or to add and update
+  tenants; leave it empty for a key that only reads.</p>
+<ul>
+  <li>The key is shown once. Keep it like a password; if it leaks, revoke it and make a new one.</li>
+  <li>A key reads with the rights of the person who made it, and stops working if they leave or stop being able to
+    manage the organization. Up to 10 keys can be in use at a time.</li>
+  <li>Send <code>Authorization: Bearer &lt;key&gt;</code> with a GET to <code>/api/v1/me/</code>,
+    <code>/api/v1/properties/</code>, <code>units</code>, <code>tenants</code>, <code>leases</code>,
+    <code>invoices</code> or <code>payments</code>.</li>
+  <li>Lists come in pages: add <code>?limit=</code> (up to 200) and pass back <code>next_cursor</code> as
+    <code>?cursor=</code>. Add <code>?updated_since=2026-10-01</code> to fetch only what changed. Money is sent as text,
+    such as <code>"15000.00"</code>.</li>
+  <li>Tenants' ID numbers, KRA PINs, emergency contacts and notes are never sent. Each key may make 120 requests a
+    minute.</li>  <li>Add <code>/&lt;id&gt;/</code> to read one item, such as <code>/api/v1/tenants/&lt;id&gt;/</code>.</li>
+  <li>To record a payment, POST JSON to <code>/api/v1/payments/</code> with <code>lease_id</code>, <code>amount</code>,
+    <code>method</code> (<code>MPESA</code>, <code>CASH</code>, <code>BANK</code>, <code>CHEQUE</code> or
+    <code>OTHER</code>) and, if you like, <code>paid_at</code>, <code>reference</code> and <code>tenant_id</code>.
+    Send an <code>Idempotency-Key</code> header that is different for each payment: if the same request is sent again
+    within a day, the first answer comes back and nothing is recorded twice. The payment is confirmed and receipted
+    as if the key's maker had entered it.</li>
+  <li>To add a tenant, POST <code>name</code> and <code>phone</code> (and, if you like, <code>kind</code>,
+    <code>contact_person</code>, <code>alt_phone</code>, <code>email</code>, <code>language</code>) to
+    <code>/api/v1/tenants/</code>; to change one, PATCH those fields to <code>/api/v1/tenants/&lt;id&gt;/</code>.
+    ID numbers, KRA PINs, emergency contacts and notes cannot be written through the API.</li>
+  <li>Changes made through the API appear in the activity log in the maker's name, with the key that made them. A
+    lapsed (read-only) account can still read but not write.</li>
+</ul>
+
+<h2 class="h6 mt-4" id="webhooks">Webhooks</h2>
+<p>A webhook tells another program when something changes, so it does not have to keep asking the API. The owner adds
+  one on <a href="{% url 'api:webhooks' %}">Staff → Webhooks</a>, giving an <code>https://</code> address on that
+  program's server and the events to send: payment confirmed or reversed, invoice issued or voided, lease activated or
+  ended, tenant added or updated.</p>
+<ul>
+  <li>Events go out within about five minutes, as a POST of JSON:
+    <code>{"id", "type", "created_at", "data": {"object": {...}}}</code>. The object looks the same as in the API.</li>
+  <li>Each webhook has a signing secret, shown once. Every event carries
+    <code>X-LPMS-Signature: t=&lt;time&gt;,v1=&lt;signature&gt;</code>, where the signature is the HMAC-SHA256 of
+    <code>&lt;time&gt;.&lt;body&gt;</code> with the secret, in hex. Check it, refuse times more than 5 minutes old, and
+    ignore an <code>X-LPMS-Delivery</code> you have already seen: the same event can arrive twice.</li>
+  <li>Answer with a 2xx within 10 seconds. Otherwise we try again after 1 minute, 5 minutes, 30 minutes, 2 hours, 6
+    hours and 12 hours. After 25 failures in a row the webhook is paused; events are kept for 30 days and sent when you
+    resume it. A failed event can be sent again by hand.</li>
+  <li>A webhook sends with the rights of the person who added it and waits if they leave. Only events after it was
+    added are sent. Addresses on private networks are refused. Up to 5 webhooks per organization.</li>
+</ul>
+{% endblock %}

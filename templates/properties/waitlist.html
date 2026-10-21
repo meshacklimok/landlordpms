@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Waitlist" %}{% endblock %}
+{% block content %}
+<a href="{% url 'properties:rooms' property.public_id %}" class="small">← {% trans "Room map" %}</a>
+<h1 class="h4 mt-2">{% trans "Waitlist" %} <span class="text-muted small">{{ property.name }}</span></h1>
+<p class="text-muted small">{% blocktrans count n=ready %}{{ n }} student can be offered a bed now.{% plural %}{{ n }} students can be offered a bed now.{% endblocktrans %}</p>
+<ul class="item-list">
+  {% for r in rows %}
+  <li><a href="{% url 'prospects:detail' r.prospect.public_id %}" class="item">
+    <span class="item-main"><span class="item-title">{{ r.prospect.name }}</span>
+      <span class="item-meta d-block">{{ r.prospect.get_gender_display }} · {{ r.prospect.wants }} · {{ r.prospect.phone }} · {% trans "since" %} {{ r.prospect.created_at|date:"j M" }}</span></span>
+    <span class="item-end">{% if r.free %}<span class="badge text-bg-success">{% blocktrans with n=r.free %}{{ n }} free{% endblocktrans %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "None free" %}</span>{% endif %}</span>
+  </a></li>
+  {% empty %}<li class="item-empty">{% trans "Nobody is waiting." %}</li>
+  {% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Moving to NyumbaPMS" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-1">{% trans "Moving to NyumbaPMS" %}</h1>
+<p class="small text-body-secondary">{% trans "Coming from cash, a bank account, another Paybill or Till, a notebook or another system? Work down these steps. Each one shows when it is done." %}</p>
+<ol class="list-group list-group-numbered mb-3">
+  {% for step in steps %}
+  <li class="list-group-item d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div class="ms-2 me-auto">
+      <div class="fw-semibold">{{ step.title }}{% if step.done %} <i class="bi bi-check-circle-fill text-success" aria-hidden="true"></i><span class="visually-hidden">{% trans "Done" %}</span>{% endif %}</div>
+      <div class="small text-body-secondary">{{ step.text }}</div>
+    </div>
+    {% if step.url and step.action %}<a class="btn btn-sm {% if step.done %}btn-outline-secondary{% else %}btn-primary{% endif %}" href="{{ step.url }}">{{ step.action }}</a>{% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% if not can_import %}<p class="small text-body-secondary">{% trans "Your role cannot import records. Ask the owner to do the import steps." %}</p>{% endif %}
+{% if not can_announce %}<p class="small text-body-secondary">{% trans "Your role cannot send messages to all tenants. Ask the owner to announce the new way to pay." %}</p>{% endif %}
+{% endblock %}

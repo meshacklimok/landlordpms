@@ -1,0 +1,57 @@
+{% load i18n static %}<div class="plan-switch" role="group" aria-label="{% trans 'Billing' %}" data-plan-switch hidden>
+  <button type="button" class="btn btn-sm btn-primary" data-pick="MONTHLY" aria-pressed="true">{% trans "Monthly" %}</button>
+  <button type="button" class="btn btn-sm btn-outline-primary" data-pick="YEARLY" aria-pressed="false">{% trans "Yearly" %}{% if best_saving %} <span class="plan-save">{% blocktrans with p=best_saving %}save up to {{ p }}%{% endblocktrans %}</span>{% endif %}</button>
+</div>
+<div class="row g-3 g-lg-4 align-items-stretch plan-grid" data-plan-grid>
+{% for plan in plans %}
+  <div class="col-sm-6 {% if plans|length == 4 %}col-xl-3{% else %}col-lg-4{% endif %}">
+    <div class="card plan-card h-100{% if plan.current %} plan-card-current{% elif plan.badge %} plan-card-featured{% endif %}">
+      {% if plan.current %}<span class="plan-flag">{% trans "Your plan" %}</span>{% elif plan.badge %}<span class="plan-flag">{{ plan.badge }}</span>{% endif %}
+      <div class="card-body d-flex flex-column p-4">
+        <h2 class="h5 fw-semibold mb-1">{{ plan.name }}</h2>
+        <p class="plan-size mb-3">{% if plan.unit_limit %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }} units{% endblocktrans %}{% else %}{% trans "No limit on units" %}{% endif %} &middot; {% if plan.seat_limit %}{% blocktrans with n=plan.seat_limit %}{{ n }} team members{% endblocktrans %}{% else %}{% trans "Unlimited team members" %}{% endif %}</p>
+
+        {% for interval, price, saved in plan.offer_list %}
+        <div class="plan-price" data-interval="{{ interval }}"{% if not forloop.first %} hidden{% endif %}><span class="plan-currency">KSh</span><span class="plan-amount">{{ price|floatformat:"0g" }}</span>
+          <span class="plan-per">{% if interval == "MONTHLY" %}{% trans "a month" %}{% elif interval == "YEARLY" %}{% trans "a year" %}{% else %}{% blocktrans with y=plan.one_off_years %}once, for {{ y }} years{% endblocktrans %}{% endif %}</span>
+          {% if saved %}<span class="plan-save">{% blocktrans with p=saved %}save {{ p }}%{% endblocktrans %}</span>{% endif %}</div>
+        {% if interval == "YEARLY" and plan.monthly_price %}<p class="plan-per mb-0" data-interval="{{ interval }}" hidden>{% blocktrans with m=plan.yearly_per_month|floatformat:"0g" %}About KSh {{ m }} a month{% endblocktrans %}</p>{% endif %}
+        {% endfor %}
+
+        {% if plan.offer_list|length > 1 %}
+        <noscript><dl class="plan-offers mt-3 mb-0">
+        {% for interval, price, saved in plan.offer_list %}{% if not forloop.first %}
+          <div class="plan-tone-{{ interval|lower }}">
+            <dt><span class="plan-dot" aria-hidden="true"></span>{% if interval == "YEARLY" %}{% trans "Yearly" %}{% else %}{% blocktrans with y=plan.one_off_years %}Once, {{ y }} years{% endblocktrans %}{% endif %}</dt>
+            <dd>KSh {{ price|floatformat:"0g" }}{% if saved %} <span class="plan-save">{% blocktrans with p=saved %}save {{ p }}%{% endblocktrans %}</span>{% endif %}</dd>
+          </div>
+        {% endif %}{% endfor %}
+        </dl></noscript>
+        {% endif %}
+
+        <hr class="plan-rule">
+        <p class="plan-included-title">{% trans "Included" %}</p>
+        <ul class="list-unstyled plan-features mb-4">
+          {% if plan.feature_lines %}{% for line in plan.feature_lines %}<li>{{ line }}</li>{% endfor %}
+          {% else %}{% for icon, title, text in features %}<li>{{ title }}</li>{% endfor %}
+          <li>{% trans "Free trial first, no card needed" %}</li>{% endif %}
+        </ul>
+        {% if choose %}
+          {% if plan.over %}<p class="small text-muted mb-0">{% trans "Too small for you now:" %} {{ plan.over|join:"; " }}</p>
+          {% elif plan.current %}<p class="small fw-semibold mb-0 text-center">{% trans "You are on this plan" %}</p>
+          {% else %}
+          <form method="post" class="d-flex gap-2 mt-auto">{% csrf_token %}
+            <input type="hidden" name="plan" value="{{ plan.key }}">
+            {% if plan.is_free %}<input type="hidden" name="interval" value="MONTHLY">
+            {% else %}<select name="interval" class="form-select" aria-label="{% trans 'How often' %}">{% for value, price, saved in plan.offer_list %}<option value="{{ value }}">{% if value == "ONCE" %}{% trans "One-off" %}{% elif value == "YEARLY" %}{% trans "Yearly" %}{% else %}{% trans "Monthly" %}{% endif %}</option>{% endfor %}</select>{% endif %}
+            <button class="btn {% if plan.badge %}btn-primary{% else %}btn-outline-primary{% endif %}">{% trans "Choose" %}</button>
+          </form>{% endif %}
+        {% else %}
+        <a class="btn {% if plan.badge %}btn-primary{% else %}btn-outline-primary{% endif %} mt-auto" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+<script src="{% static 'js/plans.js' %}" defer></script>

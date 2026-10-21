@@ -1,0 +1,46 @@
+{% load i18n %}{# One small picture of the product for each tab on the home page. Sample data, marked as such. #}
+<figure class="land-mock" aria-label="{% trans 'Example screen. Sample data.' %}">
+{% if anchor == "collect" %}
+  <div class="land-sms">
+    <p class="land-sms-from"><i class="bi bi-chat-left-text" aria-hidden="true"></i> {% trans "SMS to tenant" %}</p>
+    <p class="land-sms-body">{% trans "Received KSh 15,000 for unit A3, Sunrise Apartments. Receipt R-01482. Balance KSh 0. Thank you, Wanjiku." %}</p>
+  </div>
+  <ul class="land-rows mt-3">
+    <li><span class="land-unit">A3</span><span>Wanjiku M.</span><span class="land-amt">15,000</span><span class="land-tag ok">{% trans "Matched" %}</span></li>
+    <li><span class="land-unit">B1</span><span>Otieno K.</span><span class="land-amt">12,500</span><span class="land-tag ok">{% trans "Matched" %}</span></li>
+    <li><span class="land-unit">?</span><span>{% trans "Reference “A-3”" %}</span><span class="land-amt">9,000</span><span class="land-tag wait">{% trans "One tap" %}</span></li>
+  </ul>
+{% elif anchor == "follow-up" %}
+  <p class="land-k">{% trans "Call today" %}</p>
+  <ul class="land-rows">
+    <li><span class="land-unit">B2</span><span>Achieng R.</span><span class="land-amt">18,000</span><span class="land-tag late">{% trans "6 days" %}</span></li>
+    <li><span class="land-unit">C1</span><span>Mutua J.</span><span class="land-amt">7,500</span><span class="land-tag late">{% trans "3 days" %}</span></li>
+  </ul>
+  <p class="land-k mt-3">{% trans "Sent on their own" %}</p>
+  <ul class="land-steps-mini">
+    <li class="done"><i class="bi bi-check-circle-fill" aria-hidden="true"></i>{% trans "Invoice, 1st" %}</li>
+    <li class="done"><i class="bi bi-check-circle-fill" aria-hidden="true"></i>{% trans "Reminder, 5th" %}</li>
+    <li><i class="bi bi-circle" aria-hidden="true"></i>{% trans "Overdue notice, 10th: waiting for you" %}</li>
+  </ul>
+{% elif anchor == "manage" %}
+  <p class="land-k">{% trans "Water readings, block A" %}</p>
+  <ul class="land-rows land-rows-meter">
+    <li><span class="land-unit">A1</span><span>412 → 419 m³</span><span class="land-amt">7 m³</span><span class="land-tag ok">{% trans "Approved" %}</span></li>
+    <li><span class="land-unit">A2</span><span>388 → 392 m³</span><span class="land-amt">4 m³</span><span class="land-tag ok">{% trans "Approved" %}</span></li>
+    <li><span class="land-unit">A3</span><span>{% trans "Saved offline" %}</span><span class="land-amt">—</span><span class="land-tag wait">{% trans "To send" %}</span></li>
+  </ul>
+  <p class="land-k mt-3">{% trans "Repair" %}</p>
+  <div class="land-job"><i class="bi bi-tools" aria-hidden="true"></i><div><b>{% trans "Leaking tap, B4" %}</b><span>{% trans "Plumber assigned · KSh 1,200 as an expense" %}</span></div><span class="land-tag wait">{% trans "In progress" %}</span></div>
+{% else %}
+  <div class="land-preview-top">
+    <div><p class="land-k">{% trans "Collected this year" %}</p><p class="land-v">KSh 4.6M</p><p class="land-s">{% trans "94% of billed" %}</p></div>
+  </div>
+  <div class="land-bars" role="img" aria-label="{% trans 'Monthly collections, sample data' %}">
+    <span style="--h:68%"></span><span style="--h:75%"></span><span style="--h:82%"></span><span style="--h:69%"></span><span style="--h:79%"></span><span style="--h:88%"></span><span style="--h:91%"></span><span style="--h:84%"></span><span style="--h:90%"></span><span style="--h:94%"></span>
+  </div>
+  <ul class="land-rows mt-2">
+    <li><span class="land-unit"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></span><span>{% trans "Receipt R-01391 reversed" %}</span><span class="land-amt"></span><span class="land-tag">{% trans "Reason kept" %}</span></li>
+  </ul>
+{% endif %}
+  <figcaption class="land-mock-note">{% trans "Sample data" %}</figcaption>
+</figure>

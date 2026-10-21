@@ -1,0 +1,48 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "How it works" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+{% trans "How it works" as t_how %}{% trans "From the first unit to the monthly report, in six steps." as t_lead %}{% trans "The process" as t_eyebrow %}
+{% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_how lead=t_lead %}
+
+<ol class="pub-timeline">
+{% for title, body in steps %}
+  <li class="pub-timeline-item">
+    <span class="about-step-n" aria-hidden="true">{{ forloop.counter }}</span>
+    <div><h2 class="pub-timeline-title">{{ title }}</h2><p>{{ body }}</p></div>
+  </li>
+{% endfor %}
+</ol>
+
+<section class="about-section" aria-labelledby="plan-h">
+  <div class="about-section-head"><p class="about-eyebrow">{% trans "Our approach" %}</p><h2 id="plan-h" class="about-h2">{% trans "How we planned it" %}</h2></div>
+  <div class="about-grid pub-grid-4">
+  {% for title, body in planning %}
+    <article class="about-card"><span class="about-icon" aria-hidden="true">{{ forloop.counter }}</span><h3 class="about-card-title">{{ title }}</h3><p>{{ body }}</p></article>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="about-section" aria-labelledby="road-h">
+  <div class="about-section-head"><p class="about-eyebrow">{% trans "Roadmap" %}</p><h2 id="road-h" class="about-h2">{% trans "What is finished, and what is not" %}</h2>
+    <p class="mt-2 mb-0 text-muted">{% trans "We would rather tell you plainly. This is incomplete, and it will keep changing." %}</p></div>
+  <div class="about-grid">
+  {% for heading, colour, items in roadmap %}
+    <article class="about-card">
+      <h3 class="pub-status"><span class="badge text-bg-{{ colour }}">{{ heading }}</span></h3>
+      <ul class="pub-checks">{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>
+    </article>
+  {% endfor %}
+  </div>
+</section>
+
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Ready to see it with your units?" %}</h2><p class="mb-0">{% trans "Try it free, or read the guides first." %}</p></div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:tutorials' %}">{% trans "Tutorials" %}</a>
+  </div>
+</section>
+</div>
+{% endblock %}

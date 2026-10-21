@@ -1,0 +1,89 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "How tenants pay" %}{% endblock %}
+{% block content %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "How tenants pay" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}Invoices that fell due {{ p }}, and how many days after the due date each was paid in full. A negative number means early. Invoices not yet due are left out.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.invoices %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Paid in time" %}</div><div class="stat-value">{{ report.in_time_share|percent }}</div>
+    <div class="stat-sub">{% blocktrans with a=report.in_time b=report.paid %}{{ a }} of {{ b }} paid invoices{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Average days from due date" %}</div>
+    <div class="stat-value">{% if report.average is None %}—{% else %}{{ report.average }}{% endif %}</div>
+    <div class="stat-sub">{% if report.median is None %}{% trans "nothing paid yet" %}{% else %}{% blocktrans with m=report.median %}median {{ m }}{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Paid" %}</div><div class="stat-value">{{ report.paid }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.invoices %}of {{ n }} invoices that fell due{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Not paid" %}</div><div class="stat-value">{{ report.unpaid }}</div>
+    <div class="stat-sub">{% trans "past their due date, not in the averages" %}</div></div></div></div>
+</div>
+{% if report.truncated %}<div class="alert alert-info small">{% trans "This period has more invoices than can be read at once; the first ones are used. Choose a shorter period or one property." %}</div>{% endif %}
+
+<section class="row g-3 mb-3">
+  {% if specs.bands %}<div class="col-12 col-lg-6"><div class="chart-card">
+    <h2>{% trans "When invoices are paid" %}</h2><p class="chart-sub">{% trans "Paid invoices by days from the due date." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-bands" role="img" aria-label="{% trans 'Invoices by days from the due date. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+  {% if specs.months %}<div class="col-12 col-lg-6"><div class="chart-card">
+    <h2>{% trans "Trend" %}</h2><p class="chart-sub">{% trans "Average days from the due date, by the month invoices fell due." %}</p>
+    <div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Average days from the due date by month. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{% endif %}
+</section>
+{% if specs.bands %}{{ specs.bands|json_script:"chart-bands" }}{% endif %}
+{% if specs.months %}{{ specs.months|json_script:"chart-months" }}{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">
+    <h2 class="h6">{% trans "Days from the due date" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small align-middle">
+      <thead><tr><th>{% trans "Paid" %}</th><th class="w-25"></th><th class="text-end">{% trans "Invoices" %}</th><th class="text-end">{% trans "Share" %}</th></tr></thead>
+      <tbody>{% for b in report.bands %}<tr>
+        <td>{{ b.label }}</td>
+        <td><div class="progress" role="progressbar" aria-label="{{ b.label }}" aria-valuenow="{{ b.share|percent_number }}" aria-valuemin="0" aria-valuemax="100" style="height: 8px"><div class="progress-bar" style="width: {{ b.share|percent_number }}%"></div></div></td>
+        <td class="text-end">{{ b.count }}</td><td class="text-end">{{ b.share|percent }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+  <div class="col-lg-7">
+    <h2 class="h6">{% trans "By month" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small align-middle">
+      <thead><tr><th>{% trans "Fell due" %}</th><th class="text-end">{% trans "Paid invoices" %}</th><th class="text-end">{% trans "Average days" %}</th></tr></thead>
+      <tbody>{% for m in report.months %}<tr><td>{{ m.label }}</td><td class="text-end">{{ m.days|length }}</td><td class="text-end">{{ m.average|default:"—" }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+
+<div class="row g-3 mb-3">
+  {% for title, lines in lists %}
+  <div class="col-lg-6">
+    <h2 class="h6">{{ title }}</h2>
+    {% if lines %}
+    <div class="table-responsive"><table class="table table-sm small align-middle">
+      <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Unit" %}</th>{% if report.show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}<th class="text-end">{% trans "Average days" %}</th><th class="text-end">{% trans "Slowest" %}</th><th class="text-end">{% trans "Invoices" %}</th></tr></thead>
+      <tbody>{% for x in lines %}<tr>
+        <td><a href="{% url 'leases:detail' x.lease.public_id %}">{{ x.lease.number }}</a></td>
+        <td>{{ x.lease.unit.property.name }} · {{ x.lease.unit.code }}</td>
+        {% if report.show_tenants %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+        <td class="text-end">{{ x.average }}</td><td class="text-end">{{ x.slowest }}</td><td class="text-end">{{ x.days|length }}{% if x.unpaid %} <span class="text-danger">+{{ x.unpaid }}</span>{% endif %}</td></tr>{% endfor %}</tbody>
+    </table></div>
+    {% else %}<p class="small text-body-secondary">{% trans "No lease has two or more paid invoices in this period." %}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. A paid invoice counts from the day payments reached its full total. "Paid in time" allows the lease's grace days. Leases need two paid invoices to be ranked; a red number is invoices still unpaid.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">
+  {% trans "No invoice fell due and has passed its due date in this period. Choose another period." %}
+</div></div>
+{% endif %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,12 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Add an owner" %}{% endblock %}
+{% block console_title %}{% trans "Add an owner" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "Makes the account and the organization with its 30-day trial. There is no password yet: the owner opens Forgot password on their phone number, and the code sent there proves it is theirs." %}</p>
+<form method="post" class="card shadow-sm" style="max-width:36rem"><div class="card-body">
+  {% csrf_token %}
+  {% include "partials/form.html" with form=form %}
+  <button class="btn btn-primary">{% trans "Add the owner" %}</button>
+  <a class="btn btn-outline-secondary" href="{% url 'console:owners' %}">{% trans "Cancel" %}</a>
+</div></form>
+{% endblock %}

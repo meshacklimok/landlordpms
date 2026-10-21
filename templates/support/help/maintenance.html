@@ -1,0 +1,22 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p><strong>Maintenance</strong> follows each repair from the report to the checked work.</p>
+<ul>
+  <li>Report a problem from the Maintenance page or a unit page, with photos. Tenants can report from the tenant portal.</li>
+  <li>Assign a staff member, a supplier, or both. The supplier gets an SMS with the job and the times to start and finish by.</li>
+  <li>Each request has two target times set from its priority: <strong>start by</strong> (someone is on the job) and
+    <strong>fix by</strong>. By default an emergency should start within 4 hours and be fixed within 24 hours.
+    Owners can change the targets under Maintenance → Performance → Change targets. The new targets apply to new requests.</li>
+  <li>When a job passes either time, the person assigned and the staff who assign jobs are told in the app. The list shows
+    overdue jobs and jobs late to start.</li>
+  <li>If a job needs longer, for example while waiting for parts, move its fix-by time. The move is counted, so it shows
+    on the performance page.</li>
+  <li><strong>Performance</strong> shows, for each supplier and staff member, how many jobs they had, how many were
+    started and fixed on time, how long they took, how many were reopened and, if you can see costs, what they cost.</li>
+  <li>Record a repair's cost as an expense from the request. It is approved like any other expense.</li>
+  <li>With no connection, a report typed on the Report a problem page is kept on the phone and sent when you are back
+    online. Its times start from when you typed it (up to 7 days back). Photos are not kept on the phone, so add them
+    on the request page once it is sent. If a kept report is refused, for example because the unit no longer belongs
+    to the property, it shows on that page with the reason: put it back in the form, fix it and send it again.</li>
+</ul>
+{% endblock %}

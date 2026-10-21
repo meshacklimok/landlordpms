@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% load i18n static %}
+{% block title %}{% trans "Print all reports" %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="page-head print-hide">
+  <div>
+    <h1 class="h4">{% trans "Print all reports" %}</h1>
+    <p class="lead-text">{% trans "Every report you may open, one after another. When they have all loaded, press Print and choose “Save as PDF” as the printer to get one PDF." %}</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:centre' %}">{% trans "Back to reports" %}</a>
+    <button type="button" class="btn btn-sm btn-primary" data-print-all disabled><i class="bi bi-printer" aria-hidden="true"></i> <span data-print-label data-done="{% trans "Print / Save as PDF" %}">{% trans "Loading…" %}</span></button>
+  </div>
+</div>
+<p class="visually-hidden" aria-live="polite" data-print-status></p>
+<p class="small text-secondary d-none d-print-block">{% blocktrans with d=today|date:"j F Y" %}Reports printed {{ d }}{% endblocktrans %}</p>
+{% for r in reports %}
+<section class="print-report" aria-labelledby="pr-{{ r.key }}">
+  <h2 class="h5 print-report-title" id="pr-{{ r.key }}"><span class="text-secondary small">{{ r.group }} · </span>{{ r.label }}</h2>
+  <iframe class="print-frame" data-print-frame data-path="{{ r.url }}" src="{{ r.url }}?pane=1" title="{{ r.label }}" scrolling="no"></iframe>
+</section>
+{% endfor %}
+<div data-print-total hidden>{{ reports|length }}</div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/print_all.js' %}" defer></script>{% endblock %}

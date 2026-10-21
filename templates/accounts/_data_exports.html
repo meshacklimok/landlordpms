@@ -1,0 +1,19 @@
+{% load i18n %}{% if exports %}
+<ul class="list-unstyled small mt-3 mb-0">
+  {% for e in exports %}
+  <li class="d-flex flex-wrap gap-2 align-items-center py-1 border-top">
+    <span class="text-muted">{{ e.created_at|date:"j M Y H:i" }}</span>
+    {% if e.can_download %}
+      <a href="{% if console %}{% url download console.public_id e.public_id %}{% else %}{% url download e.public_id %}{% endif %}">{% trans "Download ZIP" %}</a>
+      <span class="text-muted">{% blocktrans with size=e.size|filesizeformat until=e.expires_at|date:"j M H:i" %}{{ size }}, until {{ until }}{% endblocktrans %}</span>
+    {% elif e.is_open %}
+      <span>{% trans "Being made…" %}</span>
+    {% elif e.status == "FAILED" %}
+      <span class="text-danger">{% trans "Could not be made. Try again, or contact support." %}</span>
+    {% else %}
+      <span class="text-muted">{% trans "Expired" %}</span>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

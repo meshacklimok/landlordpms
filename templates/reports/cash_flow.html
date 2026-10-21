@@ -1,0 +1,118 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Cash flow" %}{% endblock %}
+{% block content %}
+{% with cur=report.currency t=report.total whole=report.whole_organization %}
+<h1 class="h4 mb-0">{% trans "Cash flow" %}</h1>
+<p class="small text-body-secondary">{{ report.label }} · {% if selected %}{{ selected.name }}{% else %}{% trans "All your properties" %}{% endif %}</p>
+{% include "reports/_finance_links.html" with section="cash" %}
+{% include "reports/_finance_filter.html" %}
+
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Money in" %}</div>
+    <div class="stat-value num">{{ t.money_in|money:cur }}</div>
+    <div class="stat-sub">{% include "reports/_change.html" with c=report|change:"money_in" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Money out" %}</div>
+    <div class="stat-value num">{{ t.money_out|money:cur }}</div>
+    <div class="stat-sub">{% include "reports/_change.html" with c=report|change:"money_out" down_good=True %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-success"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net cash" %}</div>
+    <div class="stat-value num {% if t.net < 0 %}text-danger{% endif %}">{{ t.net|money:cur }}</div>
+    <div class="stat-sub">{% include "reports/_change.html" with c=report|change:"net" %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net cash a month" %}</div>
+    <div class="stat-value num {% if report.average.net < 0 %}text-danger{% endif %}">{{ report.average.net|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans count n=report.months|length %}average over {{ n }} month{% plural %}average over {{ n }} months{% endblocktrans %}</div>
+  </div></div></div>
+</div>
+
+{% if specs.months or specs.money_in %}
+<section class="row g-3 mb-3">
+  {% if specs.months %}
+  <div class="col-12{% if specs.money_in %} col-lg-8{% endif %}">
+    <div class="chart-card">
+      <h2>{% trans "Money in and out by month" %}</h2>
+      <p class="chart-sub">{% trans "Bars: money in and money out each month. Line: net cash. The figures are in the table below." %}</p>
+      <div class="chart-box h-lg"><canvas data-chart="chart-cash-months" role="img" aria-label="{% trans 'Money in, money out and net cash by month. The same figures are in the table below.' %}"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+  {% if specs.money_in %}
+  <div class="col-12{% if specs.months %} col-lg-4{% endif %}">
+    <div class="chart-card">
+      <h2>{% trans "Where money in came from" %}</h2>
+      <p class="chart-sub">{% blocktrans with a=t.money_in|money:cur %}{{ a }} in, by what it paid for.{% endblocktrans %}</p>
+      <div class="chart-box donut"><canvas data-chart="chart-cash-in" role="img" aria-label="{% trans 'Money in by what it paid for. The same figures are in the table below.' %}"></canvas></div>
+      <div class="table-responsive mt-2"><table class="table table-sm small mb-0"><tbody>
+        {% for label, amount, color in money_in_parts %}
+        <tr>
+          <td><span class="chart-legend d-inline"><span class="key" data-color="{{ color }}"></span></span>{{ label }}</td>
+          <td class="text-end num text-nowrap">{{ amount|money:cur }}</td>
+          <td class="text-end text-muted">{{ amount|share_of:t.money_in|percent }}</td>
+        </tr>
+        {% endfor %}
+      </tbody></table></div>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+<div class="table-responsive mb-3">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent" %}</th><th class="text-end">{% trans "Utilities" %}</th><th class="text-end">{% trans "Other charges" %}</th>
+    <th class="text-end">{% trans "Deposits" %}</th><th class="text-end">{% trans "Not yet applied" %}</th>
+    <th class="text-end">{% trans "Money in" %}</th><th class="text-end">{% trans "Expenses" %}</th>
+    <th class="text-end">{% trans "Deposit refunds" %}</th>
+    {% if whole %}<th class="text-end">{% trans "Payments to owners" %}</th>{% endif %}
+    <th class="text-end">{% trans "Money out" %}</th><th class="text-end">{% trans "Net cash" %}</th>
+  </tr></thead>
+  <tbody>{% for row in report.months %}{% include "reports/_cash_row.html" %}{% endfor %}</tbody>
+  <tfoot class="fw-semibold">{% include "reports/_cash_row.html" with row=t %}{% if report.months|length > 1 %}{% include "reports/_cash_row.html" with row=report.average %}{% endif %}</tfoot>
+</table>
+</div>
+
+{% if report.by_property %}
+<h2 class="h6">{% trans "By property" %}</h2>
+<div class="table-responsive mb-1">
+<table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Property" %}</th><th class="text-end">{% trans "Money in" %}</th><th class="text-end">{% trans "Expenses" %}</th>
+    <th class="text-end">{% trans "Deposit refunds" %}</th><th class="text-end">{% trans "Net cash" %}</th>
+  </tr></thead>
+  <tbody>
+    {% for place in report.by_property %}{% with f=place.figures %}
+    <tr>
+      <td><a href="?from={{ report.start|date:'Y-m' }}&amp;to={{ report.end|date:'Y-m' }}&amp;property={{ place.property.public_id }}">{{ place.property.name }}</a></td>
+      <td class="text-end num text-nowrap">{{ f.money_in|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ f.expenses|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ f.refunds|money:cur }}</td>
+      <td class="text-end num text-nowrap {% if f.net < 0 %}text-danger{% endif %}">{{ f.net|money:cur }}</td>
+    </tr>
+    {% endwith %}{% endfor %}
+  </tbody>
+</table>
+</div>
+{% if specs.places %}<div class="chart-box mb-2"><canvas data-chart="chart-cash-places" role="img" aria-label="{% trans 'Net cash by property. The same figures are in the table above.' %}"></canvas></div>{% endif %}
+<p class="small text-body-secondary mb-3">{% trans "Payments to owners are not split by property, so each property's net cash is before them." %}</p>
+{% endif %}
+
+<h2 class="h6">{% trans "Notes" %}</h2>
+<ul class="small text-body-secondary">{% for note in report.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+{% endwith %}
+{% if specs.months %}{{ specs.months|json_script:"chart-cash-months" }}{% endif %}
+{% if specs.money_in %}{{ specs.money_in|json_script:"chart-cash-in" }}{% endif %}
+{% if specs.places %}{{ specs.places|json_script:"chart-cash-places" }}{% endif %}
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

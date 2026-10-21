@@ -1,0 +1,80 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Sign" %} · {{ req.title }}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <div class="small text-body-secondary">{{ req.organization.name }} · {{ req.number }}</div>
+    <h1 class="h5 mt-1">{{ req.title }}</h1>
+    <p class="small mb-0">{% blocktrans with name=signer.name %}For {{ name }}.{% endblocktrans %}
+      {% if req.is_open %}{% blocktrans with day=req.expires_at|date:"j M Y" %}This link works until {{ day }}.{% endblocktrans %}{% endif %}</p>
+  </div></div>
+
+  {% if signer.has_signed %}
+  <div class="alert alert-success small">{% blocktrans with when=signer.signed_at|date:"j M Y, H:i" %}You signed on {{ when }}.{% endblocktrans %}
+    {% if req.status != "COMPLETED" %}{% trans "The signed copy will be ready once everyone has signed." %}{% endif %}</div>
+  {% elif signer.declined_at %}
+  <div class="alert alert-warning small">{% trans "You declined to sign. The office has been told." %}</div>
+  {% elif not req.is_open %}
+  <div class="alert alert-secondary small">{% blocktrans with status=req.shown_status %}This request is closed ({{ status }}). Nothing more can be signed through this link.{% endblocktrans %}</div>
+  {% endif %}
+
+  {% if not verified %}
+    {% if can_verify %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "First, prove it is you" %}</h2>
+      <p class="small">{% blocktrans %}We send a 6-digit code by SMS to {{ phone }}, the phone the office has for you.{% endblocktrans %}</p>
+      <form method="post" class="mb-3">{% csrf_token %}
+        <input type="hidden" name="action" value="send_code">
+        <button class="btn btn-outline-primary btn-sm">{% trans "Send me a code" %}</button>
+      </form>
+      <form method="post" class="d-flex gap-2 align-items-end flex-wrap">{% csrf_token %}
+        <input type="hidden" name="action" value="check_code">
+        <div><label class="form-label small" for="code">{% trans "Code" %}</label>
+          <input id="code" name="code" class="form-control" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></div>
+        <button class="btn btn-primary">{% trans "Continue" %}</button>
+      </form>
+    </div></div>
+    {% endif %}
+  {% else %}
+    {% if can_read %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% if req.status == "COMPLETED" %}{% trans "The signed copy" %}{% else %}{% trans "Read the document" %}{% endif %}</h2>
+      <a class="btn btn-outline-primary btn-sm" href="{% url 'esign_sign_pdf' token %}" target="_blank" rel="noopener">{% trans "Open the PDF" %}</a>
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'esign_sign_pdf' token %}?download=1">{% trans "Download" %}</a>
+      {% if others %}
+      <ul class="list-unstyled small mt-3 mb-0">
+        {% for s in others %}<li>{{ s.name }} ({{ s.get_role_display }}): {% if s.has_signed %}{% trans "signed" %}{% elif s.declined_at %}{% trans "declined" %}{% else %}{% trans "not yet signed" %}{% endif %}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div></div>
+    {% endif %}
+
+    {% if can_sign %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Sign" %}</h2>
+      <form method="post" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="sign">
+        <div class="mb-2"><label class="form-label small" for="typed_name">{% trans "Type your full name" %}</label>
+          <input id="typed_name" name="typed_name" class="form-control" maxlength="200" autocomplete="name" required></div>
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" name="agree" id="agree" required>
+          <label class="form-check-label small" for="agree">{% blocktrans with title=req.title %}I have read {{ title }}. I agree to sign it electronically, and that this has the same effect as signing it on paper.{% endblocktrans %}</label>
+        </div>
+        <button class="btn btn-primary">{% trans "Sign" %}</button>
+      </form>
+      <p class="small text-body-secondary mt-3 mb-0">{% trans "We record your name, the time, your IP address and your browser with your signature. Everyone who signs gets the same signed copy." %}</p>
+    </div></div>
+
+    <details class="mb-3"><summary class="small">{% trans "I do not want to sign" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}
+        <input type="hidden" name="action" value="decline">
+        <label class="form-label small" for="reason">{% trans "Why? The office will see this." %}</label>
+        <textarea id="reason" name="reason" class="form-control mb-2" rows="2" maxlength="300" required></textarea>
+        <button class="btn btn-outline-danger btn-sm">{% trans "Decline to sign" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

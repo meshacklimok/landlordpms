@@ -1,0 +1,34 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console health" %}{% endblock %}
+{% block console_title %}{% trans "Platform health" %}{% endblock %}
+{% block console %}
+<p class="small"><a class="btn btn-sm btn-outline-danger" href="{% url 'console:problems' %}">{% trans "Open the failures queue" %}</a></p>
+<div class="row g-3">
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Messages, last 7 days" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "Channel" %}</th><th class="text-end">{% trans "Total" %}</th><th class="text-end">{% trans "Failed" %}</th></tr></thead>
+      <tbody>{% for r in data.messages %}<tr><td>{{ r.channel }}</td><td class="text-end">{{ r.total }}</td><td class="text-end">{{ r.failed }}{% if r.failed_share %} ({{ r.failed_share }}%){% endif %}</td></tr>
+      {% empty %}<tr><td colspan="3" class="text-muted">—</td></tr>{% endfor %}</tbody>
+    </table></div>
+    <h2 class="h6 mt-3">{% trans "Money waiting too long" %}</h2>
+    <p class="small">{% blocktrans with n=data.stuck_mpesa o=data.stuck_orgs %}{{ n }} M-Pesa payments unmatched or flagged for over two days, across {{ o }} organizations.{% endblocktrans %}</p>
+    <h2 class="h6 mt-3">{% trans "Sign-ups that never verified a phone" %}</h2>
+    <p class="small">{{ data.unverified_users }}</p>
+  </div>
+  <div class="col-lg-6">
+    <h2 class="h6">{% trans "Support" %}</h2>
+    <p class="small">{% blocktrans with n=data.support_open %}{{ n }} open requests.{% endblocktrans %}
+      {% if data.support_oldest_days is not None %}{% blocktrans with d=data.support_oldest_days %}Oldest is {{ d }} days old.{% endblocktrans %}{% endif %}</p>
+    <ul class="small list-unstyled">{% for kind, n in data.support_by_kind %}<li>{{ kind }}: {{ n }}</li>{% endfor %}</ul>
+    <h2 class="h6 mt-3">{% trans "Open incidents" %}</h2>
+    <ul class="small list-unstyled">{% for title, impact in data.incidents %}<li>{{ title }} ({{ impact }})</li>{% empty %}<li class="text-muted">{% trans "None." %}</li>{% endfor %}</ul>
+    <h2 class="h6 mt-3">{% trans "Security" %}</h2>
+    <ul class="small list-unstyled">
+      <li>{% blocktrans with n=data.security.failed_codes_7 %}{{ n }} wrong two-step codes in 7 days{% endblocktrans %}</li>
+      <li>{% blocktrans with n=data.security.mfa_resets_30 %}{{ n }} two-step resets by an admin in 30 days{% endblocktrans %}</li>
+      <li>{% blocktrans with f=data.security.frozen r=data.security.read_only %}{{ f }} organizations frozen, {{ r }} read-only{% endblocktrans %}</li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

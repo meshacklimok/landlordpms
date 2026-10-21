@@ -1,0 +1,72 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Import" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-3">{% trans "Import from a spreadsheet" %}</h1>
+<p class="small text-muted">{% trans "Already have your tenants in a book or an Excel sheet? Bring them in here instead of typing them again. Nothing is added until you have checked the preview and confirmed, and you can undo an import for 24 hours." %}</p>
+<ol class="small text-muted mb-3">
+  <li>{% trans "Download the Excel sheet (we fill in your units for you) or print the form." %}</li>
+  <li>{% trans "Fill it in on the computer or by hand, or paste in your own spreadsheet with the same column names." %}</li>
+  <li>{% trans "Upload the file, or take a photo of the filled form." %}</li>
+</ol>
+<p class="small mb-3"><i class="bi bi-signpost-split" aria-hidden="true"></i> <a href="{% url 'imports:switch' %}">{% trans "Moving from another Paybill, a notebook or another system? Follow the steps" %}</a></p>
+<div class="row g-3 mb-4">
+  {% for slug, kind in cards %}
+  <div class="col-lg-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{{ kind.label }}</h2>
+    <p class="small text-muted mb-2">
+      {% if slug == "units" %}{% trans "Adds units to properties you already created. Buildings must exist first." %}
+      {% elif slug == "tenants" %}{% trans "Adds tenants only. Phone numbers like 0712 345 678 are converted to +254 format." %}
+      {% elif slug == "leases" %}{% trans "The quickest way to start: each line is a tenant, the unit they live in, the rent and the date they moved in. It adds the tenant and their lease together. Units that are already let are not touched." %}
+      {% else %}{% trans "What each tenant owed (or had paid ahead, as a negative amount) when you started. Goes to the unit's active lease unless you give a lease number. Activate the leases first." %}{% endif %}
+    </p>
+    <div class="d-flex flex-wrap gap-2 mb-3 small">
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'imports:template_xlsx' slug %}">{% trans "Excel sheet" %}{% if slug == "leases" or slug == "balances" %} <span class="text-muted">· {% trans "units filled in" %}</span>{% endif %}</a>
+      <a class="btn btn-sm btn-outline-primary" href="{% url 'imports:print' slug %}" target="_blank" rel="noopener">{% trans "Print form" %}</a>
+      <a class="btn btn-sm btn-link" href="{% url 'imports:template' slug %}">{% trans "CSV template" %}</a>
+    </div>
+    <form method="post" action="{% url 'imports:upload' slug %}" enctype="multipart/form-data" class="mb-2">{% csrf_token %}
+      <label class="form-label small mb-1" for="file-{{ slug }}">{% trans "Upload Excel or CSV" %}</label>
+      <div class="d-flex gap-2">
+        <input type="file" id="file-{{ slug }}" name="file" accept=".xlsx,.csv" required class="form-control form-control-sm">
+        <button class="btn btn-sm btn-primary text-nowrap">{% trans "Check file" %}</button>
+      </div>
+      {% if slug == "leases" and can_activate %}
+      <div class="form-check small mt-1"><input class="form-check-input" type="checkbox" name="activate" value="1" id="act-file"><label class="form-check-label" for="act-file">{% trans "Issue the leases now (otherwise they stay as drafts for you to check and activate)" %}</label></div>
+      {% endif %}
+    </form>
+    {% if photos %}
+    <form method="post" action="{% url 'imports:photo' slug %}" enctype="multipart/form-data">{% csrf_token %}
+      <label class="form-label small mb-1" for="photo-{{ slug }}">{% trans "Or a photo of the printed form, filled in" %}</label>
+      <div class="d-flex gap-2">
+        <input type="file" id="photo-{{ slug }}" name="photo" accept="image/*" capture="environment" required class="form-control form-control-sm">
+        <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Read photo" %}</button>
+      </div>
+      {% if slug == "leases" and can_activate %}
+      <div class="form-check small mt-1"><input class="form-check-input" type="checkbox" name="activate" value="1" id="act-photo"><label class="form-check-label" for="act-photo">{% trans "Issue the leases now" %}</label></div>
+      {% endif %}
+    </form>
+    {% endif %}
+  </div></div></div>
+  {% endfor %}
+</div>
+<div class="alert alert-light border small">
+  <strong>{% trans "Tenants already living there?" %}</strong>
+  {% trans "Give the date they moved in, or the first day of the month you start using NyumbaPMS, and add what they still owe under Opening balances. Rent is billed from the lease start date." %}
+</div>
+
+<h2 class="h6">{% trans "Recent imports" %}</h2>
+<div class="list-group">
+  {% for b in page %}
+  <a href="{% url 'imports:detail' b.public_id %}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+    <div>
+      <div class="fw-semibold">{{ b.get_kind_display }}{% if b.file_name %} <span class="small text-muted fw-normal">{{ b.file_name }}</span>{% endif %}</div>
+      <div class="small text-muted">{{ b.created_at|date:"j M Y H:i" }} · {{ b.created_by.get_full_name|default:b.created_by }} · {% blocktrans with ok=b.ok_count bad=b.error_count %}{{ ok }} OK, {{ bad }} with errors{% endblocktrans %}</div>
+    </div>
+    <span class="badge {% if b.status == 'APPLIED' %}text-bg-success{% elif b.status == 'PREVIEW' %}text-bg-info{% else %}text-bg-secondary{% endif %}">{{ b.get_status_display }}</span>
+  </a>
+  {% empty %}
+  <div class="list-group-item text-muted small">{% trans "No imports yet." %}</div>
+  {% endfor %}
+</div>
+{% include "partials/pager.html" %}
+{% endblock %}

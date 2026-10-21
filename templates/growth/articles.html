@@ -1,0 +1,55 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Articles" %} · NyumbaPMS{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+<div class="about">
+{% trans "Articles" as t_title %}{% trans "Short and practical. General information, not legal advice." as t_lead %}{% trans "Learn" as t_eyebrow %}
+{% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_title lead=t_lead %}
+
+<form class="pub-search" method="get" action="{% url 'growth:articles' %}" role="search">
+  {% if chosen %}<input type="hidden" name="category" value="{{ chosen }}">{% endif %}
+  <label for="article-q" class="visually-hidden">{% trans "Search articles" %}</label>
+  <input type="search" id="article-q" name="q" value="{{ q }}" maxlength="80" class="form-control" placeholder="{% trans 'Search, for example Paybill, water or deposit' %}">
+  <button type="submit" class="btn btn-primary"><i class="bi bi-search" aria-hidden="true"></i> {% trans "Search" %}</button>
+</form>
+
+{% if categories|length > 1 %}
+<nav class="pub-chips" aria-label="{% trans 'Article topics' %}"><ul>
+  <li><a href="{% url 'growth:articles' %}{% if q %}?q={{ q|urlencode }}{% endif %}"{% if not chosen %} aria-current="page"{% endif %}>{% trans "All" %} ({{ total }})</a></li>
+  {% for value, label, n in categories %}<li><a href="{% url 'growth:articles' %}?category={{ value }}{% if q %}&amp;q={{ q|urlencode }}{% endif %}"{% if chosen == value %} aria-current="page"{% endif %}>{{ label }} ({{ n }})</a></li>{% endfor %}
+</ul></nav>
+{% endif %}
+
+{% if q or chosen %}<p class="small text-muted" role="status">{% blocktrans count n=found %}{{ n }} article found.{% plural %}{{ n }} articles found.{% endblocktrans %}{% if q or chosen %} <a href="{% url 'growth:articles' %}">{% trans "Clear" %}</a>{% endif %}</p>{% endif %}
+
+{% if lead %}
+<a class="pub-feature" href="{% url 'growth:article' lead.slug %}">
+  <span class="pub-card-meta">{% trans "Start here" %} · {{ lead.get_category_display }} · {% blocktrans with m=lead.minutes %}{{ m }} min read{% endblocktrans %}</span>
+  <h2 class="pub-feature-title">{{ lead.title }}</h2>
+  <p>{{ lead.summary }}</p>
+  <span class="pub-card-go">{% trans "Read article" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+</a>
+{% endif %}
+
+<div class="pub-cards">
+{% for a in articles %}
+  <a class="pub-card" href="{% url 'growth:article' a.slug %}">
+    <span class="pub-card-meta">{{ a.get_category_display }} · {% blocktrans with m=a.minutes %}{{ m }} min read{% endblocktrans %}</span>
+    <h2 class="pub-card-title">{{ a.title }}</h2>
+    <p>{{ a.summary }}</p>
+    <span class="pub-card-foot">{% if a.published_at %}<time datetime="{{ a.published_at|date:'Y-m-d' }}">{{ a.published_at|date:"j M Y" }}</time>{% endif %}<span class="pub-card-go">{% trans "Read article" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span></span>
+  </a>
+{% empty %}
+  {% if not lead %}<p class="text-muted">{% if q %}{% trans "Nothing matches that search. Try a shorter word, or clear the search." %}{% else %}{% trans "No articles here yet." %}{% endif %}</p>{% endif %}
+{% endfor %}
+</div>
+
+<section class="about-cta">
+  <div><h2 class="about-h2 mb-1">{% trans "Stop chasing rent by hand" %}</h2><p class="mb-0">{% trans "See what is paid, what is late and who to call, all in one place. The trial is free and needs no card." %}</p></div>
+  <span class="d-flex flex-wrap gap-2">
+    {% if not user.is_authenticated %}<a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>{% endif %}
+    <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:tutorials' %}">{% trans "Step-by-step tutorials" %}</a>
+  </span>
+</section>
+</div>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Arrears analysis" %}{% endblock %}
+{% block content %}
+{% with cur=currency %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% trans "Arrears analysis" %}</h1>
+<p class="small text-body-secondary">{% blocktrans with d=report.today|date:"j M Y" p=period.label %}Who owes, as of {{ d }}. Money not yet due is never called overdue. "Recovered" is late rent paid {{ p }}.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.owed or report.recovered or report.recurring %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Overdue" %}</div><div class="stat-value num">{{ report.overdue|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.leases i=report.invoices %}{{ n }} leases · {{ i }} invoices{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Owed in total" %}</div><div class="stat-value num">{{ report.owed|money:cur }}</div>
+    <div class="stat-sub">{% if report.overdue_share is None %}—{% else %}{% blocktrans with p=report.overdue_share|percent %}{{ p }} of it is overdue{% endblocktrans %}{% endif %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Over 60 days late" %}</div><div class="stat-value">{% if report.over_60_share is None %}—{% else %}{{ report.over_60_share|percent }}{% endif %}</div>
+    <div class="stat-sub">{% trans "of everything owed" %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Late rent recovered" %}</div><div class="stat-value num">{{ report.recovered|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with n=report.recovered_count %}{{ n }} payments in the period{% endblocktrans %}</div></div></div></div>
+</div>
+
+<section class="row g-3 mb-3">
+  {% if specs.trend %}<div class="col-12 col-lg-7"><div class="chart-card">
+    <h2>{% trans "Overdue at the end of each month" %}</h2>
+    <div class="chart-box"><canvas data-chart="chart-trend" role="img" aria-label="{% trans 'Overdue rent by how late, month by month.' %}"></canvas></div>
+  </div></div>{{ specs.trend|json_script:"chart-trend" }}{% endif %}
+  {% if specs.ageing %}<div class="col-12 col-lg-5"><div class="chart-card">
+    <h2>{% trans "By how late, now" %}</h2>
+    <div class="chart-box donut"><canvas data-chart="chart-ageing" role="img" aria-label="{% trans 'Everything owed by how late it is. The same figures are in the table below.' %}"></canvas></div>
+  </div></div>{{ specs.ageing|json_script:"chart-ageing" }}{% endif %}
+</section>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "By how late" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Band" %}</th><th class="text-end">{% trans "Amount" %}</th><th class="text-end">{% trans "Share" %}</th></tr></thead>
+    <tbody>{% for key, label, amount, share in report.buckets %}<tr><td>{{ label }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td><td class="text-end">{{ share|percent }}</td></tr>{% endfor %}</tbody></table></div>
+    <p class="small"><a href="{% url 'reports:receivables' %}">{% trans "Open aged receivables" %}</a></p></div>
+  <div class="col-12 col-lg-6"><h2 class="h6">{% trans "By property (overdue)" %}</h2>
+    <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Property" %}</th><th class="text-end">{% trans "Leases" %}</th><th class="text-end">{% trans "Overdue" %}</th></tr></thead>
+    <tbody>{% for name, amount, n in report.by_property %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td></tr>{% empty %}<tr><td colspan="3" class="text-body-secondary">{% trans "Nothing is overdue." %}</td></tr>{% endfor %}</tbody></table></div></div>
+</div>
+
+<h2 class="h6">{% trans "Who owes the most" %}</h2>
+<form method="get" class="row g-2 align-items-end mb-2">
+  {% for k, v in carry.items %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <div class="col-auto"><label class="form-label small mb-0" for="min">{% trans "Overdue at least" %}</label>
+    <input class="form-control form-control-sm" id="min" name="min" type="number" min="0" step="any" value="{{ min_value }}"></div>
+  <div class="col-auto"><button class="btn btn-sm btn-outline-secondary">{% trans "Apply" %}</button></div>
+</form>
+{% if report.top %}
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Property" %}</th><th>{% trans "Unit" %}</th>
+    {% if report.top.0.tenant %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th class="text-end">{% trans "Overdue" %}</th><th class="text-end">{% trans "Days late" %}</th><th class="text-end">{% trans "Invoices" %}</th></tr></thead>
+  <tbody>{% for x in report.top %}<tr>
+    <td><a href="{% url 'leases:detail' x.row.lease.public_id %}">{{ x.row.lease.number }}</a></td>
+    <td>{{ x.row.lease.unit.property.name }}</td><td>{{ x.row.lease.unit.code }}</td>
+    {% if report.top.0.tenant %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+    <td class="text-end num text-nowrap">{{ x.overdue|money:cur }}</td><td class="text-end">{{ x.days }}</td><td class="text-end">{{ x.invoices }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="small text-body-secondary">{% trans "No lease matches." %}</p>{% endif %}
+
+<h2 class="h6">{% trans "Paid late again and again (3 or more of the last 6 months)" %}</h2>
+{% if report.recurring %}
+<div class="table-responsive mb-3"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Lease" %}</th><th>{% trans "Property" %}</th><th>{% trans "Unit" %}</th>
+    {% if report.recurring.0.tenant %}<th>{% trans "Tenant" %}</th>{% endif %}
+    <th class="text-end">{% trans "Late months" %}</th><th class="text-end">{% trans "Months billed" %}</th></tr></thead>
+  <tbody>{% for x in report.recurring %}<tr>
+    <td><a href="{% url 'leases:detail' x.lease.public_id %}">{{ x.lease.number }}</a></td>
+    <td>{{ x.lease.unit.property.name }}</td><td>{{ x.lease.unit.code }}</td>
+    {% if report.recurring.0.tenant %}<td>{{ x.tenant.name|default:"—" }}</td>{% endif %}
+    <td class="text-end">{{ x.late }}</td><td class="text-end">{{ x.billed }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% else %}<p class="small text-body-secondary">{% trans "No lease pays late that often." %}</p>{% endif %}
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "Nothing is owed and no late rent was recovered in this period. That is good news, or no rent has been billed yet." %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}

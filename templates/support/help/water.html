@@ -1,0 +1,17 @@
+{% extends "support/_help_topic.html" %}
+{% block body %}
+<p>Bill water or electricity by meter reading instead of a flat fee.</p>
+<ol>
+  <li>Add a <strong>meter</strong> to a property on <a href="{% url 'meters:list' %}">Meters</a>: water or electricity, the units it
+    serves and the rate per m³ or per kWh. A prepaid token meter is not billed. A shared meter splits equally or by weight.</li>
+  <li>The first reading is a starting point and bills nothing.</li>
+  <li>Each month, do a <strong>reading round</strong> on your phone: one box per meter. A photo is optional.
+    No signal in the meter room? Open the round page before you go in. If "Save readings" finds no connection, the
+    readings are kept on the phone and sent by themselves when you are back online (photos are not kept). The menu
+    shows how many are waiting. If one is refused, for example because someone read that meter in the meantime, the
+    round page lists it as "needs fixing": put it back in the form, correct it and save again.</li>
+  <li>Someone who may approve checks the readings. Unusual ones are flagged (lower than last time, no use, much higher,
+    long gap) and need a note.</li>
+  <li>Approved readings are billed on the next month's invoice with the readings shown, as "Metered water" or "Metered electricity".</li>
+</ol>
+{% endblock %}

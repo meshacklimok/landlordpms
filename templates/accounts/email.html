@@ -1,0 +1,9 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Your email" %}{% endblock %}
+{% block heading %}{% trans "Your email" %}{% endblock %}
+{% block card %}
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  <button class="btn btn-primary w-100">{% trans "Send code" %}</button>
+</form>
+<p class="small mt-2"><a href="{% url 'accounts:home' %}">{% trans "Do this later" %}</a></p>
+{% endblock %}

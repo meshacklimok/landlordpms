@@ -1,0 +1,13 @@
+{% load i18n %}<section class="mt-5" aria-labelledby="compare-h">
+  <h2 id="compare-h" class="h4 fw-bold mb-3">{% trans "Compare plans" %}</h2>
+  <div class="table-responsive plan-compare"><table class="table align-middle mb-0">
+    <thead><tr><th scope="col"><span class="visually-hidden">{% trans "Plan" %}</span></th>
+      {% for plan in plans %}<th scope="col">{{ plan.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      <tr><th scope="row">{% trans "Units" %}</th>{% for plan in plans %}<td>{% if plan.unit_limit %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }}{% endblocktrans %}{% else %}{% trans "No limit" %}{% endif %}</td>{% endfor %}</tr>
+      <tr><th scope="row">{% trans "Team members" %}</th>{% for plan in plans %}<td>{% if plan.seat_limit %}{{ plan.seat_limit }}{% else %}{% trans "Unlimited" %}{% endif %}</td>{% endfor %}</tr>
+      <tr class="plan-tone-monthly"><th scope="row"><span class="plan-chip">{% trans "Monthly" %}</span></th>{% for plan in plans %}<td>KSh {{ plan.monthly_price|floatformat:"0g" }}</td>{% endfor %}</tr>
+      <tr class="plan-tone-yearly"><th scope="row"><span class="plan-chip">{% trans "Yearly" %}</span></th>{% for plan in plans %}<td>{% if plan.yearly_price %}KSh {{ plan.yearly_price|floatformat:"0g" }}{% else %}&ndash;{% endif %}</td>{% endfor %}</tr>
+      <tr><th scope="row">{% trans "Every feature below" %}</th>{% for plan in plans %}<td><span class="plan-tick" aria-label="{% trans 'Included' %}"></span></td>{% endfor %}</tr>
+    </tbody></table></div>
+</section>

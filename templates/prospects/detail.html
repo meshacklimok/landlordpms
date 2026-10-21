@@ -1,0 +1,148 @@
+{% extends "prospects/_base.html" %}{% load i18n money %}
+{% block title %}{{ p.name }}{% endblock %}
+{% block content %}
+<div class="mx-auto mw-760">
+  <a href="{% url 'prospects:list' %}" class="small link-secondary link-underline-opacity-0"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "Prospects" %}</a>
+  <div class="mt-2 mb-3 d-flex flex-wrap justify-content-between align-items-start gap-2">
+    <div>
+      <h1 class="h4 mb-1">{{ p.name }} {% include "prospects/_status.html" %}</h1>
+      <div class="small text-body-secondary">{{ p.property.name }}{% if p.unit %} · <a href="{% url 'properties:unit' p.unit.public_id %}">{{ p.unit.code }}</a>{% endif %} · {{ p.get_source_display }}</div>
+    </div>
+    <span class="d-flex flex-wrap gap-2">
+      <a class="btn btn-sm btn-outline-secondary" href="tel:{{ p.phone }}"><i class="bi bi-telephone" aria-hidden="true"></i> {% trans "Call" %}</a>
+      <a class="btn btn-sm btn-outline-success" target="_blank" rel="noopener" href="https://wa.me/{{ p.phone|cut:'+' }}"><i class="bi bi-whatsapp" aria-hidden="true"></i> WhatsApp</a>
+      {% if can_manage %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'prospects:edit' p.public_id %}">{% trans "Edit" %}</a>{% endif %}
+    </span>
+  </div>
+
+  {% if duplicates %}
+  <div class="alert alert-warning small">{% trans "Also an open prospect elsewhere:" %}
+    {% for d in duplicates %}<a href="{% url 'prospects:detail' d.public_id %}">{{ d.name }}</a> ({{ d.property.name }}){% if not forloop.last %}, {% endif %}{% endfor %}
+  </div>
+  {% endif %}
+
+  {% if p.held_unit %}
+  <div class="alert {% if p.held_until < today %}alert-warning{% else %}alert-dark{% endif %} d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span><i class="bi bi-lock" aria-hidden="true"></i> {% blocktrans with unit=p.held_unit.code until=p.held_until|date:"j M Y" %}{{ unit }} is held for them until {{ until }}.{% endblocktrans %}
+      {% if p.held_until < today %}<strong>{% trans "The date has passed: extend the hold or release the unit." %}</strong>{% endif %}</span>
+    {% if can_manage %}<form method="post" data-confirm="{% trans 'Release the unit? It goes back to available.' %}">{% csrf_token %}<input type="hidden" name="action" value="release"><button class="btn btn-sm btn-outline-secondary">{% trans "Release" %}</button></form>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if p.status == "CONVERTED" %}
+  <div class="alert alert-success small">{% blocktrans with when=p.converted_at|date:"j M Y" %}Became a tenant on {{ when }}.{% endblocktrans %}
+    {% if p.tenant %}{% if can_see_tenant %}<a href="{% url 'tenants:detail' p.tenant.public_id %}">{{ p.tenant.name }}</a>{% else %}{{ p.tenant.name }}{% endif %}{% endif %}
+    {% if p.held_unit %}{% trans "The hold ends when their lease is activated." %}{% endif %}</div>
+  {% elif p.status == "LOST" %}
+  <div class="alert alert-secondary small d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span>{% blocktrans with when=p.lost_at|date:"j M Y" reason=p.get_lost_reason_display %}Lost on {{ when }}: {{ reason }}.{% endblocktrans %}{% if p.lost_note %} {{ p.lost_note }}{% endif %}</span>
+    {% if can_manage %}<form method="post">{% csrf_token %}<input type="hidden" name="action" value="reopen"><button class="btn btn-sm btn-outline-primary">{% trans "Reopen" %}</button></form>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <dl class="row small mb-0">
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Phone" %}</dt><dd class="col-sm-8">{{ p.phone }}{% if p.email %} · {{ p.email }}{% endif %}</dd>
+      {% if p.budget is not None %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Budget" %}</dt><dd class="col-sm-8 num">{{ p.budget|money:p.organization.currency }} {% trans "a month" %}</dd>{% endif %}
+      {% if p.move_in_by %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Move in by" %}</dt><dd class="col-sm-8">{{ p.move_in_by|date:"j M Y" }}</dd>{% endif %}
+      {% if p.wants %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Looking for" %}</dt><dd class="col-sm-8">{{ p.wants }}</dd>{% endif %}
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Handled by" %}</dt><dd class="col-sm-8">{% if p.assigned_to %}{{ p.assigned_to }}{% else %}<span class="text-body-secondary">{% trans "Nobody yet" %}</span>{% endif %}</dd>
+      {% if p.is_open %}<dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Follow up" %}</dt>
+      <dd class="col-sm-8">{% if p.status == "NEW" %}<span class="text-warning-emphasis fw-semibold">{% trans "Not called yet" %}</span>{% elif p.next_contact_on %}<span class="{% if p.next_contact_on <= today %}text-danger fw-semibold{% endif %}">{{ p.next_contact_on|date:"j M Y" }}</span>{% else %}<span class="text-body-secondary">—</span>{% endif %}</dd>{% endif %}
+      <dt class="col-sm-4 text-body-secondary fw-normal">{% trans "Added" %}</dt><dd class="col-sm-8">{{ p.created_at|date:"j M Y, H:i" }}{% if p.created_by %} · {{ p.created_by }}{% else %} · {% trans "from the vacancy link" %}{% endif %}</dd>
+    </dl>
+  </div></div>
+
+  {% if can_convert %}
+  <div class="card shadow-sm mb-3 border-success"><div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <span class="small">{% trans "Ready to sign? Make them a tenant and draft the lease." %}</span>
+    <a class="btn btn-success btn-sm" href="{% url 'prospects:convert' p.public_id %}"><i class="bi bi-person-check" aria-hidden="true"></i> {% trans "Make tenant" %}</a>
+  </div></div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "Viewings" %}</h2>
+    {% for v in viewings %}
+    <div class="py-2 small{% if not forloop.last %} border-bottom{% endif %}">
+      <div class="d-flex justify-content-between gap-2">
+        <span class="fw-medium">{{ v.unit.code }} · {{ v.scheduled_at|date:"D j M Y, H:i" }}{% if v.with_user %} · <span class="fw-normal text-body-secondary">{{ v.with_user }}</span>{% endif %}</span>
+        <span>{% if v.status == "BOOKED" %}<span class="badge text-bg-primary">{{ v.get_status_display }}</span>{% elif v.status == "DONE" %}<span class="badge text-bg-success">{{ v.get_status_display }}</span>{% else %}<span class="badge text-bg-light border">{{ v.get_status_display }}</span>{% endif %}</span>
+      </div>
+      {% if v.outcome %}<div>{{ v.outcome }}</div>{% endif %}
+      {% if can_manage and v.status == "BOOKED" %}
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="outcome"><input type="hidden" name="viewing" value="{{ v.public_id }}">
+        <div class="input-group input-group-sm">
+          <input type="text" name="outcome" maxlength="300" class="form-control" placeholder="{% trans 'What did they think? (optional)' %}" aria-label="{% trans 'Outcome' %}">
+          <button name="status" value="DONE" class="btn btn-outline-success">{% trans "Viewed" %}</button>
+          <button name="status" value="NO_SHOW" class="btn btn-outline-secondary">{% trans "Did not come" %}</button>
+          <button name="status" value="CANCELLED" class="btn btn-outline-danger">{% trans "Cancel" %}</button>
+        </div>
+      </form>
+      {% endif %}
+    </div>
+    {% empty %}<p class="small text-body-secondary mb-0">{% trans "No viewings yet." %}</p>{% endfor %}
+    {% if viewing_form %}
+    <details class="mt-3"{% if viewing_form.errors %} open{% endif %}><summary class="small fw-medium">{% trans "Book a viewing" %}</summary>
+      <form method="post" class="mt-2" novalidate>{% csrf_token %}<input type="hidden" name="action" value="viewing">
+        {% include "partials/form.html" with form=viewing_form %}
+        <button class="btn btn-sm btn-outline-primary">{% trans "Book" %}</button>
+      </form>
+    </details>
+    {% endif %}
+  </div></div>
+
+  {% if hold_form %}
+  <div class="row g-3 mb-3">
+    <div class="col-md-6"><form method="post" class="card shadow-sm h-100" novalidate>{% csrf_token %}<div class="card-body">
+      <input type="hidden" name="action" value="hold">
+      <h2 class="h6">{% if p.held_unit %}{% trans "Change the hold" %}{% else %}{% trans "Hold a unit" %}{% endif %}</h2>
+      {% if hold_form.fields.unit.queryset.exists %}
+      {% include "partials/form.html" with form=hold_form %}
+      <button class="btn btn-sm btn-outline-primary">{% trans "Hold" %}</button>
+      {% else %}<p class="small text-body-secondary mb-0">{% trans "No unit here is available to hold." %}</p>{% endif %}
+    </div></form></div>
+    <div class="col-md-6"><form method="post" class="card shadow-sm h-100" novalidate>{% csrf_token %}<div class="card-body">
+      <input type="hidden" name="action" value="assign">
+      <h2 class="h6">{% trans "Handled by" %}</h2>
+      {% include "partials/form.html" with form=assign_form %}
+      <button class="btn btn-sm btn-outline-primary">{% trans "Save" %}</button>
+    </div></form></div>
+  </div>
+  {% endif %}
+
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <h2 class="h6">{% trans "History" %}</h2>
+    <ul class="list-unstyled small mb-0">
+      {% for n in notes %}
+      <li class="py-2{% if not forloop.last %} border-bottom{% endif %}">
+        <div class="d-flex justify-content-between gap-2">
+          <span class="fw-medium">{% if n.kind == "CONTACT" %}<i class="bi bi-telephone" aria-hidden="true"></i> {% elif n.kind == "ENQUIRY" %}<i class="bi bi-globe" aria-hidden="true"></i> {% endif %}{{ n.get_kind_display }}</span>
+          <span class="text-body-secondary text-nowrap">{{ n.at|date:"j M, H:i" }}</span>
+        </div>
+        {% if n.text %}<div class="pre-line">{{ n.text }}</div>{% endif %}
+        <div class="text-body-secondary">{% if n.by %}{{ n.by }}{% else %}{% trans "Vacancy link" %}{% endif %}</div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div></div>
+
+  {% if note_form %}
+  <form method="post" class="card shadow-sm mb-3" novalidate>{% csrf_token %}<div class="card-body">
+    <input type="hidden" name="action" value="note">
+    <h2 class="h6">{% trans "Add a note" %}</h2>
+    {% include "partials/form.html" with form=note_form %}
+    <button class="btn btn-outline-primary">{% trans "Add" %}</button>
+  </div></form>
+  {% endif %}
+
+  {% if can_manage and p.is_open %}
+  <details class="card shadow-sm mb-3"{% if lose_form.errors %} open{% endif %}><summary class="card-body small fw-medium">{% trans "Not going ahead?" %}</summary>
+    <form method="post" class="card-body pt-0" novalidate data-confirm="{% trans 'Mark as lost? Any hold is released and booked viewings are cancelled.' %}">{% csrf_token %}
+      <input type="hidden" name="action" value="lose">
+      {% include "partials/form.html" with form=lose_form %}
+      <button class="btn btn-sm btn-outline-danger">{% trans "Mark as lost" %}</button>
+    </form>
+  </details>
+  {% endif %}
+</div>
+{% endblock %}

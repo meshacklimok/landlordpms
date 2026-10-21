@@ -1,0 +1,53 @@
+{% extends "base.html" %}{% load i18n access %}
+{% block title %}{{ owner.name }}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:owners' %}" class="small">← {% trans "Owners" %}</a>
+  <h1 class="h4 mt-2">{% trans "Edit owner" %}</h1>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+  </form>
+  {% if props %}
+  <h2 class="h6 mt-4">{{ vocab.properties }}</h2>
+  <ul class="small">{% for p, share in props %}<li>{{ p.name }}{% if share is not None %} · {% blocktrans with s=share|floatformat:"-2" %}{{ s }}% share{% endblocktrans %}{% endif %}{% if p.management_fee_percent is not None %} · {% blocktrans with f=p.management_fee_percent|floatformat:"-2" %}fee {{ f }}%{% endblocktrans %}{% endif %}{% if p.management_fee_fixed %} · {% blocktrans with f=p.management_fee_fixed|floatformat:"2g" %}KES {{ f }} a month{% endblocktrans %}{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+  {% if membership|can:"reports.view_financial" %}
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'reports:owner_account' owner.public_id %}">{% trans "Owner account: statements and payments" %}</a>
+  {% endif %}
+  {% if owner_portal %}
+  <div class="card mt-4"><div class="card-body p-3 small">
+    <h2 class="h6">{% trans "Owner portal" %}</h2>
+    {% if owner_portal.account %}
+      <p class="mb-2">{% blocktrans with since=owner_portal.account.created_at|date:"d M Y" %}The owner logs in to see their statements, payments and properties. Since {{ since }}.{% endblocktrans %}</p>
+      <p class="mb-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'owner_portal:staff_desk' owner.public_id %}">{% trans "Owner desk: messages, approvals, payout" %}</a></p>
+      {% if fully_sees %}
+      <form method="post" action="{% url 'owner_portal:revoke' owner.public_id %}" data-confirm="{% trans 'Stop this owner seeing their statements online?' %}">{% csrf_token %}
+        <button class="btn btn-sm btn-outline-danger">{% trans "Remove access" %}</button>
+      </form>
+      {% endif %}
+    {% elif owner_portal.invitation %}
+      <p class="mb-2">{% blocktrans with phone=owner_portal.invitation.phone until=owner_portal.invitation.expires_at|date:"d M Y" %}Invitation sent to {{ phone }}, open until {{ until }}.{% endblocktrans %}
+        {% if owner_portal.invitation.sent_by_email %}{% blocktrans with email=owner_portal.invitation.email %}Also emailed to {{ email }}.{% endblocktrans %}{% endif %}</p>
+      {% if fully_sees %}
+      <div class="d-flex gap-2">
+        <form method="post" action="{% url 'owner_portal:invite' owner.public_id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-primary">{% trans "Send again" %}</button></form>
+        <form method="post" action="{% url 'owner_portal:invite_revoke' owner.public_id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% trans "Cancel invitation" %}</button></form>
+      </div>
+      {% endif %}
+    {% else %}
+      <p class="mb-2">{% blocktrans with properties_l=vocab.properties|lower tenant=vocab.tenant %}Let the owner see their monthly statements, payments made to them and their {{ properties_l }} online, any time. {{ tenant }} names are not shown.{% endblocktrans %}</p>
+      {% if not fully_sees %}
+      <p class="text-muted mb-0">{% blocktrans with properties_l=vocab.properties|lower %}Only someone who sees all of this owner's {{ properties_l }} can invite them.{% endblocktrans %}</p>
+      {% elif not owner.phone %}
+      <p class="text-muted mb-0">{% trans "Add the owner's phone number first: they log in with it." %}</p>
+      {% else %}
+      <form method="post" action="{% url 'owner_portal:invite' owner.public_id %}">{% csrf_token %}
+        <button class="btn btn-sm btn-primary">{% if owner.email %}{% trans "Invite by SMS and email" %}{% else %}{% trans "Invite by SMS" %}{% endif %}</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div></div>
+  {% endif %}
+</div>
+{% endblock %}

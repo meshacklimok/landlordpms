@@ -1,0 +1,17 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% blocktrans with c=room.code %}Room {{ c }}{% endblocktrans %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:rooms' room.property.public_id %}" class="small">← {{ room.property.name }}</a>
+  <h1 class="h4 mt-2">{% blocktrans with c=room.code %}Room {{ c }}{% endblocktrans %}</h1>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+  </form>
+  <form method="post" class="mt-4">{% csrf_token %}
+    <input type="hidden" name="action" value="archive">
+    <button class="btn btn-outline-danger btn-sm" data-confirm="{% trans "Archive this room and its beds?" %}">{% trans "Archive room" %}</button>
+    <div class="form-text">{% trans "Only possible once no bed has a booking that is still open." %}</div>
+  </form>
+</div>
+{% endblock %}

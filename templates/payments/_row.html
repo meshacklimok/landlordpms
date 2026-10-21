@@ -1,0 +1,11 @@
+{% load i18n money %}<a href="{% url 'payments:detail' payment.public_id %}" class="item">
+  {% include "payments/_method.html" with method=payment.method %}
+  <div class="item-main">
+    <div class="item-title"><span class="text-truncate">{{ payment.tenant.name|default:"—" }}</span></div>
+    <div class="item-meta">{{ payment.paid_at|date:"j M Y" }} · {{ payment.lease.unit.property.name }} · {{ payment.lease.unit.code }}{% if payment.reference %} · <code>{{ payment.reference }}</code>{% endif %}</div>
+  </div>
+  <div class="item-end">
+    <span class="num fw-semibold {% if payment.state == 'rejected' or payment.state == 'reversed' %}amount-strike{% else %}text-body{% endif %}">{{ payment.amount|money:payment.lease.currency }}</span>
+    {% include "payments/_status.html" %}
+  </div>
+</a>

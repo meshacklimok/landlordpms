@@ -1,0 +1,20 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Tax residence" %}{% endblock %}
+{% block content %}
+<a href="{% url 'accounts:organization' %}" class="small">← {% trans "Settings" %}</a>
+<h1 class="h4 mt-2">{% trans "Tax residence" %}</h1>
+<p class="small text-muted">{% trans "Which rate the rental income tax estimate uses." %}</p>
+<div class="row"><div class="col-md-7 col-lg-5">
+  <div class="card shadow-sm"><div class="card-body">
+    <form method="post">{% csrf_token %}
+      <div class="fw-semibold small mb-1">{{ form.landlord_tax_residence.label }}</div>
+      {% for radio in form.landlord_tax_residence %}
+      <div class="form-check">{{ radio.tag }}<label class="form-check-label small" for="{{ radio.id_for_label }}">{{ radio.choice_label }}</label></div>
+      {% endfor %}
+      <div class="form-text small mb-3">{{ form.landlord_tax_residence.help_text }}</div>
+      <button class="btn btn-primary">{% trans "Save" %}</button>
+      <a class="btn btn-link" href="{% url 'reports:income' %}">{% trans "See the income report" %}</a>
+    </form>
+  </div></div>
+</div></div>
+{% endblock %}

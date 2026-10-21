@@ -1,0 +1,46 @@
+# NyumbaPMS web workers (D-122, doc 21). Installed by deploy/setup.sh as /etc/systemd/system/landlordpms.service.
+#   systemctl status landlordpms     journalctl -u landlordpms -f     systemctl reload landlordpms (after an update)
+[Unit]
+Description=NyumbaPMS web (gunicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+User=landlordpms
+Group=landlordpms
+WorkingDirectory=/srv/landlordpms
+EnvironmentFile=/etc/landlordpms.env
+Environment=DJANGO_SETTINGS_MODULE=config.settings.prod
+Environment=DB_APP_NAME=landlordpms
+# 2 x CPU + 1 workers for the 2-CPU server (doc 18). Each holds up to DB_POOL_MAX connections.
+ExecStart=/srv/landlordpms/venv/bin/gunicorn config.wsgi:application \
+    --bind 127.0.0.1:8000 --workers 5 --timeout 60 --graceful-timeout 30 \
+    --max-requests 2000 --max-requests-jitter 200 \
+    --limit-request-line 4094 --limit-request-fields 50 --limit-request-field_size 8190 --access-logfile - --error-logfile -
+# Reload starts new workers on the new code and lets the old ones finish their requests.
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+# More sandboxing (D-139): the web process cannot touch kernel settings, load modules, use raw sockets or reach
+# any address family but ipv4, ipv6 and local sockets, and has no Linux capabilities.
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

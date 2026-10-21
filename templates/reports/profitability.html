@@ -1,0 +1,109 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "True profitability" %}{% endblock %}
+{% block page_class %} page-wide{% endblock %}
+{% block content %}
+{% with f=report.focus %}
+<a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
+<h1 class="h4 mb-0">{% if selected %}{{ selected.name }}{% else %}{% trans "True profitability" %}{% endif %}</h1>
+<p class="small text-body-secondary">{% blocktrans with p=period.label %}What {{ p }} really earned after rent not collected, empty units and every cost of running it, and what tenants still owe.{% endblocktrans %}</p>
+{% include "reports/_period_filter.html" %}
+
+{% if report.rows or f.income or f.operating_costs %}
+<div class="row g-2 mb-3">
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Income received" %}</div><div class="stat-value num">{{ f.income|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with r=f.rent|money:cur u=f.utilities|money:cur %}{{ r }} rent, {{ u }} utilities{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Cost of running it" %}</div><div class="stat-value num">{{ f.operating_costs|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with p=f.cost_ratio|percent %}{{ p }} of income{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-info"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Net operating income" %}</div><div class="stat-value num{% if f.noi < 0 %} text-danger{% endif %}">{{ f.noi|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with p=f.margin|percent %}{{ p }} margin{% endblocktrans %}</div></div></div></div>
+  <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
+    <div class="stat-label">{% trans "Owed by tenants" %}</div><div class="stat-value num">{{ f.owed|money:cur }}</div>
+    <div class="stat-sub">{% blocktrans with o=f.overdue|money:cur %}{{ o }} overdue today{% endblocktrans %}</div></div></div></div>
+</div>
+
+<section class="report-section mb-3">
+  <h2 class="h5">{% trans "From potential rent to net operating income" %}</h2>
+  <div class="row g-3">
+    <div class="col-12 col-lg-7">
+      <div class="table-responsive"><table class="table table-sm align-middle small mb-0">
+        <thead><tr><th></th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+        <tbody>
+          <tr class="fw-semibold"><td>{% trans "Potential rent" %}</td><td class="text-end num text-nowrap">{{ f.potential|money:cur }}</td></tr>
+          <tr><td>{% trans "Less empty units" %}</td><td class="text-end num text-nowrap">−{{ f.vacancy|money:cur }}</td></tr>
+          <tr><td>{% trans "Rent billed" %}</td><td class="text-end num text-nowrap">{{ f.billed|money:cur }}</td></tr>
+          <tr><td>{% trans "Less not collected (yet)" %}</td><td class="text-end num text-nowrap">−{{ f.uncollected|money:cur }}</td></tr>
+          <tr><td>{% trans "Rent collected, for these months" %}</td><td class="text-end num text-nowrap">{{ f.collected|money:cur }}</td></tr>
+          <tr class="table-light"><td colspan="2" class="small text-body-secondary">{% trans "Money received in the period (cash)" %}</td></tr>
+          <tr><td>{% trans "Rent received" %}</td><td class="text-end num text-nowrap">{{ f.rent|money:cur }}</td></tr>
+          <tr><td>{% trans "Water and utilities received" %}</td><td class="text-end num text-nowrap">{{ f.utilities|money:cur }}</td></tr>
+          <tr><td>{% trans "Other charges received" %}</td><td class="text-end num text-nowrap">{{ f.other|money:cur }}</td></tr>
+          <tr class="fw-semibold"><td>{% trans "Income" %}</td><td class="text-end num text-nowrap">{{ f.income|money:cur }}</td></tr>
+          {% for key, label, amount in cost_rows %}<tr><td>{% blocktrans %}Less {{ label }}{% endblocktrans %}</td><td class="text-end num text-nowrap">−{{ amount|money:cur }}</td></tr>{% endfor %}
+          <tr class="fw-semibold table-active"><td>{% trans "Net operating income" %}</td><td class="text-end num text-nowrap{% if f.noi < 0 %} text-danger{% endif %}">{{ f.noi|money:cur }}</td></tr>
+        </tbody>
+      </table></div>
+      <p class="small text-body-secondary mt-2 mb-0">{% blocktrans with u=f.utility_result|money:cur %}Water and utilities received, less the water and electricity bills paid: {{ u }}.{% endblocktrans %}</p>
+    </div>
+    {% if specs.costs %}<div class="col-12 col-lg-5"><div class="chart-card">
+      <h3 class="h6">{% trans "Where the money went" %}</h3>
+      <div class="chart-box donut"><canvas data-chart="chart-costs" role="img" aria-label="{% trans 'Costs by kind. The same figures are in the table beside it.' %}"></canvas></div>
+      <div class="table-responsive"><table class="table table-sm small mb-0 mt-2"><tbody>
+        {% for row, color in cost_slices %}<tr><td><span class="key" data-color="{{ color }}"></span> {{ row.0 }}</td><td class="text-end num text-nowrap">{{ row.1|money:cur }}</td><td class="text-end">{{ row.1|share_of:f.operating_costs|percent }}</td></tr>{% endfor %}
+      </tbody></table></div>
+    </div></div>{% endif %}
+  </div>
+</section>
+
+{% if specs.months %}
+<section class="report-section mb-3">
+  <h2 class="h5">{% trans "Month by month" %}</h2>
+  <div class="chart-card"><div class="chart-box"><canvas data-chart="chart-months" role="img" aria-label="{% trans 'Income, costs and net operating income by month.' %}"></canvas></div></div>
+</section>
+{% endif %}
+
+{% if report.rows|length > 1 %}
+<section class="report-section mb-3">
+  <h2 class="h5">{% blocktrans with properties=vocab.properties %}{{ properties }} by net operating income{% endblocktrans %}</h2>
+  <div class="table-responsive">
+  <table class="table table-sm align-middle small">
+    <thead><tr><th>{{ vocab.property }}</th><th class="text-end">{% trans "Lost to empty units" %}</th><th class="text-end">{% trans "Not collected" %}</th><th class="text-end">{% trans "Income" %}</th>
+      <th class="text-end">{% trans "Costs" %}</th><th class="text-end">{% trans "Net operating income" %}</th><th class="text-end">{% trans "Margin" %}</th><th class="text-end">{% trans "Owed now" %}</th></tr></thead>
+    <tbody>
+    {% for r in report.rows %}
+      <tr{% if selected and r.property.pk == selected.pk %} class="table-active"{% endif %}>
+        <td class="fw-semibold"><a href="?{% for k, v in carry.items %}{% if k != 'property' %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}property={{ r.property.public_id }}">{{ r.name }}</a></td>
+        <td class="text-end num text-nowrap">{{ r.vacancy|money:cur }}</td><td class="text-end num text-nowrap">{{ r.uncollected|money:cur }}</td>
+        <td class="text-end num text-nowrap">{{ r.income|money:cur }}</td><td class="text-end num text-nowrap">{{ r.operating_costs|money:cur }}</td>
+        <td class="text-end num text-nowrap{% if r.noi < 0 %} text-danger{% endif %}">{{ r.noi|money:cur }}</td><td class="text-end">{{ r.margin|percent }}</td>
+        <td class="text-end num text-nowrap">{{ r.owed|money:cur }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    {% with t=report.total %}
+    <tfoot><tr class="fw-semibold"><td>{% trans "All" %}</td><td class="text-end num text-nowrap">{{ t.vacancy|money:cur }}</td><td class="text-end num text-nowrap">{{ t.uncollected|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ t.income|money:cur }}</td><td class="text-end num text-nowrap">{{ t.operating_costs|money:cur }}</td>
+      <td class="text-end num text-nowrap">{{ t.noi|money:cur }}</td><td class="text-end">{{ t.margin|percent }}</td><td class="text-end num text-nowrap">{{ t.owed|money:cur }}</td></tr></tfoot>
+    {% endwith %}
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}. Rent billed and collected are counted by the month the rent is for; income, costs and net operating income by when the money moved (cash, approved expenses only), as on the profit and loss. Costs are grouped by the kind of cost set on each expense category. Owed now is everything tenants owe today, not only what is late.{% endblocktrans %}
+{% if report.fees_counted %} {% trans "The management fee is worked out from each property's fee settings. If you also record the fee as an expense, it is counted twice." %}{% endif %}</p>
+{% if specs.costs %}{{ specs.costs|json_script:"chart-costs" }}{% endif %}
+{% if specs.months %}{{ specs.months|json_script:"chart-months" }}{% endif %}
+{% else %}
+<div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% blocktrans with properties_l=vocab.properties|lower %}No {{ properties_l }} with rent, income or costs in this period.{% endblocktrans %}</div></div>
+{% endif %}
+{% endwith %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

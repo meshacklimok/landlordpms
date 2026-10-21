@@ -1,0 +1,20 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Create account" %}{% endblock %}
+{% block heading %}{% if as_tenant %}{% trans "Tenant sign-up" %}{% else %}{% trans "Create your account" %}{% endif %}{% endblock %}
+{% block card %}
+{% if as_tenant %}<p class="small text-muted">{% trans "Use the phone number your landlord has on file. We send one code to confirm it, then you log in with the phone number and your password. No invitation link needed." %}</p>{% endif %}
+{% if invited %}<div class="alert alert-success small" data-referral-applied>{{ invited }}</div>{% endif %}
+<form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
+  {% if not invited %}
+  <details class="mb-3 small" data-referral-box{% if code_error %} open{% endif %}>
+    <summary class="text-muted" style="cursor:pointer">{% trans "Have a referral code?" %}</summary>
+    <input type="text" name="referral_code" value="{{ typed_code }}" maxlength="12" autocomplete="off" autocapitalize="characters"
+           class="form-control form-control-sm mt-2{% if code_error %} is-invalid{% endif %}" aria-label="{% trans 'Referral code' %}"{% if code_error %} aria-describedby="referral-code-error"{% endif %}>
+    {% if code_error %}<div class="invalid-feedback" id="referral-code-error">{{ code_error }}</div>{% endif %}
+  </details>
+  {% endif %}
+  <p class="small text-muted">{% trans "Read them first:" %} <a href="{% url 'support:terms' %}" target="_blank">{% trans "Terms of Service" %}</a> · <a href="{% url 'support:privacy' %}" target="_blank">{% trans "Privacy Policy" %}</a></p>
+  <button class="btn btn-primary w-100">{% trans "Continue" %}</button>
+</form>
+{% endblock %}
+{% block links %}{% trans "Already have an account?" %} <a href="{% url 'accounts:login' %}">{% trans "Log in" %}</a>{% endblock %}

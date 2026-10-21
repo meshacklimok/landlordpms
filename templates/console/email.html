@@ -1,0 +1,12 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Email" %}{% endblock %}
+{% block console_title %}{% trans "Which email account sends what" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% trans "Choose Resend or Brevo for each kind of mail, and swap them whenever you like. It applies to the next email sent. The logins themselves stay on the server." %}</p>
+<ul class="small mb-3">{% for label, ok in accounts %}<li>{{ label }}: {% if ok %}{% trans "set up on the server" %}{% else %}<strong>{% trans "not set up on the server" %}</strong>{% endif %}</li>{% endfor %}</ul>
+<form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <p class="small text-muted">{% trans "If you pick an account that is not set up, mail goes through Resend instead." %}</p>
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+</form>
+{% endblock %}

@@ -1,0 +1,223 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{{ property.name }}{% endblock %}
+{% block content %}
+{% load access %}<a href="{% url 'properties:list' %}" class="back-link"><i class="bi bi-chevron-left" aria-hidden="true"></i>{{ vocab.properties }}</a>
+<div class="detail-head">
+  <div class="min-w-0">
+    <h1 class="h4">{{ property.name }} <span class="code-tag">{{ property.code }}</span></h1>
+    <p class="facts">
+      <span>{{ property.get_category_display }}</span>
+      {% if property.address_line %}<span>{{ property.address_line }}</span>{% endif %}
+      {% if property.branch %}<span>{% blocktrans with b=property.branch.name %}Branch: {{ b }}{% endblocktrans %}</span>{% endif %}
+    </p>
+    {% if can_record_pickups %}<p><a class="btn btn-sm btn-outline-primary" href="/leases/pickups/{{ property.public_id }}">{% trans "Record pickups" %}</a></p>{% endif %}
+    {% if property.service_days %}<p class="facts"><span>{{ vocab.service_days }}: {{ property.service_days }}</span></p>{% endif %}
+    {% if not agency_tools %}{% elif owners %}<p class="facts">
+      <span>{% if owners|length > 1 %}{% trans "Owners:" %} {% for o, pct in owners %}{{ o.name }} {{ pct|floatformat:"-2" }}%{% if not forloop.last %}, {% endif %}{% endfor %}{% else %}{% blocktrans with o=property.owner.name %}Owner: {{ o }}{% endblocktrans %}{% endif %}</span>
+      {% if property.management_fee_percent is not None %}<span>{% blocktrans with f=property.management_fee_percent|floatformat:"-2" %}Fee {{ f }}% of rent collected{% endblocktrans %}</span>{% endif %}
+      {% if property.management_fee_fixed %}<span>{% blocktrans with f=property.management_fee_fixed|floatformat:"2g" %}Fixed fee KES {{ f }} a month{% endblocktrans %}</span>{% endif %}
+      {% if can_manage and not property.is_archived %}<span><a href="{% url 'properties:shares' property.public_id %}">{% trans "Owners and shares" %}</a></span>{% endif %}
+    </p>
+    {% elif can_manage and not property.is_archived %}<p class="facts"><a href="{% url 'properties:shares' property.public_id %}">{% trans "Set the owner or joint owners" %}</a></p>{% endif %}
+  </div>
+  <div class="detail-actions">
+    {% if membership|can:"meters.view" %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'meters:list' %}#property-{{ property.public_id }}"><i class="bi bi-speedometer2" aria-hidden="true"></i>{% trans "Meters" %}</a>{% endif %}
+    {% if can_add_charges %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:charges' property.public_id %}"><i class="bi bi-receipt" aria-hidden="true"></i>{% blocktrans with leases_l=vocab.leases|lower %}Add a charge to all {{ leases_l }}{% endblocktrans %}</a>{% endif %}
+    {% if can_manage and not property.is_archived %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:edit' property.public_id %}"><i class="bi bi-pencil" aria-hidden="true"></i>{% trans "Edit" %}</a>{% endif %}
+  </div>
+</div>
+
+{% if property.is_archived %}
+<div class="alert alert-secondary d-flex justify-content-between align-items-center">
+  <span>{% blocktrans with property_l=vocab.property|lower %}This {{ property_l }} is archived.{% endblocktrans %}</span>
+  {% if can_manage %}
+  <form method="post" action="{% url 'properties:archive' property.public_id %}">{% csrf_token %}
+    <input type="hidden" name="action" value="restore"><button class="btn btn-sm btn-outline-dark">{% trans "Restore" %}</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if glance %}{% with g=glance cur=currency %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>{% blocktrans with m=g.current.label %}How it is doing, {{ m }}{% endblocktrans %}</h2>
+    <span class="panel-links">
+      <a href="{% url 'reports:dashboard' %}?property={{ property.public_id }}">{% trans "Dashboard" %}</a>
+      {% if year %}<a href="{% url 'reports:profit_loss' %}?property={{ property.public_id }}">{% trans "Profit and loss" %}</a>{% endif %}
+    </span>
+  </div>
+  <div class="row g-3">
+    <div class="col-6 col-lg-3"><div class="stat stat-accent accent-primary">
+      <div class="stat-label">{% trans "Occupancy" %}</div>
+      <div class="stat-value">{{ g.occupancy.rate|percent }}</div>
+      <div class="stat-sub">{% blocktrans with a=g.occupancy.occupied b=g.occupancy.rentable %}{{ a }} of {{ b }} units{% endblocktrans %}{% if g.vacancy.amount %} · {% blocktrans with v=g.vacancy.amount|money:cur %}{{ v }} a month empty{% endblocktrans %}{% endif %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat stat-accent accent-success">
+      <div class="stat-label">{{ vocab.rent }} collected</div>
+      <div class="stat-value num">{{ g.current.collected|money:cur }}</div>
+      <div class="stat-sub">{% blocktrans with e=g.current.expected|money:cur %}of {{ e }} expected{% endblocktrans %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat stat-accent accent-info">
+      <div class="stat-label">{% trans "Collection rate" %}</div>
+      <div class="stat-value">{{ g.current.rate|percent }}</div>
+      <div class="stat-sub">{% include "reports/_change.html" with c=g|glance_change:"rate" kind="pts" %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat stat-accent accent-danger">
+      <div class="stat-label">{% trans "Overdue" %}</div>
+      <div class="stat-value num {% if g.arrears.total %}text-danger{% endif %}">{{ g.arrears.total|money:cur }}</div>
+      <div class="stat-sub">{% blocktrans count n=g.arrears.leases %}{{ n }} lease behind{% plural %}{{ n }} leases behind{% endblocktrans %}</div>
+    </div></div>
+  </div>
+  {% if specs.trend %}
+  <div class="chart-card mt-3">
+    <h2>{% blocktrans with rent=vocab.rent %}{{ rent }} over the last 12 months{% endblocktrans %}</h2>
+    <p class="chart-sub">{% blocktrans with rent=vocab.rent rent_l=vocab.rent|lower %}{{ rent }} expected against {{ rent_l }} collected, month by month.{% endblocktrans %}{% if g.current.rate is not None %} {% blocktrans with r=g.current.rate|percent %}This month {{ r }} has been collected.{% endblocktrans %}{% endif %}</p>
+    <div class="chart-box"><canvas data-chart="chart-trend" role="img" aria-label="{% trans 'Rent expected and collected by month. The same figures are in the table below.' %}"></canvas></div>
+    <details>
+      <summary>{% trans "Show as a table" %}</summary>
+      <div class="table-responsive"><table class="table table-sm small mb-0">
+        <thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Expected" %}</th><th class="text-end">{% trans "Collected" %}</th><th class="text-end">{% trans "Rate" %}</th></tr></thead>
+        <tbody>{% for r in trend %}<tr><td>{{ r.label }}</td><td class="text-end num">{{ r.expected|money:cur }}</td><td class="text-end num">{{ r.collected|money:cur }}</td><td class="text-end">{{ r.rate|percent }}</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </details>
+  </div>
+  {{ specs.trend|json_script:"chart-trend" }}
+  {% endif %}
+  {% if year %}{% with y=year.total %}
+  <div class="small text-body-secondary mt-3">
+    {% blocktrans with p=year.label i=y.income|money:cur e=y.expenses|money:cur n=y.noi|money:cur %}{{ p }}: income {{ i }}, expenses {{ e }}, net operating income {{ n }}{% endblocktrans %}{% if y.margin is not None %} · {% blocktrans with r=y.margin|percent %}margin {{ r }}{% endblocktrans %}{% endif %}{% if y.collection_rate is not None %} · {% blocktrans with r=y.collection_rate|percent %}collection rate {{ r }}{% endblocktrans %}{% endif %}
+  </div>
+  {% endwith %}{% endif %}
+</section>
+{% endwith %}{% endif %}
+
+{% if team %}
+<section class="panel" id="team">
+  <div class="panel-head">
+    <h2>{% trans "Who looks after it" %}<span class="count">{{ team.assigned|length }}</span></h2>
+    {% if can_manage_team %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts:invite' %}?property={{ property.public_id }}"><i class="bi bi-person-plus" aria-hidden="true"></i>{% trans "Invite someone for it" %}</a>{% endif %}
+  </div>
+  <p class="small text-body-secondary">{% trans "The manager, caretaker or agent for this property. They see only the properties given to them, and do what their role allows." %}</p>
+  <ul class="item-list">
+    {% for member, via_branch, direct in team.assigned %}
+    <li><div class="item">
+      <span class="item-mark" aria-hidden="true"><i class="bi bi-person"></i></span>
+      <span class="item-main">
+        <span class="item-title">{{ member.user.full_name|default:member.user.phone }}</span>
+        <span class="item-meta d-block">{{ member.role.name }} · {{ member.user.phone }}{% if via_branch %} · {% blocktrans with b=property.branch.name %}through the {{ b }} branch{% endblocktrans %}{% endif %}</span>
+      </span>
+      {% if can_manage_team and direct %}<span class="item-end">
+        <form method="post" action="{% url 'properties:team' property.public_id %}">{% csrf_token %}
+          <input type="hidden" name="member" value="{{ member.public_id }}"><input type="hidden" name="action" value="take">
+          <button class="btn btn-sm btn-outline-secondary" data-confirm="{% blocktrans with n=member.user.full_name %}Take this property off {{ n }}?{% endblocktrans %}">{% trans "Remove" %}</button>
+        </form>
+      </span>{% endif %}
+    </div></li>
+    {% endfor %}
+    {% for invite, via_branch in team.invited %}
+    <li><div class="item">
+      <span class="item-mark" aria-hidden="true"><i class="bi bi-envelope"></i></span>
+      <span class="item-main">
+        <span class="item-title">{{ invite.full_name|default:invite.phone }} <span class="badge text-bg-warning">{% trans "Invited, not joined yet" %}</span></span>
+        <span class="item-meta d-block">{{ invite.role.name }} · {{ invite.phone }}{% if invite.all_properties %} · {% trans "all properties" %}{% elif via_branch %} · {% blocktrans with b=property.branch.name %}through the {{ b }} branch{% endblocktrans %}{% endif %} · {% blocktrans with d=invite.expires_at|date:"j M" %}link expires {{ d }}{% endblocktrans %}</span>
+      </span>
+      {% if can_manage_team %}<span class="item-end">
+        <form method="post" action="{% url 'accounts:revoke_invite' invite.public_id %}">{% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'properties:detail' property.public_id %}#team">
+          <button class="btn btn-sm btn-outline-danger" data-confirm="{% trans "Revoke this invitation?" %}">{% trans "Revoke" %}</button>
+        </form>
+      </span>{% endif %}
+    </div></li>
+    {% endfor %}
+    {% if not team.assigned and not team.invited %}
+    <li class="item-empty">{% trans "Nobody is given this property alone yet. Only the people below see it." %}</li>
+    {% endif %}
+  </ul>
+  {% if team.everywhere %}<p class="small text-body-secondary mt-2 mb-0">{% trans "Also seen by everyone with all properties:" %} {% for member in team.everywhere %}{{ member.user.full_name|default:member.user.phone }} ({{ member.role.name }}){% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
+  {% if can_manage_team and team_addable %}
+  <form method="post" action="{% url 'properties:team' property.public_id %}" class="d-flex flex-wrap gap-2 align-items-end mt-3">{% csrf_token %}
+    <input type="hidden" name="action" value="give">
+    <div><label class="form-label small mb-1" for="team-member">{% trans "Add a staff member" %}</label>
+      <select name="member" id="team-member" class="form-select form-select-sm" required>
+        <option value="">{% trans "Choose…" %}</option>
+        {% for member in team_addable %}<option value="{{ member.public_id }}">{{ member.user.full_name|default:member.user.phone }} – {{ member.role.name }}</option>{% endfor %}
+      </select></div>
+    <button class="btn btn-sm btn-primary">{% trans "Add" %}</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if show_units %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>{{ vocab.units }}<span class="count">{{ unit_total }}</span></h2>
+    {% if can_manage_units and not property.is_archived %}<div class="d-flex flex-wrap gap-2"><a class="btn btn-outline-secondary btn-sm" href="{% url 'imports:list' %}">{% trans "Import CSV" %}</a>{% if organization.org_type == "HOSTEL" %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:rooms' property.public_id %}"><i class="bi bi-grid-3x3-gap" aria-hidden="true"></i>{% trans "Room map" %}</a><a class="btn btn-primary btn-sm" href="{% url 'properties:rooms_create' property.public_id %}"><i class="bi bi-plus-lg" aria-hidden="true"></i>{% trans "Add rooms" %}</a>{% else %}<a class="btn btn-primary btn-sm" href="{% url 'properties:unit_create' property.public_id %}"><i class="bi bi-plus-lg" aria-hidden="true"></i>{% trans "Add" %} {{ vocab.unit|lower }}</a>{% endif %}</div>{% endif %}
+  </div>
+  {% if status_counts %}
+  <div class="chip-row">
+    {% for key, label, n in status_counts %}<a href="{% querystring status=key page=None %}" class="chip{% if status == key %} active{% endif %}"{% if status == key %} aria-current="true"{% endif %}>{{ label }} <span class="n">{{ n }}</span></a>{% endfor %}
+    {% if status %}<a href="{% querystring status=None page=None %}" class="chip"><i class="bi bi-x-lg" aria-hidden="true"></i>{% trans "Show all" %}</a>{% endif %}
+  </div>
+  {% endif %}
+  {% if unit_total > 10 or q %}
+  <form method="get" data-autosubmit class="filter-bar" role="search">
+    <div class="filter-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" name="q" value="{{ q }}" class="form-control form-control-sm" placeholder="{% trans 'Find a unit' %}" aria-label="{% trans 'Find a unit' %}"></div>
+    {% if status %}<input type="hidden" name="status" value="{{ status }}">{% endif %}
+    <button class="btn btn-sm btn-outline-secondary">{% trans "Search" %}</button>
+  </form>
+  {% endif %}
+  <ul class="item-list">
+    {% for u in units %}
+    <li><a href="{% url 'properties:unit' u.public_id %}" class="item">
+      <span class="item-mark square" aria-hidden="true"><i class="bi bi-door-closed"></i></span>
+      <span class="item-main">
+        <span class="item-title">{{ u.code }}</span>
+        <span class="item-meta d-block">{{ u.get_unit_type_display }}{% if u.type_label %} · {{ u.type_label }}{% endif %}{% if u.building %} · {{ u.building.name }}{% endif %} · {% trans "Pay ref" %} <code>{{ u.payment_reference }}</code></span>
+      </span>
+      <span class="item-end">{% include "properties/_unit_status_badge.html" %}</span>
+    </a></li>
+    {% empty %}
+    <li class="item-empty">{% if q or status %}{% blocktrans with units_l=vocab.units|lower %}No {{ units_l }} match.{% endblocktrans %}{% else %}{% blocktrans with units_l=vocab.units|lower %}No {{ units_l }} yet.{% endblocktrans %}{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% include "partials/pager.html" with page=units %}
+  {% if archived_units %}
+  <details class="mt-2 small"><summary class="text-muted">{% blocktrans count n=archived_units|length %}{{ n }} archived unit{% plural %}{{ n }} archived units{% endblocktrans %}</summary>
+    <ul class="mb-0 mt-1">{% for u in archived_units %}<li><a href="{% url 'properties:unit' u.public_id %}">{{ u.code }}</a></li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if doc_panel %}{% include "documents/_card.html" with panel=doc_panel %}{% endif %}
+
+<section class="panel">
+  <div class="panel-head"><h2>{% trans "Buildings" %} <span class="count">{% trans "optional, for large developments" %}</span></h2></div>
+  <ul class="list-unstyled mb-2">
+    {% for b in buildings %}
+    <li class="py-1">{% if can_manage %}<a href="{% url 'properties:building_edit' b.public_id %}">{{ b.name }}</a>{% else %}{{ b.name }}{% endif %}
+      <span class="small text-muted">· {% blocktrans count n=b.unit_count %}{{ n }} unit{% plural %}{{ n }} units{% endblocktrans %}</span></li>
+    {% empty %}<li class="small text-muted">{% blocktrans with units=vocab.units property_l=vocab.property|lower %}No buildings. {{ units }} sit directly under the {{ property_l }}.{% endblocktrans %}</li>{% endfor %}
+  </ul>
+  {% if can_manage and not property.is_archived %}
+  <form method="post" action="{% url 'properties:building_create' property.public_id %}" class="d-flex gap-2">{% csrf_token %}
+    <input name="name" maxlength="100" required class="form-control form-control-sm" placeholder="{% trans 'Building name, e.g. Block A' %}" aria-label="{% trans 'Building name' %}">
+    <button class="btn btn-sm btn-outline-primary text-nowrap">{% trans "Add building" %}</button>
+  </form>
+  {% endif %}
+</section>
+
+{% if can_manage and not property.is_archived %}
+<form method="post" action="{% url 'properties:archive' property.public_id %}" class="danger-zone">{% csrf_token %}
+  <button class="btn btn-outline-danger btn-sm" data-confirm="{% blocktrans with property_l=vocab.property|lower units_l=vocab.units|lower %}Archive this {{ property_l }} with all its buildings and {{ units_l }}?{% endblocktrans %}">{% blocktrans with property_l=vocab.property|lower %}Archive {{ property_l }}{% endblocktrans %}</button>
+</form>
+{% endif %}
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

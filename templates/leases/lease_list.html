@@ -1,0 +1,54 @@
+{% extends "base.html" %}{% load i18n leases %}
+{% block title %}{{ vocab.leases }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1 class="h4">{% if show_archived %}{% trans "Archived" %} {{ vocab.leases|lower }}{% elif under_notice %}{{ vocab.tenants }} {% trans "moving out" %}{% else %}{{ vocab.leases }}{% endif %}</h1>
+    <p class="lead-text">{% blocktrans count n=page.paginator.count %}{{ n }} match{% plural %}{{ n }} matches{% endblocktrans %}</p>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'leases:agreement_blank' %}">{% trans "Blank agreement to print" %}</a>
+</div>
+<form method="get" data-autosubmit class="filter-bar" role="search">
+  {% if show_archived %}<input type="hidden" name="archived" value="on">{% endif %}
+  {% if under_notice %}<input type="hidden" name="notice" value="1">{% endif %}
+  {% if ending %}<input type="hidden" name="ending" value="1">{% endif %}
+  <div class="filter-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Search tenant, unit or lease number' %}" aria-label="{% trans 'Search' %}"></div>
+  <select name="status" class="form-select" aria-label="{% trans 'Status' %}">
+    <option value="">{% trans "All statuses" %}</option>
+    {% for value, label in status_choices %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  {% if properties|length > 1 %}<select name="property" class="form-select" aria-label="{% trans 'Property' %}">
+    <option value="">{% blocktrans with w=vocab.properties|lower %}All {{ w }}{% endblocktrans %}</option>
+    {% for p in properties %}<option value="{{ p.public_id }}" {% if prop and p.pk == prop.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+  </select>{% endif %}
+  <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
+</form>
+{% if not show_archived and not under_notice %}
+<div class="chip-row">
+  <a href="{% querystring ending=None page=None %}" class="chip{% if not ending %} active{% endif %}">{% trans "All" %}</a>
+  <a href="{% querystring ending=1 status=None page=None %}" class="chip{% if ending %} active{% endif %}"{% if ending %} aria-current="true"{% endif %}>{% blocktrans with n=expiring_days %}Ending in {{ n }} days{% endblocktrans %}</a>
+</div>
+{% endif %}
+{% if page %}
+<ul class="item-list">
+  {% for lease in page %}
+  <li><a href="{% url 'leases:detail' lease.public_id %}" class="item">
+    <span class="item-mark" aria-hidden="true">{{ lease.primary_tenant.name|default:"—"|slice:":1"|upper }}</span>
+    <span class="item-main">
+      <span class="item-title">{{ lease.primary_tenant.name|default:"—" }}{% if lease.lease_tenants.all|length > 1 %} <span class="fw-normal small text-body-secondary">+{{ lease.lease_tenants.all|length|add:"-1" }}</span>{% endif %}</span>
+      <span class="item-meta d-block">{{ lease.unit.property.name }} · {{ lease.unit.code }} · {{ lease.start_date|date:"j M Y" }} – {% if lease.end_date %}{{ lease.end_date|date:"j M Y" }}{% else %}{% trans "periodic" %}{% endif %}{% if lease.number %} · {{ lease.number }}{% endif %}</span>
+      {% if lease.move_out_on and lease.status == "ACTIVE" %}<span class="item-meta d-block {% if lease.move_out_on < today %}text-danger{% else %}text-warning-emphasis{% endif %}"><i class="bi bi-box-arrow-right" aria-hidden="true"></i> {% blocktrans with day=lease.move_out_on|date:"j M Y" %}Moving out {{ day }}{% endblocktrans %}</span>{% endif %}
+    </span>
+    <span class="item-end">{% include "leases/_status.html" %}</span>
+  </a></li>
+  {% endfor %}
+</ul>
+{% else %}
+{% if under_notice and not q %}{% trans "No tenant is under notice." as t %}{% include "partials/empty_state.html" with icon="bi-check2-circle" title=t tone="success" %}
+{% elif q or status %}{% trans "No leases match your search." as t %}{% include "partials/empty_state.html" with icon="bi-search" title=t %}
+{% elif show_archived %}{% trans "No archived leases." as t %}{% include "partials/empty_state.html" with icon="bi-archive" title=t %}
+{% else %}{% trans "No leases yet" as t %}{% trans "Open a unit and choose New lease." as x %}{% include "partials/empty_state.html" with icon="bi-file-earmark-text" title=t text=x %}{% endif %}
+{% endif %}
+{% include "partials/pager.html" %}
+<p class="small mt-3 d-flex flex-wrap gap-x-3 column-gap-3">{% if show_archived %}<a href="{% url 'leases:list' %}">{% blocktrans with w=vocab.leases|lower %}Back to current {{ w }}{% endblocktrans %}</a>{% else %}{% if under_notice %}<a href="{% url 'leases:list' %}">{% blocktrans with w=vocab.leases|lower %}All {{ w }}{% endblocktrans %}</a>{% else %}<a href="?notice=1">{{ vocab.tenants }} {% trans "moving out" %}</a>{% endif %}<a href="?archived=on">{% blocktrans with w=vocab.leases|lower %}Show archived {{ w }}{% endblocktrans %}</a> <span class="text-muted">{% trans "Closed leases with nothing owed and no deposit held are archived the day after they end." %}</span>{% endif %}</p>
+{% endblock %}

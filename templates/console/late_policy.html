@@ -1,0 +1,12 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Late payment" %}{% endblock %}
+{% block console_title %}{% trans "When a landlord does not pay" %}{% endblock %}
+{% block console %}
+<p class="small text-muted">{% blocktrans %}Days after the due date when each thing stops for a landlord who has not paid. Leave a box empty and it never stops. Login codes, our bills and our reminders are never stopped, and a landlord can always see and download their records and pay. Money tenants pay still posts.{% endblocktrans %}</p>
+<p class="small">{% blocktrans with n=overridden %}{{ n }} landlords have their own rules, set on their organization page. They ignore these days for the things they changed.{% endblocktrans %}</p>
+<p class="small text-muted">{% trans "A grace extension or an open dispute holds all of this off, the same as it holds off the lapse." %}</p>
+<form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% include "partials/form.html" %}
+  <button class="btn btn-primary">{% trans "Save" %}</button>
+</form>
+{% endblock %}
