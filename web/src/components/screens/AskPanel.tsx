@@ -11,7 +11,7 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString("en-KE", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
 /** The question box, the conversation, the proposals waiting for Confirm, and (for owners) the switches. */
-export function AskPanel({ initial }: { initial: AskState }) {
+export function AskPanel({ initial, compact = false }: { initial: AskState; compact?: boolean }) {
   const [state, setState] = useState(initial);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState<string | null>(null);
@@ -213,6 +213,23 @@ export function AskPanel({ initial }: { initial: AskState }) {
             </div>
           )}
 
+          {turnCount === 0 && state.starters.length > 0 && (
+            <div className="ask-starters">
+              <p className="muted small">Try asking:</p>
+              {state.starters.map((text) => (
+                <button
+                  key={text}
+                  className="ask-chip"
+                  type="button"
+                  disabled={pending !== null}
+                  onClick={() => void send("ask", { action: "ask", question: text })}
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
+
           <form className="card" onSubmit={ask}>
             <div className="field">
               <label htmlFor="question">{turnCount ? "Ask a follow-up question" : "Your question"}</label>
@@ -254,7 +271,7 @@ export function AskPanel({ initial }: { initial: AskState }) {
             Confirm.
           </p>
 
-          {state.recent.length > 0 && (
+          {!compact && state.recent.length > 0 && (
             <details className="ask-recent">
               <summary className="small">Your recent questions</summary>
               <ul className="small">
@@ -273,7 +290,15 @@ export function AskPanel({ initial }: { initial: AskState }) {
         </>
       )}
 
-      {switchBlock}
+      {compact ? (
+        state.can_switch && state.platform_on && (
+          <p className="muted small">
+            <a href="/ask/#settings">Assistant settings</a>
+          </p>
+        )
+      ) : (
+        switchBlock
+      )}
     </>
   );
 }

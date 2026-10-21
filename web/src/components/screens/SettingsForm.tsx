@@ -36,9 +36,14 @@ const SECTIONS: { id: string; title: string; hint?: string; names: string[] }[] 
     ],
   },
   {
+    id: "portal",
+    title: "Tenant portal",
+    names: ["tenant_self_signup"],
+  },
+  {
     id: "billing",
     title: "Billing",
-    names: ["invoice_lead_days", "prorate_partial_months", "holds_deposits"],
+    names: ["financial_year_start_month", "invoice_lead_days", "prorate_partial_months", "holds_deposits"],
   },
   {
     id: "late",

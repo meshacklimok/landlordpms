@@ -9,7 +9,18 @@ export function Notices({ session }: { session: Session }) {
       {notices.map((n) => (
         <div key={n.text} className={`alert alert-${n.level}`} role="status">
           <span>{n.text}</span>
-          {n.url && <a className="alert-link" href={n.url}>{n.link}</a>}
+          {n.url && <> <a className="alert-link" href={n.url}>{n.link}</a></>}
+          {n.people && n.people.length > 0 && (
+            <div className="mt-1 small">
+              Look around as:{" "}
+              {n.people.map((p, i) => (
+                <span key={p.key}>
+                  {i > 0 && " · "}
+                  {p.current ? <strong>{p.name} ({p.role})</strong> : <a className="alert-link" href={p.url}>{p.name} ({p.role})</a>}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       {email && (

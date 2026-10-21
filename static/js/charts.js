@@ -17,8 +17,6 @@
 //   totalLabel  when given, the tooltip adds the total of the bars under it
 (function () {
   if (typeof Chart === "undefined") return;
-  var canvases = document.querySelectorAll("canvas[data-chart]");
-  if (!canvases.length) return;
   var fmt = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
   var short = new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 });
   var css = function (name) {
@@ -37,9 +35,25 @@
     Chart.defaults.elements.line.borderWidth = 2;
     Chart.defaults.elements.point.radius = 0;
     Chart.defaults.elements.point.hoverRadius = 5;
-    Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.boxPadding = 4;
+    // Tooltips look like the app's own cards, with a square colour key per series.
+    var tip = Chart.defaults.plugins.tooltip;
+    tip.padding = 10;
+    tip.boxPadding = 5;
+    tip.cornerRadius = 8;
+    tip.usePointStyle = true;
+    tip.backgroundColor = css("--bs-body-bg");
+    tip.titleColor = css("--bs-emphasis-color");
+    tip.bodyColor = css("--bs-body-color");
+    tip.footerColor = css("--bs-secondary-color");
+    tip.borderColor = css("--bs-border-color");
+    tip.borderWidth = 1;
+    tip.titleFont = { weight: "600" };
+    tip.footerFont = { weight: "600" };
     Chart.defaults.scale.grid.drawTicks = false;
+    Chart.defaults.scale.border.display = false;
+    Chart.defaults.elements.point.borderWidth = 2;
+    Chart.defaults.elements.point.hoverBorderWidth = 2;
+    Chart.defaults.animation.duration = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 400;
   }
 
   function sum(values) { return values.reduce(function (a, b) { return a + (b || 0); }, 0); }
@@ -75,22 +89,26 @@
       var data = spec.share ? s.data.map(function (v, i) { return totals[i] ? Math.round(v / totals[i] * 1000) / 10 : 0; })
                             : s.data;
       var set = { label: s.label, data: data, raw: s.data, backgroundColor: color, borderColor: color,
-                  order: s.type === "line" ? 1 : 2 };
+                  order: s.type === "line" ? 1 : 2, pointBackgroundColor: color, pointBorderColor: css("--bs-body-bg") };
+      // Stacked and side-by-side fills are parted by a 2px gap in the surface colour, not by a darker edge.
+      if (spec.type !== "line" && s.type !== "line") { set.borderColor = css("--bs-body-bg"); set.borderWidth = 2; set.borderSkipped = false; }
       if (s.colors) set.backgroundColor = s.colors.map(token);
       if (s.negative) set.backgroundColor = s.data.map(function (v) { return v < 0 ? token(s.negative) : color; });
       if (s.type === "line" || spec.type === "line") {
         set.type = "line";
         set.tension = 0.3;
+        set.borderColor = color;
+        set.borderWidth = 2;
         set.spanGaps = true;
         set.pointRadius = spec.labels.length > 24 ? 0 : 3;
-        if (spec.type === "line" && series.length === 1) { set.fill = true; set.backgroundColor = token("1-soft") + "66"; }
+        if (spec.type === "line" && series.length === 1) { set.fill = true; set.backgroundColor = token("1") + "22"; }
       }
       if (spec.stacked || spec.share) set.stack = "all";
       return set;
     });
 
     var across = !!spec.horizontal;
-    var valueAxis = { beginAtZero: true, grid: {}, ticks: { callback: function (v) {
+    var valueAxis = { beginAtZero: true, grid: { color: token("grid") }, border: { dash: [3, 3] }, ticks: { callback: function (v) {
       return spec.share || axis === "pct" ? v + "%" : axis === "count" ? fmt.format(v) : short.format(v);
     } } };
     if (spec.share || axis === "pct") { valueAxis.min = 0; valueAxis.max = 100; valueAxis.ticks.stepSize = 25; }
@@ -110,9 +128,14 @@
         scales: across ? { x: valueAxis, y: categoryAxis } : { x: categoryAxis, y: valueAxis },
         plugins: {
           legend: { display: spec.legend !== undefined ? spec.legend : datasets.length > 1, position: "bottom",
-                    labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 2,
+                    labels: { boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 2, padding: 14,
                               sort: function (a, b) { return a.datasetIndex - b.datasetIndex; } } },
           tooltip: { callbacks: {
+            labelColor: function (x) {
+              var bg = x.dataset.backgroundColor;
+              var c = Array.isArray(bg) ? bg[x.dataIndex] : bg;
+              return { borderColor: c, backgroundColor: c, borderRadius: 2 };
+            },
             label: function (x) {
               var raw = x.dataset.raw[x.dataIndex];
               var shown = value(raw);
@@ -133,7 +156,9 @@
 
   function draw() {
     theme();
-    canvases.forEach(function (canvas) {
+    // Only canvases not drawn yet: the console loads further topics below the page (D-178) and asks for a draw again.
+    document.querySelectorAll("canvas[data-chart]:not([data-drawn])").forEach(function (canvas) {
+      canvas.setAttribute("data-drawn", "1");
       var source = document.getElementById(canvas.getAttribute("data-chart"));
       if (!source) return;
       var spec = JSON.parse(source.textContent);
@@ -161,9 +186,11 @@
   }
 
   draw();
+  window.drawCharts = draw;
   document.addEventListener("app:theme", function () {
     charts.forEach(function (chart) { chart.destroy(); });
     charts = [];
+    document.querySelectorAll("canvas[data-drawn]").forEach(function (c) { c.removeAttribute("data-drawn"); });
     draw();
   });
 })();

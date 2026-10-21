@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { BrandMark } from "@/components/BrandMark";
 
 export const metadata: Metadata = { title: { default: "Console", template: "%s · Console · NyumbaPMS" } };
@@ -9,7 +10,7 @@ export default function ConsoleLayout({ children }: LayoutProps<"/">) {
     <>
       <header className="console-bar">
         <a href="/console/" className="console-brand"><BrandMark /><span>Nyumba<span className="brand-pms">PMS</span></span> <span className="muted">Console</span></a>
-        <a href="/console/control/notifications/" className="btn btn-quiet">Control</a>
+        <Link href="/console/control/notifications/" className="btn btn-quiet">Control</Link>
       </header>
       <main id="main" className="console-main" tabIndex={-1}>{children}</main>
     </>

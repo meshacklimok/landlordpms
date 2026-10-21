@@ -141,15 +141,21 @@
   var toTop = document.querySelector("[data-back-to-top]");
   if (toTop) {
     var ticking = false;
+    var idle = null;
     var place = function () {
       ticking = false;
       var long = document.documentElement.scrollHeight > window.innerHeight * 2;
-      toTop.classList.toggle("is-visible", long && window.scrollY > Math.max(600, window.innerHeight * 1.2));
+      var far = long && window.scrollY > Math.max(600, window.innerHeight * 1.2);
+      toTop.classList.toggle("is-visible", far);
+      window.clearTimeout(idle);
+      // Only while scrolling: fade out shortly after the scrolling stops, unless the button is hovered or focused.
+      if (far) idle = window.setTimeout(function () {
+        if (!toTop.matches(":hover, :focus-visible")) toTop.classList.remove("is-visible");
+      }, 1500);
     };
     window.addEventListener("scroll", function () {
       if (!ticking) { ticking = true; window.requestAnimationFrame(place); }
     }, { passive: true });
-    place();
     toTop.addEventListener("click", function () {
       var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       window.scrollTo({ top: 0, behavior: reduce ? "auto" : "smooth" });
@@ -364,7 +370,204 @@
     if (icon) icon.className = show ? "bi bi-eye-slash" : "bi bi-eye";
   });
 
+  // Whole cards and table rows open their page, not only the name inside them. A box opens by itself when it holds
+  // exactly one ordinary link and no buttons or fields; data-href names the page when a box needs it said outright,
+  // data-no-click opts a box out. Links and controls inside still do their own job, a selection of text is left
+  // alone, and Ctrl/Cmd-click opens a new tab.
+  var BOXES = ".card, tbody tr, .list-group-item";
+  var CONTROLS = "button, input, select, textarea, label, summary, [data-bs-toggle], [data-copy], [data-confirm]";
+
+  function boxLink(box) {
+    if (box.hasAttribute("data-no-click")) return "";
+    if (box.dataset.href) return box.dataset.href;
+    // A table row may hold an Edit/Open button as long as every link in it goes to the same page (checked below).
+    var buttonLink = box.tagName !== "TR" && box.querySelector(".btn[href]");
+    if (box.querySelector(CONTROLS) || buttonLink || box.querySelector("tr, .card, .list-group-item")) return "";
+    var found = "";
+    var links = box.querySelectorAll("a[href]");
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i], raw = a.getAttribute("href");
+      if (!raw || /^(#|mailto:|tel:|javascript:|sms:)/i.test(raw) || a.host !== window.location.host) return "";
+      if (a.target || a.hasAttribute("download")) return "";
+      if (found && found !== a.href) return "";
+      found = a.href;
+    }
+    return found;
+  }
+
+  function markBoxes() {
+    document.querySelectorAll(BOXES).forEach(function (box) {
+      if (box.closest("[data-no-click], .modal, .offcanvas, nav")) return;
+      var href = boxLink(box);
+      if (href) { box.dataset.href = href; box.classList.add("is-clickable"); }
+    });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", markBoxes); else markBoxes();
+
+  // A form row with data-show-when="field:A,B" shows only while that field (a select) holds one of those values, or any value when it is "field:*".
+  function applyShowWhen(root) {
+    (root || document).querySelectorAll("[data-show-when]").forEach(function (row) {
+      var parts = row.dataset.showWhen.split(":");
+      var form = row.closest("form");
+      var control = form && form.elements[parts[0]];
+      if (!control) return;
+      row.hidden = parts[1] === "*" ? !control.value : parts[1].split(",").indexOf(control.value) === -1;
+    });
+  }
+  document.addEventListener("change", function (e) {
+    if (e.target.matches("select") && e.target.form) applyShowWhen(e.target.form);
+  });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { applyShowWhen(); }); else applyShowWhen();
+
+  document.addEventListener("click", function (e) {
+    if (e.defaultPrevented || e.button !== 0) return;
+    if (e.target.closest("a, " + CONTROLS)) return;
+    var box = e.target.closest("[data-href]");
+    if (!box) return;
+    var sel = window.getSelection && window.getSelection();
+    if (sel && String(sel).length) return;
+    if (e.ctrlKey || e.metaKey) window.open(box.dataset.href, "_blank", "noopener"); else window.location.href = box.dataset.href;
+  });
+
   // D-141. A form that came back with errors: move focus to its summary so a screen reader reads what to fix.
   var summary = document.querySelector("[data-error-summary]");
   if (summary) summary.focus();
+  // Report section menu: marks the section you are in, scrolls its chip into view, fades the edge that still has
+  // more chips, and ends each section with a "Next: ..." link so a phone reader can tell there is more below.
+  document.querySelectorAll("[data-section-nav]").forEach(function (nav) {
+    var links = Array.prototype.slice.call(nav.querySelectorAll('a[href^="#"]'));
+    var items = links.map(function (a) { return { a: a, el: document.getElementById(a.getAttribute("href").slice(1)) }; })
+      .filter(function (i) { return i.el; });
+    if (!items.length) return;
+    var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var edges = function () {
+      nav.classList.toggle("has-more-left", nav.scrollLeft > 4);
+      nav.classList.toggle("has-more-right", nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+    };
+    nav.addEventListener("scroll", edges, { passive: true });
+    window.addEventListener("resize", edges);
+    edges();
+
+    // The ≡ button: opens the "Jump to" sheet (this page's sections, then every report), when the page has one.
+    var sheet = document.querySelector("[data-report-sheet]");
+    // Inside the report centre's frame the centre page draws the button and sheet (a button fixed in the frame would sit
+    // at the bottom of the whole, tall report), so the frame makes none.
+    var inPane = document.documentElement.classList.contains("is-pane");
+    if (!sheet && !inPane) {
+      // A page without a list of reports (the M-Pesa overview): the sheet holds only its sections.
+      sheet = document.createElement("div");
+      sheet.className = "offcanvas offcanvas-start report-sheet d-print-none";
+      sheet.tabIndex = -1;
+      sheet.id = "report-menu";
+      sheet.setAttribute("aria-labelledby", "report-menu-title");
+      sheet.innerHTML = '<div class="offcanvas-header"><span class="h6 mb-0" id="report-menu-title"></span>' +
+        '<button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button></div>' +
+        '<div class="offcanvas-body"><div data-sheet-sections hidden><div class="app-nav-label"></div>' +
+        '<ul class="app-nav" data-sheet-list></ul></div></div>';
+      sheet.querySelector("#report-menu-title").textContent = nav.dataset.menuLabel || "Jump to";
+      sheet.querySelector(".app-nav-label").textContent = nav.dataset.hereLabel || "On this page";
+      sheet.querySelector(".btn-close").setAttribute("aria-label", nav.dataset.closeLabel || "Close");
+      document.body.appendChild(sheet);
+    }
+    if (sheet) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "report-nav-menu";
+      btn.setAttribute("data-bs-toggle", "offcanvas");
+      btn.setAttribute("data-bs-target", "#" + sheet.id);
+      btn.setAttribute("aria-controls", sheet.id);
+      var label = nav.dataset.menuLabel || "Jump to";
+      btn.innerHTML = '<i class="bi bi-list" aria-hidden="true"></i>';
+      btn.setAttribute("aria-label", label);
+      btn.title = label;
+      // A floating button at the bottom left, always in reach like the back-to-top button.
+      btn.className = "report-nav-menu report-fab";
+      document.body.appendChild(btn);
+      var list = sheet.querySelector("[data-sheet-list]");  // only a page without a list of reports has one
+      if (list) items.forEach(function (i) {
+        var li = document.createElement("li"), a = document.createElement("a");
+        a.href = i.a.getAttribute("href");
+        a.className = "app-nav-link";
+        a.textContent = i.a.textContent.trim();
+        // Bootstrap cancels the jump of a link that also closes a sheet, so close first and scroll once it is shut.
+        a.addEventListener("click", function (e) {
+          e.preventDefault();
+          var target = i.el;
+          sheet.addEventListener("hidden.bs.offcanvas", function () {
+            var quick = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+            target.scrollIntoView({ behavior: quick ? "auto" : "smooth", block: "start" });
+            if (history.replaceState) history.replaceState(null, "", "#" + target.id);
+          }, { once: true });
+          sheet.querySelector(".btn-close").click();
+        });
+        li.appendChild(a);
+        list.appendChild(li);
+      });
+      var holder = sheet.querySelector("[data-sheet-sections]");
+      if (holder) holder.hidden = false;
+    }
+
+    var current = null;
+    var mark = function () {
+      var line = nav.getBoundingClientRect().bottom + 24, pick = items[0];
+      items.forEach(function (i) { if (i.el.getBoundingClientRect().top <= line) pick = i; });
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) pick = items[items.length - 1];
+      if (pick === current) return;
+      current = pick;
+      items.forEach(function (i) {
+        if (i === pick) i.a.setAttribute("aria-current", "true"); else i.a.removeAttribute("aria-current");
+      });
+      var left = pick.a.offsetLeft - (nav.clientWidth - pick.a.offsetWidth) / 2;
+      nav.scrollTo({ left: Math.max(0, left), behavior: reduce ? "auto" : "smooth" });
+    };
+    var busy = false;
+    window.addEventListener("scroll", function () {
+      if (!busy) { busy = true; window.requestAnimationFrame(function () { busy = false; mark(); }); }
+    }, { passive: true });
+    mark();
+
+    var nextLabel = nav.dataset.nextLabel || "Next", topLabel = nav.dataset.topLabel || "Back to top";
+    items.forEach(function (i, n) {
+      var foot = document.createElement("p");
+      foot.className = "section-next d-print-none";
+      var next = items[n + 1], link = document.createElement("a");
+      if (next) {
+        link.href = next.a.getAttribute("href");
+        link.textContent = nextLabel + ": " + next.a.textContent.trim() + " ↓";
+      } else if (nav.dataset.nextReportUrl) {
+        link.href = nav.dataset.nextReportUrl;
+        link.textContent = nextLabel + " report: " + (nav.dataset.nextReportName || "") + " →";
+      } else {
+        link.href = "#main";
+        link.textContent = topLabel + " ↑";
+      }
+      foot.appendChild(link);
+      i.el.appendChild(foot);
+    });
+  });
+  // The floating "Jump to" button fades away after six seconds without scrolling, and returns on a scroll or a touch.
+  // A button marked data-keep (the console's) stays on screen.
+  document.querySelectorAll(".report-fab:not([data-keep])").forEach(function (fab) {
+    var timer = null;
+    var wake = function () {
+      fab.classList.remove("is-hidden");
+      window.clearTimeout(timer);
+      timer = window.setTimeout(function () {
+        if (!fab.contains(document.activeElement)) fab.classList.add("is-hidden");
+      }, 6000);
+    };
+    window.addEventListener("scroll", wake, { passive: true });
+    window.addEventListener("touchstart", wake, { passive: true });
+    fab.addEventListener("focus", wake);
+    wake();
+  });
 })();
+
+// data-check-all="name" on a checkbox: ticks or clears every checkbox of that name in the same form.
+document.addEventListener("change", function (e) {
+  var box = e.target;
+  if (!box.matches || !box.matches("input[data-check-all]") || !box.form) return;
+  box.form.querySelectorAll('input[name="' + box.getAttribute("data-check-all") + '"]').forEach(function (c) {
+    c.checked = box.checked;
+  });
+});

@@ -1,10 +1,13 @@
-import type { Figures as FiguresData } from "@/lib/types";
+import type { Figures as FiguresData, Home } from "@/lib/types";
 
 const pct = (rate: number | null) => (rate === null ? "—" : `${Math.round(rate * 100)}%`);
 const width = (rate: number | null) => `${Math.max(0, Math.min(100, Math.round((rate ?? 0) * 100)))}%`;
 
 /** This month in four figures, then the twelve-month bars. */
-export function Figures({ figures: f, rent }: { figures: FiguresData; rent: string }) {
+export function Figures({ figures: f, rent, due, vacancy, pace, net, nudges }: {
+  figures: FiguresData; rent: string; due: Home["due_soon"]; vacancy: Home["vacancy"];
+  pace: Home["pace"]; net: Home["net"]; nudges: Home["nudges"];
+}) {
   return (
     <>
       <section className="home-figures" aria-label="This month">
@@ -56,6 +59,74 @@ export function Figures({ figures: f, rent }: { figures: FiguresData; rent: stri
           <div className="stat-note">{f.occupancy.vacant} {f.occupancy.vacant === 1 ? "unit" : "units"} empty</div>
         </div>
       </section>
+
+      {(due || vacancy || pace || net || nudges.length > 0) && (
+        <section className="home-signals" aria-label="Worth knowing">
+          {pace && (
+            <div className="signal">
+              <span className="signal-icon" aria-hidden="true">
+                <i className={`bi bi-${pace.change !== null && pace.change < 0 ? "graph-down-arrow" : "graph-up-arrow"}`} />
+              </span>
+              <span>
+                <b>
+                  {pace.now} in so far
+                  {pace.change !== null && ` · ${pace.change >= 0 ? "up" : "down"} ${Math.abs(Math.round(pace.change * 100))}%`}
+                </b>
+                <span className="muted small">{pace.before} received in {pace.label}, the same days last month</span>
+              </span>
+            </div>
+          )}
+          {net && (
+            <a className="signal" href={net.url}>
+              <span className="signal-icon" aria-hidden="true"><i className="bi bi-wallet2" /></span>
+              <span>
+                <b className={net.negative ? "bad" : undefined}>{net.net} left after expenses</b>
+                <span className="muted small">{net.cash} received less {net.expenses} approved expenses this month</span>
+              </span>
+            </a>
+          )}
+          {due && (
+            <div className="signal">
+              <span className="signal-icon" aria-hidden="true"><i className="bi bi-calendar-event" /></span>
+              <span className="grow">
+                <b><a href={due.url} className="signal-link">{due.amount} falls due in the next {due.days} days</a></b>
+                <span className="muted small">{due.count} {due.count === 1 ? "invoice" : "invoices"} · nothing is late yet</span>
+              </span>
+              {due.remind_url && (
+                <a className="btn btn-outline signal-act" href={due.remind_url}>
+                  <i className="bi bi-chat-text" aria-hidden="true" />Remind them
+                </a>
+              )}
+            </div>
+          )}
+          {vacancy && (
+            <a className="signal" href={vacancy.url ?? undefined}>
+              <span className="signal-icon" aria-hidden="true"><i className="bi bi-door-open" /></span>
+              <span>
+                <b>{vacancy.units} empty {vacancy.units === 1 ? "unit stands" : "units stand"} for {vacancy.amount} a month</b>
+                <span className="muted small">
+                  At asking rent{vacancy.unpriced > 0 ? `; ${vacancy.unpriced} without a price are left out` : ""}
+                </span>
+              </span>
+            </a>
+          )}
+          {nudges.map((n) => (
+            <a key={n.key} className="signal" href={n.url ?? undefined}>
+              <span className="signal-icon" aria-hidden="true"><i className={`bi ${n.key === "long_empty" ? "bi-hourglass-split" : "bi-clock-history"}`} /></span>
+              <span>
+                <b>
+                  {n.key === "long_empty"
+                    ? `${n.count} ${n.count === 1 ? "unit has" : "units have"} stood empty ${n.days}+ days this year`
+                    : `${n.count} ${n.count === 1 ? "unit has" : "units have"} paid late ${n.days} months running`}
+                </b>
+                <span className="muted small">
+                  {n.units.join(" · ")}{n.count > n.units.length ? ` and ${n.count - n.units.length} more` : ""}
+                </span>
+              </span>
+            </a>
+          ))}
+        </section>
+      )}
 
       {f.trend.length > 0 && (
         <section className="stat home-trend" aria-labelledby="trend-h">

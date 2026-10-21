@@ -73,6 +73,7 @@ export function GlobalSearch({ action, suggestUrl }: { action: string; suggestUr
         placeholder="Search tenants, units, invoices"
         aria-label="Search tenants, units, leases, invoices and payments"
         aria-keyshortcuts="/"
+        aria-controls="global-search-list"
         aria-expanded={open && !short}
         value={q}
         onChange={(e) => setQ(e.target.value)}
@@ -83,7 +84,7 @@ export function GlobalSearch({ action, suggestUrl }: { action: string; suggestUr
       />
       <kbd className="global-search-key" aria-hidden="true">/</kbd>
       {open && !short && (
-        <div className="global-search-list" role="listbox" aria-label="Suggestions">
+        <div id="global-search-list" className="global-search-list" role="listbox" aria-label="Suggestions">
           {failed && <div className="gs-none">Search is not available right now</div>}
           {!failed &&
             groups?.map(

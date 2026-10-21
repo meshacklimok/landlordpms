@@ -154,10 +154,37 @@
       ok = !!(doc && doc.documentElement.classList.contains("is-pane"));
     } catch (e) { ok = false; }
     wrap.classList.toggle("is-failed", !ok);
-    if (!ok && status) status.textContent = failText();
+    if (!ok) diagnose(current);
+  }
+
+  // Asks the server why the report did not draw, so the message can say: login ended, a fault on our side, or no connection.
+  function diagnose(i) {
+    var box = root.querySelector("[data-reader-reason]");
+    var signin = root.querySelector("[data-reader-signin]");
+    function say(kind) {
+      if (i !== current) return;  // another report was picked meanwhile
+      if (box) box.textContent = box.getAttribute("data-text-" + kind) || box.textContent;
+      if (signin) signin.hidden = kind !== "login";
+      if (retry) retry.hidden = kind === "login";
+      if (status) status.textContent = failText();
+    }
+    if (!window.fetch) return say("server");
+    fetch(reports[i].url + "?pane=1", { credentials: "same-origin", headers: { "X-Requested-With": "report-reader" } })
+      .then(function (res) {
+        var login = res.redirected && /\/login\//.test(res.url) || res.status === 401;
+        say(login ? "login" : "server");
+      })
+      .catch(function () { say("offline"); });
   }
   frame.addEventListener("load", checkFrame);
   window.addEventListener("load", checkFrame);  // the first report may have loaded before this script ran
+
+  var retry = root.querySelector("[data-reader-retry]");
+  if (retry) retry.addEventListener("click", function () {
+    wrap.classList.remove("is-failed");
+    wrap.classList.add("is-loading");
+    frame.src = reports[current].url + "?pane=1";
+  });
 
   function failText() {
     var box = root.querySelector("[data-reader-failed]");

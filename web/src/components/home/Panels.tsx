@@ -81,8 +81,10 @@ export function Panels({ home }: { home: Home }) {
       <div className="stack">
         {checklist && (
           <section className="card" aria-labelledby="setup-h">
-            <h2 id="setup-h">Get set up <span className="muted normal">{checklist.done} of {checklist.total} done</span></h2>
-            <div className="progress" aria-hidden="true"><span style={{ width: `${Math.round((checklist.done / checklist.total) * 100)}%` }} /></div>
+            <h2 id="setup-h">Finish setting up <span className="muted normal">{checklist.done} of {checklist.total} done</span></h2>
+            <div className="progress" role="progressbar" aria-valuemin={0} aria-valuemax={checklist.total} aria-valuenow={checklist.done} aria-label="Setup progress">
+              <span style={{ width: `${Math.round((checklist.done / checklist.total) * 100)}%` }} />
+            </div>
             <ul className="plain">
               {checklist.steps.map((s) => (
                 <li key={s.key} className="step">
@@ -90,6 +92,7 @@ export function Panels({ home }: { home: Home }) {
                   <span>
                     {s.done ? <><span className="visually-hidden">Done: </span>{s.label}</> : <a href={s.url}>{s.label}</a>}
                     {s.optional && <span className="muted small"> (optional)</span>}
+                    {s.key === checklist.next && s.hint && <span className="muted small step-hint">{s.hint}</span>}
                   </span>
                 </li>
               ))}
@@ -129,6 +132,25 @@ export function Panels({ home }: { home: Home }) {
                 ))}
               </ul>
             ) : <p className="muted small">No payments confirmed yet.</p>}
+          </section>
+        )}
+
+        {home.methods.length > 0 && (
+          <section className="card" aria-labelledby="meth-h">
+            <div className="card-head"><h2 id="meth-h">Cash received this month</h2><span className="muted small">By how it came in</span></div>
+            <ul className="props">
+              {home.methods.map((x) => (
+                <li key={x.method}>
+                  <div className="row-between small">
+                    <b className="trunc">{x.label} <span className="muted normal">· {plural(x.count, "payment", "payments")}</span></b>
+                    <span className="num">{x.amount}</span>
+                  </div>
+                  <div className="meter" role="img" aria-label={`${Math.round(x.share * 100)}% of cash received`}>
+                    <span style={{ width: `${Math.round(x.share * 100)}%` }} />
+                  </div>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 

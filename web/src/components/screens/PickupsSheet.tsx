@@ -93,8 +93,8 @@ export function PickupsSheet({ initial }: { initial: PickupSheet }) {
               <table className="data">
                 <thead>
                   <tr>
-                    <th scope="col">Unit</th>
-                    <th scope="col">Customer</th>
+                    <th scope="col">{sheet.words.unit}</th>
+                    <th scope="col">{sheet.words.tenant}</th>
                     <th scope="col">Collected?</th>
                   </tr>
                 </thead>
@@ -159,8 +159,8 @@ export function PickupsSheet({ initial }: { initial: PickupSheet }) {
             <table className="data">
               <thead>
                 <tr>
-                  <th scope="col">Unit</th>
-                  <th scope="col">Customer</th>
+                  <th scope="col">{sheet.words.unit}</th>
+                  <th scope="col">{sheet.words.tenant}</th>
                   <th scope="col" className="num">Missed</th>
                   <th scope="col" className="num">Collected</th>
                 </tr>

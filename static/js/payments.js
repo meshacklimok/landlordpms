@@ -1,4 +1,4 @@
-// Payments pages: live allocation totals, quick fills, clickable rows and bulk selection (ui.js asks to confirm).
+// Payments pages: live allocation totals, quick fills and bulk selection (ui.js asks to confirm).
 // Everything here is an enhancement; the forms work the same without it.
 (function () {
   "use strict";
@@ -12,14 +12,6 @@
   function fmt(value, currency) {
     return currency + " " + value.toLocaleString("en-KE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
-
-  // Rows that open a page when clicked (a real link inside stays the keyboard route).
-  document.querySelectorAll("tr[data-href]").forEach(function (row) {
-    row.addEventListener("click", function (e) {
-      if (e.target.closest("a, button, input, label")) return;
-      window.location = row.dataset.href;
-    });
-  });
 
   // Buttons that put a value into an input.
   document.querySelectorAll("[data-fill]").forEach(function (btn) {
