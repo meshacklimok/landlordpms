@@ -48,6 +48,7 @@ def _period_name(first: datetime.date, last: datetime.date) -> str:
 
 def _month_figures(m: Membership, f: finance.Month) -> dict:
     return {"month": f.label, "income": _money(m, f.income), "rent_received": _money(m, f.rent),
+            "utilities_received": _money(m, f.utilities), "other_charges_received": _money(m, f.other),
             "expenses": _money(m, f.expenses), "net_operating_income": _money(m, f.noi),
             "rent_billed": _money(m, f.rent_billed), "collection_rate": _p(f.collection_rate),
             "expense_ratio": _p(f.expense_ratio), "margin": _p(f.margin)}

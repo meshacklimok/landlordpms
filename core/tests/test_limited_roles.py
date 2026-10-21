@@ -139,3 +139,67 @@ def test_the_next_js_endpoints_show_a_role_with_nothing_given_no_menu_and_no_set
     settings_page = _call(OrganizationSettingsDataView, member)
     assert settings_page.status_code in (403, 404) or not json.loads(settings_page.content).get("pages")
     assert json.loads(_call(SwitchGuideDataView, member).content).get("can_announce") is False
+
+
+def test_a_new_account_gets_a_guided_checklist_and_no_figures():
+    fresh = make_org()
+    data = _home_json(fresh)
+    assert data["started"] is False and data["figures"] is None
+    checklist = data["checklist"]
+    assert checklist["done"] == 0 and checklist["next"] == "property"
+    assert checklist["minutes"] == sum(s["minutes"] for s in checklist["steps"] if not s["optional"]) > 0
+    first = checklist["steps"][0]
+    assert first["hint"] and first["icon"] and first["url"]
+
+
+def test_the_checklist_moves_on_when_a_step_is_done():
+    fresh = make_org()
+    make_property(fresh.organization)
+    assert _home_json(fresh)["checklist"]["next"] == "units"
+
+
+def test_the_home_shows_rent_falling_due_and_cash_by_method(owner):
+    today = datetime.date(2026, 2, 1)
+    request = RequestFactory().get("/web-api/home/")
+    request.user, request.membership, request.organization = owner.user, owner, owner.organization
+    request.session = {mfa.VERIFIED: True}
+    home = reports_home.home(owner, today=today)
+    assert home.due_soon is not None and home.vacancy is not None
+    data = _home_json(owner)
+    assert "due_soon" in data and "vacancy" in data and isinstance(data["methods"], list)
+
+
+def test_the_home_compares_the_same_days_and_nets_off_expenses(owner):
+    data = _home_json(owner)
+    assert set(data["pace"]) == {"now", "before", "label", "change"}
+    assert set(data["net"]) == {"cash", "expenses", "net", "negative", "url"}
+    limited = _member_with(owner, {"dashboard.view_financial"}, "No expenses")
+    assert _home_json(limited)["net"] is None
+
+
+def test_nudges_flag_long_empty_units_and_rent_late_month_after_month(owner, monkeypatch):
+    import datetime
+    from types import SimpleNamespace as NS
+
+    from core import reportcache
+    from reports import home as reports_home
+    from reports import units
+
+    def row(code, status, empty, states):
+        return NS(status=status, empty_days=empty, unit=NS(code=code, property=NS(name="Moi")),
+                  cells=[NS(state=s) for s in states])
+
+    rows = [row("A1", "vacant", 90, []), row("A2", "vacant", 10, []),
+            row("B1", "occupied", 0, [units.PAID, units.LATE, units.PART, units.UNPAID, units.DUE]),
+            row("B2", "occupied", 0, [units.LATE, units.PAID, units.LATE, units.UNPAID]),
+            row("B3", "occupied", 0, [units.LATE, units.LATE])]
+    monkeypatch.setattr(reportcache, "cached", lambda *a, **k: NS(rows=rows))
+    found = {n["key"]: n for n in reports_home.nudges(owner, NS(day=datetime.date(2026, 10, 21)))}
+    assert found["long_empty"]["units"] == ["A1, Moi"] and found["long_empty"]["count"] == 1
+    assert found["repeat_late"]["units"] == ["B1, Moi"]  # B2 paid in time once; B3 has too few billed months
+    monkeypatch.setattr(reportcache, "cached", lambda *a, **k: NS(rows=[row("C1", "occupied", 0, [units.PAID] * 4)]))
+    assert reports_home.nudges(owner, NS(day=datetime.date(2026, 10, 21))) == []
+
+
+def test_the_home_json_carries_nudges(owner):
+    assert isinstance(_home_json(owner)["nudges"], list)

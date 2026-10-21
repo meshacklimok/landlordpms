@@ -178,6 +178,44 @@ class EmailRouting(models.Model):
         return self.messages_account if purpose == "messages" else self.system_account
 
 
+class SupportContact(models.Model):
+    """The WhatsApp numbers people reach us on. One row, changed in Django admin; blank falls back to settings."""
+
+    whatsapp = models.CharField("WhatsApp number", max_length=20, blank=True,
+                                help_text="With country code, e.g. 254700000000. Blank uses the server setting.")
+    whatsapp_2 = models.CharField("Second WhatsApp number", max_length=20, blank=True,
+                                  help_text="Optional.")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "support contact"
+        verbose_name_plural = "support contact"
+
+    def __str__(self):
+        return "Support contact"
+
+    @classmethod
+    def get(cls) -> "SupportContact":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class PlatformSetting(models.Model):
+    """One platform setting typed into Django admin (core.platform_config). Secrets are stored encrypted."""
+
+    key = models.CharField(max_length=60, unique=True)
+    value = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey("accounts.User", on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="+")
+
+    class Meta:
+        verbose_name = "platform setting"
+        ordering = ["key"]
+
+    def __str__(self):
+        return self.key
+
+
 class SystemMessageSetting(models.Model):
     """The owner's switch for one kind of platform message (core.system_messages). No row means on."""
 

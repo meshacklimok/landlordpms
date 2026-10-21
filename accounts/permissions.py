@@ -90,6 +90,12 @@ def branch_ids(membership: Membership) -> frozenset[int]:
     return cached
 
 
+def _late_modules(org: Organization) -> frozenset[str]:
+    from subscriptions import services as billing
+
+    return billing.blocked_modules(org)
+
+
 def can(membership: Membership | None, capability: str, property=None) -> bool:
     if not is_membership_usable(membership):
         return False
@@ -100,6 +106,8 @@ def can(membership: Membership | None, capability: str, property=None) -> bool:
         return False
     if capability not in effective_capabilities(membership):
         return False
+    if not meta.read_only_safe and meta.module in _late_modules(membership.organization):
+        return False  # a section paused for an overdue subscription (D-201)
     if meta.org_wide and not membership.all_properties:
         return False
     if property is not None:

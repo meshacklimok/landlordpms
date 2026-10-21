@@ -134,7 +134,7 @@ def test_suspended_member_loses_access_on_next_request(client):
 def _org_form(**overrides):
     data = {"name": "Kamau Homes", "org_type": "COMPANY", "brand_name": "Kamau Homes Ltd",
             "billing_phone": "0712 345678", "billing_email": "Office@Kamau.example", "document_footer": "P.O. Box 1",
-            "invoice_lead_days": "7", "late_fee_mode": "OFF"}
+            "invoice_lead_days": "7", "late_fee_mode": "OFF", "financial_year_start_month": "7"}
     data.update(overrides)
     return data
 
@@ -151,6 +151,7 @@ def test_owner_edits_the_organization_and_it_is_audited(client, owner):
     assert (org.name, org.org_type, org.display_name) == ("Kamau Homes", "COMPANY", "Kamau Homes Ltd")
     assert org.billing_phone == "+254712345678" and org.billing_email == "office@kamau.example"
     assert org.invoice_lead_days == 7 and not org.prorate_partial_months  # unticked box turns it off
+    assert org.financial_year_start_month == 7
     event = AuditEvent.objects.get(action="organization.update")
     assert event.changes["name"][1] == "Kamau Homes" and "invoice_lead_days" in event.changes
     # Saving the same values again changes nothing and records nothing.

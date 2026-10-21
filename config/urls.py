@@ -20,6 +20,7 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+from billing.views import InvoiceCheckView
 from core.csp import CspReportView
 from esign.views import CheckView as SigningCheckView
 from esign.views import SignPdfView, SignView
@@ -28,9 +29,10 @@ from mpesa.hook_views import DarajaHookView
 from mpesa.views import PayLinkStatusView, PayLinkView
 from notifications.email_views import EmailStopView
 from notifications.hook_views import AfricasTalkingHookView, OrgWhatsAppHookView, WhatsAppHookView
-from payments.views import PublicReceiptView
+from payments.views import PublicReceiptCheckView, PublicReceiptView
 from portal.ussd import UssdHookView
-from properties.views import VacancyView
+from properties.views import HostelStayView, VacancyView
+from reports.views import MonthlyReportStopView
 from subscriptions.hook_views import PlatformHookView
 from support.views import HealthzView
 
@@ -44,7 +46,11 @@ urlpatterns = [
     path("leases/", include("leases.urls")),
     path("imports/", include("imports.urls")),
     path("v/<str:token>/", VacancyView.as_view(), name="vacancy"),
+    path("stay/<str:token>/", HostelStayView.as_view(), name="hostel_stay"),
     path("r/<str:token>/", PublicReceiptView.as_view(), name="receipt_link"),
+    path("mr/<str:token>/", MonthlyReportStopView.as_view(), name="monthly_report_stop"),
+    path("ic/<uuid:public_id>/", InvoiceCheckView.as_view(), name="invoice_check"),
+    path("rc/<str:token>/", PublicReceiptCheckView.as_view(), name="receipt_check"),
     path("p/<str:token>/", PayLinkView.as_view(), name="pay_link"),
     path("l/<str:code>/", LetterCheckView.as_view(), name="letter_check"),
     path("s/<str:code>/", SigningCheckView.as_view(), name="esign_check"),

@@ -175,6 +175,24 @@ class Doc(SimpleDocTemplate):
         BaseDocTemplate.build(self, flowables, **kwargs)
 
 
+def qr_drawing(url, size):
+    """A QR code for `url` as a flowable, `size` points square, black on white with a quiet border."""
+    import segno
+    from reportlab.graphics.shapes import Drawing, Rect
+
+    matrix = [list(row) for row in segno.make(url, error="m", boost_error=False).matrix]
+    quiet = size * 0.06
+    step = (size - 2 * quiet) / len(matrix)
+    d = Drawing(size, size)
+    d.add(Rect(0, 0, size, size, fillColor=colors.white, strokeColor=None))
+    for r, row in enumerate(matrix):
+        for c, bit in enumerate(row):
+            if bit:
+                d.add(Rect(quiet + c * step, size - quiet - (r + 1) * step, step, step,
+                           fillColor=colors.black, strokeColor=None))
+    return d
+
+
 def fit(text, font, size, width) -> str:
     """The text cut with an ellipsis so that it is no wider than `width` points."""
     from reportlab.pdfbase.pdfmetrics import stringWidth
@@ -278,6 +296,26 @@ class Stub:
         self.pdf.setFont("Helvetica-Oblique", 8)
         self.pdf.drawString(self.left, self.y, fit(text, "Helvetica-Oblique", 8, self.right - self.left))
         self.y -= 5 * mm
+
+    def qr(self, url, caption):
+        """A QR code above the footer, bottom right, that opens `url` (a page that checks the document)."""
+        import segno
+
+        pdf = self.pdf
+        matrix = [list(row) for row in segno.make(url, error="m", boost_error=False).matrix]
+        size, quiet = 19 * mm, 1.5 * mm
+        step = size / len(matrix)
+        x0, y0 = self.right - size, 14 * mm
+        pdf.setFillColor(colors.white)
+        pdf.rect(x0 - quiet, y0 - quiet, size + 2 * quiet, size + 2 * quiet, stroke=0, fill=1)
+        pdf.setFillColor(colors.black)
+        for r, row in enumerate(matrix):
+            for c, bit in enumerate(row):
+                if bit:
+                    pdf.rect(x0 + c * step, y0 + size - (r + 1) * step, step, step, stroke=0, fill=1)
+        pdf.setFillColor(MUTED)
+        pdf.setFont("Helvetica", 6.5)
+        pdf.drawRightString(x0 - quiet - 1.5 * mm, y0 + size - 3 * mm, fit(caption, "Helvetica", 6.5, 60 * mm))
 
     def finish(self) -> bytes:
         pdf = self.pdf

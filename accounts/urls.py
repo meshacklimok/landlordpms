@@ -23,6 +23,7 @@ urlpatterns = [
     path("web-api/csrf/", web_api.CsrfView.as_view(), name="web_csrf"),
     path("organization/web-api/", web_api.OrganizationSettingsDataView.as_view(), name="web_organization"),
     path("organization/", views.OrganizationSettingsView.as_view(), name="organization"),
+    path("organization/monthly-report/", views.MonthlyReportPreferenceView.as_view(), name="monthly_report_pref"),
     path("organization/export/", views.OrganizationExportView.as_view(), name="organization_export"),
     path("organization/export/<uuid:public_id>/", views.OrganizationExportDownloadView.as_view(),
          name="organization_export_download"),

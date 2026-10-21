@@ -38,14 +38,14 @@ def _items(membership, assistant_set_up):
         (_("Conversations"), "conversations:inbox" if can(m, "messages.view") else None, "chat-dots"),
     ]
     money_items = [
+        (_("Reports"), _first(m, ("reports.view_basic", "reports:centre"), ("dashboard.view_financial", "reports:dashboard"),
+                              ("reports.view_financial", "reports:income")), "graph-up-arrow"),
         (_("Invoices"), "billing:invoices" if can(m, "invoices.view") else None, "receipt"),
         (_("Payments"), "payments:list" if can(m, "payments.view") else None, "cash-coin"),
         (_("M-Pesa"), _first(m, ("mpesa.view_transactions", "mpesa:overview"), ("mpesa.match", "mpesa:inbox"),
                              ("mpesa.settings", "mpesa:settings")), "phone"),
         (_("Bank"), _first(m, ("mpesa.match", "banking:inbox"), ("payments.view", "banking:lines")), "bank"),
         (_("Expenses"), "expenses:list" if can(m, "expenses.view") else None, "wallet2"),
-        (_("Reports"), _first(m, ("reports.view_basic", "reports:centre"), ("dashboard.view_financial", "reports:dashboard"),
-                              ("reports.view_financial", "reports:income")), "bar-chart-line"),
     ]
     assistant = assistant_set_up and m is not None and (m.organization.assistant_enabled
                                                         or can(m, "organization.manage"))

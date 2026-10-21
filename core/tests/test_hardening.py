@@ -25,17 +25,19 @@ MARKER = "Canary"
 
 # Routes a visitor may reach without signing in (D-097 item 1).
 PUBLIC = {
-    "healthz", "csp_report", "vacancy", "receipt_link", "pay_link", "pay_link_status", "letter_check", "email_stop",
+    "healthz", "csp_report", "vacancy", "hostel_stay", "receipt_link", "receipt_check", "invoice_check", "monthly_report_stop", "pay_link", "pay_link_status", "letter_check", "email_stop",
     "hook_africastalking", "hook_ussd", "hook_whatsapp", "hook_whatsapp_org", "hook_daraja", "hook_platform",
     "portal:accept",
     "owner_portal:accept",
     "support:manifest", "support:sw", "support:offline", "support:status", "support:security", "support:terms",
     "support:privacy", "growth:pricing", "growth:faq", "growth:tutorials", "growth:tutorial", "growth:demo",
-    "growth:demo_thanks", "growth:robots", "growth:sitemap", "growth:about", "growth:how_it_works",
+    "growth:demo_thanks", "growth:demo_enter", "growth:demo_as", "growth:demo_leave", "growth:robots", "growth:sitemap", "growth:about", "growth:how_it_works",
     "growth:articles", "growth:article", "growth:solutions", "growth:solution", "growth:llms", "growth:llms_full",
     "growth:favicon", "growth:indexnow_key", "support:delete_account", "accounts:home", "accounts:web_csrf", "accounts:register", "accounts:login", "accounts:logout", "accounts:password_reset",
     "accounts:password_reset_confirm", "accounts:accept_invite", "esign_check", "esign_sign", "esign_sign_pdf",
 }
+# Public check pages whose random id is the key (they show face facts only, so a 200 is right).
+KEYED_BY_RANDOM_ID = {"invoice_check"}
 # Form fields that name a record, posted once as junk and once as the other organization's id.
 ID_FIELDS = ["owner", "lease", "line", "charge_type", "category", "photo", "tenant", "letter", "reading", "payment",
              "request", "property", "viewing", "unit", "meter", "supplier", "invoice", "building", "member", "role",
@@ -148,7 +150,8 @@ def _sweep(client, user, requests, *, other_org=True):
                 problems.append(f"{method} {path} ({name}): shows a Canary record")
             elif response.status_code >= 500:
                 problems.append(f"{method} {path} ({name}): {response.status_code}")
-            elif other_org and str(ID) in path and response.status_code not in (401, 403, 404, 405):
+            elif (other_org and str(ID) in path and name not in KEYED_BY_RANDOM_ID
+                  and response.status_code not in (401, 403, 404, 405)):
                 problems.append(f"{method} {path} ({name}): {response.status_code} for another's id")
     return problems
 

@@ -30,8 +30,9 @@ def no_seat_home(user) -> str:
     """Where someone without a staff seat lands: their tenant portal, their owner portal (D-128) or onboarding."""
     from owner_portal import selectors as owner_portal  # both portals import this module's app
     from portal import selectors as portal
+    from portal import services as portal_services
 
-    if portal.has_access(user):
+    if portal.has_access(user) or portal_services.self_claim(user):  # D-203: no invitation needed
         return "portal:home"
     if owner_portal.has_access(user):
         return "owner_portal:home"

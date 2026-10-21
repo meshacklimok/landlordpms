@@ -17,9 +17,9 @@ from accounts.tests.factories import add_member, make_org, make_property, make_u
 from accounts.tests.test_isolation import login
 from api import services as api_services
 from audit.models import AuditEvent
+from console.models import PlatformStaff
 from console.tests.test_console import owner as console_owner
 from console.tests.test_console import seat_for, signed_in
-from console.models import PlatformStaff
 
 pytestmark = pytest.mark.django_db
 

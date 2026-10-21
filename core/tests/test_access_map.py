@@ -47,17 +47,22 @@ SIGNED_IN = {
     "support:accept_terms", "support:help", "support:help_topic", "support:contact",
     "portal:home", "portal:lease", "portal:repair_create", "portal:notice_create", "portal:repair",
     "portal:repair_photo", "portal:document", "portal:receipt", "portal:invoice_pdf", "portal:ask",
-    "portal:ask_confirm", "portal:messages", "portal:lease_terms", "portal:offer_answer",
+    "portal:ask_confirm", "portal:no_match",  # shows only the user's own phone number
+    "portal:messages", "portal:lease_terms", "portal:offer_answer",
     "portal:payments", "portal:payment_report", "portal:signing", "portal:signing_pdf",  # own lease / own payment only; anything else is a 404
     "owner_portal:home", "owner_portal:account", "owner_portal:statement", "owner_portal:sent_pdf",
     "owner_portal:payments",  # the owner's own properties only; tenant names hidden
+    "owner_portal:live", "owner_portal:desk", "owner_portal:desk_send", "owner_portal:desk_answer",
+    "owner_portal:desk_detail", "owner_portal:desk_request", "owner_portal:desk_request_withdraw",  # D-217
+    "owner_portal:guests", "owner_portal:guest_remove",
     # The developer console: 404 without a platform seat, MFA required, and each page checks its own capability.
-    "console:overview", "console:revenue", "console:behaviour", "console:usage", "console:organizations",
-    "console:organizations_export", "console:watchlist", "console:growth", "console:channels", "console:money", "console:costs", "console:expense", "console:organization_control", "console:organization_export", "console:organization_export_download", "console:announcements", "console:email", "console:audit", "console:organization", "console:health", "console:team", "console:team_add",
-    "console:team_edit", "console:notifications", "console:notification", "console:system_messages",
-    "console:referrals",  # platform owner only (OwnerMixin)
+    "console:overview", "console:today", "console:revenue", "console:behaviour", "console:usage", "console:organizations",
+    "console:organizations_export", "console:organization_bulk", "console:watchlist", "console:chase", "console:growth", "console:channels", "console:money", "console:statement", "console:costs", "console:expense", "console:organization_control", "console:organization_login_contact", "console:organization_access", "console:organization_export", "console:organization_export_download", "console:announcements", "console:email", "console:audit", "console:organization", "console:health", "console:team", "console:team_add", "console:team_activity",
+    "console:view_as", "console:view_as_stop", "console:support", "console:support_item", "console:canned_replies", "console:tools",
+    "console:team_edit", "console:articles", "console:article_new", "console:article", "console:article_preview", "console:notifications", "console:notification", "console:system_messages",
+    "console:referrals", "console:late_policy", "console:organization_late_rules", "console:email_previews", "console:email_preview",  # platform owner only (OwnerMixin)
     "console:owners", "console:owners_export", "console:owner_email", "console:owner_emails",
-    "console:owner_email_detail",  # platform owner only (OwnerMixin): owners' names and emails, and email to them
+    "console:owner_email_detail", "console:owner_email_resend", "console:owner_new", "console:owner", "console:owner_follow_ups", "console:owner_bulk", "console:problems", "console:email_preview_send",  # platform owner only (OwnerMixin): owners' names and emails, and email to them
 }
 # Signed in by other means: an API key, or a password given but the two-step code not yet.
 OWN_CHECK = {"api:me", "api:resource", "api:item", "accounts:login_mfa"}
@@ -65,7 +70,12 @@ OWN_CHECK = {"api:me", "api:resource", "api:item", "accounts:login_mfa"}
 # missing two-step code itself; what each one returns or changes is checked against the member's capabilities.
 OWN_CHECK |= {"accounts:web_session", "accounts:web_home", "accounts:web_organization",
               "ai_assistant:web_ask", "console:web_notifications", "console:web_notification",
-              "imports:web_switch", "leases:web_pickups"}
+              "imports:web_switch", "leases:web_pickups",
+              "properties:web_rooms", "properties:web_waitlist", "properties:web_rooms_new",
+              "properties:web_room", "properties:web_rollover", "reports:web_hostel",
+              "banking:web_import", "banking:web_import_detail", "banking:web_import_map",
+              "banking:web_inbox",  # also need mpesa.match, checked in BankJSONView
+              "notifications:web_announcement_new"}  # also needs messages.send_bulk, checked in the view
 
 
 def _kind(view) -> str:

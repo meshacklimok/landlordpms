@@ -79,3 +79,20 @@ class KnowledgeEntry(PublicIdModel, TimeStampedModel, OrgScopedModel):
 
     def __str__(self):
         return self.title
+
+
+class StarterPrompt(TimeStampedModel):
+    """A suggested question shown as a button in an empty assistant chat. The platform owner edits the list in Django
+    admin; it is the same for every organization."""
+
+    text = models.CharField(_("question"), max_length=200, help_text=_("Shown as a button; pressing it asks this question."))
+    sort_order = models.PositiveSmallIntegerField(_("order"), default=100, help_text=_("Lowest first."))
+    is_active = models.BooleanField(_("shown"), default=True)
+
+    class Meta:
+        ordering = ["sort_order", "pk"]
+        verbose_name = _("starter question")
+        verbose_name_plural = _("starter questions")
+
+    def __str__(self):
+        return self.text[:60]

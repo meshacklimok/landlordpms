@@ -18,6 +18,7 @@ from django.utils.translation import gettext as _
 # Session keys: epoch seconds of the login and of the last request.
 STARTED = "session_started"
 SEEN = "session_seen"
+REMEMBER = "session_remember"  # "Remember me" was ticked on the login page
 TOUCH_EVERY = 60
 
 
@@ -27,9 +28,14 @@ def is_staff_session(request) -> bool:
 
 def limits(request) -> tuple[int, int]:
     """(idle seconds, maximum age in seconds) for the logged-in user of this request."""
-    if is_staff_session(request):
-        return settings.SESSION_IDLE_MINUTES * 60, settings.SESSION_MAX_HOURS * 60 * 60
+    remember = bool(request.session.get(REMEMBER))
     day = 24 * 60 * 60
+    if is_staff_session(request):
+        if remember:
+            return settings.SESSION_REMEMBER_IDLE_MINUTES * 60, settings.SESSION_REMEMBER_MAX_HOURS * 60 * 60
+        return settings.SESSION_IDLE_MINUTES * 60, settings.SESSION_MAX_HOURS * 60 * 60
+    if remember:
+        return settings.PORTAL_REMEMBER_IDLE_DAYS * day, settings.PORTAL_REMEMBER_MAX_DAYS * day
     return settings.PORTAL_SESSION_IDLE_DAYS * day, settings.PORTAL_SESSION_MAX_DAYS * day
 
 

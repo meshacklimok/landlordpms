@@ -42,6 +42,10 @@ def request_name(actor: Membership, name: str, request=None) -> None:
     """Asks for `name`. While it waits, messages keep going under the platform's name."""
     require(actor, "subscription.manage")
     org = actor.organization
+    from subscriptions import services as billing
+
+    if not billing.own_sender_allowed(org):
+        raise ValidationError(_("Your own sender name is not switched on for your organization. Ask us if you want it."))
     name = clean_name(name)
     if org.sms_sender_id == name and org.sms_sender_status in (Status.REQUESTED, Status.APPROVED):
         return

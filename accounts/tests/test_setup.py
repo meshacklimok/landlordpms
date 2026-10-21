@@ -76,3 +76,27 @@ def test_organization_admin_lists_with_the_invoiced_filter(client, monkeypatch, 
     response = client.get(url)
     assert response.status_code == 200
     assert ("Alpha Homes" in response.content.decode()) is (invoiced != "yes")
+
+
+def test_a_first_sign_in_gets_the_welcome_with_the_next_step_and_no_quick_actions(client):
+    owner = make_org()
+    login(client, owner)
+    response = client.get(reverse("accounts:home"))
+    body = response.content.decode()
+    assert response.context["welcome"] and response.context["next_step"].key == "property"
+    assert "Let's get your first rent collected" in body or "Let&#x27;s get your first rent collected" in body
+    assert "home-actions" not in body and "Nothing is waiting for you" not in body
+
+
+def test_a_member_turns_their_own_monthly_report_off_and_on(client):
+    m = make_org()
+    other = add_member(m.organization, "caretaker")
+    login(client, m)
+    assert "Email me the monthly report" in client.get(reverse("accounts:organization")).content.decode()
+    client.post(reverse("accounts:monthly_report_pref"), {})
+    m.refresh_from_db()
+    other.refresh_from_db()
+    assert not m.monthly_report and other.monthly_report
+    client.post(reverse("accounts:monthly_report_pref"), {"monthly_report": "on"})
+    m.refresh_from_db()
+    assert m.monthly_report

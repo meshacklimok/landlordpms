@@ -95,35 +95,9 @@ if os.getenv("EMAIL_MESSAGES_HOST"):
     }
 DEFAULT_FROM_EMAIL = SERVER_EMAIL = _required("DEFAULT_FROM_EMAIL")
 
-# The console adapter would print login codes to the log instead of sending them. It is allowed only
-# when explicitly asked for (a staging server without an SMS account).
-if SMS_BACKEND.startswith("notifications.providers.sms.") and SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender" \
-        and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
-    raise ImproperlyConfigured("Set SMS_BACKEND to a real SMS adapter (or ALLOW_CONSOLE_SMS=1 on staging).")
-if SMS_BACKEND == "notifications.providers.sms.AfricasTalkingSmsSender":  # noqa: F405
-    _required("AT_USERNAME")
-    _required("AT_API_KEY")
-    if len(_required("AT_CALLBACK_TOKEN")) < 32:
-        raise ImproperlyConfigured("AT_CALLBACK_TOKEN must be at least 32 random characters.")
-# Subscription payments to our own Paybill or Paystack account (D-126).
-if PLATFORM_DARAJA_CONSUMER_KEY:  # noqa: F405
-    _required("PLATFORM_DARAJA_CONSUMER_SECRET")
-    _required("PLATFORM_DARAJA_SHORTCODE")
-    if PLATFORM_DARAJA_ENVIRONMENT not in ("SANDBOX", "PRODUCTION"):  # noqa: F405
-        raise ImproperlyConfigured("PLATFORM_DARAJA_ENVIRONMENT must be SANDBOX or PRODUCTION.")
-if PLATFORM_DARAJA_CONSUMER_KEY or PLATFORM_PAYSTACK_SECRET_KEY:  # noqa: F405
-    if len(_required("PLATFORM_CALLBACK_TOKEN")) < 32:
-        raise ImproperlyConfigured("PLATFORM_CALLBACK_TOKEN must be at least 32 random characters.")
-if PLATFORM_PAYSTACK_SECRET_KEY and not PLATFORM_PAYSTACK_SECRET_KEY.startswith(("sk_test_", "sk_live_")):  # noqa: F405
-    raise ImproperlyConfigured("PLATFORM_PAYSTACK_SECRET_KEY must be a Paystack secret key (sk_live_...).")
-if WHATSAPP_BACKEND == "notifications.providers.whatsapp.CloudApiWhatsAppSender":  # noqa: F405
-    _required("WA_PHONE_NUMBER_ID")
-    _required("WA_ACCESS_TOKEN")
-    _required("WA_APP_SECRET")
-    if len(_required("WA_VERIFY_TOKEN")) < 32:
-        raise ImproperlyConfigured("WA_VERIFY_TOKEN must be at least 32 random characters.")
-elif WHATSAPP_BACKEND and os.getenv("ALLOW_CONSOLE_SMS") != "1":  # noqa: F405
-    raise ImproperlyConfigured("Set WHATSAPP_BACKEND to notifications.providers.whatsapp.CloudApiWhatsAppSender or leave it empty.")
+# SMS, WhatsApp, OpenAI, Paybill and Paystack credentials are typed into Django admin (Platform settings,
+# core/platform_config.py) and checked there when saved, so the server starts without them. `manage.py
+# launch_check` reports anything still missing. Values in the environment keep working as the fallback.
 
 if WEBHOOKS_ALLOW_PRIVATE:  # noqa: F405
     raise ImproperlyConfigured("WEBHOOKS_ALLOW_PRIVATE is for development only (D-083 item 5).")

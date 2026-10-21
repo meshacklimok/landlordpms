@@ -37,6 +37,8 @@ KINDS = (
     Kind("invite_staff", _("Invitation to join an organization"), _("Link sent to a new team member."), (SMS,)),
     Kind("invite_tenant", _("Invitation to the tenant portal"), _("Link sent to a tenant."), (SMS,)),
     Kind("operator_alert", _("Problem and all-clear alerts to us"), _("Failed jobs and health checks."), (EMAIL,)),
+    Kind("owner_digest", _("Daily summary to us"), _("Sign-ups, money in, support waiting and problems, each morning."),
+         (EMAIL,)),
     Kind("support_request", _("New support request to us"), _("Copy of each support request."), (EMAIL,)),
     Kind("sender_name_request", _("SMS sender-name request to us"), _("When a landlord asks for their own name."),
          (EMAIL,)),

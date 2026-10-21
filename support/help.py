@@ -27,6 +27,12 @@ TOPICS = [
     ("subscription", _("Subscription and billing"), _("Plans, limits, paying us and receipts.")),
     ("importing", _("Importing your data"), _("Bring units, tenants and balances in from a spreadsheet.")),
 ]
+ICONS = {
+    "getting-started": "rocket-takeoff", "properties-units": "buildings", "tenants-leases": "people",
+    "invoices-payments": "receipt", "mpesa": "phone", "messages": "chat-dots", "water": "droplet",
+    "prospects": "person-plus", "maintenance": "tools", "documents": "folder2-open", "assistant": "stars",
+    "staff-roles": "person-badge", "subscription": "credit-card", "importing": "file-earmark-arrow-up",
+}
 SLUGS = {slug for slug, _t, _d in TOPICS}
 
 

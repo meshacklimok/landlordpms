@@ -101,11 +101,14 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "console.viewas.ViewAsTenantMiddleware",  # the owner viewing a tenant: the request becomes that tenant's login
     "accounts.middleware.ActiveOrganizationMiddleware",
     "growth.campaigns.CaptureCampaignMiddleware",  # remembers ?ref= and ?utm_ for sign-up (D-133)
     "support.app_opens.AppOpenMiddleware",  # counts installed-app opens (D-102)
     "django.contrib.messages.middleware.MessageMiddleware",
     "core.sessions.SessionTimeoutMiddleware",  # after the two above: it reads memberships and leaves a message
+    "accounts.demo.DemoReadOnlyMiddleware",  # the public demo can look, never change (D-210); after messages, which it uses
+    "console.viewas.ViewAsReadOnlyMiddleware",  # the owner viewing a landlord's account can look, never change
     "accounts.middleware.AdminMFAMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     "core.headers.ExtraSecurityHeadersMiddleware",  # Permissions-Policy, no-store for signed-in pages (D-139)
@@ -205,7 +208,13 @@ SESSION_IDLE_MINUTES = int(os.getenv("SESSION_IDLE_MINUTES", "60"))
 SESSION_MAX_HOURS = int(os.getenv("SESSION_MAX_HOURS", "12"))
 PORTAL_SESSION_IDLE_DAYS = int(os.getenv("PORTAL_SESSION_IDLE_DAYS", "14"))
 PORTAL_SESSION_MAX_DAYS = int(os.getenv("PORTAL_SESSION_MAX_DAYS", "30"))
-SESSION_COOKIE_AGE = PORTAL_SESSION_MAX_DAYS * 24 * 60 * 60
+# With "Remember me" ticked on the login page the limits are longer: caretakers and tenants should not have to log in
+# every few hours. Staff 8 idle hours / 7 days, tenants 60 idle days / 180 days.
+SESSION_REMEMBER_IDLE_MINUTES = int(os.getenv("SESSION_REMEMBER_IDLE_MINUTES", "480"))
+SESSION_REMEMBER_MAX_HOURS = int(os.getenv("SESSION_REMEMBER_MAX_HOURS", "168"))
+PORTAL_REMEMBER_IDLE_DAYS = int(os.getenv("PORTAL_REMEMBER_IDLE_DAYS", "60"))
+PORTAL_REMEMBER_MAX_DAYS = int(os.getenv("PORTAL_REMEMBER_MAX_DAYS", "180"))
+SESSION_COOKIE_AGE = max(PORTAL_SESSION_MAX_DAYS, PORTAL_REMEMBER_MAX_DAYS) * 24 * 60 * 60
 
 # A request body (not counting uploaded files) over 5 MB is refused, and a form may not carry more than 1000 fields
 # (D-139). Uploads have their own limits in documents/ and support/.
@@ -308,8 +317,9 @@ CONTENT_SECURITY_POLICY = {
     "frame-ancestors": [CSP.NONE],
     "report-uri": "/csp-report/",
 }
-# The Paybill setup video (a link set in Django admin) plays in a privacy-friendly YouTube frame (D-174).
-CONTENT_SECURITY_POLICY["frame-src"] = ["https://www.youtube-nocookie.com"]
+# The Paybill setup video (a link set in Django admin) plays in a privacy-friendly YouTube frame (D-174). 'self' stays
+# listed: setting frame-src drops the default-src fallback, and the report centre frames our own reports (D-148).
+CONTENT_SECURITY_POLICY["frame-src"] = [CSP.SELF, "https://www.youtube-nocookie.com"]
 if os.getenv("CSP_REPORT_ONLY") == "1":
     SECURE_CSP_REPORT_ONLY = CONTENT_SECURITY_POLICY
 else:
@@ -397,6 +407,8 @@ PLATFORM_KRA_PIN = os.getenv("PLATFORM_KRA_PIN", "")
 SMS_PRICE = os.getenv("SMS_PRICE", "1.00")
 # Off in development and tests: organizations send SMS without a wallet. On in production.
 SMS_WALLET_ENFORCED = os.getenv("SMS_WALLET_ENFORCED", "0") == "1"
+# Login-code SMS the whole platform sends in a day before more are paused (someone running up our SMS bill).
+OTP_SMS_DAILY_LIMIT = int(os.getenv("OTP_SMS_DAILY_LIMIT", "3000"))
 # KRA eTIMS adapter for our invoices (subscriptions/etims.py); the default sends nothing.
 ETIMS_ADAPTER = os.getenv("ETIMS_ADAPTER", "subscriptions.etims.NullEtimsAdapter")
 
@@ -419,6 +431,13 @@ PAYSTACK_EMAIL_DOMAIN = os.getenv("PAYSTACK_EMAIL_DOMAIN", "") or (
 # Operations (D-062, doc 18).
 # Who gets job and health alerts from `check_jobs`; empty falls back to ADMINS.
 OPS_ALERT_EMAILS = os.getenv("OPS_ALERT_EMAILS", "")
+# Also texted to these numbers (comma-separated, 2547...), with the same 6-hour repeat.
+OPS_ALERT_PHONES = os.getenv("OPS_ALERT_PHONES", "")
+# What counts as a problem worth a text: failed messages in 24 hours, days an M-Pesa payment stays unmatched, hours a
+# support request goes unanswered. 0 turns that check off.
+ALERT_FAILED_MESSAGES = int(os.getenv("ALERT_FAILED_MESSAGES", "20"))
+ALERT_UNMATCHED_DAYS = int(os.getenv("ALERT_UNMATCHED_DAYS", "2"))
+ALERT_SUPPORT_HOURS = int(os.getenv("ALERT_SUPPORT_HOURS", "24"))
 # "Name <email>, Name <email>": errors are emailed here when Sentry is not used.
 ADMINS = [(a.split("<")[0].strip(), a.split("<")[1].rstrip(">").strip()) if "<" in a else (a.strip(), a.strip())
           for a in os.getenv("ADMINS", "").split(",") if a.strip()]
@@ -443,8 +462,10 @@ SECURITY_ALERT_CSP_HOUR = int(os.getenv("SECURITY_ALERT_CSP_HOUR", "500"))
 MESSAGE_TEXT_DAYS = int(os.getenv("MESSAGE_TEXT_DAYS", "730"))
 
 # Support and the public pages (D-061, D-063).
-SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "")
-SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "")
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support@nyumbapms.com")
+HELLO_EMAIL = os.getenv("HELLO_EMAIL", "hello@nyumbapms.com")  # sales and general questions
+SUPPORT_WHATSAPP = os.getenv("SUPPORT_WHATSAPP", "254748578190")
+SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0748 578 190")
 # An https link (e.g. YouTube) to the Paybill setup video, shown on the M-Pesa setup pages. Empty hides it (D-174).
 MPESA_SETUP_VIDEO_URL = os.getenv("MPESA_SETUP_VIDEO_URL", "")
 DATA_PROTECTION_EMAIL = os.getenv("DATA_PROTECTION_EMAIL", "")
@@ -496,5 +517,10 @@ if SENTRY_DSN:
 # Product analytics (D-140): server-side events only (core/productevents.py). No key means nothing is sent.
 POSTHOG_API_KEY = os.getenv("POSTHOG_API_KEY", "")
 POSTHOG_HOST = os.getenv("POSTHOG_HOST", "https://eu.i.posthog.com")
+
+# Links shown on the console Tools page, so the team opens the right dashboard in one click. Nothing is sent to them.
+SENTRY_DASHBOARD_URL = os.getenv("SENTRY_DASHBOARD_URL", "")
+POSTHOG_DASHBOARD_URL = os.getenv("POSTHOG_DASHBOARD_URL", "")
+GOOGLE_ANALYTICS_URL = os.getenv("GOOGLE_ANALYTICS_URL", "")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"

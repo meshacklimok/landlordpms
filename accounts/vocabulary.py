@@ -29,6 +29,7 @@ WATER = {
     "property": _("Zone"), "properties": _("Zones"),
     "lease": _("Account"), "leases": _("Accounts"),
     "rent": _("Water charge"),
+    "service_days": _("Reading days"),
 }
 
 WASTE = {
@@ -37,9 +38,20 @@ WASTE = {
     "property": _("Route"), "properties": _("Routes"),
     "lease": _("Contract"), "leases": _("Contracts"),
     "rent": _("Collection fee"),
+    "service_days": _("Collection days"),
+}
+
+
+# A hostel still bills rent, so it keeps the rent words; only the people and places change (D-188).
+HOSTEL = {
+    "tenant": _("Student"), "tenants": _("Students"),
+    "unit": _("Room or bed"), "units": _("Rooms and beds"),
+    "property": _("Hostel"), "properties": _("Hostels"),
+    "lease": _("Booking"), "leases": _("Bookings"),
+    "rent": _("Hostel fees"),
 }
 
 
 def vocabulary_for(org_type: str) -> dict:
     """The words for an organization type; the rental words for anything else."""
-    return {"ESTATE": ESTATE, "WATER": WATER, "WASTE": WASTE}.get(org_type, RENTAL)
+    return {"ESTATE": ESTATE, "WATER": WATER, "WASTE": WASTE, "HOSTEL": HOSTEL}.get(org_type, RENTAL)

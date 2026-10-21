@@ -160,6 +160,8 @@ LEASES = [
 
 class Command(BaseCommand):
     help = "Fill an organization with demo tenants, properties, leases, invoices and payments (development only)."
+    # The data to load; the public demo (seed_public_demo) swaps in a bigger set.
+    tenants_data, properties_data, lease_specs, under_maintenance = TENANTS, PROPERTIES, LEASES, UNDER_MAINTENANCE
 
     def add_arguments(self, parser):
         parser.add_argument("--org", help="Organization id or exact name. Defaults to the only organization.")
@@ -179,7 +181,7 @@ class Command(BaseCommand):
         self.today = timezone.localdate()
 
         self._tenants()
-        if Property.all_objects.for_org(self.org).filter(code__in=[p["code"] for p in PROPERTIES]).exists():
+        if Property.all_objects.for_org(self.org).filter(code__in=[p["code"] for p in self.properties_data]).exists():
             self.stdout.write("Demo properties already exist; skipping properties, leases and payments.")
             return
         started = timezone.now()
@@ -198,15 +200,15 @@ class Command(BaseCommand):
     def _tenants(self):
         existing = set(Tenant.all_objects.for_org(self.org).values_list("name", flat=True))
         created = 0
-        for data in TENANTS:
+        for data in self.tenants_data:
             if data["name"] not in existing:
                 create_tenant(self.actor, **data)
                 created += 1
-        self.stdout.write(f"Tenants: created {created}, skipped {len(TENANTS) - created}.")
+        self.stdout.write(f"Tenants: created {created}, skipped {len(self.tenants_data) - created}.")
 
     def _properties(self):
         self.units = {}
-        for spec in PROPERTIES:
+        for spec in self.properties_data:
             fields = {k: v for k, v in spec.items() if k not in ("buildings", "units", "main_house_rent")}
             prop = create_property(self.actor, **fields)
             buildings = {name: create_building(self.actor, prop, name=name) for name in spec["buildings"]}
@@ -218,9 +220,9 @@ class Command(BaseCommand):
                 unit = update_unit(self.actor, prop.units.get(), list_rent=Decimal(spec["main_house_rent"]),
                                    type_label="4 bedroom house")
                 self.units[unit.payment_reference] = unit
-        for ref in UNDER_MAINTENANCE:
+        for ref in self.under_maintenance:
             set_unit_status(self.actor, self.units[ref], Unit.ManualStatus.UNDER_MAINTENANCE)
-        self.stdout.write(f"Properties: {len(PROPERTIES)}, units: {len(self.units)}.")
+        self.stdout.write(f"Properties: {len(self.properties_data)}, units: {len(self.units)}.")
 
     def _accounts(self):
         paybill = PaymentAccount.objects.create(organization=self.org, type=PaymentAccount.Type.PAYBILL,
@@ -261,11 +263,11 @@ class Command(BaseCommand):
 
         A lease on a unit that someone moves out of is only created once that tenant has left.
         """
-        moved_out = {spec["unit"] for spec in LEASES if spec.get("ends")}
-        later = [s for s in LEASES if s["unit"] in moved_out and not s.get("ends")]
-        leases = self._leases([s for s in LEASES if s not in later])
+        moved_out = {spec["unit"] for spec in self.lease_specs if spec.get("ends")}
+        later = [s for s in self.lease_specs if s["unit"] in moved_out and not s.get("ends")]
+        leases = self._leases([s for s in self.lease_specs if s not in later])
         lead = datetime.timedelta(days=self.org.invoice_lead_days)
-        month = month_start(min(spec["start"] for spec in LEASES))
+        month = month_start(min(spec["start"] for spec in self.lease_specs))
         last = months_to_bill(self.org, self.today)[-1]
         invoices_paid = {}
         while month <= last:

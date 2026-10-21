@@ -21,7 +21,7 @@ from django.views.decorators.csrf import ensure_csrf_cookie
 from core.money import format_money
 from reports import home as reports_home
 
-from . import mfa, setup
+from . import demo, mfa, setup
 from .navigation import nav_groups
 from .permissions import can, is_membership_usable
 
@@ -62,6 +62,10 @@ def _chrome(request, m, org, user) -> dict:
 
     banner_row = banner(org)
     notices = []
+    if org.is_demo:
+        notices.append({"level": "info", "text": _("You are looking at a demo with sample data. Nothing here is real and nothing can be changed."),
+                        "url": demo.trial_url(), "link": _("Start your free trial"),
+                        "people": demo.people(request)})
     if org.status == Organization.Status.READ_ONLY:
         notices.append({"level": "warning", "text": _(
             "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created.")})
@@ -154,7 +158,7 @@ class HomeDataView(MemberJSONView):
             "role": m.role.name,
             "currency": cur,
             "vocab": {"tenant": str(org.vocab["tenant"]), "rent": str(org.vocab["rent"]), "units": str(org.vocab["units"])},
-            "dashboard_url": reverse("reports:dashboard") if can(m, "dashboard.view_financial") else None,
+            "dashboard_url": reverse("reports:centre") if can(m, "dashboard.view_financial") else None,
             "actions": _quick_actions(m, org.vocab),
             "suggest_mfa": bool(mfa.suggest(m)),
             "security_url": reverse("accounts:security"),
@@ -176,6 +180,12 @@ class HomeDataView(MemberJSONView):
             "payments": None,
             "payments_url": None,
             "collection": [],
+            "due_soon": None,
+            "vacancy": None,
+            "methods": [],
+            "pace": None,
+            "net": None,
+            "nudges": [],
             "summary": None,
         }
         if can(m, "properties.manage"):
@@ -183,10 +193,13 @@ class HomeDataView(MemberJSONView):
             required = [s for s in steps if not s.optional]
             done = sum(s.done for s in required)
             if done < len(required):
+                first = next((s.key for s in required if not s.done), None)
                 out["checklist"] = {
-                    "done": done, "total": len(required),
+                    "done": done, "total": len(required), "next": first,
+                    "minutes": sum(s.minutes for s in required if not s.done),
                     "steps": [{"key": s.key, "label": str(s.label), "url": s.url, "done": s.done,
-                               "optional": s.optional} for s in steps],
+                               "optional": s.optional, "hint": str(s.hint), "icon": s.icon,
+                               "minutes": s.minutes} for s in steps],
                     "help_url": reverse("support:help_topic", args=["getting-started"]),
                 }
         if board is not None and home.started:
@@ -207,6 +220,29 @@ class HomeDataView(MemberJSONView):
                 "trend": [{"label": row.label, "month": row.month.strftime("%b"), "rate": _num(row.rate),
                            "collected": money(row.collected)} for row in home.trend],
             }
+            ds = home.due_soon
+            out["due_soon"] = {"count": ds[0], "amount": money(ds[1]), "days": reports_home.DUE_SOON_DAYS,
+                               "url": reverse("billing:invoices"),
+                               "remind_url": (reverse("notifications:announcement_new")
+                                              + f"?template=rent_due&days={reports_home.DUE_SOON_DAYS}")
+                               if can(m, "messages.send_bulk") else None} if ds and ds[0] else None
+            vac = home.vacancy
+            out["vacancy"] = {
+                "units": vac.units, "amount": money(vac.amount), "unpriced": vac.unpriced,
+                "url": reverse("properties:units") + "?status=vacant" if can(m, "units.view") else None,
+            } if vac and vac.units else None
+            if home.pace:
+                now, before, label = home.pace
+                out["pace"] = {"now": money(now), "before": money(before), "label": label,
+                               "change": _num((now - before) / before) if before else None}
+            if home.net:
+                cash, spent = home.net
+                out["net"] = {"cash": money(cash), "expenses": money(spent), "net": money(cash - spent),
+                              "negative": cash < spent, "url": reverse("expenses:list")}
+            out["nudges"] = home.nudges
+            total_cash = sum((x.amount for x in home.methods), 0)
+            out["methods"] = [{"method": x.method, "label": x.label, "count": x.count, "amount": money(x.amount),
+                               "share": _num(x.amount / total_cash) if total_cash else 0} for x in home.methods]
             if can(m, "invoices.view"):
                 out["debtors"] = [{
                     "unit": d.lease.unit.code,

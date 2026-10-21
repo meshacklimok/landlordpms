@@ -12,6 +12,7 @@ from django.utils.translation import gettext_lazy
 from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require
 from audit import services as audit
+from subscriptions import services as billing
 
 from . import actions, client, knowledge, stats, tools
 from .models import Question
@@ -188,6 +189,8 @@ def _messages(history, question: str) -> list[dict]:
 def ask(m: Membership, raw_question, *, history=None, today: datetime.date | None = None) -> Result:
     """Answers one question (items 3-8). Raises ValidationError for an empty or long question."""
     question = clean_question(raw_question)
+    if billing.blocked(m.organization, "assistant"):
+        raise ValidationError(billing.blocked_message())
     now = timezone.now()
     today = today or timezone.localdate()
     record = Question(organization=m.organization, user=m.user, question=question)

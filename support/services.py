@@ -15,9 +15,10 @@ from django.utils.translation import gettext as _
 from audit import services as audit
 from inspections import photos
 from notifications.providers.mail import SYSTEM, mailer_for
+from notifications.providers.sms import send_sms
 from subscriptions.services import next_platform_number
 
-from .models import SupportRequest
+from .models import SupportReply, SupportRequest
 
 logger = logging.getLogger(__name__)
 
@@ -108,3 +109,31 @@ def _email(item: SupportRequest) -> None:
     except Exception:
         # The request is saved and shows in admin; a mail outage must not lose it.
         logger.exception("Could not email support request %s", item.number)
+
+
+def reply(actor, item: SupportRequest, body: str, request=None) -> SupportReply:
+    """Answers the landlord who sent `item`: by email when they have one, otherwise by SMS. The first answer sets
+    `first_reply_at`, and the request now waits on them. A send that fails is kept (sent=False) so nothing is lost."""
+    body = (body or "").strip()[:2000]
+    if not body:
+        raise ValidationError(_("Write something to send."))
+    person = item.created_by
+    channel = SupportReply.Channel.EMAIL if person.email else SupportReply.Channel.SMS
+    sent = False
+    try:
+        if channel == SupportReply.Channel.EMAIL:
+            sent = bool(send_mail(f"Re: [{item.number}] {item.subject}", body, None, [person.email],
+                                  using=mailer_for(SYSTEM)))
+        else:
+            sent = send_sms(person.phone, f"NyumbaPMS support ({item.number}): {body}"[:300]).ok
+    except Exception:
+        logger.exception("Could not send the reply to support request %s", item.number)
+    row = SupportReply.objects.create(request=item, sent_by=actor, channel=channel, body=body, sent=sent)
+    if sent:
+        item.first_reply_at = item.first_reply_at or row.created_at
+        if item.status == SupportRequest.Status.OPEN:
+            item.status = SupportRequest.Status.WAITING
+        item.save(update_fields=["first_reply_at", "status", "updated_at"])
+    audit.record("console.support_reply", actor=actor, organization=item.organization, obj=item, request=request,
+                 changes={"channel": [None, channel], "sent": [None, sent]})
+    return row

@@ -12,7 +12,7 @@ from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
 from django.contrib.auth.models import PermissionsMixin
 from django.core.files.storage import FileSystemStorage
 from django.core.mail import send_mail
-from django.core.validators import MaxValueValidator, RegexValidator
+from django.core.validators import MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.db.models.functions import Lower, Upper
 from django.utils import timezone
@@ -133,7 +133,13 @@ class User(PublicIdModel, AbstractBaseUser, PermissionsMixin):
         """No-op when the user has no email (email is optional)."""
         if self.email:
             kwargs.setdefault("using", mailer_for(SYSTEM))
-            send_mail(subject, message, from_email, [self.email], **kwargs)
+            from notifications.email_html import send_branded
+
+            using = kwargs.pop("using")
+            if kwargs:  # options the branded sender does not take: send it as plain text
+                send_mail(subject, message, from_email, [self.email], using=using, **kwargs)
+            else:
+                send_branded(subject, message, [self.email], using=using, from_email=from_email)
 
 
 class TOTPDevice(models.Model):
@@ -212,6 +218,8 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
         ESTATE = "ESTATE", _("Estate or residents' association")
         WATER = "WATER", _("Water vendor")
         WASTE = "WASTE", _("Garbage collection company")
+        # Student accommodation (D-186): bills like a landlord, with rooms, beds and semesters.
+        HOSTEL = "HOSTEL", _("Student hostel")
 
     class Status(models.TextChoices):
         ACTIVE = "ACTIVE", _("Active")
@@ -235,12 +243,20 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     currency = models.CharField(max_length=3, default="KES")
     # Tax and billing settings (D-034): design-in only, no calculation yet.
     kra_pin = models.CharField(_("KRA PIN"), max_length=20, blank=True)
+    # Who signed up, kept as hashes so a repeat free trial can be spotted (D-207): the browser (a long-lived cookie)
+    # and the network address. Empty when the organization was made without a web request.
+    signup_device = models.CharField(max_length=32, blank=True, db_index=True, editable=False)
+    signup_ip_hash = models.CharField(max_length=64, blank=True, db_index=True, editable=False)
     vat_registered = models.BooleanField(default=False)
     billing_email = models.EmailField(blank=True)
     billing_phone = models.CharField(max_length=16, blank=True)
     # Picks the rate in the rental income tax estimate (D-050). An estimate only, never filed.
     landlord_tax_residence = models.CharField(
         _("landlord tax residence"), max_length=12, choices=TaxResidence.choices, default=TaxResidence.RESIDENT)
+    # The month the organization's financial year starts (D-199): 1 is the calendar year, 7 is July to June. Moves
+    # "this year", "last year" and the quarters on the report pages; the tax pack stays on the calendar year.
+    financial_year_start_month = models.PositiveSmallIntegerField(
+        _("financial year starts in"), default=1, validators=[MinValueValidator(1), MaxValueValidator(12)])
     # Rent billing (doc 14 A3, D-036). Partial first and last months are prorated by days
     # unless the organization bills them as a full month.
     prorate_partial_months = models.BooleanField(_("prorate partial months"), default=True)
@@ -283,6 +299,11 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     # Every member must pass two-step login before opening the organization (D-107). Tenants in the portal are not
     # members, so this never reaches them.
     require_mfa = models.BooleanField(_("two-step login for all staff"), default=False)
+    # A tenant who signs up and verifies the phone number held on their tenant record gets portal access without an
+    # invitation (D-203). On by default; an owner who wants to invite each tenant by hand switches it off.
+    tenant_self_signup = models.BooleanField(_("tenants can join the portal themselves"), default=True)
+    # The public "Try the demo" organization (D-210): sample data, read-only, and nothing is ever sent from it.
+    is_demo = models.BooleanField(default=False, editable=False)
     # What tenancy letters state besides the tenants, units and dates (D-048).
     letter_show_payment_record = models.BooleanField(_("on-time payment record"), default=True)
     letter_show_balance = models.BooleanField(_("balance owed"), default=True)
@@ -296,6 +317,8 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
     brand_color = models.CharField(_("brand colour"), max_length=7, blank=True, validators=[
         RegexValidator(r"^#[0-9A-Fa-f]{6}$", _("Use a hex colour like #1A73E8."))])
     document_footer = models.CharField(_("document footer"), max_length=200, blank=True)
+    # The conditions printed on tenancy agreements (D-187); blank means the standard ones in leases.clauses.
+    agreement_clauses = models.TextField(_("agreement wording"), blank=True)
     # What the invoice PDF adds (D-149): the owner's address under the name, how to pay, terms, and the tenant's contacts.
     address = models.CharField(_("address"), max_length=200, blank=True)
     invoice_payment_info = models.TextField(_("how to pay"), max_length=500, blank=True)
@@ -313,6 +336,9 @@ class Organization(PublicIdModel, TimeStampedModel, ArchivableModel):
                                        help_text=_("Shown on their Subscription page, e.g. why it was rejected."))
     sms_sender_requested_at = models.DateTimeField(null=True, blank=True)
     sms_sender_decided_at = models.DateTimeField(null=True, blank=True)
+    # Staff in these roles are told in the app when the subscription lapses or is paid again, besides the owner.
+    # The owner picks them on the Subscription page; owner roles are always told.
+    lapse_notify_roles = models.ManyToManyField("Role", blank=True, related_name="+")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -472,6 +498,8 @@ class Membership(PublicIdModel, TimeStampedModel, ArchivableModel):
     branches = models.ManyToManyField(Branch, blank=True, related_name="memberships")
     # Suspended when False; archived when removed from the organization.
     is_active = models.BooleanField(default=True)
+    # The monthly property report by email (D-194); the link in the email turns it off.
+    monthly_report = models.BooleanField(default=True)
     invited_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )

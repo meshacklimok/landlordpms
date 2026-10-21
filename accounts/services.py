@@ -119,14 +119,40 @@ def copy_role_templates(organization: Organization) -> dict[str, Role]:
     return roles
 
 
+DEVICE_COOKIE = "npms_dev"
+
+
+def signup_marks(request) -> tuple[str, str]:
+    """(device id, hashed network address) of a sign-up request, or empty strings without one. The device id is the
+    long-lived cookie this browser already has, or a new one the view then sets (D-207)."""
+    if request is None:
+        return "", ""
+    import hashlib
+    import uuid
+
+    from django.conf import settings
+
+    from core.net import client_ip
+
+    device = request.COOKIES.get(DEVICE_COOKIE, "")
+    if not (len(device) == 32 and device.isalnum()):
+        device = uuid.uuid4().hex
+    request.signup_device = device
+    ip = client_ip(request)
+    ip_hash = hashlib.sha256(f"{settings.SECRET_KEY}:{ip}".encode()).hexdigest() if ip else ""
+    return device, ip_hash
+
+
 @transaction.atomic
 def create_organization(*, user: User, name: str, org_type: str = Organization.Type.INDIVIDUAL,
                         request=None) -> Membership:
     """Organization + roles + Owner membership in one transaction (doc 11 §16)."""
     if not user.phone_verified:
         raise PermissionDenied(_("Verify your phone number first."))
+    device, ip_hash = signup_marks(request)
     org = Organization.objects.create(name=name.strip(), org_type=org_type, created_by=user,
-                                      billing_phone=user.phone, billing_email=user.email or "")
+                                      billing_phone=user.phone, billing_email=user.email or "",
+                                      signup_device=device, signup_ip_hash=ip_hash)
     roles = copy_role_templates(org)
     owner_role = next(r for r in roles.values() if r.is_owner_role)
     membership = Membership.objects.create(user=user, organization=org, role=owner_role, all_properties=True)
@@ -375,8 +401,8 @@ def set_require_mfa(actor: Membership, on: bool, request=None) -> None:
 # messages, tax residence, sender name) or is the Platform Admin's.
 ORGANIZATION_FIELDS = ("name", "org_type", "brand_name", "billing_phone", "billing_email", "document_footer",
                        "address", "brand_color", "invoice_payment_info", "invoice_terms", "invoice_show_tenant_contact",
-                       "invoice_show_previous_balance",
-                       "holds_deposits", "invoice_lead_days", "prorate_partial_months", "late_fee_mode", "late_fee_amount",
+                       "invoice_show_previous_balance", "tenant_self_signup",
+                       "holds_deposits", "financial_year_start_month", "invoice_lead_days", "prorate_partial_months", "late_fee_mode", "late_fee_amount",
                        "late_fee_percent", "late_fee_cap", "deposit_refund_days", "deposit_deduction_headings",
                        "deposit_proof_required", "deposit_allow_offset")
 
@@ -483,6 +509,10 @@ def update_organization(actor: Membership, *, request=None, **values) -> dict:
     org.save(update_fields=[*changes, "updated_at"])
     audit.record("organization.update", actor=actor.user, organization=org, obj=org, request=request,
                  changes={f: [str(b), str(a)] for f, (b, a) in changes.items()})
+    if {"billing_phone", "billing_email"} & set(changes):
+        from subscriptions.services import recheck_trial
+
+        recheck_trial(org)
     return changes
 
 @transaction.atomic

@@ -38,7 +38,7 @@ def bump(organization_id) -> None:
 
 
 def _key(membership, name: str, params) -> str:
-    digest = hashlib.sha1(repr(params).encode()).hexdigest()[:16]
+    digest = hashlib.sha1(repr(params).encode()).hexdigest()[:16]  # noqa: S324 - a cache key, not a secret
     return (f"rc:{membership.organization_id}:{version(membership.organization_id)}:{membership.pk}:"
             f"{timezone.localdate().isoformat()}:{name}:{digest}")
 

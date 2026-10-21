@@ -61,7 +61,7 @@ _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedire
 
 
 def _post(url: str, body: dict, headers: dict, timeout: int = TIMEOUT) -> dict:
-    request = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+    request = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",  # noqa: S310 - the address is a fixed https endpoint, never user input
                                      headers={**headers, "content-type": "application/json"})
     try:
         with _opener.open(request, timeout=timeout) as response:

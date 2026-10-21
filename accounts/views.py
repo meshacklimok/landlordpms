@@ -1,5 +1,7 @@
 """Thin views: forms in, services do the work (D-009)."""
 
+import logging
+
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -17,7 +19,7 @@ from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
 from audit import services as audit
-from core import ratelimit, reportcache
+from core import ratelimit, reportcache, sessions
 from core.net import client_ip
 from properties.models import Property
 from reports import home as reports_home
@@ -34,6 +36,8 @@ RESET_PHONE_KEY = "reset_phone"
 INVITE_TOKEN_KEY = "invite_token"  # noqa: S105 - a session key name
 PORTAL_INVITE_KEY = "portal_invite_token"  # set by portal.views.AcceptView
 OWNER_INVITE_KEY = "owner_invite_token"  # noqa: S105 - set by owner_portal.views.AcceptView
+SIGNUP_AS_KEY = "signup_as"  # "tenant" when sign-up began from the tenant link (D-203)
+logger = logging.getLogger(__name__)
 # Sign-ups and reset codes per IP per hour (D-107). Generous, since mobile networks put many phones behind one
 # address; each phone number has its own tighter limit on codes (accounts.otp).
 SIGNUP_PER_IP_HOUR = 20
@@ -90,7 +94,10 @@ def _typed_referral_code(request) -> tuple[str, str]:
 
 
 def _email_optional(request) -> bool:
-    """Whether the invitation waiting in the session is for a role that needs no email (caretaker, maintenance)."""
+    """Whether the sign-up needs no email: a tenant (D-203, the phone is their login) or an invitation waiting in the
+    session for a role that needs none (caretaker, maintenance)."""
+    if request.session.get(SIGNUP_AS_KEY) == "tenant":
+        return True
     token = request.session.get(INVITE_TOKEN_KEY)
     invitation = services.get_invitation(token) if token else None
     return bool(invitation and invitation.is_pending and not email_required_for(invitation.role))
@@ -103,8 +110,13 @@ class RegisterView(View):
     def get(self, request):
         if request.user.is_authenticated:
             return redirect("accounts:home")
+        if request.GET.get("as") == "tenant":
+            request.session[SIGNUP_AS_KEY] = "tenant"
+        elif "as" in request.GET:
+            request.session.pop(SIGNUP_AS_KEY, None)
         return render(request, self.template_name, {"form": forms.RegisterForm(email_optional=_email_optional(request)),
-                                                    "invited": _invited(request)})
+                                                    "invited": _invited(request),
+                                                    "as_tenant": request.session.get(SIGNUP_AS_KEY) == "tenant"})
 
     def post(self, request):
         form = forms.RegisterForm(request.POST, email_optional=_email_optional(request))
@@ -136,7 +148,8 @@ class RegisterView(View):
                     messages.warning(request, str(exc))
                 return redirect("accounts:verify_phone")
         return render(request, self.template_name, {"form": form, "invited": _invited(request),
-                                                    "typed_code": typed_code, "code_error": code_error})
+                                                    "typed_code": typed_code, "code_error": code_error,
+                                                    "as_tenant": request.session.get(SIGNUP_AS_KEY) == "tenant"})
 
 
 class VerifyEmailView(VerifiedUserRequiredMixin, View):
@@ -229,6 +242,12 @@ class VerifyPhoneView(LoginRequiredMixin, View):
                 return redirect("portal:accept", token=request.session[PORTAL_INVITE_KEY])
             if request.session.get(OWNER_INVITE_KEY):
                 return redirect("owner_portal:accept", token=request.session[OWNER_INVITE_KEY])
+            if _self_claim(request):  # a tenant whose landlord never sent a link (D-203)
+                request.session.pop(SIGNUP_AS_KEY, None)
+                messages.success(request, _("Welcome. Your landlord's records match your phone number."))
+                return redirect("portal:home")
+            if request.session.pop(SIGNUP_AS_KEY, None) == "tenant":
+                return redirect("portal:no_match")
             user = request.user
             if user.email and not user.email_verified_at:
                 try:
@@ -257,15 +276,29 @@ class LoginView(View):
             next_url = request.POST.get("next") or request.GET.get("next") or ""
             if mfa.is_enabled(form.user):
                 # Not logged in until the second step (D-059).
-                mfa.begin_login(request, form.user, next_url)
+                mfa.begin_login(request, form.user, next_url, remember=form.cleaned_data["remember"])
                 return redirect("accounts:login_mfa")
             login(request, form.user)
+            request.session[sessions.REMEMBER] = form.cleaned_data["remember"]
             audit.record("user.login", actor=form.user, obj=form.user, request=request)
             return _after_login(request, next_url)
         return render(request, self.template_name, {"form": form})
 
 
+def _self_claim(request) -> list:
+    """Links a verified user to the tenant records carrying their phone (D-203). A failure here never blocks login."""
+    from portal import services as portal_services
+
+    try:
+        return portal_services.self_claim(request.user, request=request)
+    except Exception:  # noqa: BLE001 - a portal problem must not stop a login
+        logger.exception("Tenant self-claim failed")
+        return []
+
+
 def _after_login(request, next_url):
+    if request.user.phone_verified:
+        _self_claim(request)
     if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}, request.is_secure()):
         return redirect(next_url)
     return redirect("accounts:home")
@@ -316,6 +349,7 @@ class LoginMFAView(View):
         if data is not None:
             request.session.pop(mfa.PENDING, None)
             login(request, user, backend=data.get("backend") or None)
+            request.session[sessions.REMEMBER] = bool(data.get("remember"))
             audit.record("user.login", actor=user, obj=user, request=request, changes={"mfa": [None, kind]})
             next_url = data.get("next", "")
         else:
@@ -409,7 +443,12 @@ class OnboardingView(VerifiedUserRequiredMixin, View):
             )
             request.session[SESSION_KEY] = str(membership.organization.public_id)
             messages.success(request, _("Welcome! Your workspace is ready."))
-            return redirect("accounts:home")
+            response = redirect("accounts:home")
+            device = getattr(request, "signup_device", "")
+            if device:
+                response.set_cookie(services.DEVICE_COOKIE, device, max_age=2 * 365 * 24 * 3600, httponly=True,
+                                    samesite="Lax", secure=request.is_secure())
+            return response
         return render(request, self.template_name, {"form": form})
 
 
@@ -444,6 +483,8 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
             ctx["checklist"] = steps
             ctx["checklist_done"], ctx["checklist_total"] = done, len(required)
             ctx["show_checklist"] = done < len(required)
+            ctx["next_step"] = next((st for st in required if not st.done), None)
+            ctx["minutes_left"] = sum(st.minutes for st in required if not st.done)
             ctx["help_url"] = reverse("support:help_topic", args=["getting-started"])
         ctx["show_staff"] = can(m, "staff.view")
         ctx["show_roles"] = can(m, "roles.manage")
@@ -455,6 +496,8 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         # The figures are kept for a few minutes and dropped when this organization's data changes (core/reportcache.py).
         ctx["home"] = home = reportcache.cached(m, "home", (), lambda: reports_home.home(m))
         ctx["board"] = home.board
+        # A brand-new account gets a guided welcome instead of empty figures and quick actions that need data.
+        ctx["welcome"] = bool(ctx.get("show_checklist")) and not home.started and not home.has_work
         return ctx
 
 
@@ -529,6 +572,8 @@ SETTINGS_PAGES = (
     (_lazy("Branches"), _lazy("Your offices, which properties each runs and which staff see them"),
      "organization.manage", "accounts:branches"),
     (_lazy("Roles"), _lazy("What each role can do"), "roles.manage", "accounts:roles"),
+    (_lazy("Agreement wording"), _lazy("The conditions printed on tenancy agreements"), "organization.manage",
+     "leases:wording"),
     (_lazy("Subscription and SMS sender name"), _lazy("Your plan, payments and the name SMS come from"),
      "subscription.view", "subscriptions:page"),
 )
@@ -544,7 +589,7 @@ class OrganizationSettingsView(CapabilityRequiredMixin, View):
         m = request.membership
         pages = [{"label": label, "hint": hint, "url": reverse(name)}
                  for label, hint, capability, name in SETTINGS_PAGES if can(m, capability)]
-        return render(request, self.template_name, {"form": form, "pages": pages,
+        return render(request, self.template_name, {"form": form, "pages": pages, "monthly_report": m.monthly_report,
                                                     "can_export": can(m, "organization.export_data"),
                                                     "exports": data_export.recent(request.organization, request.user)},
                       status=status)
@@ -569,6 +614,20 @@ class OrganizationSettingsView(CapabilityRequiredMixin, View):
             form.add_error(None, _error_text(exc))
             return self.render(request, form, status=400)
         messages.success(request, _("Organization details saved.") if changed else _("Nothing changed."))
+        return redirect("accounts:organization")
+
+
+class MonthlyReportPreferenceView(CapabilityRequiredMixin, View):
+    """Turns the member's own monthly report email on or off (D-194). Only their own membership changes."""
+
+    required_capability = "reports.view_financial"
+
+    def post(self, request):
+        m = request.membership
+        m.monthly_report = request.POST.get("monthly_report") == "on"
+        m.save(update_fields=["monthly_report"])
+        messages.success(request, _("The monthly report email is on.") if m.monthly_report
+                         else _("The monthly report email is off."))
         return redirect("accounts:organization")
 
 

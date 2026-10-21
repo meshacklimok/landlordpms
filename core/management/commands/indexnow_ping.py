@@ -31,6 +31,6 @@ class Command(BaseCommand):
         host = settings.SITE_URL.split("://", 1)[1]
         body = json.dumps({"host": host, "key": key, "keyLocation": f"{settings.SITE_URL}/indexnow/{key}.txt",
                            "urlList": urls}).encode()
-        request = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json; charset=utf-8"})
-        with urllib.request.urlopen(request, timeout=20) as response:
+        request = urllib.request.Request(ENDPOINT, body, {"Content-Type": "application/json; charset=utf-8"})  # noqa: S310 - the address is a fixed https endpoint, never user input
+        with urllib.request.urlopen(request, timeout=20) as response:  # noqa: S310 - the address is a fixed https endpoint, never user input
             self.stdout.write(f"Sent {len(urls)} URLs; IndexNow answered {response.status}.")

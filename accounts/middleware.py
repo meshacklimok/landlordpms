@@ -32,10 +32,17 @@ class ActiveOrganizationMiddleware:
             chosen = next((m for m in memberships if str(m.organization.public_id) == wanted), None)
             if chosen is None and memberships:
                 chosen = memberships[0]
+            request.viewing_as = False
+            if user.is_superuser and request.session.get("console_view_as"):
+                from console import viewas  # the owner looking at a landlord's account, read only
+
+                shown = viewas.membership_for(request)
+                if shown is not None:
+                    chosen, request.viewing_as = shown, True
             if chosen is not None:
                 request.membership = chosen
                 request.organization = chosen.organization
-                if wanted != str(chosen.organization.public_id):
+                if not request.viewing_as and wanted != str(chosen.organization.public_id):
                     request.session[SESSION_KEY] = str(chosen.organization.public_id)
             request.user_memberships = memberships
         else:

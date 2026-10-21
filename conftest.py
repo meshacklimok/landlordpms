@@ -95,6 +95,10 @@ def _seeded_plans(request):
     if not Plan.objects.exists():
         importlib.import_module("subscriptions.migrations.0002_seed_plans").seed(apps, None)
         importlib.import_module("subscriptions.migrations.0004_unit_bands_and_one_off").seed(apps, None)
+    from growth.models import Article
+
+    if not Article.objects.exists():  # the nine starting articles come from migration 0007 (D-178)
+        importlib.import_module("growth.migrations.0007_load_articles").load(apps, None)
 
 
 @pytest.fixture

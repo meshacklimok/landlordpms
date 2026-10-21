@@ -100,14 +100,17 @@ class AcceptTermsView(LoginRequiredMixin, View):
 
 
 def _support_context():
-    whatsapp = "".join(ch for ch in getattr(settings, "SUPPORT_WHATSAPP", "") if ch.isdigit())
-    return {"support_whatsapp": whatsapp, "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
+    from core.contacts import support_whatsapp
+
+    return {"support_whatsapp": support_whatsapp(), "support_email": getattr(settings, "SUPPORT_EMAIL", ""),
             "ussd_code": getattr(settings, "USSD_CODE", "")}
 
 
 class HelpIndexView(VerifiedUserRequiredMixin, View):
     def get(self, request):
-        return render(request, "support/help_index.html", {"topics": help_topics.TOPICS, **_support_context()})
+        cards = [(s, t, d, help_topics.ICONS.get(s, "journal-text")) for s, t, d in help_topics.TOPICS]
+        return render(request, "support/help_index.html", {"topics": help_topics.TOPICS, "cards": cards,
+                                                           **_support_context()})
 
 
 class HelpTopicView(VerifiedUserRequiredMixin, View):
@@ -115,8 +118,12 @@ class HelpTopicView(VerifiedUserRequiredMixin, View):
         topic = help_topics.topic(slug)
         if topic is None:
             raise Http404
-        return render(request, f"support/help/{slug}.html", {"topic_slug": slug, "topic_title": topic[1],
-                                                         "topics": help_topics.TOPICS, **_support_context()})
+        topics = help_topics.TOPICS
+        at = next(i for i, t in enumerate(topics) if t[0] == slug)
+        return render(request, f"support/help/{slug}.html", {
+            "topic_slug": slug, "topic_title": topic[1], "topic_summary": topic[2], "topics": topics,
+            "prev_topic": topics[at - 1] if at else None,
+            "next_topic": topics[at + 1] if at + 1 < len(topics) else None, **_support_context()})
 
 
 class ContactView(VerifiedUserRequiredMixin, View):

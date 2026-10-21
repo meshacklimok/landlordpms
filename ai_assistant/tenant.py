@@ -45,6 +45,7 @@ from portal.ussd import (
     can_pay,
 )
 from portal.ussd import TEXT as USSD_TEXT
+from subscriptions import services as billing
 
 from . import client, knowledge, services, tools
 from .models import Question
@@ -153,6 +154,7 @@ def leases_for(phone: str, organization=None) -> list[tuple[Lease, str, object]]
     A message that came in on one organization's own number is only about that organization's leases.
     """
     return [row for row in caller_leases(phone) if row[0].organization.tenant_assistant_enabled
+            and not billing.blocked(row[0].organization, "assistant")  # payment overdue (D-198)
             and (organization is None or row[0].organization_id == organization.pk)]
 
 
@@ -174,6 +176,7 @@ def portal_caller(user, today: datetime.date | None = None) -> Caller | None:
     leases = list(portal_selectors.own_leases(user).filter(
         status__in=LEASE_STATUSES, organization__tenant_assistant_enabled=True,
         organization__archived_at__isnull=True)[:MAX_LEASES])
+    leases = [lease for lease in leases if not billing.blocked(lease.organization, "assistant")]  # D-198
     if not leases:
         return None
     accounts = list(portal_selectors.live_accounts(user).select_related("tenant"))

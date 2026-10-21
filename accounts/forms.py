@@ -1,3 +1,5 @@
+import datetime
+
 from django import forms
 from django.contrib.auth import authenticate
 from django.contrib.auth.password_validation import password_validators_help_text_html
@@ -63,6 +65,7 @@ class LoginForm(forms.Form):
     password = forms.CharField(
         label=_("Password"), widget=forms.PasswordInput(attrs={"autocomplete": "current-password"})
     )
+    remember = forms.BooleanField(label=_("Remember me on this device"), required=False)
 
     def __init__(self, request, *args, **kwargs):
         self.request = request
@@ -170,6 +173,15 @@ class OrganizationSettingsForm(forms.Form):
                                                      required=False)
     invoice_show_previous_balance = forms.BooleanField(
         label=_("Show earlier unpaid invoices and the total owing"), required=False)
+    tenant_self_signup = forms.BooleanField(
+        label=_("Tenants can join the portal themselves"), required=False,
+        help_text=_("A tenant who signs up and confirms the phone number on their record gets in without an invitation "
+                    "link. Switch off to invite each tenant yourself."))
+    financial_year_start_month = forms.TypedChoiceField(
+        label=_("Financial year starts in"), coerce=int,
+        choices=[(m, datetime.date(2000, m, 1).strftime("%B")) for m in range(1, 13)],
+        help_text=_("\"This year\", \"Last year\" and the quarters on report pages follow this. January is the "
+                    "calendar year. The yearly income tax pack always uses the calendar year."))
     invoice_lead_days = forms.IntegerField(
         label=_("Send invoices this many days before the month starts"), min_value=0, max_value=28,
         widget=forms.NumberInput(attrs={"inputmode": "numeric"}))
@@ -231,6 +243,10 @@ class OrganizationSettingsForm(forms.Form):
         # Landlords always hold deposits, so only the other kinds of billers are asked (D-130).
         if organization is None or organization.bills_rent:
             del self.fields["holds_deposits"]
+        # Only the late-fee boxes that fit the chosen rule are shown (ui.js reads show_when).
+        self.fields["late_fee_amount"].show_when = "late_fee_mode:FIXED"
+        self.fields["late_fee_percent"].show_when = "late_fee_mode:PERCENT"
+        self.fields["late_fee_cap"].show_when = "late_fee_mode:FIXED,PERCENT"
         if organization is not None and not organization.takes_deposits:
             for name in DEPOSIT_RULE_FIELDS:
                 del self.fields[name]

@@ -156,6 +156,26 @@ def test_a_session_from_before_the_limits_counts_from_now(client):
     assert sessions.STARTED in client.session
 
 
+def test_remember_me_gives_staff_the_longer_limits(client):
+    owner = make_org().user
+    session = _logged_in(client, owner, idle=3 * 3600).session
+    session[sessions.REMEMBER] = True
+    session.save()
+    client.get(reverse("accounts:home"))
+    assert _still_in(client)
+    other = Client()
+    _logged_in(other, owner, idle=3 * 3600).get(reverse("accounts:home"))
+    assert not _still_in(other)
+
+
+def test_login_remember_box_is_stored_in_the_session(client):
+    user = make_org().user
+    client.post(reverse("accounts:login"), {"identifier": user.email or user.phone, "password": "Strong-Pass-472",
+                                            "remember": "on"})
+    if _still_in(client):
+        assert client.session[sessions.REMEMBER] is True
+
+
 def test_session_limits_come_from_settings(settings, client):
     settings.SESSION_IDLE_MINUTES = 5
     owner = make_org().user

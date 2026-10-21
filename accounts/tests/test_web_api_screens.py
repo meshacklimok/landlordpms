@@ -154,7 +154,7 @@ def test_the_settings_form_is_sent_as_data_and_saved_with_a_logo(client, tmp_pat
     picture = io.BytesIO()
     Image.new("RGB", (20, 10), "red").save(picture, "PNG")
     body = {"name": "Kamau Homes", "org_type": owner.organization.org_type, "invoice_lead_days": "7",
-            "late_fee_mode": "OFF", "logo": SimpleUploadedFile("logo.png", picture.getvalue(), "image/png")}
+            "late_fee_mode": "OFF", "financial_year_start_month": "1", "logo": SimpleUploadedFile("logo.png", picture.getvalue(), "image/png")}
     saved = client.post(url, body)
     assert saved.status_code == 200 and saved.json()["logo_url"]
     assert next(f for f in saved.json()["fields"] if f["name"] == "name")["value"] == "Kamau Homes"

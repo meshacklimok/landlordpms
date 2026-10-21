@@ -11,6 +11,7 @@ from accounts.permissions import can
 from accounts.web_api import MemberJSONView
 
 from . import client, knowledge, services
+from .models import StarterPrompt
 from .views import _with_cards, ask_question, new_conversation, settle_proposal, switch_assistant
 
 
@@ -35,6 +36,7 @@ def _state(request) -> dict:
         "recent": [{"question": q.question, "at": q.created_at.isoformat(),
                     "status": "" if q.status == "ANSWERED" else q.get_status_display()}
                    for q in services.recent(m)],
+        "starters": list(StarterPrompt.objects.filter(is_active=True).values_list("text", flat=True)),
         "post_url": reverse("ai_assistant:web_ask"),
     }
 

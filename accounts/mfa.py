@@ -242,10 +242,10 @@ def admin_reset(admin, user, request=None) -> None:
 # ---------------------------------------------------------------------------
 
 
-def begin_login(request, user, next_url: str = "") -> None:
+def begin_login(request, user, next_url: str = "", remember: bool = False) -> None:
     """The password was right; hold the user until the code is given. Not logged in yet."""
     request.session[PENDING] = {"user": user.pk, "backend": getattr(user, "backend", ""), "at": int(time.time()),
-                                "next": next_url}
+                                "next": next_url, "remember": remember}
 
 
 def pending_user(request):
