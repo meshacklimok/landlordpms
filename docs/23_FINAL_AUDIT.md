@@ -34,7 +34,7 @@ Causes above are from the error messages; the code has not been opened yet.
 
 - Financial scenarios from the checklist (KES 15,000 partial-payment example, arrears vs dashboard vs report agreement,
   mid-month move-out, rent change not altering old invoices): NOT TESTED.
-- `e2e_walkthrough/test_walkthrough.py` (temporary, step-by-step): NOT RUN.
+- `e2e_walkthrough/test_walkthrough.py` (temporary, step-by-step): dropped; the folder is gone and the audit tests cover it.
 - M-Pesa scenarios 1-10, Paystack, SMS, WhatsApp, email delivery: BLOCKED (sandbox/live credentials).
 - Two-landlord isolation: tests exist in `accounts/tests/test_isolation.py`; they ran inside the full suite and none of
   the failures are there, but they were not reviewed one by one.
@@ -56,4 +56,4 @@ checklist phases: 1 core and billing, 2 payments and isolation, 3 reports, 4 UI/
 - New WhatsApp/own-account pages used inline `onsubmit`; changed to `data-confirm` (CSP). `erd.md` regenerated.
 - The subscription-page 500 and the two owner-name report failures did not reproduce; they passed alone and in the clean run
   (files were being edited during the first run). Treat as resolved, watch on the next run.
-- Still open: every BLOCKED / NOT TESTED line above (financial scenarios, `e2e_walkthrough`, live integrations, server, counsel).
+- Still open: every BLOCKED / NOT TESTED line above (financial scenarios, live integrations, server, counsel).

@@ -6,7 +6,7 @@
 - [x] Argon2 password hashing; PBKDF2 hashes from before are re-saved with Argon2 at the next login; password validators on (D-107)
 - [x] Login rate limiting: 10 tries per phone or email and 50 per IP per 15 minutes; codes limited per phone; sign-ups and reset codes limited per IP (D-107)
 - [x] Two-step login with an authenticator app (D-059); an organization can require it for every member (D-107)
-- [x] Sessions end after 60 minutes idle or 12 hours for staff, 14 days idle or 30 days for tenants in the portal (D-107)
+- [x] Sessions end after 60 minutes idle or 12 hours for staff, 14 days idle or 30 days for tenants in the portal; with "Remember me" ticked, 8 hours idle or 7 days for staff and 60 days idle or 180 days for tenants (D-107)
 - [x] Every view requires login + org membership + role check (sweep of every route, D-097); every route names a capability or is on a reviewed list with the reason it is open, and a member whose role has no capabilities is refused on every capability route (`core/tests/test_access_map.py`, D-108)
 - [x] Every queryset org-scoped; automated cross-tenant tests (every route, as another organization and as staff kept to one property, D-097)
 - [x] Object-level access: never trust IDs in URLs or forms; look up within the active org; junk ids are not found (D-097)

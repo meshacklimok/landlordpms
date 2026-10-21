@@ -121,7 +121,7 @@ Create the login (`createsuperuser`), the off-site backup copy, outside services
   2. **Application Keys › Add a New Application Key**, limited to that bucket, read and write. Copy the keyID and applicationKey (shown once) into a password manager.
   3. `sudo -u landlordpms rclone config create offsite b2 account 'KEYID' key 'APPLICATIONKEY'`
   4. `sudo -u landlordpms rclone config create offsite-crypt crypt remote 'offsite:BUCKET-NAME' password 'LONG-1' password2 'LONG-2' --obscure` (keep both passwords off the server).
-  5. Test as in step 4 above. **[VERIFY: not yet run on a real bucket.]**
+  5. Test as in step 4 above. **Verified 2026-10-20** on the Droplet (165.245.221.108): `backup --offsite` reported `offsite: copied`, and `rclone ls offsite-crypt:nyumbapms` listed the encrypted db and media files.
 - **Backup at any time:** `sudo -u landlordpms sh /srv/landlordpms/deploy/run.sh backup --offsite` makes a fresh dump and copies it off the server. Leave off `--offsite` for a local-only copy. It is recorded like the nightly run and does not clash with it (the lock skips a run while another is going).
 - **Disk full or server too small:** resize the Droplet (below).
 

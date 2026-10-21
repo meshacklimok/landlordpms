@@ -2323,3 +2323,309 @@ Changes `/billing/invoices/generate/` (D-042, D-049). The daily job is unchanged
 4. **Email to owners (`/console/owners/email/`).** Written for the owners shown, or for the ones ticked. `{name}` (first name) and `{organization}` are the only placeholders and are replaced by plain text substitution. Every owner gets their own message (no shared To line), sent through the MESSAGES mail account with a footer saying why they got it, reply-to `SUPPORT_EMAIL`. "Send a test to me" sends the first recipient's version to the sender only. Sending needs a tick and is done in the request, one by one on one open connection, up to 500 owners (`MAX_RECIPIENTS`); a failure on one address is kept against it and the rest go on. The audience is re-read from the filters or ticks on the POST, never from a list the browser sent.
 5. **Record.** `OwnerEmail` and `OwnerEmailRecipient` (analytics migration 0005) keep subject, body, audience in words, who sent it, and per-owner delivered/failed with the error; pages `/console/owners/emails/` and `/emails/<id>/`. Each send is audited as `console.owner_email`.
 6. **Not done:** no unsubscribe link, because these are service notices to customers about their account; marketing mail would need an opt-out first. No scheduled sending; a very large list would need a job like `run_data_exports`.
+
+**D-179 addendum (2026-10-19): owner analytics made actionable.** The Owners page now has a strip of groups that need
+attention (trial ending in 7 days, past due or lapsed, quiet 30+ days, never used it, 80%+ of the plan's units, no
+two-step login, no email), each a link to the filtered list (and so to "Email all shown"). Each owner shows monthly
+value (paid subscription, yearly divided by 12), units against the plan limit and badges; a "highest monthly value"
+sort, a total and top-5 share, a joined-per-month chart (with how many are still active), and two CSV columns.
+
+### D-180 — Guided welcome on first sign-in — ACCEPTED (2026-10-19)
+
+A workspace with nothing billed or paid yet (`home.started` false) and required setup steps left now opens on a welcome panel instead of empty figures and quick actions that need data: progress, minutes left, the next step as one large card with a Start button, all steps with a one-line hint each, and the guide / spreadsheet-import help. Once anything is billed or paid, or setup is complete, the normal D-153 home returns (the small "Get set up" card stays while steps remain). `accounts/setup.py` steps gained `hint`, `icon`, `minutes`; the view adds `welcome`, `next_step`, `minutes_left`.
+
+**D-179 addendum 2 (2026-10-19): owner CRUD.** Owners page: "Add owner" (`/console/owners/new/`: name, phone, email,
+organization; phone marked verified, no password, the owner uses Forgot password), owner page (`owners/<id>/`:
+edit name/phone/email/organization, change account status through the existing control, notes with follow-up dates
+that can be edited, finished, reopened or deleted, emails sent to them). New group "Follow-up due" for open notes
+whose date has come. Model `OwnerNote`. Every change is audited (console.owner_create/update/note). Owners are not
+deleted: freeze the account instead, so records and audit history stay.
+
+**D-179 addendum 3 (2026-10-19): follow-ups inbox, failures queue, owner history.** `/console/owners/follow-ups/`
+lists every open owner note by overdue, today, coming up and no date, with mark-done; the console Overview shows a
+"follow-ups due" banner to superusers. `/console/health/problems/` (capability `health`) lists failed messages and
+failed webhook deliveries from the last 14 days with Retry and Retry-all (audited as `console.retry`), and M-Pesa
+payments unmatched over two days; the Overview shows a banner when anything is in it. The owner page has a History
+card joining audit activity, notes and emails sent. Code in `console/problems.py` and `console/owners.py`.
+
+**D-179 addendum (2026-10-19): owner email goes out from a job.** Sending up to 500 emails inside the request could
+time out and leave a half-sent record, and the pilot is 10 landlords with 50+ units each, so bulk work must not depend
+on a page staying open. `owners.send` now saves the email and one waiting row per address and returns; a list of
+`INSTANT_MAX` (20) or fewer is sent at once. The `send_owner_emails` job (every 5 minutes, listed in `core.jobs` and
+`deploy/crontab`) sends the rest for up to 4 minutes a run. An address is claimed (`sending`) before it is sent, so two
+runs never send it twice; one left `sending` for 30 minutes is marked failed and not resent, because it may already
+have gone out. `OwnerEmail.done_at` says when the last address was tried; the detail page shows how many are waiting.
+Migration analytics 0008 marks earlier emails done. Not done: no automatic refresh of the detail page, no "resend the
+failed ones" button.
+
+**D-179 addendum 4 (2026-10-19): bulk notes, health score, setup steps, where owners are.** Owners list: tick owners
+and add one note (and follow-up date) to all (`owners/bulk/`, up to 200; "Email the ticked" now posts from the same
+form and refuses an empty tick). Health score 0-100 per owner (recent use 30, setup 30, subscription 20, size 10,
+safety and team 10; bands healthy 70+, watch 40-69, at risk below 40), sort and group "Health score below 40".
+Setup steps (property, units, tenant, lease, invoice, payment, payment account): the first one missing is where
+they are stuck; filter "Stuck at", group "Setup not finished after 3 days", funnel on the page and a checklist on the
+owner page. Location analytics: organizations and units by county and by town (the area or sub-county typed on the
+property), a county filter, and a counties chart. CSV gains health score and stuck step.
+
+### D-181 — Performance for 1,000+ unit uploads — ACCEPTED (2026-10-19)
+Landlords with 1,000+ units were due to upload next month. Measured on a scratch database with 1,000 leases.
+- **Bulk import:** the plan limit check (subscription + usage) is read once per import (`entitlements.batch`, `entitlements.added`)
+  instead of per row; property and building lookups are shared across rows. About 13 down to 10 queries per unit row, about 3x
+  faster. Still a synchronous web request (`MAX_ROWS` 2,000); very large files should be split.
+- **Tenants page:** the "where do they live" lookup in `tenants/views.py` `_attach_places` went from one scan of all leases
+  (19.7 s with 1,000 leases) to only the leases of the tenants on the page (about 0.2 s).
+- **Arrears page:** paged (50 a page); tenants are fetched only for the rows on the page (`with_tenants=False`, `prefetch_tenants`).
+- Not done: `billing.selectors.arrears` still costs about 1 s when all 1,000 leases owe (building model objects). Caching the rows
+  does not help, since pickling them costs as much. Property detail, dashboard and call list inherit that cost.
+
+### D-182 — Meter and water reading screens for caretakers' phones — ACCEPTED (2026-10-19)
+The QR page (`meters/quick_read.html`) pointed at `quick_read.js` and `.quick-*` styles that did not exist, so it showed
+unstyled and without the "units used" line. Both added. The water month page gets a full-width "Read next: <meter>"
+button (the first meter still to read, this month only) and bigger "Read now" buttons. On phones the reading sheet gets
+16px+ number boxes (no zoom on tap), 44px touch targets, a safe-area-aware Save bar and a green edge on rows read.
+
+### D-183 — Rent, utilities and other charges kept apart in every report — ACCEPTED (2026-10-19)
+Audit of charges → invoices → payments → statements → reports. The ledger, allocation (oldest invoice first, reversal
+puts paid amounts back), idempotent billing (one line per lease, month and charge; one invoice line per meter charge),
+unique M-Pesa codes and bank fingerprints already held. The gap was reporting: water and electricity (metered or fixed)
+were lumped with garbage, service charge and late fees as "other".
+- `ChargeType.bucket()` is the one rule: rent, deposit, utilities (WATER, ELECTRICITY, METERED_WATER, METERED_ELECTRICITY)
+  or other. The income pack, P&L, cash flow, owner statement, their PDFs and CSVs now show **Utilities** between Rent and
+  Other charges; income = rent + utilities + other + not yet applied, and every payment's split adds back to the payment.
+- Tenant statement (staff account page and tenant portal): an invoice row lists its lines (rent, water, fixed charges, fees)
+  and a summary under the table gives rent, water and electricity, other charges, other debits and credits, which add up
+  to the closing balance.
+- `reports/tests/test_consistency.py` follows one month (rent, fixed charge, metered water, two payments, an expense, a
+  reversal) through the invoice, ledger, statement, income pack, P&L, cash flow and owner statement.
+- Known by design: a statement's month-end balance is as at that month's end, so a payment reversed later changes the
+  account but not the earlier month's balance line (collected does change).
+
+### D-184 — Chase unpaid subscriptions by phone, and tell chosen staff when an account lapses or is paid — ACCEPTED (2026-10-19)
+For 10 pilot landlords a call recovers more than any automation, and a manager who suddenly cannot save anything blames the app.
+- **Chase list** at `/console/organizations/chase/` (`console/chase.py`): every past-due or read-only organization, soonest to
+  lapse first, then already lapsed. Shows owner, phone, amount owed, days overdue, days left, dispute and extension, with Call,
+  WhatsApp (prefilled message) and Email buttons.
+- **Staff notices**: when an organization goes read-only or is paid again, the owner(s) and the roles the owner picked on the
+  Subscription page ("Who is told if the subscription lapses", `Organization.lapse_notify_roles`) get an in-app message
+  (`subscription_access`, mandatory). Tenants are told nothing. Roles must be the organization's own non-owner roles.
+- Meter reminders now skip read-only organizations; incoming M-Pesa rent still posts on a read-only account (tested).
+- `subscriptions/tests/test_lifecycle.py` follows one organization through trial ended, past due, day 13, lapsed and paid, checking
+  banner, messages, blocked writes, unlock and the chase list at each step.
+
+### D-185 — Months missed during a lapse are billed when the subscription is paid — ACCEPTED (2026-10-19)
+The daily billing job skips a read-only (lapsed) organization, and on return it billed only this month and next, so a lapsed
+month was never invoiced and rent, utilities and arrears reports stayed short for good.
+- `billing/invoicing.py` `missed_months(org, today)`: from the month of the organization's latest `organization.read_only`
+  audit event (within a year) to last month. `run_scheduled` bills those months with `notify=False`; billing is idempotent, so
+  it only adds what is missing and tenants are not messaged about old months. Meter charges already catch up.
+- Reports stay live while lapsed (payments still post and show at once); the lapsed banner now links to the Subscription page.
+- Tests: `reports/tests/test_lapsed.py` (reports load, payment shows, adds refused, exports, pay link, missed month billed),
+  `subscriptions/tests/test_lifecycle.py` (online payment unlocks the open session), `payments/tests/test_full_recovery.py`,
+  `reports/tests/test_owner_money.py`.
+
+### D-186 — Articles are written and published from the console, with topics, dates and safe formatting — ACCEPTED (2026-10-19)
+The nine public articles were Python data in `growth/pages.py`, so adding one meant a code change and a deploy.
+- `growth.Article` (migration 0006) holds slug, title, summary, body, topic (rent, utilities, people, records), author,
+  featured, is_published and published_at; migration 0007 loads the nine existing articles so nothing disappears.
+  `pages.ARTICLES` is removed.
+- Body is plain text with a few marks (`##`, `###`, bullets, numbers, `**bold**`, `*italic*`, links, `>` note).
+  `growth/articles.py render()` escapes everything first and only then adds tags, so an article cannot carry a script;
+  only `http(s)://` and `/` links are kept.
+- Console: new `articles` capability (owners and analysts), pages `/console/articles/`, `new/`, `<id>/`, `<id>/preview/`.
+  Save keeps a draft, Publish dates it, Take off the site makes it a draft; a published article cannot be deleted
+  (unpublish first). Drafts preview inside the console only; the public URL gives a 404. All writes are audited.
+  Existing console seats that were saved with a fixed capability list need "Articles" ticked on the Team page.
+- Public: topic filter on `/articles/`, author and dates, contents list for long articles, WhatsApp and copy-link
+  share, related articles. SEO: Article JSON-LD gets `datePublished`/`dateModified`, the sitemap gets `<lastmod>`,
+  and llms.txt / llms-full.txt read the table, so a new article is found without a deploy.
+- Tests: `growth/tests/test_articles.py`, three tests appended to `console/tests/test_console.py`.
+
+### D-187 — Standard conditions on the tenancy agreement, editable wording, and a blank agreement to print — ACCEPTED (2026-10-19)
+The agreement PDF used to be a summary of the lease record plus a free-text box, with no clauses. A landlord who prints and signs it needs real conditions, and the owner did not want a public generator (the Bomahut idea), only to advance what is already there.
+1. **Standard conditions** (`leases/clauses.py`): thirteen plain-language Kenyan residential clauses (use, rent, deposit, utilities, care, repairs, sub-letting, entry, quiet enjoyment, ending, default, notices, law). They print as section 5 of every agreement PDF, including the e-signature copy, and the lease's own terms box becomes section 6, "Special conditions". Markers `{rent}`, `{due_day}`, `{grace_days}`, `{deposit}`, `{notice_days}`, `{landlord}`, `{property}`, `{unit}` are filled from the lease so a clause never disagrees with the record. Nothing else in the text is evaluated.
+2. **Owner's own wording**: Settings > Agreement wording (`/leases/agreement/wording/`, needs `organization.manage`) stores `Organization.agreement_clauses` (migration 0033). One clause per blank-line-separated block, first line the heading; unknown markers and over-long text are refused; saving the unchanged standard text, or "Use the standard wording again", stores nothing. Audited as `organization.agreement_wording`. Changes apply to agreements printed from then on.
+3. **Blank agreement** (`/leases/agreement/blank/`, `leases.view`, login required, not public): the same clauses with blank lines for names, ID numbers, unit, dates, rent and deposit, a page of special-condition lines, and signature and witness lines. Linked from the Leases page and the wording page.
+4. The text is a template for an advocate to review, and the PDF says so. The owner has not supplied approved wording yet; replacing the defaults only needs the wording page or an edit to `default_text()`.
+5. Not done: separate commercial and land variants, a house-rules page, and print forms for key handover. Tests: `leases/tests/test_paperwork.py`.
+
+### D-188 — Student hostels: rooms and beds, billing per bed or per room, semesters, parent as payer — ACCEPTED (2026-10-19)
+The owner asked for hostels to be chosen at registration, billed per bed and, for some rooms, per room. Phases 1 and 2 only.
+1. **Registration**: `Organization.Type.HOSTEL` ("Student hostel") with its own words (Students, Room or bed, Hostel, Booking, Hostel fees) in `accounts/vocabulary.py`. It bills rent like a landlord. A new hostel's property form fixes the category to `Property.Category.HOSTEL`. The setup checklist already follows the vocabulary.
+2. **Rooms and beds**: new `properties.Room` (code, optional block, gender F/M/any, `let_whole`, capacity). Beds are ordinary `BED_SPACE` units (`R101-A`, payment reference `PROP-R101-A`); a room let whole is one `HOSTEL_ROOM` unit. `Unit.room` links them. A room is its own table, not a container unit, so vacancy and occupancy reports count only lettable units. Services in `properties/hostel.py` (`add_rooms` all-or-nothing in an entitlements batch, `update_room` to change gender or add beds, `archive_room` blocked while a bed has an open lease). Pages: `/properties/<id>/rooms/` (room map), `rooms/new/`, `rooms/<id>/`; 404 for other organization types. Migrations accounts 0034, leases 0007, tenants 0004, properties 0011.
+3. **Billing both ways without new lease logic**: a lease per bed, or one lease on the room with several students (`LeaseTenant`). `Lease.Frequency.SEMESTER` is one invoice for four months counted from the start month (`MONTHS_PER_PERIOD`); monthly leases serve instalment payers. The hostel lease form is worded for fees, defaults to semester and a 14-day notice.
+4. **Students and parents**: tenant fields `student_number`, `institution`, `course`, `year_of_study` (hostel forms and detail page only); the emergency contact is shown as "Parent or guardian". Creating a hostel lease, or adding a student to it, adds that phone as a `LeasePayer`, so M-Pesa from the parent matches the booking.
+5. Not done (phases 3 and 4): public booking link, waitlist, term rollover, hostel reports. Next.js screens not touched. Tests: `properties/tests/test_hostel.py`.
+
+### D-189 — Hostel phase 3: public booking page, waitlist, term rollover — ACCEPTED (2026-10-19)
+Builds on D-188 using the existing prospects CRM rather than a new system.
+1. **Booking page** `/stay/<token>/` (public, noindex, rate-limited, honeypot, same as the vacancy link). Staff with `units.manage` turn it on or off on the room map (`Property.booking_token`, a new link replaces the old; audited). It shows free beds by gender, "from" prices for a bed and for a whole room, and a form (name, phone, gender, bed/room/either, college, move-in date, message). Whoever turned it on is the contact and gets the enquiries.
+2. **Waitlist**: an enquiry makes a `Prospect` (new fields `gender`, `waitlisted`). If no free bed suits (right gender, bed or whole room; `hostel.free_beds`) the student is waitlisted and told so; the same phone asking again joins the same prospect. `/properties/<id>/waitlist/` lists them longest first with how many suitable beds are free now; each links to the usual prospect page (hold, viewing, convert). Automatic SMS offers came next, see D-190.
+3. **Term rollover** `/properties/<id>/rollover/` (`leases.draft`): tick the students who stay, give the new start and end dates and optionally a new fee; each gets an ordinary renewal draft (`renew_lease`: same bed or room, students, guardian payers, charges). A lease that already has a draft is skipped. Staff then activate the drafts as for any renewal; there is no bulk activate.
+4. Not done: automatic SMS to waitlisted students when a bed frees, bulk activation, hostel reports (phase 4), Next.js screens. Migrations properties 0012, prospects 0002. Tests: `properties/tests/test_hostel.py`.
+
+### D-190 — Hostel waitlist: text the first waiting student when a bed frees up — ACCEPTED (2026-10-19)
+Follows D-189. The daily billing job (`billing.jobs.run_daily`) now calls `prospects.services.offer_free_beds`. For each hostel it goes down the waitlist, oldest first, and texts (notification type `hostel_bed_free`, SMS to the bare phone, the hostel's own sender name) each student whose gender and bed-or-room choice has a free bed (`hostel.free_beds`). A student already offered within 3 days counts against the free beds of their gender, so one bed is never offered to two people. Each student is texted once (`Prospect.offered_at`, dedupe key per prospect); when the offer lapses the prospect stays on the waitlist for staff to call. The SMS names the contact (whoever turned the booking page on) and the 3 days; a note and an audit event are written. Anyone with a held unit leaves the waitlist. Not done: the student cannot accept by replying, and nothing is held for them while the offer is open. Migration prospects 0003. Tests: `properties/tests/test_hostel.py`.
+
+
+### D-191 — True profitability: costs grouped by kind, management fees, and what is still owed, on one page — ACCEPTED (2026-10-19)
+Most of the list (rent billed vs collected, vacancy loss, NOI) already existed in `/reports/performance/` (D-164) and the profit and loss. What was missing was telling salaries from security from insurance, and a profit figure that includes management fees and tenant balances.
+1. **Kind of cost on every expense category** (`ExpenseCategory.cost_class`): maintenance and repairs, caretaker and staff salaries, security, garbage and cleaning, insurance, water and electricity bills, property management fees, other. Default categories carry one; the migration sorts existing categories by what their name says (expenses 0004). Landlords change it on the Categories page (audited `expenses.category_class`); new categories ask for it.
+2. **`/reports/profitability/`** (`reports/profitability.py`, nothing stored, reuses `performance()` and `finance`): potential rent, empty units, billed, collected; cash income split rent / water and utilities / other; approved expenses by kind of cost; the management fee worked out with `statements.fee_for` for properties that have one; net operating income and margin; water and utility income less the water and electricity bills; owed by tenants today and the overdue part (aged receivables); a month-by-month chart; every property ranked by NOI. CSV and Excel via the usual export (needs `reports.export`).
+3. Net operating income here is the profit and loss's figure less the computed fee. A landlord who also records the fee as an expense counts it twice; the page says so.
+Tests: `reports/tests/test_profitability.py`; added to the lapsed-landlord and query-count sweeps.
+
+### D-192 — Hostel report at /reports/hostel/ — ACCEPTED (2026-10-19)
+Phase 4 of D-188. One page per hostel organisation (404 for others; listed in the report centre only for hostels), needing `reports.view_financial`. For each hostel property: beds taken and free (by women's, men's and mixed rooms), what the current term's invoices have billed and collected, overdue invoices with the student and the parent or guardian's name and phone (names only with `tenants.view`), the waitlist by gender with how many can be offered a bed now, and bookings ending in the next 60 days with a link to Next term. CSV and Excel download need `reports.export`. Nothing new stored (`reports/hostel.py`). Tests: `reports/tests/test_hostel_report.py`.
+
+### D-193 — Activate next-term renewal drafts in one go — ACCEPTED (2026-10-19)
+Follows D-189. The Next term page (`/properties/<id>/rollover/`) now also lists the hostel's renewal drafts with tick boxes and an "Activate the ticked drafts" button (needs `leases.activate`; people without it see the list only). Each draft is activated in its own transaction through the normal `activate_lease`, so one that fails (for example the bed is taken) is reported and the rest still go through. Nothing is activated unless ticked. `leases/rollover.py` (`drafts`, `activate_drafts`); test in `properties/tests/test_hostel.py`.
+
+### D-194 — Property health score, announcement templates, receipt QR check, monthly report email — ACCEPTED (2026-10-19)
+From a list of ideas for making the product stand out; only what the app did not already have was built.
+1. **Property health score** (`reports/health.py`): a score out of 100 per property on the Property scorecard, from rent collection 30%, occupancy 25%, arrears 20%, maintenance 15% and expense control 10% (our weights, shown on the page). A part with no records is left out and the rest re-weighted, so missing data never lowers a score; any gap marks it provisional, and if less than half the weight is measurable no score is given. The breakdown per property is on the page and the score is in the CSV/Excel export.
+2. **Announcement templates** (`notifications/announcements.PRESETS`): water interruption, power outage, planned repair, tenants' meeting, emergency, inspection, as buttons on the new-announcement page. They fill the box with [square-bracket] blanks; the form refuses to send while any remain.
+3. **Receipt QR check**: new receipts carry a QR code (`core.brand.Stub.qr`) opening `/rc/<token>/`, a public, rate-limited, noindex page showing only what is printed on the receipt (number, issuer, date, method, amount) and whether the payment was later reversed. No tenant, unit or balance. Receipts issued before this have no QR. Invoices do not have one yet.
+4. **Monthly report email** (`reports/monthly.py`, job `monthly_reports`, cron on the 1st at 07:00): to each active member who can see financial reports, last month's figures in three labelled parts (what the records show, what stands out, suggested next steps). Once per member per month (`reports.MonthlyReportSent`); `Membership.monthly_report` is turned off by the signed link `/mr/<token>/` in the email. Migrations accounts 0035, reports 0004. Not done: a settings toggle inside the app.
+5. **Invoice QR check**: issued (not draft) invoices carry a QR opening `/ic/<public_id>/`, a public, rate-limited, noindex page with the number, issuer, issue and due dates, total, and whether it was cancelled. No tenant, unit or balance. The route-sweep test lists it as keyed by a random id.
+6. **Finishing touches**: each member turns their own monthly report on or off on the Settings page (`accounts:monthly_report_pref`, managers see that page; everyone else has the stop link in the email). Each health part on the scorecard links to the records behind it, filtered to the property (arrears to the call list, occupancy to units, maintenance, expenses), only when the member may open that page.
+Tests: `reports/tests/test_new_reports.py`, `test_monthly.py`, `notifications/tests/test_announcements.py`, `test_triggers.py`.
+
+### D-195 — Hostel room map and waitlist as Next.js screens — ACCEPTED (2026-10-19)
+Follows D-168 and D-188/189. `/properties/<id>/rooms/` and `/properties/<id>/waitlist/` are drawn by the Next.js app (`RoomMapView`, `WaitlistScreen`), reading `/properties/web-api/hostel/<id>/rooms/` and `.../waitlist/` (`properties/web_api.py`). The room map also turns the booking page on or off through the same JSON address. A member without the capability (units.view, units.manage, prospects.view) or a landlord organisation gets a 404 from the JSON. The Django pages are kept for now (they still answer in development and in tests); they are removed once the Next.js ones are checked in a browser. The rest moved in D-196. `tsc` and `eslint` pass; the screens have not been looked at in a browser. Tests: `properties/tests/test_hostel.py`.
+
+
+### D-196 — Hostel Add rooms, Edit room, Next term and report as Next.js screens — ACCEPTED (2026-10-19)
+Completes D-195. `/properties/<id>/rooms/new/`, `/properties/rooms/<id>/`, `/properties/<id>/rollover/` and `/reports/hostel/` are drawn by the Next.js app. The three forms read their fields from the Django forms (`properties.web_api._describe`: kind, label, help, choices, start value), so validation stays in Django and one TS component (`HostelFields`) draws them; errors come back as 422 with `fields`, and general form errors are joined into `message`. After a save the screen goes to the room map with `?done=added|updated|archived`. Next term drafts and bulk-activates (D-193) in one screen. The report reads `/reports/web-api/hostel/` (404 for non-hostels or without reports.view_financial; CSV link only with reports.export). New routes are in `OWN_CHECK`. The Django pages stay as a fallback until the Next.js ones are checked in a browser. `tsc`, `eslint` and `next build` pass; not looked at in a browser. Tests: `properties/tests/test_hostel.py`, `reports/tests/test_hostel_report.py`.
+
+
+### D-197 — Shared expenses: one payment split across several properties — ACCEPTED (2026-10-20)
+
+A payment that serves several properties (caretaker, security) is recorded once at `/expenses/new/shared/` and stored as one `Expense` per property, linked by `split_key`, with `split_total` and `split_rule`. Rules: equal, by unit count, or typed percentages (must total 100). Shares add up exactly to the amount paid (last share takes the rounding remainder), so cash totals stay right and every property report, scorecard, owner statement and the monthly email already carry its own share with no report changes. The split is fixed at recording. Approve, reject and void apply to all shares together and need `expenses.approve` on every property; shares cannot be edited (void and record again). Reference and receipt stay on the first share. Needs `expenses.submit` on every property. Migration `expenses/0005_expense_split`. Tests in `expenses/tests`.
+
+### D-198 — What stops when a landlord does not pay, after how many days, with a per-landlord override — ACCEPTED (2026-10-20)
+Read-only at day 14 (D-040) was the only lever. SMS, WhatsApp, email, photo scans and the assistant cost us money or reach other people on the landlord's behalf, so each now stops on its own day, and the owner can change every number for everyone or for one landlord.
+- **Platform defaults** (`BillingPolicy`, edited at `/console/control/late-payment/` or in Django admin): `stop_sms_days` 7, `stop_whatsapp_days` 7, `stop_scans_days` 7, `stop_assistant_days` 7, `stop_email_days` 14. Days count from the due date (`past_due_since`). Empty = never stops.
+- **Per-landlord override** (`Subscription.late_overrides`, JSON; owner only, with a reason, audited as `console.late_rules`): on the organization page under "If this landlord pays late". Empty box = follow the platform, a number = their own days (0 = stop at once), `never` = never stops. A lapsed account with an own "never" still sends.
+- `subscriptions.services.blocked(org, key)` is the one check. It is used by `delivery.sms_available`, `whatsapp_available`, `email_available` (also re-checked in `send_one` for messages already queued), `meters.ocr.available` / `read_photo`, `ai_assistant.services.ask`, and the tenant assistant (`leases_for`, `portal_caller`: tenants simply see it off).
+- **Never stopped**: login codes, invitations, our invoices and reminders (`SYSTEM` mailer and platform SMS), in-app notices, viewing and downloading records, paying us, and rent tenants pay (it still posts).
+- **A Platform Admin's grace extension or an open invoice dispute holds all of this off**, the same as it holds off the lapse (`held_off`).
+- The banner lists what is paused ("Paused until you pay: SMS"), and the overdue reminder says which things stop on which day.
+- **Reminders to the landlord (dunning)** now go by email and SMS (platform sender, never charged to them), once per channel (`SubscriptionReminder.channel`), on the existing reminder days. `dunning_email` / `dunning_sms` are platform switches with a per-landlord override. WhatsApp reminders are not built: they need an approved template.
+- Migration `subscriptions/0012_late_payment_rules`. Tests: `subscriptions/tests/test_late_rules.py`.
+
+
+### D-199 — Financial year setting — ACCEPTED (2026-10-20)
+
+`Organization.financial_year_start_month` (1 to 12, default 1 = calendar year), set on the Settings page under Billing. The report period presets (`reports/periods.py`) take it: "This year" and "Last year" run from that month for twelve months, and quarters count from it (a July year has Jul-Sep as its first quarter). The payments list "this year" shortcut follows it too. The annual income tax pack (`reports/income.py`) stays on the calendar year because individual landlords file on it. Month-by-month charts are unchanged. Migration `accounts/0036_financial_year`. Tests: `reports/tests/test_operations.py`, `accounts/tests/test_views.py`.
+
+### D-200 — SMS policy: free from the start, a few free then paid, or paid; own account and own sender name switchable — ACCEPTED (2026-10-20)
+
+Option 1 (the landlord buys SMS credit from us on the Subscription page, by M-Pesa or Paystack) was already built on the SMS wallet (D-060 item 10, D-142). This adds the choices around it. **SMS policy** (one row, Django admin) sets what a new organization's wallet starts as: Sponsored (we pay, up to a monthly cap), Prepaid (pays from the first SMS) or Bundled (monthly allowance, then the wallet), and **free welcome SMS**: a number of parts given once as wallet credit (`SmsWalletEntry.Kind.WELCOME`, worth that many parts at `SMS_PRICE`) to Prepaid and Bundled starts, so "100 free, then top up" is Prepaid with 100 welcome parts. The wallet is made on first use (`services.ensure_wallet`), so existing wallets keep their terms; defaults (Sponsored, 300 parts, no welcome credit) match what happened before. The two do-it-yourself ways are switched in the same policy for everyone and per organization under SMS wallets (`SmsWallet.own_account`, `own_sender`: follow the platform / allowed / not allowed): option 2, the organization's own Africa's Talking account (`own_accounts.usable_sms`, save and test refuse when off; saved details are kept and used again when switched back on) and option 3, its own sender name (`sender_ids.request_name` refuses, `sender_id_for` falls back to the platform name, and the Subscription page hides the card). The Messages > SMS page explains when the own account is off and points to the top-up. Migration `subscriptions/0013_sms_policy`. Tests: `subscriptions/tests/test_sms_policy.py`.
+
+### D-201 — Sections where recording something new pauses after N days overdue — ACCEPTED (2026-10-20)
+
+Extends D-198. Nine sections (`subscriptions.services.SECTIONS`: expenses, meter readings and utilities, inspections, documents, repairs, new properties and units, new tenants/leases/prospects, invoicing, payments recorded by hand) each have a `BillingPolicy.stop_<section>_days` (empty = never; defaults 10 days for expenses, meters, inspections, documents, properties; the rest off). Edited in Django admin and at console "Late payment"; each landlord can override per section on its console page (same `late_overrides`, reason + audit). Enforced in `accounts.permissions.can()`: a capability that is not read-only-safe is denied when its module is paused (viewing, exports, subscription pages and M-Pesa auto-posted rent are untouched). Extensions and disputes hold it off like D-198; paying lifts it at once. Migration `subscriptions/0014_paused_sections`. Not done: trial dedupe, WhatsApp dunning.
+
+### D-202 — No second free trial for the same phone number or email — ACCEPTED (2026-10-20)
+
+`subscriptions.services.repeat_signup(org)`: when another organization has the same phone or email (billing contact, or its creator's sign-in), the new organization's trial is `BillingPolicy.repeat_trial_days` long (default 0, editable in Django admin) instead of `trial_days`. The owner can still grant days with the console "extend trial" control. Migration `subscriptions/0015_repeat_trial_days`.
+
+### D-203 — Tenants join the portal themselves, no invitation link needed — ACCEPTED (2026-10-20)
+
+Some owners never send the invitation (D-055), so tenants could not get in. The invitation never added security: accepting already required a verified phone equal to the tenant record's phone. So that proof now opens the door on its own.
+1. **Self-claim** (`portal.services.self_claim`, `claimable_tenants`). A user whose verified phone equals `Tenant.phone` gets a `TenantAccount` for every such record that is not archived, in an organization not archived, on a lease past draft, with the organization's `tenant_self_signup` on, and that has never had a portal account. Audited as `portal.self_claim`. It runs after phone verification, after every login (also after the two-step step), and when a signed-in user with no seat opens the home page, so a tenant added to a lease later is linked at the next login. Failures at login are logged and never block it.
+2. **Revoking sticks.** A record whose account staff revoked is not self-claimed again; staff invite it again (D-055) and the tenant accepts. Another user's live account is never taken over.
+3. **Owner switch.** `Organization.tenant_self_signup`, on by default, in Settings under "Tenant portal" (migration `accounts/0037_tenant_self_signup`). Off means invitations only.
+4. **Tenant sign-up** at `/register/?as=tenant` (link under the login form). The email is optional, because the phone is the login. One SMS code confirms the phone; the password chosen on the same form is the everyday login, so codes are not sent at each login (they go out only for phone verification and password reset). A tenant whose phone matches no record lands on `/my/no-match/`, which says to ask the landlord to correct the number.
+5. **Not done:** a printable per-property QR link, automatic invitation when a lease is activated, a bulk "Invite all" on the tenants list.
+
+Tests: `portal/tests/test_self_claim.py`.
+
+### D-204 — Starter questions in the assistant chat, edited in Django admin — ACCEPTED (2026-10-20)
+An empty NyumbaPMS AI chat (floating panel and the Next.js Ask screen) shows suggested questions as buttons; pressing one asks it. They are `ai_assistant.StarterPrompt` rows (text, order, shown), the same for every organization, edited in Django admin ("Starter questions"); migration `0005_starter_prompts` seeds five. `/ask/web-api/` returns them as `starters`. Not done: the old Django Ask page does not show them.
+
+### D-205 — Closing loopholes in the late-payment rules — ACCEPTED (2026-10-20)
+
+(1) The daily invoicing and late-fee jobs skip an organization whose "Invoicing" section is paused (D-201); missed months are caught up once it pays. (2) An overdue landlord with an open, undisputed invoice cannot choose the free plan, which voided the debt; they pay first. (3) `recheck_trial`: changing the billing phone or email onto one already used by another organization cuts a running trial back to `repeat_trial_days`; Checked and unchanged: every write route, including API and web screens, goes through `accounts.permissions.can()`, which already enforces the lapse; only a Platform Admin can mark an invoice disputed. Still open: new phone + new email + no PIN gets a full trial; tenant-facing actions (portal, USSD, M-Pesa posting) are deliberately not paused.
+
+### D-206 — The Platform Owner can change a landlord's sign-in phone number and email — ACCEPTED (2026-10-20)
+
+For a landlord who lost the phone number they sign in with. On the organization's console page (owner only, "Lost phone number or email"), pick the person, enter the new phone and/or email and how you checked it is them (`console.services.change_login_contact`). The new phone is unverified, so the landlord confirms it with a code at the next sign-in; a new email is unverified too. Every session of that account ends, the old number gets an SMS and the old email a message (an email is also sent to the address on file when only the phone changed), and the audit trail keeps the reason. Email already worked either way: sign-in and password reset accept phone or email, and the reset code goes to the email on file. Not done: authenticator (TOTP) reset for someone who lost that device too.
+
+Addendum to D-200 (same day): closing the leaks around it. An SMS sent outside the queue (a signing link and code, a tenant portal invitation, an owner portal invitation) goes through `notifications.delivery.send_sms_for`: checked against the organization's credit, sent through its own account when it has one, charged to the wallet otherwise (`subscriptions.services.charge_parts`, entry note names what it was), with the wallet row locked from check to charge. A signing code is charged but never blocked. Prepaid and Bundled need one whole part (`SMS_PRICE`) of credit to start a message. The free welcome SMS are once per person (same creating user or billing phone), and the policy's `welcome_when` can hold them back until the first top-up so a made-up account gets nothing. Login-code SMS: 10 a day per phone across all purposes, and a platform ceiling `OTP_SMS_DAILY_LIMIT` (3000) a day, after which codes by SMS pause (email still works) and an error is logged. Migration `subscriptions/0016_sms_welcome_when`. Tests: `subscriptions/tests/test_sms_policy.py`, `accounts/tests/test_otp.py`.
+
+D-206 addendum: the same console section has a tick box "Also reset two-step login", for a landlord who lost the authenticator app too. It calls `accounts.mfa.admin_reset` (removes the app and recovery codes, ends sessions); the landlord sets it up again, as the organization may require. It can be used alone, without changing phone or email.
+
+### D-207 — Provider keys and contact details typed in Django admin, not the environment file — ACCEPTED (2026-10-20)
+
+The owner should not need a developer or a server login to put in Africa's Talking, WhatsApp, OpenAI, Paybill or Paystack keys. Django admin has a **Platform settings** page (`core.PlatformSetting`, `core/platform_config.py`): one form grouped by provider (SMS, WhatsApp, assistant and scans, subscription payments, phone alerts, contacts and legal details). A value saved there beats the environment; blank falls back to the environment and then to the default. Secrets are stored encrypted (`core.crypto`), shown only as "set (ends 1234)", kept when the field is left blank and removed with the Clear tick. The form refuses a provider that is chosen but incomplete (Africa's Talking without username, key and callback token; WhatsApp without its four values; Daraja without secret, passkey and shortcode; callback tokens under 32 characters; Paystack keys without `sk_`). Saves are audited by key name only, never value. Only a superuser reaches the page.
+
+How it works: `platform_config.install()` (called from `CoreConfig.ready`) makes `settings.NAME` answer from the saved values for the registered names, so no call site changed. `override_settings` still wins. Values are cached per process for 20 seconds, so a change reaches every gunicorn worker within that time without a restart. Nothing is read from the database while pytest runs unless `platform_config.ENABLED` is turned on. A saved `PLATFORM_PAYBILL` also serves as the Daraja shortcode when that is blank.
+
+`config/settings/prod.py` no longer stops the server from starting when SMS, WhatsApp, Daraja or Paystack values are missing; `manage.py launch_check` reports what is still missing. Still in the environment file because the server needs them before the database is up: `SECRET_KEY`, database, Redis, mail logins, `FIELD_ENCRYPTION_KEYS`, Sentry, PostHog, `ALLOWED_HOSTS`, `SITE_URL`. Settings read once at start-up (a module constant) need a restart; none of the registered ones are. Tests: `core/tests/test_platform_config.py`.
+
+### D-207 — Repeat free trials also caught by browser and network address — ACCEPTED (2026-10-20)
+
+Extends D-202. A sign-up stores a long-lived device cookie (`npms_dev`, set by the onboarding view) and a salted hash of the network address on the organization (`signup_device`, `signup_ip_hash`; migration `accounts/0038_signup_marks`). A new organization from a browser that already made one gets the repeat-sign-up trial (`BillingPolicy.repeat_trial_days`, default 0). The network address counts only from the third organization within 30 days (`SAME_NETWORK_ORGS`, `SAME_NETWORK_DAYS`), because offices, cafes and phone companies share addresses. Clearing cookies and switching network still gets a full trial; the owner can always grant days by hand. Also: `notifications/0027_sync_type_choices` brings the notification-type choices in line with the models.
+
+### D-208 — First-run home: welcome, guided setup path, analytics only when real — ACCEPTED (2026-10-21, not browser-checked)
+
+1. A new account (`started` false, required setup steps unfinished) sees a welcome instead of the usual home: a progress ring, one big button for the next step, the whole setup path as cards (icon, hint, minutes, done/next/later), and a "what appears here next" panel that names the figures and charts without showing any numbers. Quick actions, figures and charts are hidden until there is data; "Today" shows only if tasks exist.
+2. `/web-api/home/` checklist now also sends `next`, `minutes`, and each step's `hint`, `icon`, `minutes` (already on `accounts.setup.Step`). Roles without `properties.manage` still get no checklist.
+3. Once something is billed, paid or let, the full dashboard returns on its own, with a "Finish setting up" card (progress bar, hint for the next step) until the required steps are done.
+4. `components/home/Onboarding.tsx` is new; `btn-primary` and the main quick action now use `--on-primary` so the label stays readable in dark mode.
+
+### D-210 — "Try the demo": a read-only sample landlord with 74 units, no sign-up — ACCEPTED (2026-10-21, not browser-checked)
+
+1. A "Try the demo" button (landing hero, final call to action, top bar, Book a demo page) posts to `/demo/try/` (`growth:demo_enter`, 30 per hour per connection). It signs the visitor in as one shared user (`Demo Landlord`, `+254700000000`, no usable password, no two-step, not staff) in the organization marked `Organization.is_demo` (migration `accounts.0039`). A signed-in real landlord who presses it keeps their own session. With no demo organization yet it sends the visitor to the Book a demo page.
+2. Read-only: `accounts.demo.DemoReadOnlyMiddleware` (after the messages middleware) refuses every POST/PUT/PATCH/DELETE from a demo session except sign-out. A browser form gets a message and a redirect back; a script gets 403 `demo_read_only`. This covers the Django pages, `/web-api/` and the Next.js screens alike, and the assistant (which costs money).
+3. Nothing is sent: `notifications.delivery.notify` returns `None` for a demo organization, so no SMS, WhatsApp, email or in-app message is made, including by the daily jobs. Staff sessions keep the normal idle limits (D-107). The subscription's trial runs ten years so it never lapses.
+4. Both the Django `base.html` and the Next.js shell (`/web-api/session/` notices) show "You are looking at a demo with sample data" with a link to start the free trial.
+5. `manage.py seed_public_demo` (a job, `reset_public_demo`, weekly on Mondays at 04:30 in `deploy/crontab`, late after 8 days) builds a fresh organization through the real services: 4 properties (Riverside Apartments in Kilimani, Kahawa Court in Ruiru, Moi Avenue Plaza in the CBD, Greenview Gardens in Nakuru), 74 units, 70 leases, 70 tenants, deposits, ten months of invoices and payments with prompt, late, partial and stopped payers, 12 repairs and about 230 expenses. Dates are worked out from today. Only after it succeeds is the previous demo organization archived; a failed run archives itself and leaves the old demo. It takes about 90 seconds. It reuses `seed_demo` (now loads its data from class attributes).
+6. **More like the real thing** (same day): the demo has 74 units and five sample staff (owner, manager, accountant, leasing agent, caretaker; the last two see only their properties). A banner row "Look around as:" in both shells switches person through `/demo/as/<key>/` (`growth:demo_as`), no password involved. "Start your free trial" now goes to `/demo/leave/` (`growth:demo_leave`), which signs the demo session out and sends the visitor to register (the old link pointed at register while signed in, which bounced home). The seed adds 43 meters with five months of readings (approved, one spike left for review at two properties), 14 prospects across every stage, about 530 Paybill messages (matched, unmatched and flagged), and in-app notifications plus a message history for tenants. All of it is DELIVERED, SENT or FAILED, never QUEUED, so `send_due_messages` cannot send it. Pages that hold secrets or cost money (`demo.BLOCKED_PREFIXES`: subscription, API keys, webhooks, two-step, invite, M-Pesa settings, send-by-channel pages, assistant, account and security, data export, console) are closed to a demo session: a browser gets a message and a redirect, a script gets 403 `demo_read_only`.
+7. Not done: water readings, late fees and the owner portal have no sample data; archived demo organizations are kept (about 2,000 rows a week) and can be purged by hand later.
+
+### D-209 — Home: rent due soon, cost of empty units, cash by method — ACCEPTED (2026-10-21, not browser-checked)
+
+Three additions to the financial home, all from existing queries and shown only with the figures (so never to a new account, and never to roles without `dashboard.view_financial`).
+1. **Falls due soon**: open invoices due in the next 7 days and not yet overdue, with the unpaid amount; needs `invoices.view`; links to invoices.
+2. **Empty units**: how many units stand empty and the asking rent they stand for per month (`metrics.vacancy_loss`); units with no asking rent are counted separately, not priced.
+3. **Cash received this month** by method with shares (`metrics.cash_by_method`).
+`/web-api/home/` gains `due_soon`, `vacancy`, `methods`. Hidden when empty.
+4. **Pace**: cash received so far this month against the same days of last month (only in the current month; the percentage is left out when last month had none). **Left after expenses**: cash received this month less approved expenses paid in it; needs `expenses.view`. `/web-api/home/` gains `pace`, `net`.
+5. **Remind them** (built on the announcements flow, so it keeps its review step): a "Remind them" button on the "falls due soon" card opens `/messages/announcements/new/?template=rent_due&days=7`. New audience filter `Audience.due_within` (open invoice due in the next N days and not yet overdue; needs `invoices.view` like "owing"), new "Rent reminder" preset (staff fill in `[date]`), and a checkbox on the form. Staff see who gets it, the SMS cost and who is skipped, then press Send; the nonce keeps a double click from sending twice. Nothing is sent from the home page itself. Button shown only with `messages.send_bulk`; `/web-api/home/` `due_soon.remind_url`.
+
+### D-212 — Bank statements: saved column maps and photo/scan reading — ACCEPTED (2026-10-21; Next.js screens added in D-215)
+
+Two additions to D-211. (1) A bank statement whose header names we do not know is kept for 24 hours as an import with status MAPPING (raw bytes in `StatementImport.raw`, emptied on use, expiry or purge). `/bank/import/<id>/columns/` shows the file's headers and a few rows; the landlord picks date, money in (or amount), money out, description, reference and balance once. The choice is saved per payment account (`StatementFormat`) and tried before the built-in names next time, so the same bank's next statement needs no questions. (2) A photo, screenshot or scanned PDF is read with the meter-photo model (`banking/scan.py`, `meters.ocr`, Scan.Kind.STATEMENT, counts against the monthly scan limit, at most 4 pages). Safety: the landlord must tick "This is a photo or scan" (a picture without it is refused with an explanation); rows with unclear digits or that disagree with the statement's own running balance (`parsing.unreconciled`) are left out with the reason; the import is marked `source=SCAN` and `matching.process(confirm=False)` only suggests a lease, so money from a photo is never confirmed without a person accepting it in the inbox. Tests: `banking/tests/test_map_and_scan.py`. Next: Next.js screens (D-168 pattern) and `/web-api/` endpoints for the bank pages.
+
+### D-213 — Home: browser check fixes and "worth a look" nudges — ACCEPTED (2026-10-21)
+
+1. **Browser check** (Edge via Playwright, new account and a 74-unit demo account, phone 390, tablet 820, desktop 1366, light and dark): fixed four layout bugs. Figures with large amounts ran to the card edge at desktop width (`.stat-value` now scales and clips); the home grid's single column grew past the phone width because of a long row (grid tracks are now `minmax(0, 1fr)`, 476 px wide down to 390); the due-soon card's text lost its stacking when it held a button (`.signal > span:not(.signal-icon)`); the signals grid is two columns at most. Not covered: a partly set-up account, and a real phone.
+2. **Nudges** (`reports.home.nudges`, from the unit-by-unit report `reports.units.unit_report`, cached like that page, needs `dashboard.view_financial`): units now vacant that stood empty 60+ days in the last 12 months, and occupied units whose last 3 billed months were each paid late, part paid or not paid. Shown as "Worth knowing" cards linking to `/reports/units/`, with up to three unit names; nothing shown when nothing stands out. `/web-api/home/` gains `nudges`. Test: `core/tests/test_limited_roles.py`.
+
+### D-214 — New announcement drawn in Next.js — ACCEPTED (2026-10-21, browser-checked at phone and desktop width, preview only)
+
+`/messages/announcements/new/` (the page "Remind them" opens) is now a Next.js screen (`AnnouncementScreen`, `AnnouncementForm`) over a new JSON view, `notifications/web_api.py` (`/messages/announcements/web-api/new/`). GET gives the starting values (the `rent_due` preset aims at tenants due within `?days=`), properties, buildings, presets and the form's nonce; POST JSON with `action` = `preview` or `send`. The rules are unchanged and stay Django's: `AnnouncementForm` validates (errors come back as 422 with `fields`), `announcements.preview` and `announcements.send` decide who is reached, the nonce makes a double press return the first announcement, and `messages.send_bulk` is still required (anyone without it gets a 404). The screen refuses to send until the preview matches the form (any edit marks it stale), asks to confirm, then moves to the sent announcement's Django page. The Django page and view remain as a fallback. Tests: `notifications/tests/test_announcements.py`. Checked in Edge on a demo account: the demo account is read-only so its preview is refused; the new-account preview rendered; nothing was sent. In dev, Django needs `CSRF_TRUSTED_ORIGINS=http://localhost:3000` for POSTs through Next.js (prod already trusts `SITE_URL`).
+
+### D-215 — Bank import and inbox drawn in Next.js — ACCEPTED (2026-10-21, not browser-checked)
+
+`/bank/import/`, `/bank/import/<id>/`, `/bank/import/<id>/columns/` and `/bank/inbox/` are Next.js screens (D-168 pattern) reading `banking/web_api.py` (`/bank/web-api/import/`, `.../import/<id>/`, `.../import/<id>/columns/`, `/bank/web-api/inbox/`). All four need `mpesa.match` (anyone else gets the not-found answer) and call the same `banking.services` / `banking.inbox` functions as the Django pages, so the safety rules of D-211/D-212 are unchanged. Upload is multipart (account, file, "photo or scan" tick); a statement with unknown headers sends the browser to the columns screen. The bank accounts page, the lines list and a single line (choosing a lease) stay on Django and are linked to. Tests: `banking/tests/test_web_api.py`; routes added to OWN_CHECK in `core/tests/test_access_map.py`.
+
+
+### D-216 Platform owner console: Today, view as landlord, digest, statement (2026-10-21)
+
+The console gained: a **Today** page (support waiting, problems, watch list, new sign-ups, follow-ups due); **view as landlord** (superuser only, read only: `console/viewas.py` refuses every non-GET outside `/console/`, start and stop are audited as `console.view_as`); health badge and "most at risk first" sort on the landlords table; **bulk** note, grace days and SMS on ticked landlords; saved support replies; scheduled notices (`PlatformAnnouncement.starts_at`); lists of landlords **stuck** at each funnel step on Growth; "Paid us" and "Left over" per landlord on Costs; an **Income and expenses** page (`insights.statement`, CSV) that takes SMS and assistant costs from the providers' charges and skips hand-entered duplicates; audit log date filters and CSV (capped at 50,000 rows, audited); and a **daily summary email** to `OPS_ALERT_EMAILS` (`send_owner_digest`, 07:30, switchable under System messages as `owner_digest`). Tests: `console/tests/test_owner_pack.py`. Not committed.
+
+### D-217 — Owner desk: today view, messages, approvals, payout details and requests, guests the owner chooses — ACCEPTED (2026-10-21, not browser-checked)
+D-128 listed owner approvals, messages and payout details as "not in this step". Property owners now do more in `/owner/`, all on Django pages, and the office has a matching **owner desk** at `/owner/owners/<id>/desk/` (link on the owner page; capability `owners.invite_portal`, and the member must see every one of the owner's properties).
+
+1. **Today** (`/owner/accounts/<id>/live/`, `owner_portal/live.py`): per property, units let and empty, leases and amount overdue (over 60 days apart), repairs not finished, leases ending in 60 days. Computed live from the ledger with no tenant names.
+2. **Messages.** One thread per owner (`OwnerMessage`, 1000 characters, 10 an hour). The owner's note alerts staff in the app (`owner_message_received`); the office's reply sends the owner an SMS (`owner_message_reply`) to open the portal.
+3. **Approvals** (`OwnerApproval`). Staff pick an open repair or a submitted expense on the owner's properties and ask; the owner gets an SMS and approves or declines with a note. Title and amount are copied when asked. One open question per repair or expense (database constraint). **The answer is a record only:** it does not approve or reject the expense or change the repair; staff alerted (`owner_approval_answered`) act in the usual way. Staff can withdraw a question.
+4. **Payout details and requests.** The owner enters M-Pesa or bank details (`OwnerPayoutDetail`). They count only after staff confirm them (the page tells staff to phone the owner on the number already on file); a new set replaces the confirmed one only when confirmed. Only then can the owner ask to be paid (`OwnerPayoutRequest`, an amount or blank, one open at a time). Staff mark it paid or not paid; **marking it paid moves no money**, the payment is still recorded as a remittance on the owner's account. Staff are alerted (`owner_payout_event`). The owner sees only the last four digits of a confirmed account.
+5. **People the owner chooses** (`/owner/accounts/<id>/people/`). The owner invites up to 3 guests (name and phone, SMS link, 7 days) who log in with that phone and see the same figures read-only (`OwnerAccount.is_delegate`). Guests get a 404 on the desk and sharing pages and cannot send, answer or change payout details (also checked in `desk._live`). One live login per user per owner; at most one non-guest account per owner. Removing the owner's access removes the guests too. The staff `live_account` and `pending_invitation` ignore guests. Audited: `owner_portal.guest_*`, `approval_*`, `payout_*`.
+6. **Notification types** added: five (see `notifications/catalog.py`), with migration. Tests: `owner_portal/tests/test_desk.py`, `test_owner_portal.py`; routes added to `core/tests/test_access_map.py`.
+7. **Not in this step:** the landlord's own Owner-role controls (approval limits, delegating approvals), Next.js screens for the owner portal, an owner choosing the supplier for a repair, email copies of the new SMS, a menu badge for unread owner notes, and sending money to the owner from the app.
+
+D-216 addendum: view as is not only the owner. The landlord page also lets the platform owner pick any active staff seat (manager, accountant, caretaker ...) or any tenant with a portal login (`console/viewas.py`: `MEMBER_KEY`, `TENANT_KEY`, `ViewAsTenantMiddleware` swaps `request.user` for the tenant outside `/console/`). Still read only, audited (`console.view_as`, who is named), banner with Stop. Viewing a tenant does not mark their messages read.

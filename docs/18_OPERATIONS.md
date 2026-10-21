@@ -99,6 +99,7 @@ To add a job, subclass `core.jobs.JobCommand`, then add it to `core.jobs.JOBS`, 
 | `HOSTING_LOCATION` | empty | Shown on `/security/` and `/privacy/`, for example "Nairobi, Kenya" **[VERIFY]**. |
 | `SESSION_IDLE_MINUTES`, `SESSION_MAX_HOURS` | `60`, `12` | Staff are logged out after this long without a request, and this long after logging in (D-107). |
 | `PORTAL_SESSION_IDLE_DAYS`, `PORTAL_SESSION_MAX_DAYS` | `14`, `30` | The same for tenants in the portal. |
+| `SESSION_REMEMBER_IDLE_MINUTES`, `SESSION_REMEMBER_MAX_HOURS`, `PORTAL_REMEMBER_IDLE_DAYS`, `PORTAL_REMEMBER_MAX_DAYS` | `480`, `168`, `60`, `180` | The longer limits when "Remember me on this device" is ticked at login. |
 | `CSP_REPORT_ONLY` | empty | `1` sends the Content Security Policy as report-only: nothing is blocked, and what would be is logged under `django.security.csp`. Use it to try a policy change, then remove it (D-107). |
 | `LEGAL_NAME` | "NyumbaPMS" | The company's registered name on `/terms/` and `/privacy/` (D-095). |
 | `LEGAL_REGISTRATION`, `LEGAL_ADDRESS` | empty | The company number (for example "Company No. PVT-…") and its postal and physical address, on both pages (D-124). |
