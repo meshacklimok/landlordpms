@@ -135,7 +135,11 @@ def propose(org: Organization, today: datetime.date) -> int:
 def run_daily(today: datetime.date) -> dict[str, int]:
     counts = {"late_fees_proposed": 0, "late_fees_skipped": 0}
     orgs = Organization.objects.filter(archived_at__isnull=True, status=Organization.Status.ACTIVE)
+    from subscriptions.services import blocked_modules
+
     for org in orgs:
+        if "invoices" in blocked_modules(org):
+            continue  # paused for an overdue subscription (D-205)
         counts["late_fees_skipped"] += _skip_stale(org, today)
         counts["late_fees_proposed"] += propose(org, today)
     return counts

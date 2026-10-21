@@ -266,7 +266,7 @@ def test_the_owner_sets_the_rules_on_the_settings_page(client, owner):
     login(client, owner)
     page = client.get(reverse("accounts:organization"))
     assert page.status_code == 200 and "Settle a deposit within" in page.content.decode()
-    data = {"name": "Acme", "org_type": owner.organization.org_type, "invoice_lead_days": "5",
+    data = {"name": "Acme", "org_type": owner.organization.org_type, "invoice_lead_days": "5", "financial_year_start_month": "1",
             "late_fee_mode": "OFF", "deposit_refund_days": "21", "deposit_deduction_headings": ["DAMAGE", "KEYS"],
             "deposit_proof_required": "on"}
     response = client.post(reverse("accounts:organization"), data)

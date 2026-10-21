@@ -16,7 +16,9 @@ from .models import DarajaCredentials, MpesaTransaction, SetupVideo
 
 
 def whatsapp_number() -> str:
-    return "".join(ch for ch in getattr(settings, "SUPPORT_WHATSAPP", "") if ch.isdigit())
+    from core.contacts import support_whatsapp
+
+    return support_whatsapp()
 
 
 def video_url() -> str:

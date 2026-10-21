@@ -148,7 +148,7 @@ class DeductForm(DepositForm):
         if cites_report:  # the move-out report is the proof
             del self.fields["evidence"]
         allowed = deposits.allowed_headings(organization) if organization is not None else []
-        headings = [(c, l) for c, l in DepositEntry.Heading.choices if not allowed or c in allowed]
+        headings = [(c, label) for c, label in DepositEntry.Heading.choices if not allowed or c in allowed]
         self.fields["heading"].choices = headings if allowed else [("", "---------"), *headings]
         self.fields["heading"].required = bool(allowed)
         if organization is not None:

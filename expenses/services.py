@@ -3,6 +3,7 @@
 import datetime
 import re
 import secrets
+import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -21,9 +22,9 @@ from audit import services as audit
 from core.money import ZERO, parse_money, round_money
 from core.numbering import next_number
 from inspections import photos
-from properties.models import Property
+from properties.models import Property, Unit
 
-from .models import Expense, ExpenseCategory, Supplier
+from .models import CostClass, Expense, ExpenseCategory, Supplier
 
 Status = Expense.Status
 
@@ -41,6 +42,15 @@ DEFAULT_CATEGORIES = (
     gettext_noop("Professional and legal fees"),
     gettext_noop("Other"),
 )
+DEFAULT_CLASSES = {
+    "Repairs and maintenance": CostClass.MAINTENANCE,
+    "Water": CostClass.UTILITIES,
+    "Electricity": CostClass.UTILITIES,
+    "Security": CostClass.SECURITY,
+    "Cleaning and garbage": CostClass.GARBAGE,
+    "Caretaker and staff wages": CostClass.SALARIES,
+    "Insurance": CostClass.INSURANCE,
+}
 MAX_PDF_BYTES = 10 * 1024 * 1024
 MAX_AMOUNT = Decimal("99999999.99")
 
@@ -102,7 +112,9 @@ def ensure_categories(organization: Organization) -> None:
         return
     with transaction.atomic():
         ExpenseCategory.objects.bulk_create(
-            [ExpenseCategory(organization=organization, name=name) for name in DEFAULT_CATEGORIES],
+            [ExpenseCategory(organization=organization, name=name,
+                             cost_class=DEFAULT_CLASSES.get(name, CostClass.OTHER))
+             for name in DEFAULT_CATEGORIES],
             ignore_conflicts=True)
 
 
@@ -136,12 +148,32 @@ def _unique_category(org, name, exclude=None) -> None:
 
 
 @transaction.atomic
-def create_category(actor: Membership, *, name: str, request=None) -> ExpenseCategory:
+def create_category(actor: Membership, *, name: str, cost_class: str = CostClass.OTHER,
+                    request=None) -> ExpenseCategory:
     _require_categories(actor)
     name = _clean_name(name, "name", 60, _("Give the category a name."))
     _unique_category(actor.organization, name)
-    category = ExpenseCategory.objects.create(organization=actor.organization, name=name)
-    _audit("expenses.category_create", actor, category, request, {"name": [None, name]})
+    if cost_class not in CostClass.values:
+        cost_class = CostClass.OTHER
+    category = ExpenseCategory.objects.create(organization=actor.organization, name=name, cost_class=cost_class)
+    _audit("expenses.category_create", actor, category, request,
+           {"name": [None, name], "cost_class": [None, cost_class]})
+    return category
+
+
+@transaction.atomic
+def set_category_class(actor: Membership, category: ExpenseCategory, *, cost_class: str, request=None
+                       ) -> ExpenseCategory:
+    """Says what kind of cost a category is, which the profitability report groups by (D-191)."""
+    _require_categories(actor)
+    if category.organization_id != actor.organization_id:
+        raise PermissionDenied("expenses.approve")
+    if cost_class not in CostClass.values:
+        raise ValidationError(_("Choose a kind of cost from the list."))
+    if cost_class != category.cost_class:
+        before, category.cost_class = category.cost_class, cost_class
+        category.save(update_fields=["cost_class", "updated_at"])
+        _audit("expenses.category_class", actor, category, request, {"cost_class": [before, cost_class]})
     return category
 
 
@@ -338,9 +370,13 @@ def _clean(org, prop: Property, *, category, description, amount, paid_on, metho
 @transaction.atomic
 def record_expense(actor: Membership, prop: Property, *, category: ExpenseCategory, description: str, amount,
                    paid_on: datetime.date, method: str, reference: str = "", supplier: Supplier | None = None,
-                   receipt=None, maintenance_request=None, today: datetime.date | None = None,
-                   request=None) -> Expense:
-    """Records a paid expense. Approved at once when the recorder may approve on the property (D-067 item 2)."""
+                   receipt=None, maintenance_request=None, is_recurring: bool = False,
+                   today: datetime.date | None = None, request=None, split: dict | None = None,
+                   approve_now: bool | None = None) -> Expense:
+    """Records a paid expense. Approved at once when the recorder may approve on the property (D-067 item 2).
+
+    `split` and `approve_now` are for record_split: the shares of one payment carry the split and are approved
+    together or not at all."""
     _check(actor, prop, "expenses.submit")
     today = today or timezone.localdate()
     org = actor.organization
@@ -353,7 +389,9 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
     if receipt:
         fields["receipt"] = process_receipt(receipt)
     now = timezone.now()
-    at_once = can(actor, "expenses.approve", prop)
+    at_once = can(actor, "expenses.approve", prop) if approve_now is None else approve_now
+    if split:
+        fields.update(split)
     if at_once:
         fields.update(status=Status.APPROVED, approved_at=now, approved_by=actor.user)
     try:
@@ -361,7 +399,7 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
             expense = Expense.objects.create(
                 organization=org, property=prop, category=category, supplier=supplier, description=description,
                 amount=amount, paid_on=paid_on, method=method, reference=reference, reference_key=key,
-                recorded_by=actor.user, number=next_number(org, "expense", prefix="EXP", period=str(today.year)),
+                is_recurring=bool(is_recurring), recorded_by=actor.user, number=next_number(org, "expense", prefix="EXP", period=str(today.year)),
                 **fields)
     except IntegrityError:
         raise ValidationError({"reference": _("That reference is already on another expense.")}) from None
@@ -369,25 +407,122 @@ def record_expense(actor: Membership, prop: Property, *, category: ExpenseCatego
         "property": [None, prop.name], "category": [None, category.name], "amount": [None, str(amount)],
         "paid_on": [None, paid_on.isoformat()], "method": [None, method],
         **({"reference": [None, reference]} if reference else {}),
+        **({"is_recurring": [None, True]} if is_recurring else {}),
         **({"supplier": [None, supplier.name]} if supplier else {}),
         **({"receipt": [None, True]} if receipt else {}),
         **({"maintenance_request": [None, maintenance_request.number]} if maintenance_request else {}),
+        **({"split_total": [None, str(split["split_total"])], "split_rule": [None, split["split_rule"]]}
+           if split else {}),
         "status": [None, expense.status]})
     return expense
+
+
+# ---------------------------------------------------------------------------
+# One payment shared by several properties (D-197)
+# ---------------------------------------------------------------------------
+
+SPLIT_RULES = (("equal", gettext_noop("Equal shares")), ("units", gettext_noop("By number of units")),
+               ("percent", gettext_noop("Percentages I type in")))
+MAX_SPLIT = 20
+
+
+def split_amounts(total: Decimal, weights: list[Decimal]) -> list[Decimal]:
+    """`total` shared in proportion to `weights`, to the cent. Every share but the last is rounded; the last takes
+    what is left, so the shares always add up to exactly `total`."""
+    whole = sum(weights)
+    shares = [round_money(total * w / whole) for w in weights[:-1]]
+    shares.append(total - sum(shares))
+    if any(s <= 0 for s in shares):
+        raise ValidationError({"amount": _("That amount is too small to share between these properties.")})
+    return shares
+
+
+def split_weights(rule: str, props: list[Property], percents: dict | None) -> list[Decimal]:
+    if rule == "equal":
+        return [Decimal(1)] * len(props)
+    if rule == "units":
+        counts = [Unit.objects.filter(property=p).count() for p in props]
+        empty = [p.name for p, n in zip(props, counts, strict=False) if not n]
+        if empty:
+            raise ValidationError({"rule": _("These properties have no units to count: %(names)s.")
+                                   % {"names": ", ".join(empty)}})
+        return [Decimal(n) for n in counts]
+    if rule == "percent":
+        values = [(percents or {}).get(p.pk) for p in props]
+        if any(v is None or v <= 0 for v in values):
+            raise ValidationError({"rule": _("Type a percentage for every property you chose.")})
+        if sum(values) != 100:
+            raise ValidationError({"rule": _("The percentages must add up to 100. They add up to %(n)s.")
+                                   % {"n": sum(values).normalize()}})
+        return list(values)
+    raise ValidationError({"rule": _("Choose how to share it.")})
+
+
+@transaction.atomic
+def record_split(actor: Membership, props: list[Property], *, rule: str, percents: dict | None = None,
+                 category: ExpenseCategory, description: str, amount, paid_on: datetime.date, method: str,
+                 reference: str = "", supplier: Supplier | None = None, receipt=None, is_recurring: bool = False,
+                 today: datetime.date | None = None, request=None) -> list[Expense]:
+    """Records one payment shared by several properties as one expense per property.
+
+    The shares add up to what was paid, so cash totals stay right while each property's reports carry its own
+    share. The split is fixed when recorded: later changes to units do not move it. The reference and the receipt
+    go on the first share. All shares are approved at once only when the recorder may approve on every property."""
+    props = list({p.pk: p for p in props}.values())
+    if not 2 <= len(props) <= MAX_SPLIT:
+        raise ValidationError({"properties": _("Choose between 2 and %(n)s properties.") % {"n": MAX_SPLIT}})
+    for prop in props:
+        _check(actor, prop, "expenses.submit")
+    try:
+        total = parse_money(amount, allow_zero=False)
+    except ValidationError as exc:
+        raise ValidationError({"amount": exc.messages[0]}) from None
+    shares = split_amounts(total, split_weights(rule, props, percents))
+    split = {"split_key": uuid.uuid4(), "split_total": total, "split_rule": rule}
+    everywhere = all(can(actor, "expenses.approve", p) for p in props)
+    made = []
+    for i, (prop, share) in enumerate(zip(props, shares, strict=False)):
+        made.append(record_expense(
+            actor, prop, category=category, description=description, amount=share, paid_on=paid_on, method=method,
+            reference=reference if i == 0 else "", supplier=supplier, receipt=receipt if i == 0 else None,
+            is_recurring=is_recurring, today=today, request=request, split=split, approve_now=everywhere))
+    return made
+
+
+def split_group(expense: Expense) -> list[Expense]:
+    """All the shares of the payment this expense belongs to (just itself when it is not shared)."""
+    if not expense.split_key:
+        return [expense]
+    return list(Expense.objects.for_org(expense.organization).filter(split_key=expense.split_key)
+                .select_related("property").order_by("pk"))
+
+
+def _acts_on(expense: Expense) -> list[Expense]:
+    """The rows an approval, rejection or void of `expense` applies to, locked: its shares in the same status."""
+    if not expense.split_key:
+        return [_lock(expense)]
+    rows = list(Expense.objects.select_for_update(of=("self",)).select_related("property")
+                .filter(organization=expense.organization, split_key=expense.split_key).order_by("pk"))
+    return [r for r in rows if r.status == expense.status]
 
 
 def _lock(expense: Expense) -> Expense:
     return Expense.objects.select_for_update(of=("self",)).select_related("property").get(pk=expense.pk)
 
 
+def _may_approve_all(membership: Membership, expense: Expense) -> bool:
+    """Whether the member may approve on the expense's property, and on every property its payment is shared with."""
+    return all(can(membership, "expenses.approve", e.property) for e in split_group(expense))
+
+
 def can_approve(membership: Membership, expense: Expense) -> bool:
     return (expense.organization_id == membership.organization_id and expense.status == Status.SUBMITTED
-            and can(membership, "expenses.approve", expense.property))
+            and _may_approve_all(membership, expense))
 
 
 def can_void(membership: Membership, expense: Expense) -> bool:
     return (expense.organization_id == membership.organization_id and expense.status == Status.APPROVED
-            and can(membership, "expenses.approve", expense.property))
+            and _may_approve_all(membership, expense))
 
 
 def can_add_receipt(membership: Membership, expense: Expense) -> bool:
@@ -400,8 +535,8 @@ def can_add_receipt(membership: Membership, expense: Expense) -> bool:
 
 def can_edit(membership: Membership, expense: Expense) -> bool:
     """Approvers correct any live expense; whoever recorded it corrects it until it is approved (D-123)."""
-    if expense.organization_id != membership.organization_id or not expense.is_live:
-        return False
+    if expense.organization_id != membership.organization_id or not expense.is_live or expense.split_key:
+        return False  # a shared payment is voided and recorded again, so its shares always add up
     if can(membership, "expenses.approve", expense.property):
         return True
     return (expense.status == Status.SUBMITTED and expense.recorded_by_id == membership.user_id
@@ -411,7 +546,8 @@ def can_edit(membership: Membership, expense: Expense) -> bool:
 @transaction.atomic
 def update_expense(actor: Membership, expense: Expense, *, prop: Property, category: ExpenseCategory,
                    description: str, amount, paid_on: datetime.date, method: str, reference: str = "",
-                   supplier: Supplier | None = None, today: datetime.date | None = None, request=None) -> Expense:
+                   supplier: Supplier | None = None, is_recurring: bool = False,
+                   today: datetime.date | None = None, request=None) -> Expense:
     """Corrects a live expense. Its status stays: an approved one stays approved, so only approvers may change it,
     and on a new property the editor needs the same power there. Every changed field is audited."""
     expense = _lock(expense)
@@ -425,13 +561,14 @@ def update_expense(actor: Membership, expense: Expense, *, prop: Property, categ
                    maintenance_request=expense.maintenance_request, today=today or timezone.localdate(),
                    exclude=expense)
     clean["property"] = prop
+    clean["is_recurring"] = bool(is_recurring)
     changes = {}
-    for field, after in clean.items():
-        before = getattr(expense, field)
+    for column, after in clean.items():
+        before = getattr(expense, column)
         if before != after:
-            if field != "reference_key":
-                changes[field] = [_shown(before), _shown(after)]
-            setattr(expense, field, after)
+            if column != "reference_key":
+                changes[column] = [_shown(before), _shown(after)]
+            setattr(expense, column, after)
     if not changes:
         return expense
     try:
@@ -465,11 +602,15 @@ def approve(actor: Membership, expense: Expense, *, request=None) -> Expense:
     expense = _lock(expense)
     if expense.status != Status.SUBMITTED:
         raise ValidationError(_("This expense is not waiting for approval."))
-    expense.status = Status.APPROVED
-    expense.approved_at = timezone.now()
-    expense.approved_by = actor.user
-    expense.save()
-    _audit("expenses.approve", actor, expense, request, {"status": [Status.SUBMITTED, Status.APPROVED]})
+    now = timezone.now()
+    for row in _acts_on(expense):
+        _check(actor, row.property, "expenses.approve")
+        row.status = Status.APPROVED
+        row.approved_at = now
+        row.approved_by = actor.user
+        row.save()
+        _audit("expenses.approve", actor, row, request, {"status": [Status.SUBMITTED, Status.APPROVED]})
+    expense.refresh_from_db()
     return expense
 
 
@@ -480,13 +621,17 @@ def reject(actor: Membership, expense: Expense, *, reason: str, request=None) ->
     if expense.status != Status.SUBMITTED:
         raise ValidationError(_("Only an expense waiting for approval can be rejected."))
     reason = _reason(reason, _("Say why the expense is rejected."))
-    expense.status = Status.REJECTED
-    expense.rejected_at = timezone.now()
-    expense.rejected_by = actor.user
-    expense.reject_reason = reason
-    expense.save()
-    _audit("expenses.reject", actor, expense, request,
-           {"status": [Status.SUBMITTED, Status.REJECTED], "reason": [None, reason]})
+    now = timezone.now()
+    for row in _acts_on(expense):
+        _check(actor, row.property, "expenses.approve")
+        row.status = Status.REJECTED
+        row.rejected_at = now
+        row.rejected_by = actor.user
+        row.reject_reason = reason
+        row.save()
+        _audit("expenses.reject", actor, row, request,
+               {"status": [Status.SUBMITTED, Status.REJECTED], "reason": [None, reason]})
+    expense.refresh_from_db()
     return expense
 
 
@@ -497,13 +642,17 @@ def void(actor: Membership, expense: Expense, *, reason: str, request=None) -> E
     if expense.status != Status.APPROVED:
         raise ValidationError(_("Only an approved expense can be voided."))
     reason = _reason(reason, _("Say why the expense is voided."))
-    expense.status = Status.VOIDED
-    expense.voided_at = timezone.now()
-    expense.voided_by = actor.user
-    expense.void_reason = reason
-    expense.save()
-    _audit("expenses.void", actor, expense, request,
-           {"status": [Status.APPROVED, Status.VOIDED], "reason": [None, reason]})
+    now = timezone.now()
+    for row in _acts_on(expense):
+        _check(actor, row.property, "expenses.approve")
+        row.status = Status.VOIDED
+        row.voided_at = now
+        row.voided_by = actor.user
+        row.void_reason = reason
+        row.save()
+        _audit("expenses.void", actor, row, request,
+               {"status": [Status.APPROVED, Status.VOIDED], "reason": [None, reason]})
+    expense.refresh_from_db()
     return expense
 
 

@@ -103,4 +103,7 @@ def run_daily(today: datetime.date | None = None) -> dict[str, int]:
     counts["leases_archived"] = archive_settled_leases(today)
     counts.update(triggers.send_reminders(today))
     counts.update(meter_reminders.run_daily(today))
+    from prospects.services import offer_free_beds
+
+    counts.update(offer_free_beds(today))
     return counts

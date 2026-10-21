@@ -134,7 +134,9 @@ def template_xlsx(actor: Membership, kind: str) -> bytes:
     for r, values in enumerate(prefill(actor, kind), start=2):
         for i, column in enumerate(columns, start=1):
             if values.get(column):
-                sheet.cell(row=r, column=i, value=values[column])
+                cell = sheet.cell(row=r, column=i, value=values[column])
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"  # a name that starts with = is text, never a formula
     help_sheet = book.create_sheet(str(_("How to fill in"))[:31])
     help_sheet.column_dimensions["A"].width = 110
     for r, line in enumerate(_instructions(kind), start=1):

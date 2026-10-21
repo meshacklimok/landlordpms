@@ -7,6 +7,8 @@ Nothing is stored: the PDF shows the invoice as it stands, with what is paid on 
 import io
 from xml.sax.saxutils import escape
 
+from django.conf import settings
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from reportlab.lib import colors
@@ -51,6 +53,11 @@ def _earlier_unpaid(invoice):
     older = (Invoice.objects.filter(lease=invoice.lease, status__in=Invoice.OPEN)
              .exclude(pk=invoice.pk).filter(due_date__lte=invoice.due_date).order_by("due_date", "pk"))
     return [(i, i.outstanding) for i in older if i.outstanding > 0]
+
+
+def check_url(invoice: Invoice) -> str:
+    """The public page that confirms an invoice (D-194); it shows no tenant, unit or payments."""
+    return settings.SITE_URL + reverse("invoice_check", args=[invoice.public_id])
 
 
 def render_invoice(invoice: Invoice) -> bytes:
@@ -188,9 +195,14 @@ def render_invoice(invoice: Invoice) -> bytes:
         sign.hAlign = "LEFT"
         story += [Spacer(1, 6 * mm), sign]
         story += [_p(_("Authorised signature, %(who)s") % {"who": org.display_name}, SMALL)]
+    if invoice.number and invoice.status != Invoice.Status.DRAFT:
+        story += [Spacer(1, 5 * mm), Table([[brand.qr_drawing(check_url(invoice), 20 * mm),
+                                              _p(_("Scan to check this invoice is genuine."), SMALL)]],
+                                            colWidths=[24 * mm, None], hAlign="LEFT",
+                                            style=[("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                                                   ("LEFTPADDING", (0, 0), (-1, -1), 0)])]
     story += [Spacer(1, 6 * mm),
               _p(_("Printed %(when)s.") % {"when": timezone.localtime().strftime("%d %b %Y %H:%M")}, SMALL)]
     _footer(story, org)
     doc.build(story)
     return buf.getvalue()
-

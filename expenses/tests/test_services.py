@@ -373,3 +373,88 @@ def test_moving_to_a_property_outside_scope_is_refused(owner, org, prop, repairs
     e = spend(manager, prop, repairs)
     with pytest.raises(PermissionDenied):
         _edit(manager, e, prop=other)
+
+
+# ---------------------------------------------------------------------------
+# One payment shared by several properties (D-197)
+# ---------------------------------------------------------------------------
+
+
+def _three(org):
+    return [make_property(org, name=n) for n in ("Acacia", "Baobab", "Cedar")]
+
+
+def test_equal_shares_add_up_to_what_was_paid(owner, org, repairs):
+    a, b, c = _three(org)
+    made = services.record_split(owner, [a, b, c], rule="equal", category=repairs, description="Guard",
+                                 amount="10000", paid_on=PAID, method="CASH", reference="ab12")
+    assert [e.amount for e in made] == [Decimal("3333.33"), Decimal("3333.33"), Decimal("3333.34")]
+    assert sum(e.amount for e in made) == Decimal("10000")
+    assert len({e.split_key for e in made}) == 1 and made[0].split_total == Decimal("10000")
+    assert made[0].reference_key == "AB12" and made[1].reference_key == "" and all(e.status == Status.APPROVED for e in made)
+    assert len(services.split_group(made[1])) == 3
+    assert services.totals(Expense.objects.all()).approved == Decimal("10000")
+
+
+def test_shares_by_units_and_by_percent(owner, org, repairs):
+    from properties import services as property_services
+    a, b, _c = _three(org)
+    for code in ("1", "2", "3"):
+        property_services.create_unit(owner, a, code=code)
+    property_services.create_unit(owner, b, code="1")
+    made = services.record_split(owner, [a, b], rule="units", category=repairs, description="Guard", amount="4000",
+                                 paid_on=PAID, method="CASH")
+    assert [e.amount for e in made] == [Decimal("3000"), Decimal("1000")]
+    made = services.record_split(owner, [a, b], rule="percent", percents={a.pk: Decimal("70"), b.pk: Decimal("30")},
+                                 category=repairs, description="Bins", amount="1000", paid_on=PAID, method="CASH")
+    assert [e.amount for e in made] == [Decimal("700"), Decimal("300")]
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a, b], rule="percent", percents={a.pk: Decimal("70"), b.pk: Decimal("20")},
+                              category=repairs, description="Bins", amount="1000", paid_on=PAID, method="CASH")
+    with pytest.raises(ValidationError):  # no units to count
+        services.record_split(owner, [a, _c], rule="units", category=repairs, description="x", amount="1000",
+                              paid_on=PAID, method="CASH")
+
+
+def test_a_split_needs_two_properties_and_a_big_enough_amount(owner, org, repairs):
+    a, b, _c = _three(org)
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a], rule="equal", category=repairs, description="x", amount="100",
+                              paid_on=PAID, method="CASH")
+    with pytest.raises(ValidationError):
+        services.record_split(owner, [a, b, _c], rule="equal", category=repairs, description="x", amount="0.02",
+                              paid_on=PAID, method="CASH")
+    assert not Expense.objects.exists()
+
+
+def test_shares_are_approved_rejected_and_voided_together(owner, org, repairs):
+    a, b, _c = _three(org)
+    manager = add_member(org, "manager", properties=[a])
+    with pytest.raises(PermissionDenied):  # a manager may not record on a property outside their scope
+        services.record_split(manager, [a, b], rule="equal", category=repairs, description="x", amount="100",
+                              paid_on=PAID, method="CASH")
+    both = add_member(org, "manager", properties=[a, b])
+    made = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                 paid_on=PAID, method="CASH")
+    assert {e.status for e in made} == {Status.SUBMITTED}
+    assert not services.can_approve(both, made[0])
+    services.approve(owner, made[1])
+    assert {e.status for e in Expense.objects.all()} == {Status.APPROVED}
+    assert not services.can_edit(owner, made[0])
+    services.void(owner, made[0], reason="Recorded twice")
+    assert {e.status for e in Expense.objects.all()} == {Status.VOIDED}
+    again = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                  paid_on=PAID, method="CASH")
+    services.reject(owner, again[0], reason="Not ours")
+    assert Expense.objects.filter(status=Status.REJECTED).count() == 2
+
+
+def test_one_approver_for_only_one_property_cannot_approve_a_share(owner, org, repairs):
+    a, b, _c = _three(org)
+    both = add_member(org, "manager", properties=[a, b])
+    made = services.record_split(both, [a, b], rule="equal", category=repairs, description="Guard", amount="1000",
+                                 paid_on=PAID, method="CASH")
+    accountant = add_member(org, "accountant", properties=[a])
+    assert not services.can_approve(accountant, made[0])
+    with pytest.raises(PermissionDenied):
+        services.approve(accountant, made[0])

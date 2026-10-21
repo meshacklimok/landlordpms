@@ -77,6 +77,18 @@ class ChargeType(PublicIdModel, TimeStampedModel, ArchivableModel):
     def is_recurring_allowed(self) -> bool:
         return self.category not in self.NOT_RECURRING
 
+    # Water and electricity, metered or at a fixed amount: reports show them apart from rent and other charges.
+    UTILITIES = (Category.WATER, Category.ELECTRICITY, Category.METERED_WATER, Category.METERED_ELECTRICITY)
+
+    @classmethod
+    def bucket(cls, category: str) -> str:
+        """The group reports and statements put a charge in: rent, deposit, utilities or other."""
+        if category == cls.Category.RENT:
+            return "rent"
+        if category == cls.Category.DEPOSIT:
+            return "deposit"
+        return "utilities" if category in cls.UTILITIES else "other"
+
 
 # ---------------------------------------------------------------------------
 # Invoices and the ledger

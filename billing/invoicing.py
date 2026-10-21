@@ -83,6 +83,25 @@ def months_to_bill(org: Organization, today: datetime.date) -> list[datetime.dat
     return months
 
 
+def missed_months(org: Organization, today: datetime.date) -> list[datetime.date]:
+    """Past months to bill again after a lapse: from the month the organization went read-only to last month.
+
+    The daily job skips a lapsed organization, so those months were never billed. Billing is idempotent, so this
+    only ever adds what is missing; it looks back a year at most.
+    """
+    from audit.models import AuditEvent
+    since = timezone.now() - datetime.timedelta(days=366)
+    lapsed = (AuditEvent.objects.filter(organization=org, action="organization.read_only", created_at__gte=since)
+              .order_by("-created_at").values_list("created_at", flat=True).first())
+    if lapsed is None:
+        return []
+    months, month = [], month_start(timezone.localtime(lapsed).date())
+    while month < month_start(today):
+        months.append(month)
+        month = next_month(month)
+    return months
+
+
 def _fmt(day: datetime.date) -> str:
     return day.strftime("%d %b %Y")
 
@@ -496,12 +515,25 @@ def bill_meter_charges(org: Organization, *, today=None, lease: Lease | None = N
     return result
 
 
+def blocked_modules(org):
+    from subscriptions.services import blocked_modules as paused
+
+    return paused(org)
+
+
 def run_scheduled(today=None) -> dict[str, int]:
     """The daily job: bills this month and, within the lead days, next month, for every organization."""
     today = today or timezone.localdate()
     counts = {"organizations": 0, "invoices": 0, "errors": 0}
     for org in Organization.objects.filter(archived_at__isnull=True, status=Organization.Status.ACTIVE):
+        if "invoices" in blocked_modules(org):
+            continue  # paused for an overdue subscription (D-205); the months are caught up once it is paid
         counts["organizations"] += 1
+        for month in missed_months(org, today):
+            # Months the job skipped while the subscription had lapsed; the tenants are not messaged about them.
+            result = generate_month(org, month, today=today, notify=False)
+            counts["invoices"] += len(result.invoices)
+            counts["errors"] += len(result.errors)
         for month in months_to_bill(org, today):
             result = generate_month(org, month, today=today)
             counts["invoices"] += len(result.invoices)

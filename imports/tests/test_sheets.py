@@ -132,6 +132,19 @@ def test_the_excel_sheet_lists_vacant_units_and_blank_rows_are_skipped(owner, pr
     assert [r["data"]["unit_code"] for r in parsed] == ["A2"] and not parsed[0]["errors"]
 
 
+def test_prefilled_text_in_the_excel_sheet_is_never_a_formula(owner, prop, monkeypatch):
+    monkeypatch.setattr(sheets, "prefill", lambda actor, kind: [{"property_code": "=HYPERLINK(\"http://x\")",
+                                                                   "unit_code": "A2"}])
+    sheet = load_workbook(io.BytesIO(sheets.template_xlsx(owner, LEASES))).worksheets[0]
+    cell = sheet.cell(row=2, column=1)
+    assert cell.data_type == "s" and cell.value.startswith("=")
+
+
+def test_macro_workbooks_are_not_accepted(owner):
+    with pytest.raises(ValidationError):
+        services.parse_upload(LEASES, SimpleUploadedFile("x.xlsm", b"PK"))
+
+
 def test_balances_sheet_lists_active_leases(owner, prop):
     batch = services.preview_import(
         owner, LEASES, moving_in(prop, ["A1", "Wanjiku", "0712345678", 15000, "2026-01-01"]), activate=True)

@@ -269,7 +269,7 @@ def test_the_page_charges_and_skips_ticked_fees(client, owner, prop):
 
 def test_the_settings_page_saves_the_rule(client, owner):
     login(client, owner)
-    data = {"name": owner.organization.name, "org_type": owner.organization.org_type, "invoice_lead_days": 5,
+    data = {"name": owner.organization.name, "org_type": owner.organization.org_type, "invoice_lead_days": 5, "financial_year_start_month": 1,
             "prorate_partial_months": "on", "late_fee_mode": "FIXED", "late_fee_amount": "",
             "late_fee_percent": "", "late_fee_cap": ""}
     r = client.post(reverse("accounts:organization"), data)

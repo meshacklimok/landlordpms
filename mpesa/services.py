@@ -19,8 +19,8 @@ from audit import services as audit
 from payments.models import PaymentAccount
 
 from .daraja import DarajaError, get_client
-from .setup import friendly_error
 from .models import FORBIDDEN_URL_WORDS, DarajaCredentials, new_callback_token
+from .setup import friendly_error
 
 MPESA_TYPES = (PaymentAccount.Type.PAYBILL, PaymentAccount.Type.TILL)
 _SHORTCODE = re.compile(r"^\d{5,7}$")

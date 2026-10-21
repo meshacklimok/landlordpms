@@ -25,8 +25,8 @@ from mpesa.models import MpesaTransaction
 from payments.models import PaymentAccount, PropertyPaymentAccount
 from properties.models import Property
 
-from . import matching, parsing
-from .models import BankTransaction, StatementImport
+from . import matching, parsing, scan
+from .models import BankTransaction, StatementFormat, StatementImport
 
 logger = logging.getLogger(__name__)
 
@@ -146,37 +146,128 @@ def _mpesa_rows(parsed: parsing.Parsed) -> tuple[list[dict], int]:
     return [r for r in rows if r["receipt"] not in known], len(parsed.lines) - len(rows) + len(known)
 
 
-def preview(actor: Membership, account: PaymentAccount, upload, *, request=None) -> StatementImport:
-    """Reads the file and stores what importing it would add. Raises ValidationError if it cannot be read."""
-    _check(actor, account)
-    kind = KIND_FOR[account.type]
-    if upload.size > parsing.MAX_BYTES:
-        raise ValidationError(_("The file is larger than 1 MB."))
-    try:
-        parsed = (parsing.read_bank if kind == Kind.BANK else parsing.read_mpesa)(upload.read())
-    except parsing.StatementError as e:
-        raise ValidationError(str(e)) from None
+def _store(actor: Membership, account: PaymentAccount, kind: str, name: str, parsed: parsing.Parsed, *,
+           source: str = StatementImport.Source.FILE, batch: StatementImport | None = None,
+           request=None) -> StatementImport:
+    """Works out what importing `parsed` would add and stores it as the preview (a new one, or `batch`)."""
     rows, duplicates = _bank_rows(account, parsed) if kind == Kind.BANK else _mpesa_rows(parsed)
     dates = [line.posted_on if kind == Kind.BANK else line.paid_at.astimezone(parsing.NAIROBI).date()
              for line in parsed.lines]
-    batch = StatementImport.objects.create(
-        organization=actor.organization, payment_account=account, kind=kind, created_by=actor.user,
-        file_name=(upload.name or "")[:200], rows=rows, errors=[list(e) for e in parsed.errors[:200]],
-        new_count=len(rows), duplicate_count=duplicates, skipped_count=parsed.skipped,
-        period_from=min(dates, default=None), period_to=max(dates, default=None))
+    fields = {"rows": rows, "errors": [list(e) for e in parsed.errors[:200]], "new_count": len(rows),
+              "duplicate_count": duplicates, "skipped_count": parsed.skipped, "status": Status.PREVIEW, "raw": None,
+              "period_from": min(dates, default=None), "period_to": max(dates, default=None)}
+    if batch is None:
+        batch = StatementImport.objects.create(
+            organization=actor.organization, payment_account=account, kind=kind, created_by=actor.user,
+            file_name=name[:200], source=source, **fields)
+    else:
+        for key, value in fields.items():
+            setattr(batch, key, value)
+        batch.save()
     audit.record("statement.preview", actor=actor.user, organization=actor.organization, obj=batch, request=request,
                  changes={"account": [None, account.display_name], "new": [None, len(rows)],
-                          "duplicates": [None, duplicates], "errors": [None, len(parsed.errors)]})
+                          "duplicates": [None, duplicates], "errors": [None, len(parsed.errors)],
+                          "source": [None, source]})
     return batch
 
 
+def saved_columns(account: PaymentAccount) -> dict:
+    saved = StatementFormat.objects.filter(payment_account=account).first()
+    return saved.columns if saved else {}
+
+
+def preview(actor: Membership, account: PaymentAccount, upload, *, scanned: bool = False,
+            request=None) -> StatementImport:
+    """Reads the file and stores what importing it would add. Raises ValidationError if it cannot be read.
+    A bank statement whose columns are not recognised is kept for a day with status MAPPING, so the landlord can
+    match its columns by hand (D-212); `scanned` reads a photo or a scanned PDF instead."""
+    _check(actor, account)
+    kind = KIND_FOR[account.type]
+    if upload.size > parsing.MAX_BYTES:
+        raise ValidationError(_("The file is larger than 5 MB."))
+    data = upload.read()
+    name = upload.name or ""
+    if not scanned and scan.is_picture(data):
+        raise ValidationError(_("This is a picture. Tick \u201cThis is a photo or scan\u201d to have it read, or "
+                                "download the statement as a PDF, Excel or CSV file from your bank."))
+    if scanned:
+        if kind != Kind.BANK:
+            raise ValidationError(_("Photos and scans can be read for bank accounts only."))
+        parsed = scan.read(actor, data)
+        return _store(actor, account, kind, name, parsed, source=StatementImport.Source.SCAN, request=request)
+    try:
+        if kind == Kind.BANK:
+            parsed = parsing.read_bank(data, saved_columns(account))
+        else:
+            parsed = parsing.read_mpesa(data)
+    except parsing.NotRecognised as e:
+        try:
+            found = parsing.describe(data)
+        except parsing.StatementError:
+            found = {"headers": []}
+        if not found["headers"]:
+            raise ValidationError(str(e)) from None
+        return StatementImport.objects.create(
+            organization=actor.organization, payment_account=account, kind=kind, created_by=actor.user,
+            file_name=name[:200], status=Status.MAPPING, raw=data)
+    except parsing.StatementError as e:
+        message = str(e)
+        if "no text" in message and scan.available(actor):
+            message += " " + _("Tick “This is a photo or scan” to read it instead.")
+        raise ValidationError(message) from None
+    return _store(actor, account, kind, name, parsed, request=request)
+
+
+def mapping_page(actor: Membership, batch: StatementImport) -> dict:
+    """The header names found in a statement waiting for its columns, and what is known so far."""
+    if batch.status != Status.MAPPING or not batch.raw or is_expired(batch):
+        raise ValidationError(_("This statement is no longer waiting. Upload the file again."))
+    found = parsing.describe(bytes(batch.raw))
+    return {**found, "saved": saved_columns(batch.payment_account)}
+
+
+@transaction.atomic
+def map_columns(actor: Membership, batch: StatementImport, mapping: dict[str, str], *, request=None):
+    """Saves which header is which for this account and reads the waiting statement with it."""
+    if not visible_imports(actor).filter(pk=batch.pk).exists():
+        raise PermissionDenied(_("That record belongs to another organization."))
+    batch = StatementImport.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=batch.pk)
+    if batch.status != Status.MAPPING or not batch.raw or is_expired(batch):
+        raise ValidationError(_("This statement is no longer waiting. Upload the file again."))
+    data = bytes(batch.raw)
+    headers = {parsing.normalize_header(h) for h in parsing.describe(data)["headers"]}
+    clean = {}
+    for key in parsing.MAPPABLE:
+        value = " ".join((mapping.get(key) or "").split())
+        if not value:
+            continue
+        if parsing.normalize_header(value) not in headers:
+            raise ValidationError({key: _("That column is not in the file.")})
+        clean[key] = value
+    if "date" not in clean:
+        raise ValidationError({"date": _("Choose the date column.")})
+    if "credit" not in clean and "amount" not in clean:
+        raise ValidationError({"credit": _("Choose the money-in column, or the amount column.")})
+    try:
+        parsed = parsing.read_bank(data, clean)
+    except parsing.StatementError as e:
+        raise ValidationError(str(e)) from None
+    StatementFormat.objects.update_or_create(
+        payment_account=batch.payment_account,
+        defaults={"organization": actor.organization, "columns": clean, "updated_by": actor.user})
+    audit.record("statement.columns", actor=actor.user, organization=actor.organization, obj=batch, request=request,
+                 changes={"account": [None, batch.payment_account.display_name], "columns": [None, clean]})
+    return _store(actor, batch.payment_account, batch.kind, batch.file_name, parsed, batch=batch, request=request)
+
+
 def is_expired(batch: StatementImport) -> bool:
-    return batch.status == Status.PREVIEW and timezone.now() >= batch.created_at + PREVIEW_TTL
+    return batch.status in (Status.PREVIEW, Status.MAPPING) and timezone.now() >= batch.created_at + PREVIEW_TTL
 
 
 def purge_stale_previews() -> int:
-    return StatementImport.objects.filter(status=Status.PREVIEW, created_at__lt=timezone.now() - PREVIEW_TTL).update(
-        status=Status.DISCARDED, rows=[], updated_at=timezone.now())
+    return StatementImport.objects.filter(status__in=[Status.PREVIEW, Status.MAPPING],
+                                          created_at__lt=timezone.now() - PREVIEW_TTL).update(
+        status=Status.DISCARDED, rows=[], raw=None, updated_at=timezone.now())
 
 
 # ---------------------------------------------------------------------------
@@ -253,7 +344,8 @@ def apply(actor: Membership, batch: StatementImport, *, request=None) -> Stateme
     for obj in added:
         if batch.kind == Kind.BANK:
             try:
-                matched += matching.process(obj).status == BankTransaction.Status.MATCHED
+                matched += matching.process(obj, confirm=batch.source != StatementImport.Source.SCAN
+                                            ).status == BankTransaction.Status.MATCHED
             except Exception:
                 logger.exception("Bank line %s could not be matched", obj.pk)
                 BankTransaction.objects.filter(pk=obj.pk, status=BankTransaction.Status.UNMATCHED).update(

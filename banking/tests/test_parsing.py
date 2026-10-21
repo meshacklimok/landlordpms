@@ -90,3 +90,132 @@ def test_an_mpesa_organization_statement():
     assert first.paid_at == datetime.datetime(2026, 2, 3, 10, 15, tzinfo=parsing.NAIROBI)
     assert (second.bill_ref, second.payer_raw) == ("GV A2", "2547****5678")
     assert parsed.skipped == 2
+
+
+# ---------------------------------------------------------------------------
+# Excel, PDF and other layouts (D-211)
+# ---------------------------------------------------------------------------
+
+
+def _xlsx(rows) -> bytes:
+    import io
+
+    from openpyxl import Workbook
+
+    book = Workbook()
+    sheet = book.active
+    for row in rows:
+        sheet.append(row)
+    out = io.BytesIO()
+    book.save(out)
+    return out.getvalue()
+
+
+def test_an_excel_statement_with_real_dates_and_numbers():
+    data = _xlsx([
+        ["Co-operative Bank", None, None],
+        ["Date", "Transaction Details", "Money In", "Money Out", "Balance"],
+        [datetime.datetime(2026, 10, 6), "UJ6PF8WITP-254729024549-MPESAC2B_400 200-MESHACK", 3200.0, None, 3489.98],
+        [datetime.datetime(2026, 10, 6), "CLOUDFLARE 795564", None, -1668.3, 289.98],
+    ])
+    parsed = read_bank(data)
+    assert [(line.posted_on, line.amount, line.balance) for line in parsed.lines] == [
+        (D(2026, 10, 6), Decimal("3200.00"), Decimal("3489.98"))]
+    assert "MESHACK" in parsed.lines[0].description
+    assert parsed.skipped == 1
+
+
+def test_an_old_xls_and_a_web_page_are_refused_with_advice():
+    with pytest.raises(StatementError, match="xlsx"):
+        read_bank(b"\xd0\xcf\x11\xe0" + b"0" * 50)
+    with pytest.raises(StatementError, match="web page"):
+        read_bank(b"<!DOCTYPE html><html><table></table></html>")
+
+
+def test_coop_app_columns_with_signed_amounts_in_csv():
+    data = (b"Date,Value Date,Transaction Details,Ref Number,Money In,Money Out,Balance\n"
+            b"06-Oct-26,06-Oct-26,UJ6PF8WITP-254729024549-MPESAC2B_400 200-MESHACK,UJ6PF8WITP,"
+            b"\"+ 3,200.00\",,\"3,489.98\"\n"
+            b"14-Oct-26,14-Oct-26,EXCISE MPESA BANK COMMISSION,,,\"- 3.60\",989.08\n")
+    parsed = read_bank(data)
+    assert [(line.amount, line.reference) for line in parsed.lines] == [(Decimal("3200.00"), "UJ6PF8WITP")]
+    assert parsed.skipped == 1
+
+
+def test_a_single_amount_column_with_a_dr_cr_column():
+    data = (b"Date,Narration,Amount,Dr/Cr\n03/02/2026,RENT GV A1,15000,CR\n04/02/2026,FEE,50,DR\n")
+    parsed = read_bank(data)
+    assert [line.amount for line in parsed.lines] == [Decimal("15000.00")]
+    assert parsed.skipped == 1
+
+
+def test_an_unsigned_amount_column_is_split_by_the_running_balance_either_way_round():
+    newest_first = (b"Date,Description,Amount,Balance\n"
+                    b"05/02/2026,RENT B2,2000,12000\n04/02/2026,FEE,50,10000\n03/02/2026,Opening,10050,10050\n")
+    assert [line.amount for line in read_bank(newest_first).lines] == [Decimal("2000.00"), Decimal("10050.00")]
+    oldest_first = (b"Date,Description,Amount,Balance\n"
+                    b"03/02/2026,Opening,10050,10050\n04/02/2026,FEE,50,10000\n05/02/2026,RENT B2,2000,12000\n")
+    assert [line.amount for line in read_bank(oldest_first).lines] == [Decimal("10050.00"), Decimal("2000.00")]
+
+
+def test_unknown_description_header_falls_back_to_the_other_cells():
+    data = b"Date,Credit,Particulars of payment\n03/02/2026,100,RENT GV A1 JANE\n"
+    assert read_bank(data).lines[0].description == "RENT GV A1 JANE"
+
+
+COOP_ROWS = [
+    # date, value date, description lines, ref, money in, money out, balance
+    ("14-Oct-26", ["EXCISE MPESA BANK COMMISSION"], "", "", "- 3.60", "989.08"),
+    ("06-Oct-26", ["UJ6PF8WITP-254729024549-01102052606001-MPESAC2B_400", "200-MESHACK KIPLIMO"], "UJ6PF8WITP",
+     "+ 3,200.00", "", "3,489.98"),
+    ("06-Oct-26", ["CLOUDFLARE 795564 30137777893 01102052606001", "APQUP1VD 4195144516"], "627906812228", "",
+     "- 1,668.30", "289.98"),
+    ("08-Sep-26", ["UI8PF5KQDV-254729024549-01102052606001-MPESAC2B_40", "0200-MESHACK KIPLIMO"], "UI8PF5KQDV",
+     "+ 5,000.00", "", "8,231.37"),
+]
+
+
+def _coop_pdf() -> bytes:
+    import io
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Spacer, Table, TableStyle
+
+    header = ["Date", "Value Date", "Transaction Details", "Ref Number", "Money In", "Money Out", "Balance"]
+    body = [[d, d, "\n".join(desc), ref, money_in, money_out, bal]
+            for d, desc, ref, money_in, money_out, bal in COOP_ROWS]
+    widths = [22 * mm, 22 * mm, 62 * mm, 28 * mm, 22 * mm, 22 * mm, 22 * mm]
+    table = Table([header, *body], colWidths=widths, rowHeights=[10 * mm] + [12 * mm] * len(body))
+    table.setStyle(TableStyle([("FONTSIZE", (0, 0), (-1, -1), 7), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                               ("ALIGN", (4, 0), (-1, -1), "CENTER")]))
+    out = io.BytesIO()
+    SimpleDocTemplate(out, pagesize=A4, leftMargin=8 * mm, rightMargin=8 * mm).build(
+        [Spacer(1, 5 * mm), table, Spacer(1, 15 * mm)])
+    return out.getvalue()
+
+
+def test_a_coop_app_pdf_with_wrapped_descriptions_is_rebuilt_into_rows():
+    parsed = read_bank(_coop_pdf())
+    assert [(line.posted_on, line.amount, line.balance) for line in parsed.lines] == [
+        (D(2026, 10, 6), Decimal("3200.00"), Decimal("3489.98")),
+        (D(2026, 9, 8), Decimal("5000.00"), Decimal("8231.37"))]
+    first = parsed.lines[0]
+    assert "MESHACK KIPLIMO" in first.description and "UJ6PF8WITP-254729024549" in first.description
+    assert first.reference == "UJ6PF8WITP"
+    assert parsed.skipped == 2 and parsed.errors == []
+
+
+def test_a_pdf_with_no_text_says_what_to_do():
+    import io
+
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(200, 200)
+    out = io.BytesIO()
+    writer.write(out)
+    with pytest.raises(StatementError, match="no text"):
+        read_bank(out.getvalue())
+    with pytest.raises(StatementError, match="could not be read"):
+        read_bank(b"%PDF-1.4 garbage")

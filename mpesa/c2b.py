@@ -309,7 +309,7 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
         tx.note = (f"{tx.note} Already recorded by hand on {recorded.lease.number} "
                    f"({recorded.get_status_display().lower()}); check it and ignore this one.").strip()[:300]
         tx.save()
-        _alert(tx, payer=False)
+        _alert(tx)
         return tx
     stk_reason = _confirm_stk(tx)
     if tx.status == Status.MATCHED:
@@ -330,11 +330,11 @@ def process(tx: MpesaTransaction) -> MpesaTransaction:
     return tx
 
 
-def _alert(tx: MpesaTransaction, *, payer: bool = True) -> None:
-    """Tells the staff who can match it, and the payer. A failure here never undoes the matching.
+def _alert(tx: MpesaTransaction) -> None:
+    """Tells the staff who can match it, in the app and by email. A failure here never undoes the matching.
 
-    Not for a statement import: the member importing sees the summary, and the payment is old news
-    to the payer (D-064 item 7)."""
+    The payer is told nothing: they get the payment confirmation once it is matched.
+    Not for a statement import: the member importing sees the summary (D-064 item 7)."""
     from notifications import triggers
 
     if tx.source == MpesaTransaction.Source.STATEMENT:
@@ -342,8 +342,6 @@ def _alert(tx: MpesaTransaction, *, payer: bool = True) -> None:
     try:
         with transaction.atomic():
             triggers.mpesa_unmatched(tx)
-            if payer:
-                triggers.payer_unmatched(tx)
     except Exception:
         logger.exception("Alerts for unmatched M-Pesa transaction %s failed", tx.trans_id)
 

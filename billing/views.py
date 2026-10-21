@@ -21,8 +21,10 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from core import ratelimit
 from core.ids import uuid_or_none
 from core.money import format_money
+from core.net import client_ip
 from leases import paperwork
 from leases.models import Lease, LeaseTenant
 from leases.services import visible_leases
@@ -37,6 +39,7 @@ from . import deposits, followups, forms, invoicing, late_fees, selectors, servi
 from .models import ChargeType, DepositEntry, Invoice, LedgerEntry
 
 PAGE_SIZE = 25
+ARREARS_PAGE_SIZE = 50
 
 
 class ChargeTypeListView(CapabilityRequiredMixin, View):
@@ -93,6 +96,30 @@ class ChargeTypeListView(CapabilityRequiredMixin, View):
 
 def _get_invoice(request, public_id) -> Invoice:
     return get_object_or_404(selectors.visible_invoices(request.membership), public_id=public_id)
+
+
+class InvoiceCheckView(View):
+    """What an invoice's QR code opens (D-194): is this invoice genuine? No login; the random id is the key.
+
+    Shows what is printed at the top of the invoice (number, issuer, dates, total) and whether it was voided. Never
+    the tenant, unit, payments or balance. Drafts are not found.
+    """
+
+    def get(self, request, public_id):
+        if not ratelimit.hit(f"invoice_check:ip:{client_ip(request)}", 60, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        invoice = (Invoice.objects.select_related("organization")
+                   .filter(public_id=public_id).exclude(status=Invoice.Status.DRAFT).exclude(number="").first())
+        if invoice is None:
+            response = render(request, "billing/invoice_check.html", {"invoice": None}, status=404)
+        else:
+            response = render(request, "billing/invoice_check.html", {
+                "invoice": invoice, "organization": invoice.organization.display_name,
+                "void": invoice.status == Invoice.Status.VOID,
+                "total": format_money(invoice.total, invoice.currency)})
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
 
 
 class InvoicePdfView(CapabilityRequiredMixin, View):
@@ -199,7 +226,6 @@ class GenerateBase(CapabilityRequiredMixin, View):
     def example_message(self, request, form, month, include):
         """One tenant's message with real figures, so the wording is visible before anything can be billed."""
         today = timezone.localdate()
-        org = request.organization
         chosen = form.chosen_leases() if form.is_bound and form.is_valid() else None
         leases = chosen if chosen is not None else list(form._leases.values())
         for lease in leases:
@@ -344,9 +370,13 @@ class ArrearsView(CapabilityRequiredMixin, View):
     def get(self, request):
         today = timezone.localdate()
         show_all = request.GET.get("all") == "1"
-        rows = selectors.arrears(request.membership, today, overdue_only=not show_all)
+        rows = selectors.arrears(request.membership, today, overdue_only=not show_all, with_tenants=False)
+        # The figures cover every lease; only the table is paged, so 1,000 owing leases do not render as 1,000 rows,
+        # and tenants are loaded for the rows shown.
+        page = Paginator(rows, ARREARS_PAGE_SIZE).get_page(request.GET.get("page"))
+        selectors.prefetch_tenants(list(page.object_list))
         return render(request, self.template_name, {
-            "rows": rows, "totals": selectors.aging_totals(rows), "buckets": selectors.AGING_BUCKETS,
+            "rows": rows, "page": page, "totals": selectors.aging_totals(rows), "buckets": selectors.AGING_BUCKETS,
             "today": today, "show_all": show_all, "summary": selectors.arrears_summary(rows, today),
             "currency": request.membership.organization.currency,
             "can_late_fees": can(request.membership, "invoices.generate"),

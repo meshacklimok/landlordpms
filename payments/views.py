@@ -20,7 +20,7 @@ from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
 from billing.invoicing import lease_balance
 from core import charts, exports, ratelimit
-from core.money import ZERO
+from core.money import ZERO, format_money
 from core.net import client_ip
 from leases.models import Lease
 from leases.services import visible_leases
@@ -75,7 +75,7 @@ class PaymentListView(CapabilityRequiredMixin, View):
             "totals": selectors.totals_by_state(base),
             "states": Payment.STATES,
             "presets": [(key, start, end, start == filters.get("date_from") and end == filters.get("date_to"))
-                        for key, start, end in selectors.period_presets(today)],
+                        for key, start, end in selectors.period_presets(today, request.organization.financial_year_start_month)],
             "pending_count": selectors.pending_review(m).count(),
             "can_record": can(m, "payments.record"),
             "can_export": can(m, "reports.export"),
@@ -351,6 +351,30 @@ class PublicReceiptView(View):
             raise Http404
         response = FileResponse(receipt.pdf.open("rb"), content_type="application/pdf",
                                 filename=f"{receipt.number}.pdf")
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        response["Referrer-Policy"] = "no-referrer"
+        return response
+
+
+class PublicReceiptCheckView(View):
+    """What a receipt's QR code opens (D-194): is this receipt genuine, and is it still good?
+
+    It shows only what is printed on the receipt's face: number, who issued it, the date, method and amount, and
+    whether the payment has since been reversed. No tenant, unit or balance. The token is the key.
+    """
+
+    def get(self, request, token):
+        if not ratelimit.hit(f"receipt_check:ip:{client_ip(request)}", RECEIPT_LINK_RATE_LIMIT, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        receipt = (Receipt.objects.select_related("payment", "organization").filter(share_token=token).first())
+        if receipt is None:
+            response = render(request, "payments/receipt_check.html", {"receipt": None}, status=404)
+        else:
+            payment = receipt.payment
+            response = render(request, "payments/receipt_check.html", {
+                "receipt": receipt, "organization": receipt.organization.display_name, "payment": payment,
+                "reversed": payment.status == Payment.Status.REVERSED,
+                "amount": format_money(payment.amount, payment.lease.currency)})
         response["X-Robots-Tag"] = "noindex, nofollow"
         response["Referrer-Policy"] = "no-referrer"
         return response

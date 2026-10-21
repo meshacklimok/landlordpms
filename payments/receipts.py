@@ -7,7 +7,9 @@ It is served only through a permission-checked view, and its file name is a rand
 import secrets
 import uuid
 
+from django.conf import settings
 from django.core.files.base import ContentFile
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from reportlab.lib.pagesizes import A5
@@ -94,4 +96,11 @@ def render_pdf(receipt: Receipt) -> bytes:
     row(_("%(what)s after this payment") % {"what": d["balance_label"]}, d["balance"], bold=True)
     stub.y -= 1 * mm
     stub.note(_("Keep this receipt as proof of payment."))
+    if receipt.share_token:
+        stub.qr(check_url(receipt), _("Scan to check this receipt is genuine."))
     return stub.finish()
+
+
+def check_url(receipt: Receipt) -> str:
+    """The public page that confirms a receipt (D-194); it shows no tenant name or balance."""
+    return settings.SITE_URL + reverse("receipt_check", args=[receipt.share_token])

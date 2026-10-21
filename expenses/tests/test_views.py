@@ -202,3 +202,26 @@ def test_editing_through_the_page(client, owner, org, prop, repairs):
     client.logout()
     login(client, viewer)
     assert client.get(reverse("expenses:edit", args=[e.public_id])).status_code == 403
+
+
+def test_recording_a_shared_expense_through_the_page(client, owner, org, repairs):
+    a, b = make_property(org, name="Acacia"), make_property(org, name="Baobab")
+    login(client, owner)
+    assert client.get(reverse("expenses:create_split")).status_code == 200
+    response = client.post(reverse("expenses:create_split"), {
+        "properties": [str(a.public_id), str(b.public_id)], "rule": "percent",
+        f"percent_{a.public_id}": "60", f"percent_{b.public_id}": "40",
+        "category": str(repairs.public_id), "description": "Guard", "amount": "5,000", "paid_on": PAID.isoformat(),
+        "method": "CASH", "reference": "", "supplier": ""})
+    assert response.status_code == 302
+    assert sorted(Expense.objects.values_list("amount", flat=True)) == [2000, 3000]
+    page = client.get(response["Location"]).content.decode()
+    assert "Shared payment" in page and "Baobab" in page
+    assert "Shared" in client.get(reverse("expenses:list")).content.decode()
+    bad = client.post(reverse("expenses:create_split"), {
+        "properties": [str(a.public_id), str(b.public_id)], "rule": "percent",
+        f"percent_{a.public_id}": "60", f"percent_{b.public_id}": "30",
+        "category": str(repairs.public_id), "description": "Guard", "amount": "5000", "paid_on": PAID.isoformat(),
+        "method": "CASH"})
+    assert bad.status_code == 200 and "add up to 100" in bad.content.decode()
+    assert Expense.objects.count() == 2

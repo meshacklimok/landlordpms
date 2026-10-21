@@ -75,7 +75,7 @@ def test_the_pages_show_expenses(client, owner, books):
     page = client.get(reverse("reports:profit_loss"), {"from": "2025-01", "to": "2025-01"}).content.decode()
     assert "Guards" not in page and "Security" in page and "3,000.00" in page and "17,000.00" in page
     csv = client.get(reverse("reports:cash_flow"), {"from": "2025-01", "to": "2025-01", "format": "csv"})
-    assert "2025-01,20000.00,0.00,0.00,0.00,20000.00,3000.00,0.00" in csv.content.decode()
+    assert "2025-01,20000.00,0.00,0.00,0.00,0.00,20000.00,3000.00,0.00" in csv.content.decode()
 
 
 def test_the_owner_statement_takes_off_expenses(owner, jane, books):

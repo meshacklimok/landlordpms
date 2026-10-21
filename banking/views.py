@@ -95,7 +95,13 @@ class BankAccountsView(CapabilityRequiredMixin, View):
 
 class UploadForm(forms.Form):
     account = forms.ModelChoiceField(label=gettext_lazy("Account"), queryset=None, empty_label=None)
-    file = forms.FileField(label=gettext_lazy("Statement (CSV)"))
+    file = forms.FileField(label=gettext_lazy("Statement (Excel, CSV or PDF)"),
+                           widget=forms.ClearableFileInput(
+                               attrs={"accept": ".csv,.txt,.xlsx,.pdf,.jpg,.jpeg,.png,.webp"}))
+    scanned = forms.BooleanField(
+        required=False, label=gettext_lazy("This is a photo or scan"),
+        help_text=gettext_lazy("A photo, screenshot or scanned PDF is read by AI and uses one of this month's photo "
+                               "scans. Nothing from a photo is matched automatically."))
 
     def __init__(self, *args, accounts=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -121,10 +127,13 @@ class ImportView(CapabilityRequiredMixin, View):
         form = UploadForm(request.POST, request.FILES, accounts=services.importable_accounts(m))
         if form.is_valid():
             try:
-                batch = services.preview(m, form.cleaned_data["account"], form.cleaned_data["file"], request=request)
+                batch = services.preview(m, form.cleaned_data["account"], form.cleaned_data["file"],
+                                         scanned=form.cleaned_data["scanned"], request=request)
             except ValidationError as e:
                 form.add_error("file", e.messages)
             else:
+                if batch.status == StatementImport.Status.MAPPING:
+                    return redirect("banking:import_map", public_id=batch.public_id)
                 return redirect("banking:import_detail", public_id=batch.public_id)
         return render(request, self.template_name, self.context(request, form), status=400)
 
@@ -141,6 +150,8 @@ class ImportDetailView(CapabilityRequiredMixin, View):
 
     def get(self, request, public_id):
         batch = self.batch(request, public_id)
+        if batch.status == StatementImport.Status.MAPPING and not services.is_expired(batch):
+            return redirect("banking:import_map", public_id=batch.public_id)
         return render(request, self.template_name, {
             "batch": batch, "expired": services.is_expired(batch), "rows": batch.rows[:500],
             "currency": request.organization.currency,
@@ -164,6 +175,57 @@ class ImportDetailView(CapabilityRequiredMixin, View):
                                         "inbox.") % {"n": batch.new_count, "m": batch.matched_count,
                                                       "u": batch.unmatched_count})
         return redirect("banking:import_detail", public_id=batch.public_id)
+
+
+class ImportMapView(ImportDetailView):
+    """Match the columns of a statement we did not recognise to what they hold (D-212)."""
+
+    template_name = "banking/import_map.html"
+
+    def page(self, request, batch):
+        try:
+            return services.mapping_page(request.membership, batch)
+        except ValidationError as e:
+            messages.error(request, " ".join(e.messages))
+            return None
+
+    def get(self, request, public_id):
+        batch = self.batch(request, public_id)
+        page = self.page(request, batch)
+        if page is None:
+            return redirect("banking:import")
+        return render(request, self.template_name, {"batch": batch, "fields": _fields(page["saved"]), **page})
+
+    def post(self, request, public_id):
+        batch = self.batch(request, public_id)
+        chosen = {key: request.POST.get(key, "") for key, _label, _help in FIELDS}
+        try:
+            batch = services.map_columns(request.membership, batch, chosen, request=request)
+        except PermissionDenied:
+            raise Http404 from None
+        except ValidationError as e:
+            errors = e.message_dict if hasattr(e, "error_dict") else {"": e.messages}
+            page = self.page(request, batch)
+            if page is None:
+                return redirect("banking:import")
+            return render(request, self.template_name, {"batch": batch, "fields": _fields(chosen), **page,
+                                                         "errors": errors}, status=400)
+        return redirect("banking:import_detail", public_id=batch.public_id)
+
+
+FIELDS = (
+    ("date", gettext_lazy("Date"), gettext_lazy("Required")),
+    ("credit", gettext_lazy("Money in"), gettext_lazy("Use this, or Amount below")),
+    ("amount", gettext_lazy("Amount"), gettext_lazy("One column for money in and out")),
+    ("debit", gettext_lazy("Money out"), gettext_lazy("Optional")),
+    ("description", gettext_lazy("Description"), gettext_lazy("The narration; helps matching")),
+    ("reference", gettext_lazy("Reference"), gettext_lazy("The bank reference, if there is a column")),
+    ("balance", gettext_lazy("Balance"), gettext_lazy("Optional; used to tell money in from money out")),
+)
+
+
+def _fields(chosen: dict) -> list[tuple]:
+    return [(key, label, help_text, chosen.get(key, "")) for key, label, help_text in FIELDS]
 
 
 # ---------------------------------------------------------------------------

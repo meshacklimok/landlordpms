@@ -206,3 +206,17 @@ def test_the_account_shows_the_payment_record(client, owner, lease):
     page = client.get(account(lease)).content.decode()
     assert "Payment record" in page and "Billed to date" in page and "100% of it paid" in page
     assert "Payments received" in page and "1 payment, " in page
+
+
+def test_invoice_check_page_shows_only_face_facts(client, owner, lease):
+    from billing.pdf import check_url, render_invoice
+    invoice = bill(lease, FEB)
+    url = reverse("invoice_check", args=[invoice.public_id])
+    assert check_url(invoice).endswith(url)
+    body = client.get(url).content.decode()
+    assert invoice.number in body and lease.unit.code not in body and "Paid so far" not in body
+    assert render_invoice(invoice).startswith(b"%PDF")
+    assert client.get(reverse("invoice_check", args=["00000000-0000-4000-8000-000000000000"])).status_code == 404
+    from billing import invoicing
+    invoicing.void_invoice(owner, invoice, reason="Billed in error")
+    assert "cancelled" in client.get(url).content.decode()

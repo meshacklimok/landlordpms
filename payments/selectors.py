@@ -210,12 +210,13 @@ def for_lease(lease):
             .prefetch_related("allocations__invoice").order_by("-paid_at", "-pk"))
 
 
-def period_presets(today: datetime.date) -> list[tuple[str, datetime.date, datetime.date]]:
+def period_presets(today: datetime.date, year_first_month: int = 1) -> list[tuple[str, datetime.date, datetime.date]]:
     """Quick date ranges for the list: (label key, from, to)."""
     month_start = today.replace(day=1)
     last_month_end = month_start - datetime.timedelta(days=1)
     return [
         ("this_month", month_start, today),
         ("last_month", last_month_end.replace(day=1), last_month_end),
-        ("this_year", today.replace(month=1, day=1), today),
+        ("this_year", today.replace(month=year_first_month, day=1, year=today.year - (today.month < year_first_month)),
+         today),
     ]

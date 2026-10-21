@@ -7,6 +7,7 @@ app_name = "expenses"
 urlpatterns = [
     path("", views.ExpenseListView.as_view(), name="list"),
     path("new/", views.ExpenseCreateView.as_view(), name="create"),
+    path("new/shared/", views.ExpenseSplitView.as_view(), name="create_split"),
     path("suppliers/", views.SupplierListView.as_view(), name="suppliers"),
     path("suppliers/new/", views.SupplierFormView.as_view(), name="supplier_create"),
     path("suppliers/<uuid:public_id>/", views.SupplierFormView.as_view(), name="supplier_edit"),

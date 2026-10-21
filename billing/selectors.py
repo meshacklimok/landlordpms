@@ -5,14 +5,14 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from decimal import Decimal
 
-from django.db.models import Count, F, Max, Min, Prefetch, Q, Sum
+from django.db.models import Count, F, Max, Min, Prefetch, Q, Sum, prefetch_related_objects
 from django.utils.translation import gettext_lazy as _
 
 from accounts.permissions import accessible_property_ids, can
 from core.money import ZERO
 from leases.models import Lease, LeaseTenant
 
-from .models import Invoice, LedgerEntry
+from .models import ChargeType, Invoice, InvoiceLine, LedgerEntry
 
 Kind = LedgerEntry.Kind
 
@@ -127,6 +127,8 @@ def invoice_totals(invoices, today: datetime.date) -> InvoiceTotals:
 class StatementRow:
     entry: LedgerEntry
     balance: Decimal
+    # What an invoice row charged for: the invoice's lines, so rent, water and fees show apart.
+    lines: list = field(default_factory=list)
 
     @property
     def debit(self):
@@ -147,11 +149,25 @@ def statement(lease: Lease, *, start: datetime.date | None = None, end: datetime
     if end:
         entries = entries.filter(entry_date__lte=end)
     rows, balance = [], brought
-    for entry in entries.select_related("invoice", "payment").order_by("entry_date", "pk"):
+    listed = list(entries.select_related("invoice", "payment").order_by("entry_date", "pk"))
+    lines = defaultdict(list)
+    for line in (InvoiceLine.objects.filter(invoice__in=[e.invoice_id for e in listed if e.kind == Kind.INVOICE])
+                 .select_related("charge_type").order_by("pk")):
+        lines[line.invoice_id].append(line)
+    charged = {"rent": ZERO, "utilities": ZERO, "deposit": ZERO, "other": ZERO}
+    for entry in listed:
         balance += entry.amount
-        rows.append(StatementRow(entry, balance))
+        row = StatementRow(entry, balance, lines.get(entry.invoice_id, []) if entry.kind == Kind.INVOICE else [])
+        for line in row.lines:
+            charged[ChargeType.bucket(line.charge_type.category)] += line.amount
+        rows.append(row)
+    debits = sum((r.entry.amount for r in rows if r.entry.amount > 0), ZERO)
+    credits = -sum((r.entry.amount for r in rows if r.entry.amount < 0), ZERO)
+    # Billed by kind, the other debits (opening balance, adjustments) and what came off: the lines add up to
+    # the closing balance less the balance brought forward.
     return {"lease": lease, "start": start, "end": end, "brought_forward": brought, "rows": rows,
-            "closing": balance}
+            "closing": balance, "charged": charged, "debits": debits, "credits": credits,
+            "other_debits": debits - sum((r.entry.amount for r in rows if r.entry.kind == Kind.INVOICE), ZERO)}
 
 
 # ---------------------------------------------------------------------------
@@ -236,11 +252,18 @@ def lease_arrears(lease: Lease, entries: list[LedgerEntry], today: datetime.date
                         late_from=min((d.late_from for d in debts), default=None))
 
 
-def arrears(membership, today: datetime.date, *, overdue_only=True) -> list[LeaseArrears]:
-    """Leases that owe money, most overdue first, from the ledger in one query per table."""
+def arrears(membership, today: datetime.date, *, overdue_only=True, with_tenants=True) -> list[LeaseArrears]:
+    """Leases that owe money, most overdue first, from the ledger in one query per table.
+
+    A caller that shows only some of the rows passes `with_tenants=False` and loads the tenants of those with
+    `prefetch_tenants`, instead of loading them for every lease."""
     if not can(membership, "invoices.view"):
         return []
-    return _arrears(membership, today, overdue_only=overdue_only)
+    return _arrears(membership, today, overdue_only=overdue_only, with_tenants=with_tenants)
+
+
+def prefetch_tenants(rows: list[LeaseArrears]) -> None:
+    prefetch_related_objects([r.lease for r in rows], Prefetch("lease_tenants", LeaseTenant.objects.select_related("tenant")))
 
 
 def overdue_lease_count(membership, today: datetime.date) -> int:
@@ -252,9 +275,9 @@ def overdue_lease_count(membership, today: datetime.date) -> int:
     return len(_arrears(membership, today, overdue_only=True))
 
 
-def _arrears(membership, today: datetime.date, *, overdue_only: bool) -> list[LeaseArrears]:
+def _arrears(membership, today: datetime.date, *, overdue_only: bool, with_tenants=True) -> list[LeaseArrears]:
     entries = _in_scope(membership, LedgerEntry.objects.for_org(membership.organization), "lease__unit__property_id")
-    return _arrears_from(entries, today, overdue_only=overdue_only)
+    return _arrears_from(entries, today, overdue_only=overdue_only, with_tenants=with_tenants)
 
 
 def organization_arrears(org, day: datetime.date, *, as_recorded_now: bool = False) -> list[LeaseArrears]:
@@ -269,10 +292,12 @@ def organization_arrears(org, day: datetime.date, *, as_recorded_now: bool = Fal
     return _arrears_from(entries, day, overdue_only=True)
 
 
-def _arrears_from(entries, today: datetime.date, *, overdue_only: bool) -> list[LeaseArrears]:
+def _arrears_from(entries, today: datetime.date, *, overdue_only: bool, with_tenants=True) -> list[LeaseArrears]:
     owing = entries.values("lease_id").annotate(s=Sum("amount")).filter(s__gt=0).values("lease_id")
-    leases = {lease.pk: lease for lease in Lease.all_objects.filter(pk__in=owing).select_related(
-        "unit__property").prefetch_related(Prefetch("lease_tenants", LeaseTenant.objects.select_related("tenant")))}
+    found = Lease.all_objects.filter(pk__in=owing).select_related("unit__property")
+    if with_tenants:
+        found = found.prefetch_related(Prefetch("lease_tenants", LeaseTenant.objects.select_related("tenant")))
+    leases = {lease.pk: lease for lease in found}
     grouped = defaultdict(list)
     # Every entry of each owing lease is read, because credits pay the oldest debits across the whole history.
     # Only the columns `unpaid_debts` uses are loaded, which keeps a long history cheap (doc 20 §30).

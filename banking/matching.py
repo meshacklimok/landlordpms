@@ -111,8 +111,9 @@ def _leave(line: BankTransaction, lease: Lease | None, note: str) -> None:
 
 
 @transaction.atomic
-def process(line: BankTransaction) -> BankTransaction:
-    """Matches a new line: confirmed by reference, else left UNMATCHED, perhaps with a suggestion."""
+def process(line: BankTransaction, *, confirm: bool = True) -> BankTransaction:
+    """Matches a new line: confirmed by reference, else left UNMATCHED, perhaps with a suggestion. With
+    `confirm` off (a statement read from a photo, D-212) a reference match is only suggested."""
     line = BankTransaction.objects.select_for_update(of=("self",)).select_related("payment_account").get(pk=line.pk)
     if line.status != Status.UNMATCHED or line.matched_at is not None or line.payment_id:
         return line
@@ -127,6 +128,10 @@ def process(line: BankTransaction) -> BankTransaction:
         if recorded is not None:
             _leave(line, lease, f"A bank payment of the same amount is already recorded on {lease.number} "
                                 f"({recorded.paid_at:%d %b %Y}); if it is this money, ignore this line.")
+            return line
+        if not confirm:
+            _leave(line, lease, "Read from a photo or scan: check the amount and date against your statement, "
+                                "then accept the suggested lease.")
             return line
         confirm_to_lease(line, lease, matched_by=BankTransaction.MatchedBy.REFERENCE)
         return line

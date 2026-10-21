@@ -44,6 +44,7 @@ from leases import services as lease_services
 from leases.models import Lease
 from properties import services as property_services
 from properties.models import Building, Property, Unit, clean_code
+from subscriptions import entitlements
 from tenants import services as tenant_services
 from tenants.models import Tenant
 
@@ -215,7 +216,7 @@ def parse_upload(kind: str, upload) -> list[dict]:
     name = getattr(upload, "name", "").lower()
     if name.endswith(".xls"):
         raise ValidationError(_("Old .xls files are not supported. In Excel choose Save As, then .xlsx or CSV."))
-    records = _read_xlsx(upload) if name.endswith((".xlsx", ".xlsm")) else _read_csv(upload)
+    records = _read_xlsx(upload) if name.endswith(".xlsx") else _read_csv(upload)
     header, names, rows = None, [], []
     for line, record in records:
         if not any(str(v).strip() for v in record):
@@ -293,16 +294,28 @@ def _date(value: str) -> datetime.date:
 # ---------------------------------------------------------------------------
 
 
+def _property(actor: Membership, ctx, code: str):
+    """The visible property with this code. A batch looks each one up once, with its organization, not once a row."""
+    cache = ctx["properties"]
+    if code.upper() not in cache:
+        cache[code.upper()] = (visible_properties(actor, Property.objects.all()).filter(code__iexact=code)
+                               .select_related("organization").first())
+    return cache[code.upper()]
+
+
 def _create_unit(actor: Membership, data: dict, request, ctx):
     code = clean_code(data["property_code"])
-    prop = visible_properties(actor, Property.objects.all()).filter(code__iexact=code).first()
+    prop = _property(actor, ctx, code)
     if prop is None:
         raise ValidationError(_("No property with code %(code)s.") % {"code": code})
     if not can(actor, "units.manage", prop):
         raise ValidationError(_("You cannot add units to %(name)s.") % {"name": prop.name})
     building = None
     if data.get("building"):
-        building = Building.objects.filter(property=prop, name__iexact=data["building"]).first()
+        key = (prop.pk, data["building"].upper())
+        if key not in ctx["buildings"]:
+            ctx["buildings"][key] = Building.objects.filter(property=prop, name__iexact=data["building"]).first()
+        building = ctx["buildings"][key]
         if building is None:
             raise ValidationError(_("%(name)s has no building called “%(b)s”. Add it first.")
                                   % {"name": prop.name, "b": data["building"]})
@@ -332,11 +345,11 @@ def _create_tenant(actor: Membership, data: dict, request, ctx):
     return tenant, tenant.name
 
 
-def _unit(actor: Membership, data: dict) -> Unit:
+def _unit(actor: Membership, data: dict, ctx) -> Unit:
     code = clean_code(data["property_code"])
-    unit = (Unit.objects.filter(property__in=visible_properties(actor, Property.objects.all()),
-                                property__code__iexact=code, code__iexact=clean_code(data["unit_code"]))
-            .select_related("property").first())
+    prop = _property(actor, ctx, code)
+    unit = (Unit.objects.filter(property=prop, code__iexact=clean_code(data["unit_code"])).select_related("property")
+            .first()) if prop is not None else None
     if unit is None:
         raise ValidationError(_("No unit %(unit)s in property %(code)s.") % {"unit": data["unit_code"], "code": code})
     return unit
@@ -360,7 +373,7 @@ def _create_payment(actor: Membership, data: dict, request, ctx):
     from payments import services as payment_services
     from payments.models import Payment
 
-    unit = _unit(actor, data)
+    unit = _unit(actor, data, ctx)
     lease = _lease_of(unit, data)
     method = _choice(Payment.Method, data.get("method", ""), Payment.Method.CASH)
     paid_at, amount = _date(data["paid_at"]), _money(data["amount"])
@@ -381,7 +394,7 @@ def _create_payment(actor: Membership, data: dict, request, ctx):
 
 def _create_balance(actor: Membership, data: dict, request, ctx):
     """A balance brought forward for the unit's active lease, or for the lease named in lease_number."""
-    unit = _unit(actor, data)
+    unit = _unit(actor, data, ctx)
     lease = _lease_of(unit, data)
     if invoicing.opening_balance(lease) is not None:
         raise ValidationError(_("Lease %(number)s already has a balance brought forward. Change it on its account "
@@ -409,7 +422,7 @@ def _whole(value: str, field: str, low: int, high: int) -> int:
 
 def _create_lease(actor: Membership, data: dict, request, ctx):
     """A tenant (the one with this phone, or a new one) on a lease for the unit: a draft, or issued if asked."""
-    unit = _unit(actor, data)
+    unit = _unit(actor, data, ctx)
     start = _date(data["start_date"])
     rent, deposit = _money(data["rent"]), _money(data.get("deposit", ""))
     due_day = _whole(data["due_day"], "due_day", 1, 28) if data.get("due_day") else 1
@@ -449,21 +462,25 @@ def _process(actor: Membership, kind: str, rows: list[dict], request,
              activate: bool = False) -> tuple[list[dict], list[int], list[int]]:
     """Runs every row. Returns (rows with their errors, ids created, ids of tenants created along the way)."""
     checked, created, tenants = [], [], []
-    for row in rows:
-        errors, label = list(row.get("parse_errors", row["errors"])), ""
-        ctx = {"activate": activate, "tenants": []}
-        if not errors:
-            try:
-                with transaction.atomic():
-                    obj, label = CREATE[kind](actor, row["data"], request, ctx)
-            except ValidationError as exc:
-                errors = _messages(exc)
-            except PermissionDenied:
-                errors = [_("You are not allowed to add this.")]
-            else:
-                created.append(obj.pk)
-                tenants.extend(ctx["tenants"])
-        checked.append({**row, "errors": errors, "label": label})
+    shared = {"properties": {}, "buildings": {}}  # looked up once for the whole batch
+    with entitlements.batch(actor.organization):  # the plan and the unit count are read once, not per row
+        for row in rows:
+            errors, label = list(row.get("parse_errors", row["errors"])), ""
+            ctx = {"activate": activate, "tenants": [], **shared}
+            if not errors:
+                try:
+                    with transaction.atomic():
+                        obj, label = CREATE[kind](actor, row["data"], request, ctx)
+                except ValidationError as exc:
+                    errors = _messages(exc)
+                except PermissionDenied:
+                    errors = [_("You are not allowed to add this.")]
+                else:
+                    created.append(obj.pk)
+                    tenants.extend(ctx["tenants"])
+                    if kind == Kind.UNITS:
+                        entitlements.added("units")
+            checked.append({**row, "errors": errors, "label": label})
     return checked, created, tenants
 
 
