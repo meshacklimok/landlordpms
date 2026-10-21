@@ -11,10 +11,11 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import HRFlowable, KeepTogether, Paragraph, Spacer, Table, TableStyle
 
 from core import brand
 from core.money import format_money
+from leases import clauses
 
 BODY = ParagraphStyle("body", fontName="Helvetica", fontSize=10, leading=14, textColor=brand.INK)
 SMALL = ParagraphStyle("small", parent=BODY, fontSize=8, leading=11, textColor=brand.MUTED)
@@ -26,10 +27,12 @@ TITLE = ParagraphStyle("title", parent=BODY, fontName="Helvetica-Bold", fontSize
                        keepWithNext=1)
 SECTION = ParagraphStyle("section", parent=BODY, fontName="Helvetica-Bold", fontSize=11, leading=15,
                          spaceBefore=8, spaceAfter=3, textColor=brand.PRIMARY, keepWithNext=1)
+CLAUSE = ParagraphStyle("clause", parent=BODY, alignment=4)
 DRAFT = ParagraphStyle("draft", parent=TITLE, textColor=brand.WARN)
 
 LINE = brand.LINE
 BLANK = "_" * 28
+SHORT_BLANK = "_" * 12
 
 
 def _p(text, style=BODY):
@@ -59,6 +62,22 @@ def _facts(rows) -> Table:
     return table
 
 
+def _fill_in(rows) -> Table:
+    """Label rows with an empty ruled cell to write in, for the blank agreement."""
+    table = Table([[_p(label, LABEL), _p(hint, SMALL) if hint else ""] for label, hint in rows],
+                  colWidths=[45 * mm, None], rowHeights=[8.5 * mm] * len(rows))
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "BOTTOM"), ("LINEBELOW", (1, 0), (-1, -1), 0.5, colors.black),
+                               ("LEFTPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    return table
+
+
+def _write_lines(count) -> Table:
+    """Full-width ruled lines to write on."""
+    table = Table([[""]] * count, colWidths=[170 * mm], rowHeights=[8.5 * mm] * count)
+    table.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.black), ("LEFTPADDING", (0, 0), (-1, -1), 0)]))
+    return table
+
+
 def _amounts(rows, total=None) -> Table:
     """Description and amount rows, with an optional bold total line."""
     data = [[_p(label), _p(amount, RIGHT)] for label, amount in rows]
@@ -80,19 +99,17 @@ def _amounts(rows, total=None) -> Table:
 
 
 def _signatures(heading, parties) -> KeepTogether:
-    """A heading, then a signature, name and date line for each party, kept on one page."""
-    rows = []
-    for role, name in parties:
-        rows.append([_p(role, LABEL), _p(name or "")])
-        rows.append([_p(_("Signature")), _p(BLANK)])
-        rows.append([_p(_("Date")), _p(BLANK)])
-    table = Table(rows, colWidths=[45 * mm, None])
-    table.setStyle(TableStyle([
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
-        *[("TOPPADDING", (0, i), (-1, i), 10) for i in range(0, len(rows), 3) if i],
-    ]))
-    return KeepTogether([Spacer(1, 6 * mm), _p(heading, SECTION), table])
+    """A heading, then a signing space for each party in two columns, kept on one page."""
+    cells = [[Spacer(1, 11 * mm), HRFlowable(width="88%", thickness=0.6, color=colors.black, hAlign="LEFT"),
+              Spacer(1, 1 * mm), _p(role, LABEL), _p(name or " ", SMALL), Spacer(1, 3 * mm),
+              _p(_("Date: %(blank)s") % {"blank": "_" * 16}, SMALL)] for role, name in parties]
+    if len(cells) % 2:
+        cells.append("")
+    rows = [cells[k:k + 2] for k in range(0, len(cells), 2)]
+    table = Table(rows, colWidths=[None, None])
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 4)]))
+    return KeepTogether([Spacer(1, 4 * mm), _p(heading, SECTION), table])
 
 
 def _signed_electronically(heading, parties) -> KeepTogether:
@@ -124,6 +141,21 @@ def _footer(story, org):
 # ---------------------------------------------------------------------------
 # Agreement
 # ---------------------------------------------------------------------------
+
+
+def _conditions(org, values, number) -> list:
+    """The numbered standard conditions: the owner's own wording, or ours (D-187). The heading stays with the first
+    condition and the last one is returned last, so the caller can keep it with what follows."""
+    story = []
+    for i, (heading, body) in enumerate(clauses.clauses_for(org), start=1):
+        block = [_p(f"{number}.{i} {clauses.fill(heading, values)}", LABEL)]
+        if body:
+            block.append(_p(clauses.fill(body, values), CLAUSE))
+        block.append(Spacer(1, 2 * mm))
+        if i == 1:
+            block.insert(0, _p(f"{number}. {_('Conditions of the tenancy')}", SECTION))
+        story.append(KeepTogether(block))
+    return story
 
 
 def render_agreement(data: dict) -> bytes:
@@ -196,19 +228,68 @@ def render_agreement(data: dict) -> bytes:
                                         for p in data["payers"]]))
     story.append(_facts(rows))
 
-    if data["terms"]:
-        story.append(_p(_("5. Other terms"), SECTION))
-        story += [_p(line) if line.strip() else Spacer(1, 2 * mm) for line in data["terms"].splitlines()]
+    values = {
+        "landlord": data["organization"], "property": data["property"], "unit": data["unit"],
+        "rent": money(data["rent"]) if data["rent"] is not None else SHORT_BLANK,
+        "due_day": data["due_day"], "grace_days": data["grace_days"], "deposit": money(data["deposit"]),
+        "notice_days": data["notice_days"],
+    }
+    conditions = _conditions(lease.organization, values, 5)
+    tail = conditions.pop()  # kept with the signatures, so they never stand alone on a page
 
-    story += [Spacer(1, 6 * mm), _p(_(
-        "Prepared from the lease record. It contains only the terms recorded on the lease; "
-        "the parties should have their agreement reviewed before signing."), SMALL)]
+    story += conditions
+    if data["terms"]:
+        tail = [tail, _p(_("6. Special conditions"), SECTION),
+                *[_p(line) if line.strip() else Spacer(1, 2 * mm) for line in data["terms"].splitlines()]]
+    else:
+        tail = [tail]
+
+    tail += [Spacer(1, 4 * mm), _p(_(
+        "Prepared from the lease record and the standard conditions above. "
+        "The parties should have their agreement reviewed by an advocate before signing."), SMALL)]
     parties = [(_("For the landlord"), data["organization"])]
     parties += [(_("Tenant"), t["name"]) for t in data["tenants"]]
     if not data.get("for_signing"):
         parties.append((_("Witness"), ""))
-    story.append(_signature_block(data, _("Signed by the parties"), parties))
+    tail.append(_signature_block(data, _("Signed by the parties"), parties))
+    story.append(KeepTogether(tail))
     _footer(story, lease.organization)
+    doc.build(story)
+    return buf.getvalue()
+
+
+def render_blank_agreement(org, name: str) -> bytes:
+    """The same agreement with blank lines to fill in by hand, for signing on paper before the lease is recorded."""
+    buf = io.BytesIO()
+    doc = _doc(buf, _("Tenancy agreement (blank)"))
+    values = {key: SHORT_BLANK for key in clauses.PLACEHOLDERS}
+    values["landlord"] = name
+    story = [_head(org, name, _("Tenancy agreement"), ""), Spacer(1, 6 * mm), _p(_("TENANCY AGREEMENT"), TITLE),
+             Spacer(1, 3 * mm),
+             _p(_("This agreement is made on %(blank)s between the landlord and the tenant(s) named below, "
+                  "for the premises and on the terms set out here.") % {"blank": SHORT_BLANK}), Spacer(1, 4 * mm)]
+    story.append(_p(_("1. The parties"), SECTION))
+    story.append(_facts([(_("Landlord"), [_p(name)] + ([_p(_("KRA PIN %(pin)s") % {"pin": org.kra_pin})]
+                                                      if org.kra_pin else []))]))
+    story.append(_fill_in([(_("Tenant"), ""), (_("Phone"), ""), (_("ID number"), ""), (_("KRA PIN"), ""),
+                           (_("Second tenant"), _("if any")), (_("ID number"), "")]))
+    story.append(_p(_("2. The premises"), SECTION))
+    story.append(_fill_in([(_("Property"), ""), (_("Unit"), "")]))
+    story.append(_p(_("3. Term"), SECTION))
+    story.append(_fill_in([(_("Starts on"), ""), (_("Ends on"), _("leave blank if it runs until notice is given")),
+                           (_("Notice (days)"), "")]))
+    story.append(_p(_("4. Rent and deposit"), SECTION))
+    story.append(_fill_in([(_("Rent a month"), ""), (_("Due on day"), _("of each month")),
+                           (_("Grace days"), _("before rent is late")), (_("Other charges"), ""), (_("Deposit"), "")]))
+    conditions = _conditions(org, values, 5)
+    tail = [conditions.pop(), _p(_("6. Special conditions"), SECTION), _write_lines(4)]
+    story += conditions
+    tail += [Spacer(1, 4 * mm), _p(_(
+        "A template. The parties should have their agreement reviewed by an advocate before signing."), SMALL),
+        _signatures(_("Signed by the parties"), [
+            (_("For the landlord"), name), (_("Tenant"), ""), (_("Tenant"), ""), (_("Witness"), "")])]
+    story.append(KeepTogether(tail))
+    _footer(story, org)
     doc.build(story)
     return buf.getvalue()
 

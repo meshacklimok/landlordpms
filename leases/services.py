@@ -229,6 +229,31 @@ def open_successor(lease: Lease) -> Lease | None:
 # ---------------------------------------------------------------------------
 
 
+def _add_guardian_payers(lease: Lease, tenants, actor: Membership) -> None:
+    """In a hostel a student's parent or guardian usually pays, so their phone is matched to the lease (D-188).
+
+    Their phone is the student's emergency contact. A phone that is already a tenant's or a payer's is skipped.
+    """
+    if lease.organization.org_type != "HOSTEL":
+        return
+    own = {p for t in lease.lease_tenants.select_related("tenant") for p in (t.tenant.phone, t.tenant.alt_phone) if p}
+    for tenant in tenants:
+        if not tenant.emergency_contact_phone:
+            continue
+        try:
+            phone = normalize_phone(tenant.emergency_contact_phone)
+        except InvalidPhoneNumber:
+            continue
+        if phone in own:
+            continue
+        _payer, created = LeasePayer.objects.get_or_create(
+            lease=lease, phone=phone,
+            defaults={"organization": lease.organization, "created_by": actor.user,
+                      "name": (tenant.emergency_contact_name or _("Parent or guardian"))[:150]})
+        if created:
+            _audit("lease.payer_add", actor, lease, None, {"payer": [None, phone]})
+
+
 @transaction.atomic
 def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_date: datetime.date, rent,
                  end_date=None, deposit_amount=0, billing_frequency=Lease.Frequency.MONTHLY, due_day=1,
@@ -254,6 +279,7 @@ def create_lease(actor: Membership, *, unit: Unit, tenants: list[Tenant], start_
         LeaseTenant.objects.create(organization=lease.organization, lease=lease, tenant=t, is_primary=i == 0)
     LeaseRentChange.objects.create(organization=lease.organization, lease=lease, effective_from=start_date,
                                    amount=rent, reason=_("Initial rent"), created_by=actor.user)
+    _add_guardian_payers(lease, tenants, actor)
     _audit("lease.create", actor, lease, request, {
         **{k: [None, v] for k, v in _snapshot(lease).items() if v not in (None, "")},
         "unit": [None, unit.payment_reference], "rent": [None, str(rent)],
@@ -333,6 +359,7 @@ def add_lease_tenant(actor: Membership, lease: Lease, tenant: Tenant, request=No
     link = LeaseTenant.objects.create(organization=lease.organization, lease=lease, tenant=tenant,
                                       is_primary=not lease.lease_tenants.exists())
     _audit("lease.tenant_add", actor, lease, request, {"tenant": [None, tenant.name]})
+    _add_guardian_payers(lease, [tenant], actor)
     return link
 
 

@@ -229,3 +229,58 @@ def test_renewed_lease_has_no_move_out(owner, lease):
     services.renew_lease(owner, lease, start_date=D(2026, 1, 1), end_date=None, rent=22000)
     lease.status = Lease.Status.RENEWED
     assert not paperwork.move_out_applies(lease)
+
+
+# Standard conditions and the blank template (D-187)
+
+def test_agreement_prints_standard_conditions_with_lease_values(owner, lease):
+    from leases import clauses
+
+    filled = [clauses.fill(b, {"rent": "KES 20,000.00", "due_day": 5, "grace_days": 3, "deposit": "KES 20,000.00",
+                               "notice_days": 30}) for _h, b in clauses.clauses_for(owner.organization)]
+    assert any("KES 20,000.00" in b and "day 5" in b for b in filled)
+    assert not any("{" in b for b in filled)
+    assert render_agreement(paperwork.agreement(lease, owner)).startswith(b"%PDF")
+
+
+def test_clause_parse_fill_and_check():
+    from leases import clauses
+
+    assert clauses.parse("A\nbody one\nmore\n\nB\nx") == [("A", "body one more"), ("B", "x")]
+    assert clauses.fill("{rent} {other}", {"rent": "1"}) == "1 {other}"
+    assert clauses.fill("{rent.__class__}", {"rent": "1"}) == "{rent.__class__}"
+    clauses.check("A\nUnit {unit}")
+    with pytest.raises(ValueError):
+        clauses.check("A\n{nope}")
+
+
+def test_blank_agreement_pdf(client, owner):
+    login(client, owner)
+    r = client.get(reverse("leases:agreement_blank"))
+    assert r.status_code == 200 and r["Content-Type"] == "application/pdf" and r.content.startswith(b"%PDF")
+
+
+def test_own_wording_is_saved_used_and_reset(client, owner, lease):
+    login(client, owner)
+    url = reverse("leases:wording")
+    assert client.get(url).status_code == 200
+    bad = client.post(url, {"clauses": "Pets\nNo {pets}"})
+    assert bad.status_code == 400
+    r = client.post(url, {"clauses": "Pets\nNo pets in {unit}."})
+    assert r.status_code == 302
+    org = owner.organization
+    org.refresh_from_db()
+    assert org.agreement_clauses == "Pets\nNo pets in {unit}."
+    from leases import clauses
+    assert clauses.clauses_for(org) == [("Pets", "No pets in {unit}.")]
+    assert client.get(reverse("leases:agreement", args=[lease.public_id])).status_code == 200
+    assert client.post(url, {"reset": "1"}).status_code == 302
+    org.refresh_from_db()
+    assert org.agreement_clauses == ""
+
+
+def test_wording_needs_organization_manage(client, org, prop):
+    agent = add_member(org, "leasing_agent", properties=[prop])
+    login(client, agent)
+    assert client.get(reverse("leases:wording")).status_code == 403
+    assert client.get(reverse("leases:agreement_blank")).status_code == 200

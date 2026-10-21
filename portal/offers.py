@@ -136,4 +136,3 @@ def start_draft(actor: Membership, offer: RenewalOffer, *, request=None) -> Leas
     offer.successor = draft
     offer.save(update_fields=["successor", "updated_at"])
     return draft
-

@@ -3,6 +3,8 @@
 A lease is visible when its unit's property is. Anything else is a 404, never a 403.
 """
 
+import datetime
+
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files.base import ContentFile
@@ -17,6 +19,7 @@ from django.views import View
 
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can, visible_properties
+from audit import services as audit
 from billing import deposits, invoicing
 from billing.services import recurring_charge_types
 from core.ids import uuid_or_none
@@ -27,8 +30,8 @@ from properties.views import _apply_errors, _get_unit
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
-from . import forms, paperwork, pdf, services
-from .models import Lease, LeaseCharge, LeasePayer, LeaseTenant
+from . import clauses, forms, paperwork, pdf, services
+from .models import EXPIRING_WITHIN_DAYS, Lease, LeaseCharge, LeasePayer, LeaseTenant
 
 PAGE_SIZE = 25
 
@@ -92,12 +95,28 @@ class LeaseListView(CapabilityRequiredMixin, View):
                 Q(number__icontains=q) | Q(unit__code__icontains=q) | Q(unit__payment_reference__icontains=q)
                 | Q(unit__property__name__icontains=q) | Q(lease_tenants__tenant__name__icontains=q)
             ).distinct()
-        order = ("move_out_on", "pk") if under_notice else ("-start_date", "-pk")
+        # Active leases ending within the expiring window, soonest first.
+        ending = bool(search.cleaned_data.get("ending"))
+        if ending:
+            today = timezone.localdate()
+            qs = qs.filter(status=Lease.Status.ACTIVE, end_date__gte=today,
+                           end_date__lte=today + datetime.timedelta(days=EXPIRING_WITHIN_DAYS))
+        properties = visible_properties(request.membership, Property.objects.all()).order_by("name")
+        wanted = search.cleaned_data.get("property")
+        prop = next((p for p in properties if str(p.public_id) == wanted), None) if wanted else None
+        if prop:
+            qs = qs.filter(unit__property=prop)
+        order = ("move_out_on", "pk") if under_notice else ("end_date", "pk") if ending else ("-start_date", "-pk")
         page = Paginator(_with_tenants(qs).order_by(*order), PAGE_SIZE).get_page(request.GET.get("page"))
         return render(request, self.template_name, {
             "page": page, "q": q, "status": status, "status_choices": Lease.Status.choices,
             "today": timezone.localdate(), "show_archived": show_archived, "under_notice": under_notice,
+            "ending": ending, "properties": properties[:200], "prop": prop, "expiring_days": EXPIRING_WITHIN_DAYS,
         })
+
+
+def _is_hostel(request) -> bool:
+    return request.organization.org_type == "HOSTEL"
 
 
 class LeaseCreateView(CapabilityRequiredMixin, View):
@@ -120,12 +139,12 @@ class LeaseCreateView(CapabilityRequiredMixin, View):
         tenant = request.GET.get("tenant")
         if tenant:
             initial["tenant"] = _tenant_choices(request).filter(public_id=tenant).first()
-        form = forms.LeaseForm(initial=initial, tenants=_tenant_choices(request))
+        form = forms.LeaseForm(initial=initial, tenants=_tenant_choices(request), hostel=_is_hostel(request))
         return render(request, self.template_name, {"form": form, "unit": unit})
 
     def post(self, request, public_id):
         unit = self._unit(request, public_id)
-        form = forms.LeaseForm(request.POST, tenants=_tenant_choices(request))
+        form = forms.LeaseForm(request.POST, tenants=_tenant_choices(request), hostel=_is_hostel(request))
         if form.is_valid():
             data = dict(form.cleaned_data)
             tenants = [data.pop("tenant"), *data.pop("co_tenants")]
@@ -153,12 +172,13 @@ class LeaseEditView(CapabilityRequiredMixin, View):
         lease = self._lease(request, public_id)
         if not lease.is_draft:
             return redirect("leases:detail", public_id=lease.public_id)
-        form = forms.LeaseForm(initial=forms.LeaseForm.initial_for(lease), tenants=None, with_tenants=False)
+        form = forms.LeaseForm(initial=forms.LeaseForm.initial_for(lease), tenants=None, with_tenants=False,
+                               hostel=_is_hostel(request))
         return render(request, self.template_name, {"form": form, "unit": lease.unit, "lease": lease})
 
     def post(self, request, public_id):
         lease = self._lease(request, public_id)
-        form = forms.LeaseForm(request.POST, tenants=None, with_tenants=False)
+        form = forms.LeaseForm(request.POST, tenants=None, with_tenants=False, hostel=_is_hostel(request))
         if form.is_valid():
             try:
                 services.update_draft_lease(request.membership, lease, request=request, **form.cleaned_data)
@@ -583,6 +603,55 @@ class AgreementView(CapabilityRequiredMixin, View):
         _save_copy(request, lease, content, filename=_filename(lease, "agreement"), title=title[:120],
                    category=Document.Category.LEASE)
         return redirect("leases:detail", public_id=lease.public_id)
+
+
+class BlankAgreementView(CapabilityRequiredMixin, View):
+    """The agreement with blank lines, to print and fill in by hand (D-187). No lease is needed."""
+
+    required_capability = "leases.view"
+
+    def get(self, request):
+        org = request.organization
+        content = pdf.render_blank_agreement(org, org.brand_name or org.name)
+        return _pdf_response(request, content, "tenancy-agreement-blank.pdf")
+
+
+class AgreementWordingView(CapabilityRequiredMixin, View):
+    """Where an owner reads and rewrites the conditions printed on every tenancy agreement (D-187)."""
+
+    template_name = "leases/agreement_wording.html"
+    required_capability = "organization.manage"
+
+    def render(self, request, form, status=200):
+        return render(request, self.template_name, {
+            "form": form, "custom": bool(request.organization.agreement_clauses.strip()),
+            "markers": clauses.PLACEHOLDERS}, status=status)
+
+    def get(self, request):
+        org = request.organization
+        text = org.agreement_clauses.strip() or clauses.default_text()
+        return self.render(request, forms.AgreementWordingForm(initial={"clauses": text}))
+
+    def post(self, request):
+        org = request.organization
+        if "reset" in request.POST:
+            text = ""
+        else:
+            form = forms.AgreementWordingForm(request.POST)
+            if not form.is_valid():
+                return self.render(request, form, status=400)
+            text = form.cleaned_data["clauses"]
+            if text == clauses.default_text().strip():  # unchanged standard wording is not stored as the owner's own
+                text = ""
+        if text != org.agreement_clauses.strip():
+            org.agreement_clauses = text
+            org.save(update_fields=["agreement_clauses"])
+            audit.record("organization.agreement_wording", actor=request.user, organization=org, obj=org,
+                         request=request, changes={"agreement_clauses": ["custom" if text else "standard"] * 2})
+            messages.success(request, _("Agreement wording saved.") if text else _("Back to the standard wording."))
+        else:
+            messages.success(request, _("Nothing changed."))
+        return redirect("leases:wording")
 
 
 def _move_out_lease(request, public_id) -> Lease:

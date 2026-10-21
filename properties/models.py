@@ -61,6 +61,7 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         COMMERCIAL = "COMMERCIAL", _("Commercial")
         MIXED_USE = "MIXED_USE", _("Mixed-use")
         SINGLE_HOUSE = "SINGLE_HOUSE", _("Single house")
+        HOSTEL = "HOSTEL", _("Student hostel")
 
     # One managing organization only (D-017).
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="properties")
@@ -102,6 +103,10 @@ class Property(PublicIdModel, TimeStampedModel, ArchivableModel):
         validators=[MinValueValidator(0)],
         help_text=_("What it would sell for today. Used only to work out its yield on the performance report; "
                     "leave empty if you do not know."))
+    # A hostel's public booking page /stay/<token>/ (D-189). Null when off; turning it on again issues a new token.
+    booking_token = models.CharField(max_length=32, null=True, blank=True, unique=True, editable=False)  # noqa: DJ001
+    booking_shared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+", editable=False)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
     )
@@ -200,6 +205,46 @@ class Building(PublicIdModel, TimeStampedModel, ArchivableModel):
         return self.name
 
 
+class Room(PublicIdModel, TimeStampedModel, ArchivableModel):
+    """A hostel room (D-188). It groups the beds that are let one by one, or is itself let whole.
+
+    - `let_whole` False: the room holds `capacity` BED_SPACE units, each let on its own.
+    - `let_whole` True: the room is one HOSTEL_ROOM unit, let to one booking that may have several students.
+    A room's way of being let is chosen when it is made and does not change, so a room is never let both ways.
+    """
+
+    class Gender(models.TextChoices):
+        ANY = "", _("Mixed or not set")
+        FEMALE = "F", _("Female")
+        MALE = "M", _("Male")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="rooms")
+    building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="rooms")
+    code = models.CharField(_("room"), max_length=10, validators=[unit_code_validator])
+    gender = models.CharField(_("for"), max_length=1, choices=Gender.choices, blank=True, default="")
+    let_whole = models.BooleanField(_("let as a whole room"), default=False)
+    # Beds in the room, or students the whole room takes.
+    capacity = models.PositiveSmallIntegerField(_("beds"), default=1,
+                                                validators=[MinValueValidator(1), MaxValueValidator(50)])
+
+    objects = LiveManager()
+    all_objects = AllObjectsManager()
+
+    class Meta:
+        ordering = ["property__name", "code"]
+        constraints = [
+            models.UniqueConstraint("property", Upper("code"), name="properties_room_property_code_unique"),
+        ]
+
+    def __str__(self):
+        return f"{self.property.name} · {self.code}"
+
+    def save(self, *args, **kwargs):
+        self.code = clean_code(self.code)
+        super().save(*args, **kwargs)
+
+
 class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
     class Type(models.TextChoices):
         BEDSITTER = "BEDSITTER", _("Bedsitter")
@@ -217,8 +262,9 @@ class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
         HOUSE = "HOUSE", _("House")
         WAREHOUSE = "WAREHOUSE", _("Warehouse")
         PARKING = "PARKING", _("Parking")
-        # Hostels: design-in only (D-040). Room/bed assignment and semester billing come later.
+        # Hostels (D-188): a bed is let on its own; a room let whole is one HOSTEL_ROOM unit.
         BED_SPACE = "BED_SPACE", _("Bed space")
+        HOSTEL_ROOM = "HOSTEL_ROOM", _("Hostel room")
 
     class ManualStatus(models.TextChoices):
         NORMAL = "NORMAL", _("Normal")
@@ -231,6 +277,9 @@ class Unit(PublicIdModel, TimeStampedModel, ArchivableModel):
     # Must belong to the same property; checked in services.
     building = models.ForeignKey(Building, on_delete=models.PROTECT, null=True, blank=True, related_name="units")
     code = models.CharField(_("unit code"), max_length=10, validators=[unit_code_validator])
+    # Hostels (D-188): the room a bed, or a whole-room let, belongs to. Null for everything else.
+    room = models.ForeignKey("Room", on_delete=models.PROTECT, null=True, blank=True, related_name="units",
+                             verbose_name=_("room"))
     unit_type = models.CharField(_("type"), max_length=20, choices=Type.choices, default=Type.APARTMENT)
     type_label = models.CharField(_("label"), max_length=60, blank=True, help_text=_("Optional, e.g. 2 bedroom"))
     manual_status = models.CharField(

@@ -127,4 +127,3 @@ def staff_unread(membership: Membership) -> int:
     leases = visible_leases(membership, Lease.all_objects.all()).values("pk")
     return PortalMessage.objects.filter(organization=membership.organization, lease_id__in=leases,
                                         side=PortalMessage.Side.TENANT, read_at__isnull=True).count()
-

@@ -24,6 +24,7 @@ urlpatterns = [
     path("receipts/<uuid:public_id>/", views.ReceiptView.as_view(), name="receipt"),
     path("invoices/<uuid:public_id>/pdf/", views.InvoicePdfView.as_view(), name="invoice_pdf"),
     path("invite/<str:token>/", views.AcceptView.as_view(), name="accept"),
+    path("no-match/", views.NoMatchView.as_view(), name="no_match"),
     path("ask/", portal_views.TenantAskView.as_view(), name="ask"),
     path("ask/confirm/", portal_views.TenantConfirmView.as_view(), name="ask_confirm"),
 ]

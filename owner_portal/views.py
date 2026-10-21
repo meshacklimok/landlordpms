@@ -23,7 +23,7 @@ from reports import owners, statements
 from reports.metrics import add_months
 from reports.pdf import render_statement
 
-from . import selectors, services
+from . import live, selectors, services
 
 PICKER_MONTHS = 24
 
@@ -89,6 +89,18 @@ class AccountView(OwnerPortalRequiredMixin, View):
             "sends": selectors.sends(account), "props": props,
             "several": selectors.live_accounts(request.user).count() > 1,
         }))
+
+
+class LiveView(OwnerPortalRequiredMixin, View):
+    """Today's picture of the owner's properties: owed, empty, repairs, leases ending. No tenant names."""
+
+    template_name = "owner_portal/live.html"
+
+    def get(self, request, public_id):
+        account = self.account(request, public_id)
+        return _no_store(render(request, self.template_name, {
+            "account": account, "owner": account.owner, "currency": account.organization.currency,
+            "live": live.live(account)}))
 
 
 PAYMENTS_SHOWN = 300

@@ -132,6 +132,27 @@ def test_the_invitation_sms(client, owner, a1, outbox):
     assert services.get_invitation(token) == services.pending_invitation(tenant)
 
 
+def test_invite_by_whatsapp_or_copied_link_sends_no_sms_and_shows_the_link_once(client, owner, a1, outbox):
+    client.force_login(owner.user)
+    tenant = tenant_of(a1)
+    notifications.set_tenant_channel(owner, tenant, SMS, allowed=False)
+    assert client.post(f"/tenants/{tenant.public_id}/portal/invite/", {"via": "sms"}).status_code == 302
+    assert services.pending_invitation(tenant) is None and not outbox
+
+    client.post(f"/tenants/{tenant.public_id}/portal/invite/", {"via": "whatsapp"})
+    assert not outbox
+    page = client.get(f"/tenants/{tenant.public_id}/").content.decode()
+    match = re.search(r'value="([^"]*/my/invite/[^"]+)"', page)
+    assert match and "https://wa.me/" in page and "Open WhatsApp" in page
+    token = match.group(1).rsplit("/my/invite/", 1)[1].strip("/")
+    assert services.get_invitation(token) == services.pending_invitation(tenant)
+    assert 'id="portal-invite-url"' not in client.get(f"/tenants/{tenant.public_id}/").content.decode()
+
+    client.post(f"/tenants/{tenant.public_id}/portal/invite/", {"via": "link"})
+    page = client.get(f"/tenants/{tenant.public_id}/").content.decode()
+    assert 'id="portal-invite-url"' in page and "Open WhatsApp" not in page
+
+
 def test_the_tenant_page_card(client, owner, a1):
     client.force_login(owner.user)
     tenant = tenant_of(a1)
@@ -139,7 +160,7 @@ def test_the_tenant_page_card(client, owner, a1):
     assert "Tenant portal" in page and f"/tenants/{tenant.public_id}/portal/invite/" in page
     services.invite_tenant(owner, tenant)
     page = client.get(f"/tenants/{tenant.public_id}/").content.decode()
-    assert "Invited" in page and "Send again" in page and "portal/cancel-invite/" in page
+    assert "Invited" in page and "Send SMS again" in page and "portal/cancel-invite/" in page
     client.post(f"/tenants/{tenant.public_id}/portal/cancel-invite/")
     assert services.pending_invitation(tenant) is None
     join(owner, a1)
@@ -461,3 +482,43 @@ def test_billers_that_are_not_landlords_have_no_deposit_or_notice_to_vacate(clie
     assert "Deposit" not in page and "Notice to leave" not in page
     assert client.get(f"/my/leases/{a1.public_id}/notice/").status_code == 404
     assert client.post(f"/my/leases/{a1.public_id}/notice/", {"move_out_on": "2030-01-01"}).status_code == 404
+
+
+def test_the_platform_owner_can_view_a_tenant_portal_read_only(client, owner, a1):
+    from django.urls import reverse
+
+    from console import viewas
+    from console.tests.test_console import owner as console_owner
+
+    join(owner, a1)
+    account = TenantAccount.objects.get()
+    console_owner(client)
+    org = owner.organization
+    r = client.post(reverse("console:view_as", args=[org.public_id]), {"account": str(account.public_id)})
+    assert r.status_code == 302 and r.url == reverse("portal:home")
+    page = client.get(reverse("portal:home"))
+    assert page.status_code == 200 and b"You are viewing as" in page.content
+    assert client.post(reverse("portal:home")).status_code in (302, 403)
+    assert AuditEvent.objects.filter(action="console.view_as", organization=org).count() == 1
+    client.post(reverse("console:view_as_stop"))
+    assert viewas.TENANT_KEY not in client.session
+    assert AuditEvent.objects.filter(action="console.view_as", organization=org).count() == 2
+
+
+def test_the_platform_owner_can_view_as_any_staff_seat(client, owner):
+    from django.urls import reverse
+
+    from console import viewas
+    from console.tests.test_console import owner as console_owner
+
+    seat = add_member(owner.organization, "accountant")
+    console_owner(client)
+    r = client.post(reverse("console:view_as", args=[owner.organization.public_id]),
+                    {"membership": str(seat.public_id)})
+    assert r.status_code == 302 and client.session[viewas.MEMBER_KEY] == str(seat.public_id)
+    page = client.get(reverse("accounts:home"))
+    assert page.status_code in (200, 302)
+    assert client.post(reverse("accounts:home")).status_code in (302, 403)
+    bad = client.post(reverse("console:view_as", args=[owner.organization.public_id]),
+                      {"membership": "00000000-0000-0000-0000-000000000000"})
+    assert bad.status_code == 302

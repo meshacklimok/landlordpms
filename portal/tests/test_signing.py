@@ -30,7 +30,7 @@ def lease(owner):
     return make_lease(owner, make_property(owner.organization))
 
 
-def join(owner, lease, password="s3cret-Passw0rd!"):
+def join(owner, lease, password="s3cret-Passw0rd!"):  # noqa: S107 - a test password
     tenant = lease.lease_tenants.get().tenant
     _inv, token = portal_services.invite_tenant(owner, tenant)
     user = make_user(phone=tenant.phone)

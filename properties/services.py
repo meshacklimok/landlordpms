@@ -35,7 +35,7 @@ from .models import (
 PROPERTY_FIELDS = ("name", "category", "county", "sub_county", "area", "street", "latitude", "longitude", "owner",
                    "management_fee_percent", "management_fee_fixed", "branch", "service_days", "market_value")
 OWNER_FIELDS = ("name", "phone", "email", "note")
-UNIT_FIELDS = ("code", "building", "unit_type", "type_label", "list_rent")
+UNIT_FIELDS = ("code", "building", "room", "unit_type", "type_label", "list_rent")
 
 # Case C: a single house gets one unit automatically.
 MAIN_HOUSE_CODE = "MAIN"
@@ -346,6 +346,8 @@ def archive_building(actor: Membership, building: Building, request=None) -> Non
 def _check_unit(prop: Property, unit: Unit, exclude_pk=None) -> None:
     if unit.building is not None and (unit.building.property_id != prop.pk or unit.building.is_archived):
         raise ValidationError({"building": _("Choose a building in this property.")})
+    if unit.room is not None and (unit.room.property_id != prop.pk or unit.room.is_archived):
+        raise ValidationError({"room": _("Choose a room in this hostel.")})
     code_taken = (
         Unit.all_objects.filter(property=prop).annotate(ucode=Upper("code")).filter(ucode=unit.code)
         .exclude(pk=exclude_pk).exists()
@@ -433,6 +435,33 @@ def set_unit_status(actor: Membership, unit: Unit, status: str, request=None) ->
 
             prospects.unit_status_changed(actor, unit, request=request)
     return unit
+
+
+@transaction.atomic
+def bulk_update_units(actor: Membership, units, *, rent=None, percent=None, status: str = "", request=None) -> int:
+    """Change the asking rent (to an amount, or by a percent) and/or the manual status of many units at once.
+
+    Each unit goes through the single-unit services, so permissions, audit and rules are the same.
+    All or nothing: one blocked unit rolls the whole change back.
+    """
+    if rent is not None and percent is not None:
+        raise ValidationError(_("Choose a new rent or a percentage change, not both."))
+    if rent is not None and rent < 0:
+        raise ValidationError(_("Rent cannot be negative."))
+    count = 0
+    for unit in units:
+        if rent is not None:
+            update_unit(actor, unit, request=request, list_rent=Decimal(rent))
+        elif percent is not None:
+            base = unit.list_rent
+            if base is None:
+                continue
+            new = (base * (Decimal(100) + Decimal(percent)) / Decimal(100)).quantize(Decimal("1"))
+            update_unit(actor, unit, request=request, list_rent=max(new, Decimal(0)))
+        if status:
+            set_unit_status(actor, unit, status, request=request)
+        count += 1
+    return count
 
 
 @transaction.atomic

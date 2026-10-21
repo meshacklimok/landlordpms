@@ -94,6 +94,7 @@ class TenantListView(CapabilityRequiredMixin, View):
             if can(request.membership, "tenants.view_sensitive"):
                 match |= Q(id_number__iexact=q.replace(" ", ""))
             qs = qs.filter(match)
+        sort = search.cleaned_data.get("sort") or "name"
         see_places = can(request.membership, "leases.view")
         placed = search.cleaned_data.get("placed", "") if see_places else ""
         if placed:
@@ -107,13 +108,13 @@ class TenantListView(CapabilityRequiredMixin, View):
             prop = next((p for p in properties if str(p.public_id) == wanted), None)
             if prop:
                 qs = qs.filter(lease_links__lease__unit__property=prop).distinct()
-        page = Paginator(qs.order_by("name", "pk"), PAGE_SIZE).get_page(request.GET.get("page"))
+        page = Paginator(qs.order_by("-created_at", "-pk") if sort == "new" else qs.order_by("name", "pk"), PAGE_SIZE).get_page(request.GET.get("page"))
         if see_places:
             _attach_places(request.membership, page.object_list)
         return render(request, self.template_name, {
             "page": page, "q": q, "status": status, "show_archived": show_archived, "can_manage": can_manage,
             "status_choices": Tenant.Status.choices, "properties": properties, "prop": prop,
-            "see_places": see_places, "placed": placed,
+            "see_places": see_places, "placed": placed, "sort": sort,
         })
 
 
@@ -123,15 +124,18 @@ def _attach_places(membership, tenants):
     A tenant has no property of their own; it comes from their lease's unit (D-016).
     """
     tenants = list(tenants)
-    links = LeaseTenant.objects.filter(tenant__in=tenants).exclude(lease__status=Lease.Status.DRAFT)
-    leases = visible_leases(membership, Lease.all_objects.filter(lease_tenants__in=links)).select_related(
-        "unit__property", "unit__building").prefetch_related("lease_tenants")
+    ids = {t.pk for t in tenants}
+    # Leases picked by a plain IN on the page's tenant ids, each once, however many of the page's tenants share it.
+    on_page = LeaseTenant.objects.filter(tenant_id__in=ids).values("lease_id")
+    leases = (visible_leases(membership, Lease.all_objects.exclude(status=Lease.Status.DRAFT).filter(pk__in=on_page))
+              .select_related("unit__property", "unit__building").prefetch_related("lease_tenants"))
     today = timezone.localdate()
     by_tenant = {}
     for lease in leases.order_by("-start_date", "-pk"):
         current = lease.status == Lease.Status.ACTIVE and lease.start_date <= today
         for link in lease.lease_tenants.all():
-            by_tenant.setdefault(link.tenant_id, []).append((current, lease))
+            if link.tenant_id in ids:
+                by_tenant.setdefault(link.tenant_id, []).append((current, lease))
     for t in tenants:
         found = by_tenant.get(t.pk, [])
         current = [lease for is_current, lease in found if is_current]
@@ -155,7 +159,8 @@ class TenantCreateView(CapabilityRequiredMixin, View):
 
     def _form(self, request, data=None, for_unit=None):
         return forms.TenantForm(data, show_sensitive=can(request.membership, "tenants.view_sensitive"),
-                                units=None if for_unit else _assignable_units(request.membership))
+                                units=None if for_unit else _assignable_units(request.membership),
+                                student=request.organization.org_type == "HOSTEL")
 
     def _context(self, request, form, for_unit, **extra):
         return {**_form_context(request, form, **extra), "for_unit": for_unit}
@@ -224,7 +229,7 @@ class TenantDetailView(CapabilityRequiredMixin, View):
             "whatsapp_allowed": notifications.channel_allowed(tenant, WHATSAPP),
             "email_allowed": notifications.channel_allowed(tenant, EMAIL),
             "recent_messages": recent_for_tenant(tenant) if can(m, "messages.view") else None,
-            "portal": portal_views.tenant_card(tenant) if can(m, "tenants.invite_portal") else None,
+            "portal": portal_views.tenant_card(tenant, request) if can(m, "tenants.invite_portal") else None,
             "doc_panel": documents.panel(m, tenant),
         })
 
@@ -250,7 +255,8 @@ class TenantEditView(CapabilityRequiredMixin, View):
 
     def _form(self, request, tenant, data=None):
         return forms.TenantForm(data, instance=tenant,
-                                show_sensitive=can(request.membership, "tenants.view_sensitive"))
+                                show_sensitive=can(request.membership, "tenants.view_sensitive"),
+                                student=request.organization.org_type == "HOSTEL")
 
     def get(self, request, public_id):
         tenant = _get_tenant(request, public_id)

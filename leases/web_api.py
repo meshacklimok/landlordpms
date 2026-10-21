@@ -38,6 +38,7 @@ def _sheet(prop: Property, day: datetime.date) -> dict:
     first = today.replace(day=1)
     return {
         "route": {"name": str(prop), "id": str(prop.public_id)},
+        "words": {"unit": str(prop.organization.vocab["unit"]), "tenant": str(prop.organization.vocab["tenant"])},
         "day": day.isoformat(),
         "today": today.isoformat(),
         "month_start": first.isoformat(),

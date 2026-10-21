@@ -15,7 +15,6 @@ from audit import services as audit
 from leases.models import Lease, LeaseTenant
 from notifications import services as notifications
 from notifications.catalog import SMS
-from notifications.providers.sms import send_sms
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
@@ -67,8 +66,12 @@ def has_leases(tenant: Tenant) -> bool:
 
 
 @transaction.atomic
-def invite_tenant(actor: Membership, tenant: Tenant, *, request=None) -> tuple[PortalInvitation, str]:
-    """A new invitation, replacing any pending one. Returns it with the raw token for the link."""
+def invite_tenant(actor: Membership, tenant: Tenant, *, request=None,
+                  via_sms: bool = True) -> tuple[PortalInvitation, str]:
+    """A new invitation, replacing any pending one. Returns it with the raw token for the link.
+
+    `via_sms` is False when staff share the link themselves (WhatsApp or copy), so a tenant who stopped SMS can still
+    be invited."""
     _check_tenant(actor, tenant)
     tenant = Tenant.all_objects.select_for_update().get(pk=tenant.pk)
     if tenant.is_archived:
@@ -77,7 +80,7 @@ def invite_tenant(actor: Membership, tenant: Tenant, *, request=None) -> tuple[P
         raise ValidationError(_("This tenant can already use the portal."))
     if not has_leases(tenant):
         raise ValidationError(_("Add this tenant to a lease first: the portal shows their leases."))
-    if not notifications.channel_allowed(tenant, SMS):
+    if via_sms and not notifications.channel_allowed(tenant, SMS):
         raise ValidationError(_("This tenant has turned off SMS, so the invitation cannot be sent."))
     now = timezone.now()
     PortalInvitation.objects.filter(tenant=tenant, accepted_at__isnull=True, revoked_at__isnull=True).update(
@@ -91,11 +94,24 @@ def invite_tenant(actor: Membership, tenant: Tenant, *, request=None) -> tuple[P
     return invitation, token
 
 
+def invitation_text(invitation: PortalInvitation, accept_url: str) -> str:
+    return (_("%(org)s invites you to see your rent, statements and receipts online. Open: %(url)s")
+            % {"org": invitation.organization.name, "url": accept_url})
+
+
+def whatsapp_invite_link(invitation: PortalInvitation, accept_url: str) -> str:
+    """A wa.me link that opens the staff member's WhatsApp on this tenant's number with the invitation typed in."""
+    from console.chase import whatsapp_link
+
+    return whatsapp_link(invitation.phone, invitation_text(invitation, accept_url))
+
+
 def send_invitation(invitation: PortalInvitation, accept_url: str) -> bool:
     """Whether the SMS went out."""
-    return send_sms(invitation.phone,
-             _("%(org)s invites you to see your rent, statements and receipts online. Open: %(url)s")
-             % {"org": invitation.organization.name, "url": accept_url}, org=invitation.organization).ok
+    from notifications.delivery import send_sms_for
+
+    return send_sms_for(invitation.organization, invitation.phone, invitation_text(invitation, accept_url),
+                        what="Portal invitation").ok
 
 
 def get_invitation(token: str) -> PortalInvitation | None:
@@ -130,6 +146,38 @@ def accept_invitation(token: str, user: User, *, request=None) -> TenantAccount:
     invitation.save(update_fields=["accepted_at", "accepted_by", "updated_at"])
     audit.record("portal.accept", actor=user, organization=invitation.organization, obj=tenant, request=request)
     return account
+
+
+def claimable_tenants(user: User):
+    """Tenant records the user may claim without an invitation (D-203): their verified phone is the phone on the record,
+    the record and organization are live, the organization allows it, the tenant is on a lease past draft, and the record
+    has never had a portal account (a revoked one needs a fresh invitation)."""
+    if not user.phone_verified or not user.phone:
+        return Tenant.all_objects.none()
+    # Held by someone, or revoked by staff: a revocation sticks until staff invite the tenant again.
+    held = TenantAccount.objects.values("tenant_id")
+    on_lease = LeaseTenant.objects.filter(lease__archived_at__isnull=True).exclude(
+        lease__status=Lease.Status.DRAFT).values("tenant_id")
+    return (Tenant.all_objects.filter(phone=user.phone, archived_at__isnull=True,
+                                      organization__archived_at__isnull=True,
+                                      organization__tenant_self_signup=True, pk__in=on_lease)
+            .exclude(pk__in=held).select_related("organization"))
+
+
+@transaction.atomic
+def self_claim(user: User, *, request=None) -> list[TenantAccount]:
+    """Links the user to every tenant record that carries their verified phone. Proving the phone by SMS code is the same
+    check an invitation makes, so the landlord need not send one. Safe to call at every login: it does nothing when
+    there is nothing to claim."""
+    accounts = []
+    for tenant in claimable_tenants(user).select_for_update(of=("self",)):
+        if live_account(tenant) is not None:  # taken since the list was read
+            continue
+        account = TenantAccount.objects.create(organization=tenant.organization, tenant=tenant, user=user)
+        audit.record("portal.self_claim", actor=user, organization=tenant.organization, obj=tenant, request=request,
+                     changes={"phone": tenant.phone})
+        accounts.append(account)
+    return accounts
 
 
 @transaction.atomic

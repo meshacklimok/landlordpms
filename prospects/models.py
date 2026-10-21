@@ -64,6 +64,11 @@ class Prospect(PublicIdModel, TimeStampedModel):
     budget = models.DecimalField(_("budget per month"), max_digits=12, decimal_places=2, null=True, blank=True)
     move_in_by = models.DateField(_("wants to move in by"), null=True, blank=True)
     wants = models.CharField(_("looking for"), max_length=300, blank=True)
+    # A hostel enquiry (D-189): who the bed is for, and whether nothing suitable was free when they asked.
+    gender = models.CharField(_("gender"), max_length=1, blank=True, choices=[("F", _("Female")), ("M", _("Male"))])
+    waitlisted = models.BooleanField(_("on the waitlist"), default=False, editable=False)
+    # When the student was texted that a bed is free (D-190). Once only: after the offer lapses staff follow up.
+    offered_at = models.DateTimeField(null=True, blank=True, editable=False)
     status = models.CharField(_("status"), max_length=10, choices=Status.choices, default=Status.NEW,
                               editable=False)
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,

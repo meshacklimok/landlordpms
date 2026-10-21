@@ -242,3 +242,28 @@ def test_staff_pages_use_the_organizations_own_words(client, owner, unit, tenant
     assert "Memberships" in page and ">Leases<" not in page
     assert "Member" in client.get(reverse("tenants:detail", args=[tenant.public_id])).content.decode()
     assert "Add house" in client.get(reverse("properties:detail", args=[unit.property.public_id])).content.decode()
+
+
+class TestListFilters:
+    def test_ending_filter_and_property_filter(self, client):
+        from accounts.tests.factories import make_org
+        from accounts.tests.test_isolation import login
+        from properties import services as prop_services
+        from tenants import services as tenant_services
+
+        owner = make_org()
+        login(client, owner)
+        prop = prop_services.create_property(owner, name="Greenview", code="GV")
+        other = prop_services.create_property(owner, name="Hillside", code="HS")
+        today = datetime.date.today()
+        soon, later = (prop_services.create_unit(owner, p, code=c) for p, c in ((prop, "A1"), (other, "B1")))
+        for unit, name, end in ((soon, "Soon Tenant", today + datetime.timedelta(days=20)),
+                                (later, "Later Tenant", today + datetime.timedelta(days=400))):
+            tenant = tenant_services.create_tenant(owner, name=name, phone="0712345678" if unit is soon else "0722345678")
+            lease = services.create_lease(owner, unit=unit, tenants=[tenant], start_date=today - datetime.timedelta(days=30),
+                                          end_date=end, rent=10000)
+            services.activate_lease(owner, lease)
+        body = client.get(reverse("leases:list"), {"ending": "1"}).content.decode()
+        assert "Soon Tenant" in body and "Later Tenant" not in body
+        body = client.get(reverse("leases:list"), {"property": str(other.public_id)}).content.decode()
+        assert "Later Tenant" in body and "Soon Tenant" not in body

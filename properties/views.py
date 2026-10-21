@@ -27,21 +27,23 @@ from billing.invoicing import month_start, next_month
 from billing.models import ChargeType
 from billing.services import recurring_charge_types
 from core import charts, ratelimit
+from core.ids import uuid_or_none
 from core.net import client_ip
 from documents import services as documents
+from leases import rollover
 from leases import services as lease_services
-from leases.forms import PropertyChargeForm
+from leases.forms import PropertyChargeForm, RolloverForm
 from leases.models import Lease
 from leases.services import with_occupancy
 from maintenance import services as maintenance
 from owner_portal.views import owner_card as owner_portal_card
 from prospects import services as prospects
-from prospects.forms import EnquiryForm
+from prospects.forms import EnquiryForm, HostelEnquiryForm
 from reports import finance, metrics
 from reports.statements import fully_sees
 
-from . import forms, selectors, services
-from .models import Building, Property, PropertyOwner, PropertyShare, Unit, owned_by
+from . import forms, hostel, selectors, services
+from .models import Building, Property, PropertyOwner, PropertyShare, Room, Unit, owned_by
 
 PAGE_SIZE = 25
 
@@ -499,6 +501,17 @@ class BuildingEditView(CapabilityRequiredMixin, View):
 # ---------------------------------------------------------------------------
 
 
+def _occupant_name():
+    """The primary tenant on the lease now occupying the unit, for the unit list (one subquery, no N+1)."""
+    from django.db.models import OuterRef, Subquery
+
+    from leases.models import LeaseTenant
+    from leases.services import occupying_leases
+
+    return Subquery(LeaseTenant.objects.filter(is_primary=True, lease__unit=OuterRef("pk"), lease__in=occupying_leases())
+                    .values("tenant__name")[:1])
+
+
 class UnitListView(CapabilityRequiredMixin, View):
     """Every unit the member can see, across properties; `?status=vacant` is the vacancy list."""
 
@@ -510,7 +523,12 @@ class UnitListView(CapabilityRequiredMixin, View):
         search.is_valid()
         data = search.cleaned_data
         props = visible_properties(request.membership, Property.objects.all()).order_by("name")
-        units = selectors.visible_units(request.membership)
+        show_archived = bool(data.get("archived")) and can(request.membership, "units.manage")
+        if show_archived:
+            units = with_occupancy(Unit.all_objects.archived().filter(
+                property__in=visible_properties(request.membership, Property.all_objects.all())))
+        else:
+            units = selectors.visible_units(request.membership)
         prop = props.filter(public_id=data["property"]).first() if data.get("property") else None
         if prop is not None:
             units = units.filter(property=prop)
@@ -519,11 +537,18 @@ class UnitListView(CapabilityRequiredMixin, View):
         counts = selectors.status_counts(units)
         status = data.get("status", "")
         units = selectors.filter_units(units, status=status, q=data.get("q", ""))
+        see_tenants = can(request.membership, "tenants.view")
+        if see_tenants:
+            units = units.annotate(occupant=_occupant_name())
         page = Paginator(units.select_related("property", "building"), PAGE_SIZE).get_page(request.GET.get("page"))
         return render(request, self.template_name, {
             "page": page,
+            "see_tenants": see_tenants,
+            "manual_statuses": Unit.ManualStatus.choices,
             "q": data.get("q", ""),
             "status": status,
+            "show_archived": show_archived,
+            "can_manage_units": can(request.membership, "units.manage"),
             "unit_type": data.get("unit_type", ""),
             "selected_property": prop,
             "properties": props[:200],
@@ -531,6 +556,34 @@ class UnitListView(CapabilityRequiredMixin, View):
             "status_choices": [(key, label) for key, (label, _cond) in selectors.STATUS_FILTERS.items()],
             "type_choices": Unit.Type.choices,
         })
+
+
+class UnitBulkView(CapabilityRequiredMixin, View):
+    """Change rent or status for the units ticked on the unit list."""
+
+    required_capability = "units.manage"
+
+    def post(self, request):
+        form = forms.BulkUnitForm(request.POST)
+        back = request.POST.get("next", "")
+        target = back if back.startswith("/") and not back.startswith("//") else reverse("properties:units")
+        ids = [i for i in (uuid_or_none(v) for v in request.POST.getlist("units")) if i]
+        if not ids:
+            messages.error(request, _("Tick at least one unit."))
+            return redirect(target)
+        if not form.is_valid():
+            messages.error(request, " ".join(e for errs in form.errors.values() for e in errs))
+            return redirect(target)
+        units = selectors.visible_units(request.membership).filter(public_id__in=ids).select_related("property")
+        data = form.cleaned_data
+        try:
+            n = services.bulk_update_units(request.membership, list(units), rent=data["rent"], percent=data["percent"],
+                                           status=data["status"], request=request)
+        except (ValidationError, PermissionDenied) as exc:
+            messages.error(request, " ".join(getattr(exc, "messages", None) or [str(exc)]))
+        else:
+            messages.success(request, _("%(n)s units updated.") % {"n": n})
+        return redirect(target)
 
 
 class UnitCreateView(CapabilityRequiredMixin, View):
@@ -558,6 +611,207 @@ class UnitCreateView(CapabilityRequiredMixin, View):
                     return redirect("properties:unit_create", public_id=prop.public_id)
                 return redirect("properties:detail", public_id=prop.public_id)
         return render(request, self.template_name, {"form": form, "property": prop})
+
+
+def _get_room(request, public_id) -> Room:
+    props = visible_properties(request.membership, Property.all_objects.all())
+    qs = Room.all_objects.filter(organization=request.organization, property__in=props).select_related(
+        "property", "building")
+    return get_object_or_404(qs, public_id=public_id)
+
+
+def _hostel_only(request):
+    if request.organization.org_type != "HOSTEL":
+        raise Http404
+
+
+class RoomsCreateView(CapabilityRequiredMixin, View):
+    """D-188: add a run of hostel rooms, each with its beds."""
+
+    template_name = "properties/rooms_form.html"
+    required_capability = "units.manage"
+
+    def get(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id)
+        _require(request, "units.manage", prop)
+        return render(request, self.template_name, {"form": forms.RoomsForm(property=prop), "property": prop})
+
+    def post(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id)
+        _require(request, "units.manage", prop)
+        form = forms.RoomsForm(request.POST, property=prop)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                rooms = hostel.add_rooms(
+                    request.membership, prop, prefix=d["prefix"], first=d["first"], count=d["count"],
+                    capacity=d["capacity"], let_whole=d["let"] == forms.RoomsForm.LET_WHOLE, gender=d["gender"],
+                    building=d.get("building"), price=d["price"], request=request)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            else:
+                messages.success(request, _("%(n)s rooms added.") % {"n": len(rooms)})
+                return redirect("properties:rooms", public_id=prop.public_id)
+        return render(request, self.template_name, {"form": form, "property": prop})
+
+
+class RoomMapView(CapabilityRequiredMixin, View):
+    """D-188: every room with its beds, who is in each and which are free."""
+
+    template_name = "properties/room_map.html"
+    required_capability = "units.view"
+
+    def get(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id, include_archived=True)
+        beds = (with_occupancy(Unit.objects.filter(property=prop, room__isnull=False, room__archived_at__isnull=True))
+                .annotate(occupant=_occupant_name()).select_related("room").order_by("room__code", "code"))
+        by_room = defaultdict(list)
+        for unit in beds:
+            by_room[unit.room_id].append(unit)
+        rooms, free, taken = [], 0, 0
+        for room in Room.objects.filter(property=prop).select_related("building").order_by("building__name", "code"):
+            units = by_room.get(room.pk, [])
+            n_taken = sum(1 for u in units if u.is_occupied)
+            rooms.append({"room": room, "units": units, "taken": n_taken, "free": len(units) - n_taken})
+            free += len(units) - n_taken
+            taken += n_taken
+        return render(request, self.template_name, {
+            "property": prop, "rooms": rooms, "free": free, "taken": taken,
+            "can_manage_units": can(request.membership, "units.manage", prop) and not prop.is_archived,
+            "booking_url": (request.build_absolute_uri(reverse("hostel_stay", args=[prop.booking_token]))
+                            if prop.booking_token else ""),
+            "waiting": prospects.waitlist(prop).count(),
+            "can_rollover": can(request.membership, "leases.draft", prop) and not prop.is_archived})
+
+
+class BookingLinkView(CapabilityRequiredMixin, View):
+    """D-189: turn the hostel's public booking page on or off."""
+
+    required_capability = "units.manage"
+
+    def post(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id)
+        try:
+            if request.POST.get("action") == "off":
+                hostel.disable_booking_link(request.membership, prop, request=request)
+                messages.success(request, _("The booking page is off."))
+            else:
+                hostel.enable_booking_link(request.membership, prop, request=request)
+                messages.success(request, _("The booking page is on. Share its link with students."))
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        return redirect("properties:rooms", public_id=prop.public_id)
+
+
+class WaitlistView(CapabilityRequiredMixin, View):
+    """D-189: students waiting for a bed, and how many beds of their kind are free now."""
+
+    template_name = "properties/waitlist.html"
+    required_capability = "prospects.view"
+
+    def get(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id, include_archived=True)
+        rows = []
+        for p in prospects.waitlist(prop):
+            whole = {"Bed": False, "Whole room": True}.get(p.wants)
+            rows.append({"prospect": p, "free": hostel.free_beds(prop, p.gender, whole).count()})
+        return render(request, self.template_name, {"property": prop, "rows": rows,
+                                                    "ready": sum(1 for r in rows if r["free"])})
+
+
+class RolloverView(CapabilityRequiredMixin, View):
+    """D-189: draft next term's bookings for the students who stay."""
+
+    template_name = "properties/rollover.html"
+    required_capability = "leases.draft"
+
+    def ctx(self, request, prop, form):
+        return {"property": prop, "form": form, "rows": rollover.candidates(prop),
+                "drafts": rollover.drafts(prop), "can_activate": can(request.membership, "leases.activate", prop)}
+
+    def get(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id)
+        _require(request, "leases.draft", prop)
+        return render(request, self.template_name, self.ctx(request, prop, RolloverForm()))
+
+    def post(self, request, public_id):
+        _hostel_only(request)
+        prop = _get_property(request, public_id)
+        _require(request, "leases.draft", prop)
+        ids = [i for i in (uuid_or_none(v) for v in request.POST.getlist("lease")) if i]
+        if request.POST.get("action") == "activate":
+            return self.activate(request, prop, ids)
+        form = RolloverForm(request.POST)
+        leases = list(Lease.objects.filter(unit__property=prop, public_id__in=ids, status=Lease.Status.ACTIVE)
+                      .select_related("unit"))
+        if not ids:
+            form.add_error(None, _("Tick the students who are staying."))
+        if form.is_valid() and leases:
+            d = form.cleaned_data
+            made, skipped = rollover.roll_over(request.membership, prop, leases=leases, start_date=d["start_date"],
+                                               end_date=d["end_date"], rent=d["rent"], request=request)
+            if made:
+                messages.success(request, _("%(n)s renewal drafts made. Review and activate them under Leases.")
+                                 % {"n": len(made)})
+            for lease, why in skipped:
+                messages.warning(request, f"{lease.unit.code}: {why}")
+            if made or skipped:
+                return redirect("properties:rollover", public_id=prop.public_id)
+        return render(request, self.template_name, self.ctx(request, prop, form))
+
+
+    def activate(self, request, prop, ids):
+        """D-193: issue the ticked renewal drafts in one go; each one fails or succeeds on its own."""
+        _require(request, "leases.activate", prop)
+        leases = list(rollover.drafts(prop).filter(public_id__in=ids))
+        if not leases:
+            messages.error(request, _("Tick the drafts to activate."))
+        else:
+            done, skipped = rollover.activate_drafts(request.membership, prop, leases=leases, request=request)
+            if done:
+                messages.success(request, _("%(n)s bookings activated.") % {"n": len(done)})
+            for lease, why in skipped:
+                messages.warning(request, f"{lease.unit.code}: {why}")
+        return redirect("properties:rollover", public_id=prop.public_id)
+
+
+class RoomEditView(CapabilityRequiredMixin, View):
+    template_name = "properties/room_form.html"
+    required_capability = "units.manage"
+
+    def get(self, request, public_id):
+        _hostel_only(request)
+        room = _get_room(request, public_id)
+        return render(request, self.template_name, {"form": forms.RoomEditForm(room=room), "room": room})
+
+    def post(self, request, public_id):
+        _hostel_only(request)
+        room = _get_room(request, public_id)
+        if request.POST.get("action") == "archive":
+            try:
+                hostel.archive_room(request.membership, room, request=request)
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+                return redirect("properties:room", public_id=room.public_id)
+            messages.success(request, _("Room archived."))
+            return redirect("properties:rooms", public_id=room.property.public_id)
+        form = forms.RoomEditForm(request.POST, room=room)
+        if form.is_valid():
+            try:
+                hostel.update_room(request.membership, room, gender=form.cleaned_data["gender"],
+                                   capacity=form.cleaned_data["capacity"], request=request)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            else:
+                messages.success(request, _("Room updated."))
+                return redirect("properties:rooms", public_id=room.property.public_id)
+        return render(request, self.template_name, {"form": form, "room": room})
 
 
 class UnitDetailView(CapabilityRequiredMixin, View):
@@ -648,6 +902,57 @@ class UnitDetailView(CapabilityRequiredMixin, View):
 
 VACANCY_RATE_LIMIT = 60  # views per IP per minute
 ENQUIRY_RATE_LIMIT = 5  # enquiries per IP per hour (D-072)
+
+
+class HostelStayView(View):
+    """D-189: a hostel's public booking page. Shows what is free and takes a request, or puts the student on the waitlist."""
+
+    template_name = "properties/hostel_stay.html"
+
+    def page(self, request, prop, form=None, status=200):
+        org = prop.organization
+        free = {g: hostel.free_beds(prop, g).count() for g in ("F", "M")}
+        beds = hostel.free_beds(prop, "", False)
+        prices = [u.list_rent for u in beds if u.list_rent is not None]
+        whole = [u.list_rent for u in hostel.free_beds(prop, "", True) if u.list_rent is not None]
+        contact = prop.booking_shared_by
+        response = render(request, self.template_name, {
+            "property": prop, "free": free, "any_free": free["F"] + free["M"] > 0,
+            "bed_from": min(prices) if prices else None, "room_from": min(whole) if whole else None,
+            "contact_name": contact.full_name if contact else "", "contact_phone": contact.phone if contact else "",
+            "enquiry_form": form or HostelEnquiryForm(),
+            "sent": request.GET.get("sent"), "org_name": org.display_name}, status=status)
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response
+
+    def get(self, request, token):
+        if not ratelimit.hit(f"stay:ip:{client_ip(request)}", VACANCY_RATE_LIMIT, 60):
+            return HttpResponse(_("Too many requests. Try again in a minute."), status=429)
+        prop = hostel.shared_hostel(token)
+        if prop is None:
+            raise Http404
+        return self.page(request, prop)
+
+    def post(self, request, token):
+        prop = hostel.shared_hostel(token)
+        if prop is None:
+            raise Http404
+        if request.POST.get("website"):  # a bot filled the hidden field: look successful, keep nothing
+            return redirect(reverse("hostel_stay", args=[token]) + "?sent=1")
+        if not ratelimit.hit(f"stay:enquiry:ip:{client_ip(request)}", ENQUIRY_RATE_LIMIT, 3600):
+            return HttpResponse(_("Too many requests. Try again later, or call instead."), status=429)
+        form = HostelEnquiryForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                p = prospects.hostel_enquiry(prop, name=d["name"], phone=d["phone"], gender=d["gender"],
+                                             wants=d["wants"], institution=d["institution"],
+                                             move_in_by=d["move_in_by"], message=d["message"], request=request)
+            except ValidationError as exc:
+                _apply_errors(form, exc)
+            else:
+                return redirect(reverse("hostel_stay", args=[token]) + ("?sent=waitlist" if p.waitlisted else "?sent=1"))
+        return self.page(request, prop, form=form, status=400)
 
 
 class VacancyView(View):

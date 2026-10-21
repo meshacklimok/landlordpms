@@ -115,3 +115,30 @@ def test_property_page_charts_the_rent_only_once_there_is_some(client, owner, pr
     bill(make_lease(owner, prop, start=month), month)
     r = client.get(url)
     assert 'data-chart="chart-trend"' in r.text and r.context["specs"]["trend"]["series"][0]["data"][-1] == 20000
+
+
+def test_units_page_shows_who_lives_there(client, owner, prop, mixed):
+    response = client.get(UNITS)
+    by_code = {u.code: u.occupant for u in response.context["page"]}
+    assert by_code["A1"] == "Wanjiku"
+    assert by_code["A2"] is None
+    assert "Wanjiku" in response.content.decode()
+
+
+def test_bulk_rent_and_status(client, owner, prop, mixed):
+    a1, a2, a3, a4 = mixed
+    for u in (a1, a2):
+        u.list_rent = 10000
+        u.save()
+    ids = [str(a1.public_id), str(a2.public_id)]
+    client.post(reverse("properties:units_bulk"), {"units": ids, "percent": "10"})
+    a1.refresh_from_db(), a2.refresh_from_db()
+    assert a1.list_rent == 11000 and a2.list_rent == 11000
+    client.post(reverse("properties:units_bulk"), {"units": [str(a2.public_id)], "rent": "12500", "status": "RESERVED"})
+    a2.refresh_from_db()
+    assert a2.list_rent == 12500 and a2.manual_status == "RESERVED" and a1.list_rent == 11000
+    # Nothing ticked, or both rent and percent: nothing changes.
+    client.post(reverse("properties:units_bulk"), {"rent": "1"})
+    client.post(reverse("properties:units_bulk"), {"units": ids, "rent": "1", "percent": "5"})
+    a1.refresh_from_db()
+    assert a1.list_rent == 11000

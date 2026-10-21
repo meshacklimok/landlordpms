@@ -48,6 +48,8 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         MONTHLY = "MONTHLY", _("Monthly")
         QUARTERLY = "QUARTERLY", _("Quarterly")
         YEARLY = "YEARLY", _("Yearly")
+        # A hostel semester of four months, billed in one invoice (D-188). Students who pay monthly use MONTHLY.
+        SEMESTER = "SEMESTER", _("Per semester (4 months)")
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     unit = models.ForeignKey("properties.Unit", on_delete=models.PROTECT, related_name="leases")
@@ -174,7 +176,8 @@ class Lease(PublicIdModel, TimeStampedModel, ArchivableModel):
         return link.tenant if link else None
 
 
-MONTHS_PER_PERIOD = {Lease.Frequency.MONTHLY: 1, Lease.Frequency.QUARTERLY: 3, Lease.Frequency.YEARLY: 12}
+MONTHS_PER_PERIOD = {Lease.Frequency.MONTHLY: 1, Lease.Frequency.QUARTERLY: 3, Lease.Frequency.SEMESTER: 4,
+                     Lease.Frequency.YEARLY: 12}
 
 
 class LeaseTenant(TimeStampedModel):

@@ -270,7 +270,8 @@ class MessagesView(PortalRequiredMixin, View):
         if lease is None:
             raise Http404
         response = self._render(request, lease, portal_forms.MessageForm())
-        conversation.mark_read_by_tenant(lease)
+        if not getattr(request, "viewing_tenant", None):  # the owner looking in must not mark messages read
+            conversation.mark_read_by_tenant(lease)
         return response
 
     def post(self, request, public_id):
@@ -467,6 +468,17 @@ class InvoicePdfView(PortalRequiredMixin, View):
         return _no_store(response)
 
 
+class NoMatchView(VerifiedUserRequiredMixin, View):
+    """Where a tenant lands after verifying their phone when no landlord's records carry that number (D-203)."""
+
+    template_name = "portal/no_match.html"
+
+    def get(self, request):
+        if selectors.has_access(request.user):
+            return redirect("portal:home")
+        return render(request, self.template_name, {"phone": request.user.phone})
+
+
 class AcceptView(View):
     """Open to anyone with the link; claiming it needs a login with the invited, verified phone."""
 
@@ -504,6 +516,9 @@ class AcceptView(View):
 # ---------------------------------------------------------------------------
 
 
+INVITE_LINK_KEY = "portal_invite_link"
+
+
 def _staff_tenant(request, public_id) -> Tenant:
     return get_object_or_404(visible_tenants(request.membership, Tenant.all_objects.all()), public_id=public_id)
 
@@ -513,12 +528,23 @@ class InviteView(CapabilityRequiredMixin, View):
 
     def post(self, request, public_id):
         tenant = _staff_tenant(request, public_id)
+        via = request.POST.get("via")
+        via = via if via in ("whatsapp", "link") else "sms"
         try:
-            invitation, token = services.invite_tenant(request.membership, tenant, request=request)
+            invitation, token = services.invite_tenant(request.membership, tenant, request=request,
+                                                       via_sms=via == "sms")
         except (ValidationError, PermissionDenied) as exc:
             messages.error(request, _error_text(exc))
             return redirect("tenants:detail", public_id=tenant.public_id)
-        if not services.send_invitation(invitation, request.build_absolute_uri(reverse("portal:accept", args=[token]))):
+        url = request.build_absolute_uri(reverse("portal:accept", args=[token]))
+        if via != "sms":
+            # The raw token is not stored, so the link is shown once on the tenant page, to this staff member only.
+            request.session[INVITE_LINK_KEY] = {
+                "tenant": str(tenant.public_id), "url": url, "via": via,
+                "whatsapp": services.whatsapp_invite_link(invitation, url) if via == "whatsapp" else ""}
+            messages.success(request, _("Invitation ready. It works for 7 days."))
+            return redirect("tenants:detail", public_id=tenant.public_id)
+        if not services.send_invitation(invitation, url):
             messages.warning(request, _("The invitation was made but the SMS could not be sent. Try again."))
         else:
             messages.success(request, _("Invitation sent to %(phone)s. It works for 7 days.")
@@ -560,11 +586,15 @@ class RemoveUssdPinView(CapabilityRequiredMixin, View):
         return redirect("tenants:detail", public_id=tenant.public_id)
 
 
-def tenant_card(tenant: Tenant) -> dict:
-    """What the tenant page shows about the portal and the USSD PIN."""
+def tenant_card(tenant: Tenant, request=None) -> dict:
+    """What the tenant page shows about the portal and the USSD PIN. With the request, a link made a moment ago by
+    WhatsApp or copy is shown once."""
+    link = request.session.pop(INVITE_LINK_KEY, None) if request is not None else None
+    invitation = services.pending_invitation(tenant)
     return {
+        "link": link if link and invitation and link.get("tenant") == str(tenant.public_id) else None,
         "ussd_pin": services.ussd_pin(tenant),
         "account": services.live_account(tenant),
-        "invitation": services.pending_invitation(tenant),
+        "invitation": invitation,
         "has_leases": services.has_leases(tenant),
     }

@@ -584,6 +584,126 @@ def public_enquiry(unit: Unit, *, name: str, phone: str, message: str = "", now:
     return p
 
 
+# What a hostel enquiry asked for, kept in `Prospect.wants` in these words whatever the language.
+HOSTEL_WANTS = {"bed": "Bed", "room": "Whole room", "any": "Bed or room"}
+
+
+@transaction.atomic
+def hostel_enquiry(prop: Property, *, name: str, phone: str, gender: str = "", wants: str = "", institution: str = "",
+                   move_in_by=None, message: str = "", now: datetime.datetime | None = None, request=None) -> Prospect:
+    """A student asked for a bed or room on a hostel's booking page (D-189).
+
+    With nothing suitable free the student goes on the waitlist instead; staff see both in the same list.
+    """
+    from properties import hostel
+
+    errors = {}
+    name = " ".join((name or "").split())[:150]
+    if not name:
+        errors["name"] = _("Enter your name.")
+    try:
+        phone = normalize_phone(phone)
+    except InvalidPhoneNumber as exc:
+        errors["phone"] = str(exc)
+    if gender not in ("F", "M"):
+        errors["gender"] = _("Choose female or male, so we can offer the right room.")
+    if wants not in ("bed", "room", "any"):
+        errors["wants"] = _("Choose a bed or a whole room.")
+    if errors:
+        raise ValidationError(errors)
+    org = prop.organization
+    now = now or timezone.now()
+    whole = {"bed": False, "room": True}.get(wants)
+    waitlisted = not hostel.free_beds(prop, gender, whole).exists()
+    what = HOSTEL_WANTS[wants]
+    parts = [_("Asked for: %(what)s, from the booking page.") % {"what": what}]
+    if institution:
+        parts.append(_("College or university: %(i)s.") % {"i": institution[:120]})
+    if waitlisted:
+        parts.append(_("Nothing suitable was free, so they are on the waitlist."))
+    if message.strip():
+        parts.append(message.strip()[:500])
+    text = " ".join(parts)
+    owner = prop.booking_shared_by if prop.booking_shared_by and prop.booking_shared_by.is_active else None
+    p = (Prospect.objects.select_for_update(of=("self",))
+         .filter(organization=org, property=prop, phone=phone, status__in=Prospect.OPEN).order_by("-pk").first())
+    if p is not None:
+        p.gender, p.wants = gender, what[:300]
+        p.waitlisted = p.waitlisted or waitlisted
+        p.save(update_fields=["gender", "wants", "waitlisted", "updated_at"])
+        note = _note(p, Kind.ENQUIRY, text, None, now)
+        _audit("prospects.enquiry", None, org, p, request, {"again": [None, True], "waitlisted": [None, waitlisted]})
+    else:
+        p = Prospect.objects.create(organization=org, property=prop, name=name, phone=phone, gender=gender,
+                                    wants=what[:300], move_in_by=move_in_by, waitlisted=waitlisted,
+                                    source=Prospect.Source.VACANCY_LINK, assigned_to=owner)
+        note = _note(p, Kind.ENQUIRY, text, None, now)
+        _audit("prospects.enquiry", None, org, p, request,
+               {"property": [None, prop.name], "name": [None, name], "source": [None, p.source],
+                "waitlisted": [None, waitlisted]})
+    recipients = [p.assigned_to] if p.assigned_to_id else staff_with(org, "prospects.manage", prop)
+    label = _("the waitlist") if waitlisted else what
+    for user in recipients:
+        notify(org, "prospect_new", user=user, dedupe_key=f"prospect_new:{note.pk}:{user.pk}",
+               context={"name": p.name, "phone": p.phone, "property": prop.name, "unit": label,
+                        "source": p.get_source_display()})
+    return p
+
+
+def waitlist(prop: Property):
+    """Open prospects waiting for a bed (none yet held a unit), longest waiting first."""
+    return (Prospect.objects.filter(property=prop, waitlisted=True, status__in=Prospect.OPEN, held_unit__isnull=True)
+            .order_by("created_at", "pk"))
+
+
+OFFER_DAYS = 3
+
+
+def offer_free_beds(today: datetime.date | None = None, now: datetime.datetime | None = None) -> dict[str, int]:
+    """D-190: text the waitlisted students whose kind of bed is now free, first come first served.
+
+    A bed is offered once: a student already offered within OFFER_DAYS counts against the free beds of their gender,
+    so two students are not sent after one bed. An offer that lapsed is not repeated; the prospect stays on the
+    waitlist for staff to call.
+    """
+    from properties import hostel
+
+    now = now or timezone.now()
+    today = today or timezone.localdate()
+    sent = 0
+    props = (Property.objects.filter(prospects__waitlisted=True, prospects__status__in=Prospect.OPEN,
+                                     prospects__held_unit__isnull=True, prospects__offered_at__isnull=True,
+                                     organization__org_type="HOSTEL").distinct().select_related("organization"))
+    for prop in props:
+        waiting = list(waitlist(prop))
+        cutoff = now - datetime.timedelta(days=OFFER_DAYS)
+        pending = [p for p in waiting if p.offered_at and p.offered_at >= cutoff]
+        for p in waiting:
+            if p.offered_at or not p.gender:
+                continue
+            whole = {"Bed": False, "Whole room": True}.get(p.wants)
+            free = hostel.free_beds(prop, p.gender, whole, today).count()
+            if free <= sum(1 for q in pending if q.gender == p.gender):
+                continue
+            with transaction.atomic():
+                note_text = _("Texted that a bed is free; they have %(n)s days to take it.") % {"n": OFFER_DAYS}
+                contact = prop.booking_shared_by or p.assigned_to
+                if contact is None:
+                    users = staff_with(prop.organization, "prospects.manage", prop)
+                    contact = users[0] if users else None
+                who = (contact.phone if contact is not None else "") or prop.organization.display_name
+                message = notify(prop.organization, "hostel_bed_free", phone=p.phone,
+                                 dedupe_key=f"hostel_bed_free:{p.pk}",
+                                 context={"name": p.name, "property": prop.name, "contact": who, "days": OFFER_DAYS})
+                p.offered_at = now
+                p.save(update_fields=["offered_at", "updated_at"])
+                _note(p, Kind.NOTE, note_text, None, now)
+                _audit("prospects.bed_offer", None, prop.organization, p, None, {"offered_at": [None, str(now)]})
+            pending.append(p)
+            sent += 1 if message is not None else 0
+    return {"bed_offers": sent}
+
+
 # ---------------------------------------------------------------------------
 # Lists and home tasks
 # ---------------------------------------------------------------------------

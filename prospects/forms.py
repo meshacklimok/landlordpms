@@ -122,3 +122,23 @@ class EnquiryForm(forms.Form):
                                                            "placeholder": _("e.g. When can I view it?")}))
     website = forms.CharField(required=False, widget=forms.TextInput(attrs={"tabindex": "-1",
                                                                              "autocomplete": "off"}))
+
+
+class HostelEnquiryForm(forms.Form):
+    """The public form on a hostel's booking page (D-189). `website` is a trap for bots and must stay empty."""
+
+    name = forms.CharField(label=_("Your name"), max_length=150)
+    phone = forms.CharField(label=_("Your phone"), max_length=20,
+                            widget=forms.TextInput(attrs={"inputmode": "tel", "autocomplete": "tel",
+                                                          "placeholder": "0712 345678"}))
+    gender = forms.ChoiceField(label=_("I am"), choices=[("", _("Choose")), ("F", _("Female")), ("M", _("Male"))])
+    wants = forms.ChoiceField(label=_("I want"), choices=[("bed", _("A bed in a shared room")),
+                                                           ("room", _("A whole room")),
+                                                           ("any", _("Either"))], initial="bed")
+    institution = forms.CharField(label=_("College or university"), max_length=120, required=False)
+    move_in_by = forms.DateField(label=_("Moving in on"), required=False,
+                                 widget=forms.DateInput(attrs={"type": "date"}))
+    message = forms.CharField(label=_("Message (optional)"), max_length=500, required=False,
+                              widget=forms.Textarea(attrs={"rows": 2}))
+    website = forms.CharField(required=False, widget=forms.TextInput(attrs={"tabindex": "-1",
+                                                                             "autocomplete": "off"}))

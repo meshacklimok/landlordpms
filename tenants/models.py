@@ -11,6 +11,7 @@ Only PROSPECT, ACTIVE and FORMER are stored. Leases move a tenant between them
 """
 
 from django.conf import settings
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.db.models.functions import Upper
@@ -54,6 +55,13 @@ class Tenant(PublicIdModel, TimeStampedModel, ArchivableModel):
     id_type = models.CharField(_("ID type"), max_length=12, choices=IdType.choices, blank=True)
     id_number = models.CharField(_("ID / registration number"), max_length=30, blank=True)
     kra_pin = models.CharField(_("KRA PIN"), max_length=11, blank=True)
+
+    # Students in a hostel (D-188). The parent or guardian is the emergency contact below.
+    student_number = models.CharField(_("student or admission number"), max_length=30, blank=True)
+    institution = models.CharField(_("college or university"), max_length=120, blank=True)
+    course = models.CharField(_("course"), max_length=120, blank=True)
+    year_of_study = models.PositiveSmallIntegerField(_("year of study"), null=True, blank=True,
+                                                     validators=[MinValueValidator(1), MaxValueValidator(10)])
 
     emergency_contact_name = models.CharField(_("emergency contact"), max_length=150, blank=True)
     emergency_contact_phone = models.CharField(_("emergency contact phone"), max_length=16, blank=True)

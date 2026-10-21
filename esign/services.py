@@ -36,7 +36,6 @@ from leases import paperwork
 from leases import pdf as lease_pdf
 from leases.models import Lease
 from notifications import catalog
-from notifications.providers.sms import send_sms
 from notifications.services import channel_allowed
 from properties.models import Property
 
@@ -263,10 +262,12 @@ def new_link(actor: Membership, signer: Signer, *, request=None) -> tuple[str, b
     url = sign_url(token)
     sent = False
     if channel_allowed(signer.tenant, catalog.SMS):
-        sent = send_sms(signer.phone, _(
+        from notifications.delivery import send_sms_for
+
+        sent = send_sms_for(req.organization, signer.phone, _(
             "%(org)s asks you to sign %(title)s electronically. Open %(url)s . The link works until %(day)s.")
             % {"org": req.organization.name, "title": req.title, "url": url,
-               "day": timezone.localtime(req.expires_at).strftime("%d %b %Y")}, org=req.organization).ok
+               "day": timezone.localtime(req.expires_at).strftime("%d %b %Y")}, what="Signing link").ok
     Signer.objects.filter(pk=signer.pk).update(token_hash=_hash_token(token), link_sent_at=timezone.now(),
                                                code_hash="", code_expires_at=None)
     _audit("esign.send_link", req, request, actor=actor.user, changes={"signer": [None, signer.name],
@@ -328,9 +329,12 @@ def send_code(signer: Signer) -> None:
     Signer.objects.filter(pk=signer.pk).update(code_hash=_code_hash(signer, code), code_sent_at=now,
                                                code_expires_at=now + CODE_TTL, code_attempts=0)
     signer.code_sent_at = now
-    result = send_sms(signer.phone, _("Your code to sign %(title)s is %(code)s. It expires in 10 minutes. "
-                                      "Never share it.") % {"title": signer.request.title[:60], "code": code},
-                      org=signer.request.organization)
+    from notifications.delivery import send_sms_for
+
+    result = send_sms_for(signer.request.organization, signer.phone,
+                          _("Your code to sign %(title)s is %(code)s. It expires in 10 minutes. Never share it.")
+                          % {"title": signer.request.title[:60], "code": code},
+                          what="Signing code", block_when_empty=False)
     if not result.ok:
         raise SigningError(_("The code could not be sent. Try again in a minute."))
 

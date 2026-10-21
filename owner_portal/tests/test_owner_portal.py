@@ -322,3 +322,30 @@ def test_one_login_for_two_organizations(client, owner, jane, prop):
     assert page.status_code == 200
     text = page.content.decode()
     assert owner.organization.name in text and other.organization.name in text
+
+
+# ---------------------------------------------------------------------------
+# Today's picture (D-217)
+# ---------------------------------------------------------------------------
+
+
+def test_the_live_page_shows_owed_rent_and_empty_units_but_no_tenant_names(client, owner, jane, prop, january, tom):
+    from django.urls import reverse
+
+    from leases.models import Lease
+    from owner_portal import live
+
+    user = join(owner, jane)
+    account = selectors.live_accounts(user).get()
+    # A1 was billed in January and is paid; February is billed and unpaid.
+    bill(Lease.objects.get(unit__code="A1"), D(2025, 2, 1))
+    data = live.live(account, today=D(2025, 4, 1))
+    assert data["owed"] == Decimal("20000.00") and data["owing_leases"] == 1
+    # Tom's property is never in Jane's picture.
+    assert [r.property.name for r in data["rows"]] == ["Acacia Court"]
+    client.force_login(user)
+    response = client.get(reverse("owner_portal:live", args=[account.public_id]))
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Acacia Court" in body and "Baobab" not in body
+    assert response["Cache-Control"] == "private, no-store"

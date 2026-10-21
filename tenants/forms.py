@@ -25,13 +25,31 @@ class TenantForm(forms.ModelForm):
     class Meta:
         model = Tenant
         fields = ["kind", "name", "contact_person", "phone", "alt_phone", "email", "language",
-                  "id_type", "id_number", "kra_pin",
+                  "id_type", "id_number", "kra_pin", "student_number", "institution", "course", "year_of_study",
                   "emergency_contact_name", "emergency_contact_phone", "notes"]
         widgets = {"notes": forms.Textarea(attrs={"rows": 3})}
         help_texts = {"contact_person": _("For a company tenant")}
 
-    def __init__(self, *args, show_sensitive=False, units=None, **kwargs):
+    STUDENT_FIELDS = ("student_number", "institution", "course", "year_of_study")
+
+    def __init__(self, *args, show_sensitive=False, units=None, student=False, **kwargs):
         super().__init__(*args, **kwargs)
+        self.more_names = set(self.MORE_FIELDS)
+        # Only a company has a contact person (ui.js reads show_when).
+        self.fields["contact_person"].show_when = f"kind:{Tenant.Kind.COMPANY}"
+        if student:
+            # A hostel (D-188): who the student is and who pays for them, up front.
+            self.fields["name"].label = _("Student name")
+            self.fields["emergency_contact_name"].label = _("Parent or guardian")
+            self.fields["emergency_contact_phone"].label = _("Parent or guardian phone")
+            self.fields["emergency_contact_phone"].help_text = _(
+                "They can pay fees from this phone: payments from it are matched to the student's booking.")
+            self.fields["student_number"].help_text = _("The number on the student card or admission letter.")
+            self.fields["unit"].label = _("Assign to a room or bed") if "unit" in self.fields else None
+            self.more_names -= {"emergency_contact_name", "emergency_contact_phone"}
+        else:
+            for f in self.STUDENT_FIELDS:
+                del self.fields[f]
         if units is None:
             del self.fields["unit"]
         else:
@@ -50,10 +68,10 @@ class TenantForm(forms.ModelForm):
                    "emergency_contact_name", "emergency_contact_phone", "notes")
 
     def primary_fields(self):
-        return [f for f in self if f.name not in self.MORE_FIELDS]
+        return [f for f in self if f.name not in self.more_names]
 
     def more_fields(self):
-        return [f for f in self if f.name in self.MORE_FIELDS]
+        return [f for f in self if f.name in self.more_names]
 
     def _post_clean(self):
         # Services validate and save; the form only parses input.
@@ -75,3 +93,4 @@ class TenantSearchForm(forms.Form):
     placed = forms.ChoiceField(required=False, choices=[("", _("All")), ("yes", _("In a unit")),
                                                            ("none", _("No unit yet"))])
     archived = forms.BooleanField(required=False)
+    sort = forms.ChoiceField(required=False, choices=[("name", _("Name")), ("new", _("Newest first"))])
