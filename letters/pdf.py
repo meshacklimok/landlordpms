@@ -5,6 +5,7 @@ so the check page shows exactly the same wording.
 """
 
 import io
+
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from reportlab.lib.pagesizes import A4
@@ -16,6 +17,7 @@ from leases.pdf import BODY, HEAD, LABEL, SMALL, TITLE, _head, _p  # noqa: F401
 
 from .models import TenancyLetter
 from .services import statements, verify_url
+
 
 def render_pdf(letter: TenancyLetter) -> bytes:
     data = letter.facts

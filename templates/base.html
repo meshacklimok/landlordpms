@@ -138,7 +138,7 @@
 {% endif %}
 <main id="main" tabindex="-1" class="container page{% block page_class %}{% endblock %}{% if report_steps %} has-report-steps{% endif %} py-3 py-lg-4">
   {% if not report_pane %}
-  {% if request.viewing_as %}<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status"><span>{% blocktrans with n=request.organization.name %}You are viewing {{ n }} as its owner. Nothing can be changed.{% endblocktrans %}</span>
+  {% if request.viewing_as or request.viewing_tenant %}<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status"><span>{% blocktrans with n=viewing_label %}You are viewing as {{ n }}. Nothing can be changed.{% endblocktrans %}</span>
     <form method="post" action="{% url 'console:view_as_stop' %}" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-dark">{% trans "Stop viewing" %}</button></form></div>{% endif %}
   {% for a in announcements %}<div class="alert alert-{{ a.level }}" role="status">{{ a.message }}</div>{% endfor %}
   {% if in_demo %}

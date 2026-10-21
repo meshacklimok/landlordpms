@@ -45,9 +45,19 @@
 {% endwith %}
 {% if control %}
 <form method="post" action="{% url 'console:view_as' org.public_id %}" class="mt-3">{% csrf_token %}
-  <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "View as this landlord (read only)" %}</button>
-  <span class="small text-muted ms-2">{% trans "You see what their owner sees. Nothing can be changed, and it is logged." %}</span>
+  <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "View as the owner (read only)" %}</button>
+  <span class="small text-muted ms-2">{% trans "You see what they see. Nothing can be changed, and it is logged." %}</span>
 </form>
+<details class="mt-2 small"><summary>{% trans "View as someone else here" %}</summary>
+  <form method="post" action="{% url 'console:view_as' org.public_id %}" class="d-flex flex-wrap gap-2 mt-2">{% csrf_token %}
+    <select name="membership" class="form-select form-select-sm w-auto" aria-label="{% trans 'Staff member' %}">{% for m in seats %}<option value="{{ m.public_id }}">{{ m.user.full_name }} · {{ m.role.name }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-outline-secondary">{% trans "View as this staff member" %}</button>
+  </form>
+  {% if tenant_logins %}<form method="post" action="{% url 'console:view_as' org.public_id %}" class="d-flex flex-wrap gap-2 mt-2">{% csrf_token %}
+    <select name="account" class="form-select form-select-sm w-auto" aria-label="{% trans 'Tenant' %}">{% for a in tenant_logins %}<option value="{{ a.public_id }}">{{ a.tenant }}</option>{% endfor %}</select>
+    <button class="btn btn-sm btn-outline-secondary">{% trans "View the tenant portal as this tenant" %}</button>
+  </form>{% else %}<p class="text-muted mt-2 mb-0">{% trans "No tenant has a portal login yet." %}</p>{% endif %}
+</details>
 <h2 class="h6 mt-4">{% trans "Owner controls" %}</h2>
 <div class="row g-3">
   <form method="post" action="{% url 'console:organization_control' org.public_id %}" class="col-lg-5">{% csrf_token %}

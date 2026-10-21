@@ -4,6 +4,7 @@ The wording comes from notices.paragraphs and notices.arrears_rows, so the previ
 """
 
 import io
+
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from reportlab.lib.pagesizes import A4
