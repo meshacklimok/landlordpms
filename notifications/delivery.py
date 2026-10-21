@@ -64,16 +64,57 @@ def sms_available(org: Organization) -> bool:
 
     from .own_accounts import usable_sms
 
+    if billing.blocked(org, "sms"):  # payment overdue (D-198)
+        return False
     if usable_sms(org) is not None:
         return True
     return billing.sms_available(org)
 
 
+def send_sms_for(org: Organization, to: str, body: str, *, what: str = "", block_when_empty: bool = True) -> SmsResult:
+    """An SMS the organization sends outside the queue (a signing link, an invitation): checked against its SMS
+    credit and charged like any other, through its own account when it has one (D-200). A refusal comes back as
+    a failed result, so the caller can fall back to email. `block_when_empty=False` is for a code the person is
+    waiting on: it is sent and charged even when the credit has run out. The wallet row stays locked from the
+    check to the charge, so two sends at once cannot both spend the last part."""
+    from subscriptions import services as billing
+
+    from .own_accounts import sms_sender, usable_sms
+
+    try:
+        own = usable_sms(org)
+        with transaction.atomic():
+            if own is None:
+                billing.lock_wallet(org)
+            if block_when_empty and not sms_available(org):
+                return SmsResult(ok=False, provider="", error="No SMS credit")
+            if own is not None:
+                return sms_sender(own).send(to, body)
+            result = get_sms_sender().send(to, body, sender_id=sender_id_for(org))
+            if result.ok:
+                billing.charge_parts(org, body, note=what[:200])
+            return result
+    except Exception as e:
+        logger.exception("Sending an SMS for organization %s failed", org.pk)
+        return SmsResult(ok=False, provider="", error=str(e) or e.__class__.__name__)
+
+
 def whatsapp_available(org: Organization) -> bool:
     """The organization's own number, or else the platform's."""
+    from subscriptions import services as billing
+
     from .whatsapp_account import platform_available, usable_account
 
+    if billing.blocked(org, "whatsapp"):  # payment overdue (D-198)
+        return False
     return usable_account(org) is not None or platform_available()
+
+
+def email_available(org: Organization) -> bool:
+    """Email the organization sends to tenants and staff stops when payment is overdue for long enough (D-198)."""
+    from subscriptions import services as billing
+
+    return not billing.blocked(org, "email")
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +180,8 @@ def _blocked(org, ntype, channel: str, tenant, user, phone: str = "") -> str | N
         return Skip.CHANNEL_UNAVAILABLE
     if channel == catalog.WHATSAPP and not whatsapp_available(org):
         return Skip.CHANNEL_UNAVAILABLE
+    if channel == catalog.EMAIL and not email_available(org):
+        return Skip.CHANNEL_UNAVAILABLE
     if channel != catalog.IN_APP and not _address(channel, tenant, user):
         return Skip.NO_ADDRESS
     if not ntype.mandatory:
@@ -186,7 +229,7 @@ def _choose(org, ntype, rule: Rule, tenant, user, language: str,
         return None, Skip.RULE_DISABLED, None
     reasons = []
     for channel in rule.channels:
-        if channel == catalog.EMAIL and catalog.email_copy(ntype):
+        if channel == catalog.EMAIL and tenant is not None and catalog.email_copy(ntype):
             continue  # a copy, written by _email_copy, never a fallback (D-076)
         reason = _blocked(org, ntype, channel, tenant, user, phone)
         text = None if reason else template_for(org, ntype, channel, language)
@@ -234,7 +277,9 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, pho
     if [tenant is not None, user is not None, bool(phone)].count(True) != 1:
         raise ValueError("notify() needs exactly one of tenant, user or phone")
     ntype = catalog.get(type_codename)
-    if dedupe_key and Message.objects.filter(organization=org, dedupe_key=dedupe_key).exists():
+    if org.is_demo:  # the public demo never messages anyone (D-210)
+        return None
+    if dedupe_key and Message.objects.filter(organization=org, dedupe_key__in=[dedupe_key, f"{dedupe_key}|email"]).exists():
         return None
     now = now or timezone.now()
     rule = effective_rule(org, ntype)
@@ -245,6 +290,9 @@ def notify(org: Organization, type_codename: str, *, tenant=None, user=None, pho
     context = {"org_name": org.display_name, **(context or {})}
 
     chosen, reason, reason_channel = _choose(org, ntype, rule, tenant, user, language, phone)
+    if chosen is None and reason is None and tenant is not None and rule.enabled and catalog.EMAIL in rule.channels:
+        # The organization sends this by email only: there is no SMS to write or to skip.
+        return _email_copy(org, ntype, tenant, language, context, base, send_now)
     if chosen is None:
         channel = reason_channel or (rule.channels[0] if rule.channels else ntype.channels[0])
         # A bare number is the only record of who it was for, so it is kept even when skipped.
@@ -352,8 +400,11 @@ def send_one(pk: int, now: datetime.datetime | None = None) -> str | None:
                    .filter(pk=pk, status=Status.QUEUED).first())
         if message is None or (message.send_after and message.send_after > now):
             return None
-        if message.channel == catalog.SMS and not sms_available(message.organization):
-            # The cap or the credit ran out while it waited (D-142); do not let a queue run past it.
+        org = message.organization
+        if ((message.channel == catalog.SMS and not sms_available(org))
+                or (message.channel == catalog.WHATSAPP and not whatsapp_available(org))
+                or (message.channel == catalog.EMAIL and not email_available(org))):
+            # The cap or the credit ran out, or payment went overdue, while it waited (D-142, D-198).
             message.status = Status.SKIPPED
             message.skip_reason = Message.SkipReason.CHANNEL_UNAVAILABLE
             message.save()
@@ -382,6 +433,9 @@ def send_one(pk: int, now: datetime.datetime | None = None) -> str | None:
             message.error = (result.error or "")[:300]
             if result.permanent or message.attempts >= Message.MAX_ATTEMPTS:
                 message.status = Status.FAILED
+                from . import triggers
+
+                transaction.on_commit(lambda: triggers.message_failed(message))
             else:
                 message.send_after = now + RETRY_BASE * (2 ** (message.attempts - 1))
         message.save()

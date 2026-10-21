@@ -35,9 +35,18 @@ def sms_account(org) -> SmsAccount | None:
     return SmsAccount.objects.filter(organization=org).first()
 
 
+def sms_allowed(org) -> bool:
+    """Whether a Platform Admin lets this organization use its own SMS account (D-200)."""
+    from subscriptions import services as billing
+
+    return billing.own_account_allowed(org)
+
+
 def usable_sms(org) -> SmsAccount | None:
+    """The organization's own SMS account if it is set up, switched on and allowed. Turning the permission off in
+    admin sends its SMS through the platform and its wallet again, without deleting the saved details."""
     account = sms_account(org)
-    return account if account is not None and account.usable else None
+    return account if account is not None and account.usable and sms_allowed(org) else None
 
 
 def connection(account: EmailAccount):
@@ -136,6 +145,9 @@ def save_sms(actor: Membership, *, username: str, api_key: str = "", sender_id: 
     """Creates or updates the organization's Africa's Talking account. A blank key keeps the saved one."""
     require(actor, "organization.manage")
     org = actor.organization
+    if not sms_allowed(org):
+        raise ValidationError(_("Your own SMS account is not switched on for your organization. Top up your SMS "
+                                "credit on the Subscription page instead, or ask us to switch it on."))
     username = (username or "").strip()
     if not username:
         raise ValidationError({"username": _("Enter your Africa's Talking username.")})
@@ -173,6 +185,8 @@ def test_sms(actor: Membership, *, request=None) -> SmsAccount:
     account = sms_account(actor.organization)
     if account is None:
         raise ValidationError(_("Save your SMS account first."))
+    if not sms_allowed(actor.organization):
+        raise ValidationError(_("Your own SMS account is not switched on for your organization."))
     result = sms_sender(account).send(actor.user.phone, _("Test from NyumbaPMS: your own SMS account works."))
     account.check_error = "" if result.ok else (result.error or "Not accepted")[:300]
     account.checked_at = timezone.now()

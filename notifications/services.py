@@ -19,7 +19,13 @@ from audit import services as audit
 
 from . import catalog
 from .delivery import consent, effective_rule, send_one
-from .models import ConsentRecord, Message, MessageTemplate, OrganizationNotificationRule
+from .models import (
+    ConsentRecord,
+    Message,
+    MessageTemplate,
+    OrganizationMessageSettings,
+    OrganizationNotificationRule,
+)
 from .rendering import validate_body
 
 MAX_OFFSETS = 3
@@ -92,8 +98,6 @@ def save_rule(actor: Membership, type_codename: str, *, enabled: bool, channels=
     channels = tuple(dict.fromkeys(channels or ntype.channels))
     if not channels or any(c not in usable for c in channels):
         raise ValidationError({"channels": _("Choose from: %(channels)s.") % {"channels": ", ".join(usable)}})
-    if channels == (catalog.EMAIL,):
-        raise ValidationError({"channels": _("Email is a copy: keep SMS or WhatsApp as well.")})
     offsets = parse_offsets(ntype, offsets) if ntype.offsets else ()
     include_co_tenants = bool(include_co_tenants) and ntype.audience == catalog.TENANT
 
@@ -135,6 +139,25 @@ def set_quiet_hours(actor: Membership, *, start: datetime.time, end: datetime.ti
     actor.organization.quiet_hours_start, actor.organization.quiet_hours_end = start, end
     audit.record("notifications.quiet_hours", actor=actor.user, organization=org, obj=org, request=request,
                  changes={"quiet_hours": [f"{before[0]:%H:%M}–{before[1]:%H:%M}", f"{start:%H:%M}–{end:%H:%M}"]})
+
+
+@transaction.atomic
+def set_message_content(actor: Membership, *, includes_deposit: bool, shows_credit: bool, request=None) -> None:
+    """What `{balance}` means in this organization's messages. Both off is the default and keeps no row."""
+    require(actor, "organization.manage")
+    org = actor.organization
+    row = OrganizationMessageSettings.objects.select_for_update().filter(organization=org).first()
+    before = {"balance_includes_deposit": bool(row and row.balance_includes_deposit),
+              "balance_shows_credit": bool(row and row.balance_shows_credit)}
+    after = {"balance_includes_deposit": bool(includes_deposit), "balance_shows_credit": bool(shows_credit)}
+    if before == after:
+        return
+    row = row or OrganizationMessageSettings(organization=org)
+    row.balance_includes_deposit, row.balance_shows_credit = after["balance_includes_deposit"], after["balance_shows_credit"]
+    row.updated_by = actor.user
+    row.save()
+    audit.record("notifications.message_content", actor=actor.user, organization=org, obj=org, request=request,
+                 changes=audit.diff(before, after))
 
 
 @transaction.atomic
@@ -310,3 +333,32 @@ def clear_old_text(now: datetime.datetime | None = None, batch: int = 2000) -> i
     while ids := list(old.order_by().values_list("pk", flat=True)[:batch]):
         cleared += Message.objects.filter(pk__in=ids).update(body="", subject="", to="", provider_template={})
     return cleared
+
+
+# The emails that remind (D-076 follow-up): a tenant can stop these and still get invoices and receipts.
+REMINDER_TYPES = ("rent_due_soon", "rent_overdue", "move_out_soon")
+
+
+def email_reminders_stopped(tenant) -> bool:
+    from .models import NotificationPreference
+
+    stopped = set(NotificationPreference.objects.filter(
+        organization=tenant.organization, tenant=tenant, channel=catalog.EMAIL, enabled=False,
+        type__in=REMINDER_TYPES).values_list("type", flat=True))
+    return set(REMINDER_TYPES) <= stopped
+
+
+@transaction.atomic
+def stop_email_reminders_by_link(tenant) -> bool:
+    """The tenant chose "reminders only" on the stop page. Returns False when they were already stopped."""
+    from .models import NotificationPreference
+
+    if email_reminders_stopped(tenant):
+        return False
+    for codename in REMINDER_TYPES:
+        NotificationPreference.objects.update_or_create(
+            organization=tenant.organization, tenant=tenant, type=codename, channel=catalog.EMAIL,
+            defaults={"enabled": False})
+    audit.record("tenant.consent", organization=tenant.organization, obj=tenant,
+                 changes={"email reminders": [True, False], "source": [None, "Email link"]})
+    return True

@@ -16,6 +16,7 @@ from accounts import sender_ids
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from ai_assistant import services as assistant
+from core.contacts import support_whatsapp
 from growth.content import FEATURES
 from meters import ocr
 
@@ -55,6 +56,7 @@ class SubscriptionView(CapabilityRequiredMixin, View):
             if last_checkout.status == PlatformCheckout.Status.PAID:
                 messages.success(request, _("Thank you: payment received."))
                 return redirect("subscriptions:page")
+        chosen_roles = set(org.lapse_notify_roles.values_list("pk", flat=True))
         return render(request, self.template_name, {
             "sub": sub,
             "usage": [(entitlements.LABELS[k], used[k], allowed[k]) for k in ("units", "seats")],
@@ -84,7 +86,9 @@ class SubscriptionView(CapabilityRequiredMixin, View):
             "scans": ocr.summary(org),
             "assistant": assistant.month_summary(org),
             "org": org,
-            "support_whatsapp": "".join(c for c in getattr(settings, "SUPPORT_WHATSAPP", "") if c.isdigit()),
+            "lapse_roles": [{"role": r, "on": r.pk in chosen_roles}
+                            for r in services.lapse_role_choices(org)] if can(request.membership, "subscription.manage") else [],
+            "support_whatsapp": support_whatsapp(),
             "platform_sender": getattr(settings, "AT_SENDER_ID", "") or "NyumbaPMS",
         })
 
@@ -151,6 +155,23 @@ class SenderNameView(CapabilityRequiredMixin, View):
                                             "fee; until it is approved, SMS keep going under the platform name."))
         except ValidationError as exc:
             messages.error(request, " ".join(exc.messages))
+        return redirect("subscriptions:page")
+
+
+class LapseNotifyView(CapabilityRequiredMixin, View):
+    """Which roles besides the owner are told in the app when the subscription lapses or is paid again."""
+
+    required_capability = "subscription.manage"
+
+    def post(self, request):
+        try:
+            names = services.set_lapse_notify_roles(request.membership, request.POST.getlist("roles"),
+                                                    request=request)
+        except ValidationError as exc:
+            messages.error(request, " ".join(exc.messages))
+        else:
+            messages.success(request, _("Saved. Besides you, %(who)s will be told.") % {"who": ", ".join(names)}
+                             if names else _("Saved. Only owners will be told."))
         return redirect("subscriptions:page")
 
 

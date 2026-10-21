@@ -455,6 +455,32 @@ def test_sms_top_up_page(client, owner):
     assert response.status_code == 302 and response.url.startswith("https://")
 
 
+def test_buying_sms_credit_end_to_end(client, owner, settings):
+    """Buy 500, see it on the page and the receipt, spend it, and a repeat callback changes nothing."""
+    from notifications import delivery
+    from subscriptions.models import SmsWallet, SmsWalletEntry
+
+    settings.SMS_WALLET_ENFORCED, settings.SMS_PRICE = True, "1.00"
+    org = owner.organization
+    SmsWallet.objects.update_or_create(organization=org, defaults={"mode": SmsWallet.Mode.PREPAID})
+    login(client, owner)
+    assert not services.sms_available(org)
+    client.post(reverse("subscriptions:sms_top_up"), {"amount": "500", "phone": "0712000111", "method": "mpesa"})
+    checkout = PlatformCheckout.objects.get()
+    assert services.sms_balance(org) == 0  # nothing until Safaricom confirms
+    hook(client, "stk", stk_callback(checkout, receipt="QEND2END01", amount=500))
+    hook(client, "stk", stk_callback(checkout, receipt="QEND2END01", amount=500))  # Safaricom retries
+    entry = SmsWalletEntry.objects.get(organization=org, kind=SmsWalletEntry.Kind.TOP_UP)
+    assert entry.amount == Decimal("500.00") and entry.payment.receipt
+    page = client.get(reverse("subscriptions:page")).content.decode()
+    assert "KES 500.00" in page and "Top up with M-Pesa" in page
+    assert services.sms_available(org)
+    assert delivery.send_sms_for(org, "+254712345678", "Rent is due on the 5th").ok
+    assert services.sms_balance(org) == Decimal("499.00")
+    page = client.get(reverse("subscriptions:page")).content.decode()
+    assert "KES 499.00" in page and "1 parts sent this month" in page
+
+
 # ---------------------------------------------------------------------------
 # Renewing by a saved card
 # ---------------------------------------------------------------------------
@@ -593,7 +619,7 @@ def test_the_renewal_reminder_says_the_card_will_be_charged(owner, invoice):
     sub.period_end = today + datetime.timedelta(days=7)
     sub.save()
     mail.outbox.clear()
-    assert services.send_reminders(today) == 1
+    assert services.send_reminders(today) == 2  # the email and the SMS (D-198)
     assert "4081" in mail.outbox[0].body and "charged automatically" in mail.outbox[0].body
     sub.auto_renew = False
     sub.save()

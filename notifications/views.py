@@ -21,9 +21,20 @@ from django.views import View
 from accounts.mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin
 from accounts.permissions import can
 
-from . import announcements, catalog, compose, forms, own_accounts, push, selectors, services, whatsapp_account
+from . import (
+    announcements,
+    catalog,
+    compose,
+    forms,
+    own_accounts,
+    push,
+    selectors,
+    services,
+    triggers,
+    whatsapp_account,
+)
 from .delivery import Rule, effective_rule, whatsapp_available
-from .models import Message, PushSubscription
+from .models import Message, MessageTemplate, PushSubscription
 from .rendering import SMS_MAX, SMS_SEGMENT, template_for
 from .rendering import render as fill
 
@@ -36,6 +47,7 @@ SAMPLE = {
     "invoice_number": "INV-2026-000123", "amount": "KES 15,000.00", "amount_due": "KES 15,000.00",
     "due_date": "05/10/2026", "balance": "KES 15,000.00", "pay_reference": "RIV-A4", "paid_on": "03/10/2026",
     "receipt_number": "RCT-2026-000456", "receipt_link": "https://pms.example.com/r/AbCdEf123456",
+    "amount_plain": "8,000.00", "breakdown": "Rent: 8,000.00", "balance_signed": "-8,000.00",
     "text": "Water will be off on Friday from 9am to 1pm.", "recorded_by": "Otieno", "offset": "3",
 }
 
@@ -147,18 +159,49 @@ class SettingsView(CapabilityRequiredMixin, View):
             if ntype.composed:
                 continue
             rule = effective_rule(org, ntype)
+            offered = self._offered(org, ntype)
             rows.append({
                 "type": ntype, "rule": rule, "offsets": ", ".join(str(o) for o in rule.offsets),
-                "email_possible": catalog.email_copy(ntype), "email_on": catalog.EMAIL in rule.channels,
+                "switches": [{"code": c, "name": c.lower(), "label": dict(catalog.CHANNEL_CHOICES)[c],
+                              "on": c in rule.channels,
+                              "needs_setup": c == catalog.WHATSAPP and not whatsapp_available(org)}
+                             for c in offered],
                 "changed": rule != Rule(ntype.enabled, ntype.channels, ntype.offsets, False),
                 "error": (errors or {}).get(ntype.codename),
             })
         return rows
 
+    @staticmethod
+    def _offered(org, ntype) -> list[str]:
+        """The channels a tenant type shows a switch for: the ones it has wording for and the org can use."""
+        if ntype.audience != catalog.TENANT:
+            return []
+        out = []
+        for c in (catalog.SMS, catalog.WHATSAPP):
+            if c in services.usable_channels(ntype):
+                out.append(c)
+        if catalog.email_copy(ntype):
+            out.append(catalog.EMAIL)
+        return out
+
+    def _channels(self, org, ntype, data) -> list[str]:
+        """The rule's channels after the switches: those switched on, then what no switch covers."""
+        current = effective_rule(org, ntype).channels
+        offered = self._offered(org, ntype)
+        on = {c for c in offered if data.get(c.lower())}
+        if offered and not on and data.get("enabled"):
+            raise ValidationError({"channels": _("Choose at least one way to send it, or switch it off.")})
+        kept = [c for c in current if c not in offered]
+        order = [c for c in ntype.channels if c in on] + [c for c in (catalog.EMAIL,) if c in on]
+        return order + kept
+
     def context(self, request, quiet_form=None, errors=None, reply_form=None):
         org = request.organization
         rows = self.rows(org, errors)
+        cfg = triggers.message_settings(org)
         return {
+            "content": {"balance_includes_deposit": bool(cfg and cfg.balance_includes_deposit),
+                        "balance_shows_credit": bool(cfg and cfg.balance_shows_credit)},
             "reply_form": reply_form or forms.ReplyEmailForm(initial={"reply_email": org.reply_email}),
             "tenant_rows": [r for r in rows if r["type"].audience == catalog.TENANT],
             "staff_rows": [r for r in rows if r["type"].audience == catalog.STAFF],
@@ -181,6 +224,15 @@ class SettingsView(CapabilityRequiredMixin, View):
             messages.success(request, _("Quiet hours saved."))
             return redirect("notifications:settings")
 
+        if request.POST.get("action") == "content":
+            form = forms.MessageContentForm(request.POST)
+            form.is_valid()
+            services.set_message_content(m, includes_deposit=form.cleaned_data.get("balance_includes_deposit", False),
+                                         shows_credit=form.cleaned_data.get("balance_shows_credit", False),
+                                         request=request)
+            messages.success(request, _("What messages show is saved."))
+            return redirect("notifications:settings")
+
         if request.POST.get("action") == "reply_email":
             form = forms.ReplyEmailForm(request.POST)
             if not form.is_valid():
@@ -197,9 +249,7 @@ class SettingsView(CapabilityRequiredMixin, View):
             if request.POST.get("action") == "reset":
                 services.save_rule(m, ntype.codename, enabled=ntype.enabled, offsets=ntype.offsets, request=request)
             else:
-                channels = [c for c in effective_rule(m.organization, ntype).channels if c != catalog.EMAIL]
-                if data.get("email") and catalog.email_copy(ntype):
-                    channels.append(catalog.EMAIL)
+                channels = self._channels(m.organization, ntype, data)
                 services.save_rule(m, ntype.codename, enabled=data.get("enabled", False) or ntype.mandatory,
                                    offsets=data.get("offsets") or "", channels=channels,
                                    include_co_tenants=data.get("include_co_tenants", False), request=request)
@@ -357,6 +407,9 @@ class SmsSettingsView(_OwnAccountView):
     def account(self, org):
         return own_accounts.sms_account(org)
 
+    def context(self, request, form=None):
+        return {**super().context(request, form), "not_allowed": not own_accounts.sms_allowed(request.organization)}
+
     def initial(self, a):
         return {"username": a.username, "sender_id": a.sender_id, "enabled": a.enabled} if a else None
 
@@ -383,8 +436,15 @@ class TemplateListView(CapabilityRequiredMixin, View):
     template_name = "notifications/templates.html"
     required_capability = "templates.manage"
 
+    @staticmethod
+    def _uses_swahili(org) -> bool:
+        """English is the default; Swahili wording is listed once a tenant or a saved text uses it."""
+        return (MessageTemplate.objects.filter(organization=org, language=catalog.SW).exists()
+                or org.tenants.filter(language=catalog.SW).exists())
+
     def get(self, request):
         org = request.organization
+        show_sw = request.GET.get("lang") == catalog.SW or self._uses_swahili(org)
         groups = []
         for ntype in catalog.TYPES:
             if ntype.composed:
@@ -394,13 +454,15 @@ class TemplateListView(CapabilityRequiredMixin, View):
                 if channel == catalog.WHATSAPP and not whatsapp_available(org):
                     continue
                 for language in services.usable_languages(ntype):
+                    if language == catalog.SW and not show_sw:
+                        continue
                     override = services.live_template(org, ntype.codename, channel, language)
                     text = template_for(org, ntype, channel, language) or ""
                     items.append({"channel": channel, "language": language, "custom": override is not None,
                                   "editable": channel in services.editable_channels(ntype),
                                   "preview": fill(text, _sample(org))})
             groups.append({"type": ntype, "items": items})
-        return render(request, self.template_name, {"groups": groups})
+        return render(request, self.template_name, {"groups": groups, "show_sw": show_sw})
 
 
 class TemplateEditView(CapabilityRequiredMixin, View):
@@ -584,11 +646,16 @@ class AnnouncementNewView(CapabilityRequiredMixin, View):
             "form": form, "preview": preview, "fields": announcements.FIELDS,
             "price": announcements.price_per_part(), "inline_limit": announcements.BULK_INLINE,
             "has_buildings": form.fields["buildings"].queryset.exists(),
-            "org_name": request.organization.display_name,
+            "org_name": request.organization.display_name, "presets": announcements.PRESETS,
         }, status=status)
 
     def get(self, request):
-        form = forms.AnnouncementForm(membership=request.membership, initial={"nonce": uuid.uuid4()})
+        template = request.GET.get("template", "")
+        initial = {"nonce": uuid.uuid4(), "text": announcements.preset_text(template)}
+        if template == "rent_due":  # the reminder starts aimed at tenants whose rent falls due soon
+            days = request.GET.get("days", "")
+            initial.update(due=True, due_within=int(days) if days.isdigit() and 1 <= int(days) <= 60 else 7)
+        form = forms.AnnouncementForm(membership=request.membership, initial=initial)
         return self._render(request, form)
 
     def post(self, request):

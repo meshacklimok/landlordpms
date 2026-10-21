@@ -306,3 +306,82 @@ def test_members_without_send_bulk_are_kept_out(client, org):
 
 def test_announcement_type_catalog_fields_cover_the_filled_context():
     assert set(announcements.FIELDS) <= set(catalog.get("announcement").placeholders)
+
+
+def test_presets_use_known_fields_and_leave_blanks_to_fill():
+    from notifications.rendering import fields_in
+    assert len(announcements.PRESETS) >= 5
+    for key, _label, text in announcements.PRESETS:
+        assert set(fields_in(str(text))) <= set(announcements.FIELDS), key
+        assert announcements.unfilled(str(text)), key
+        assert announcements.preset_text(key) == str(text)
+    assert announcements.preset_text("nope") == ""
+    assert announcements.unfilled("Water is off on 5 May.") == []
+
+
+def test_filter_by_rent_falling_due(owner, prop):
+    billed = lease_on(owner, prop, "A1", "Amina")
+    lease_on(owner, prop, "A2", "Baraka")  # nothing billed
+    bill(billed, FEB, today=D(2026, 1, 27))  # due 5 Feb
+    assert names(announcements.recipients(owner, Audience(due_within=7), D(2026, 2, 1))) == ["Amina"]
+    assert names(announcements.recipients(owner, Audience(due_within=2), D(2026, 2, 1))) == []
+    assert names(announcements.recipients(owner, Audience(due_within=7), TODAY)) == []  # already late
+    assert Audience(due_within=7).summary() == "All properties · rent due within 7 days"
+
+
+def test_rent_due_needs_invoice_access(org, prop, owner):
+    caretaker = add_member(org, "caretaker", all_properties=True)
+    with pytest.raises((PermissionDenied, ValidationError)):
+        announcements.preview(caretaker, "Hi", Audience(due_within=7), TODAY)
+
+
+def test_the_rent_reminder_link_opens_aimed_at_tenants_due_soon(client, owner, prop):
+    login(client, owner)
+    r = client.get(reverse("notifications:announcement_new") + "?template=rent_due&days=5")
+    html = r.content.decode()
+    assert r.status_code == 200 and "falls due soon" in html and "[date]" in html
+    assert 'name="due" id="ann-due" checked' in html and 'name="due_within"' in html and 'value="5"' in html
+
+
+# ---------------------------------------------------------------------------
+# The screen drawn by Next.js (D-214)
+# ---------------------------------------------------------------------------
+def _post_json(client, body):
+    return client.post(reverse("notifications:web_announcement_new"), body, content_type="application/json")
+
+
+def test_the_json_screen_starts_from_the_rent_reminder(client, owner, prop):
+    login(client, owner)
+    r = client.get(reverse("notifications:web_announcement_new") + "?template=rent_due&days=5")
+    data = r.json()
+    assert r.status_code == 200 and data["start"]["due"] is True and data["start"]["due_within"] == 5
+    assert "[date]" in data["start"]["text"] and uuid.UUID(data["nonce"])
+    assert [p["name"] for p in data["properties"]] == ["Riverside"] and data["can_due"] is True
+    plain = client.get(reverse("notifications:web_announcement_new")).json()
+    assert plain["start"]["due"] is False and plain["start"]["text"] == ""
+
+
+def test_the_json_screen_previews_then_sends_once(client, owner, prop):
+    lease_on(owner, prop, "A1", "Amina")
+    login(client, owner)
+    nonce = str(uuid.uuid4())
+    body = {"text": "Hello {tenant_name}, water is off.", "nonce": nonce, "properties": [str(prop.pk)],
+            "include_co_tenants": True}
+    r = _post_json(client, {**body, "action": "preview"})
+    shown = r.json()["preview"]
+    assert r.status_code == 200 and shown["sending"] == 1 and shown["recipients"][0]["who"] == "Amina"
+    assert not Announcement.objects.exists()
+    sent = _post_json(client, {**body, "action": "send"})
+    assert sent.status_code == 200 and "/announcements/" in sent.json()["redirect"]
+    again = _post_json(client, {**body, "action": "send"})  # a double press returns the first announcement
+    assert again.json()["redirect"] == sent.json()["redirect"] and Announcement.objects.count() == 1
+
+
+def test_the_json_screen_refuses_an_unfilled_blank_and_a_member_without_the_capability(client, owner, prop, org):
+    login(client, owner)
+    r = _post_json(client, {"text": "Pay by [date]", "nonce": str(uuid.uuid4()), "action": "preview"})
+    assert r.status_code == 422 and "text" in r.json()["fields"]
+    caretaker = add_member(org, "caretaker", all_properties=True)
+    client.logout()
+    login(client, caretaker)
+    assert client.get(reverse("notifications:web_announcement_new")).status_code == 403

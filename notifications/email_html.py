@@ -79,7 +79,9 @@ def _footer(reason_html: str, org_name: str) -> str:
     support = getattr(settings, "SUPPORT_EMAIL", "")
     if support:
         help_bits.append(f'<a class="lk" href="mailto:{escape(support)}" style="color:{ACCENT};">{escape(support)}</a>')
-    wa = "".join(c for c in getattr(settings, "SUPPORT_WHATSAPP", "") if c.isdigit())
+    from core.contacts import support_whatsapp
+
+    wa = support_whatsapp()
     if wa:
         help_bits.append(f'<a class="lk" href="https://wa.me/{wa}" style="color:{ACCENT};">WhatsApp us</a>')
     legal = " &nbsp;·&nbsp; ".join(
@@ -88,9 +90,9 @@ def _footer(reason_html: str, org_name: str) -> str:
     why = (f'<p class="muted" style="margin:0 0 14px;font-size:12px;line-height:1.6;color:{MUTED};">{reason_html}</p>'
            if reason_html else "")
     if org_name == "NyumbaPMS":
-        lead, tagline = "", "Rent, water and repairs, in one place."
+        lead = ""
     else:
-        lead, tagline = "Powered by ", f"Property management for {escape(org_name)}."
+        lead = "Powered by "
     return (
         f'<tr><td class="ln" style="padding:20px 32px 26px;border-top:1px solid {LINE};background:transparent;'
         f'font-size:12px;line-height:1.6;color:{MUTED};">{why}'
@@ -100,7 +102,7 @@ def _footer(reason_html: str, org_name: str) -> str:
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="ln" '
         f'style="border-top:1px solid {LINE};"><tr><td style="padding-top:14px;font-size:12px;line-height:1.6;'
         f'color:{MUTED};" class="muted"><span class="ink" style="color:{INK};font-weight:700;">'
-        f'{lead}{_wordmark("NyumbaPMS")}</span> &nbsp;{tagline}<br>'
+        f'{lead}{_wordmark("NyumbaPMS")}</span><br>'
         f'{legal} &nbsp;·&nbsp; <a class="muted" href="{site}" style="color:{MUTED};">'
         f'{escape(site.split("//", 1)[-1])}</a>'
         f'</td></tr></table></td></tr>')
@@ -177,7 +179,28 @@ def _blocks(text: str, button_label: str) -> str:
     return "".join(_block(b, state, button_label) for b in parts)
 
 
-def render_html(org_name: str, body: str, *, note: str = "", button_label: str = "Open", logo_cid: str = "") -> str:
+GREETING = re.compile(r"^(dear|hello|hi|mpendwa|habari)\b", re.I)
+
+
+def preheader_for(main: str, limit: int = 110) -> str:
+    """The grey line inbox lists show after the subject: the first real sentence, without the greeting or links."""
+    for block in re.split(r"\n\s*\n", main.strip()):
+        text = URL.sub("", " ".join(block.split())).strip()
+        if text and not GREETING.match(text):
+            return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0] + "…"
+    return ""
+
+
+def _preheader(text: str) -> str:
+    """Hidden in the email itself; the padding stops mail apps from filling the rest of the line with the body."""
+    if not text:
+        return ""
+    return (f'<div style="display:none;max-height:0;overflow:hidden;opacity:0;mso-hide:all;font-size:1px;'
+            f'line-height:1px;color:{PAGE};">{escape(text)}{"&#847;&zwnj;&nbsp;" * 40}</div>')
+
+
+def render_html(org_name: str, body: str, *, note: str = "", button_label: str = "Open", logo_cid: str = "",
+                preheader: str = "") -> str:
     """`body` may end in the "-- " footer the sender adds.
 
     An email from a landlord leads with their name and logo (`logo_cid` names the inline image, else their initial);
@@ -208,6 +231,7 @@ def render_html(org_name: str, body: str, *, note: str = "", button_label: str =
         '<meta name="color-scheme" content="light dark">'
         '<meta name="supported-color-schemes" content="light dark">' + DARK + '</head>'
         f'<body class="bg-page" style="margin:0;padding:0;background:{PAGE};">'
+        + _preheader(preheader or preheader_for(main)) +
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-page" style="background:{PAGE};">'
         '<tr><td align="center" style="padding:28px 12px;">'
         f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="bg-card ln" style="max-width:580px;'
@@ -279,3 +303,10 @@ def send_branded(subject: str, body: str, to: list[str], *, using: str, from_ema
     for name, content, mimetype in attachments:
         message.attach(name, content, mimetype)
     message.send(using=using)
+
+
+def subscription_link() -> str:
+    """The Subscription page address, set on its own line at the end of a billing email so it becomes a button."""
+    from django.urls import reverse
+
+    return settings.SITE_URL + reverse("subscriptions:page")

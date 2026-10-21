@@ -10,14 +10,14 @@ is claimed that is not built, and no prices are written here: the plans supply t
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from django.conf import settings
 from django.templatetags.static import static
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
-from . import content, pages, solutions
+from . import articles, content, pages, solutions
 
 SITE_NAME = "NyumbaPMS"
 LOCALE = "en_KE"        # Open Graph
@@ -39,7 +39,7 @@ AI_SEARCH_BOTS = [
 
 # Never offered to crawlers: the signed-in app, tenant and owner portals, webhooks, one-time links and the API.
 PRIVATE_PREFIXES = [
-    "/ok-ml-staff/", "/my/", "/owner/", "/hooks/", "/api/", "/p/", "/r/", "/sign/", "/s/", "/l/", "/v/", "/e/",
+    "/ok-ml-staff/", "/my/", "/owner/", "/hooks/", "/api/", "/p/", "/r/", "/rc/", "/ic/", "/mr/", "/sign/", "/s/", "/l/", "/v/", "/e/",
     "/esign/", "/console/", "/conversations/", "/csp-report/", "/healthz", "/search/", "/ask/", "/properties/",
     "/tenants/", "/leases/", "/imports/", "/billing/", "/payments/", "/messages/", "/mpesa/", "/bank/",
     "/inspections/", "/meters/", "/expenses/", "/maintenance/", "/documents/", "/prospects/", "/letters/",
@@ -60,6 +60,7 @@ class Page:
     breadcrumb: list = field(default_factory=list)   # [(name, path)] between Home and this page
     graph: list = field(default_factory=list)        # extra JSON-LD nodes (FAQPage, HowTo, Article, offers)
     summary: str = ""                # one line for llms.txt when it differs from the description
+    lastmod: str = ""                # YYYY-MM-DD, for the sitemap
 
 
 def absolute(path: str) -> str:
@@ -221,17 +222,24 @@ def _static_pages():
 
 
 def _article_page(slug):
-    item = pages.article(slug)
+    item = articles.get_published(slug)
     if item is None:
         return None
-    path = reverse("growth:article", args=[slug])
-    graph = [{"@type": "Article", "headline": str(item["title"]), "description": str(item["summary"]),
-              "articleBody": " ".join(f"{h}. {b}" for h, b in item["body"]), "inLanguage": LANG,
+    return _article_node(item)
+
+
+def _article_node(item):
+    path = reverse("growth:article", args=[item.slug])
+    graph = [{"@type": "Article", "headline": item.title, "description": item.summary,
+              "articleBody": articles.plain_text(item.body), "inLanguage": LANG,
+              "datePublished": item.published_at.isoformat(), "dateModified": item.updated_at.isoformat(),
+              "articleSection": str(item.get_category_display()),
               "mainEntityOfPage": absolute(path), "image": absolute(static(OG_IMAGE)),
-              "author": {"@id": absolute("/#organization")}, "publisher": {"@id": absolute("/#organization")}}]
-    return Page(title=f"{item['title']} · {SITE_NAME}", description=str(item["summary"]), path=path, kind="article",
-                schema="Article", priority="0.6", graph=graph,
-                breadcrumb=[(_("Articles"), reverse("growth:articles")), (str(item["title"]), path)])
+              "author": {"@type": "Organization", "name": item.author or SITE_NAME},
+              "publisher": {"@id": absolute("/#organization")}}]
+    return Page(title=f"{item.title} · {SITE_NAME}", description=item.summary, path=path, kind="article",
+                schema="Article", priority="0.6", graph=graph, lastmod=item.updated_at.date().isoformat(),
+                breadcrumb=[(_("Articles"), reverse("growth:articles")), (item.title, path)])
 
 
 def _tutorial_page(slug):
@@ -263,7 +271,7 @@ def all_pages():
     registry = _static_pages()
     ordered = [registry["landing"]] + [p for k, p in registry.items() if k != "landing"]
     ordered += [_solution_page(s["slug"]) for s in solutions.SOLUTIONS]
-    ordered += [_article_page(a["slug"]) for a in pages.ARTICLES]
+    ordered += [_article_node(a) for a in articles.published()]
     ordered += [_tutorial_page(t["slug"]) for t in content.TUTORIALS]
     return ordered
 
@@ -282,7 +290,17 @@ def page_for(request):
         return _tutorial_page(match.kwargs.get("slug"))
     if name == "growth:solution":
         return _solution_page(match.kwargs.get("slug"))
-    return _static_pages().get(name)
+    page = _static_pages().get(name)
+    if page is not None and name == "growth:articles":
+        page = replace(page, graph=[_article_list_node()])
+    return page
+
+
+def _article_list_node():
+    """The list as an ItemList, so search engines see every guide this page leads to."""
+    return {"@type": "ItemList", "itemListElement": [
+        {"@type": "ListItem", "position": i, "url": absolute(reverse("growth:article", args=[a.slug])), "name": a.title}
+        for i, a in enumerate(articles.published(), 1)]}
 
 
 def breadcrumb_node(page):
@@ -345,6 +363,7 @@ def sitemap_xml() -> str:
     for page in all_pages():
         url = absolute(page.path)
         rows.append(f"<url><loc>{url}</loc><xhtml:link rel=\"alternate\" hreflang=\"{LANG}\" href=\"{url}\"/>"
+                    f"{'<lastmod>' + page.lastmod + '</lastmod>' if page.lastmod else ''}"
                     f"<changefreq>{page.changefreq}</changefreq><priority>{page.priority}</priority></url>")
     return ('<?xml version="1.0" encoding="UTF-8"?>'
             '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">'
@@ -374,8 +393,8 @@ def llms_txt() -> str:
     out += [f"- [{s['title']}]({absolute(reverse('growth:solution', args=[s['slug']]))}): {s['description']}"
             for s in solutions.SOLUTIONS]
     out += ["", "## " + _("Guides"), ""]
-    out += [f"- [{a['title']}]({absolute(reverse('growth:article', args=[a['slug']]))}): {a['summary']}"
-            for a in pages.ARTICLES]
+    out += [f"- [{a.title}]({absolute(reverse('growth:article', args=[a.slug]))}): {a.summary}"
+            for a in articles.published()]
     out += [f"- [{t['title']}]({absolute(reverse('growth:tutorial', args=[t['slug']]))}): {t['summary']}"
             for t in content.TUTORIALS]
     out += ["", "## " + _("Trust and legal"), ""]
@@ -406,8 +425,8 @@ def llms_full_txt() -> str:
         for q, a in items:
             out += [f"**{q}**", "", str(a), ""]
     out += ["## " + _("Guides"), ""]
-    for a in pages.ARTICLES:
-        out += [f"### {a['title']}", "", str(a["summary"]), ""] + [f"- **{h}.** {b}" for h, b in a["body"]] + [""]
+    for a in articles.published():
+        out += [f"### {a.title}", "", a.summary, "", articles.plain_text(a.body), ""]
     out += ["## " + _("Tutorials"), ""]
     for t in content.TUTORIALS:
         out += [f"### {t['title']}", "", str(t["summary"]), ""]

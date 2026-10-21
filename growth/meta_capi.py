@@ -56,10 +56,10 @@ def payload(event: str, event_id: str, request, *, phone: str = "", email: str =
 
 
 def _post(body: dict) -> None:
-    req = urllib.request.Request(API.format(pixel=settings.META_PIXEL_ID), data=json.dumps(body).encode(),
+    req = urllib.request.Request(API.format(pixel=settings.META_PIXEL_ID), data=json.dumps(body).encode(),  # noqa: S310 - the address is a fixed https endpoint, never user input
                                  headers={"Content-Type": "application/json"}, method="POST")
     try:
-        urllib.request.urlopen(req, timeout=8).read()
+        urllib.request.urlopen(req, timeout=8).read()  # noqa: S310 - the address is a fixed https endpoint, never user input
     except Exception:
         logger.exception("Meta Conversions API call failed")
 

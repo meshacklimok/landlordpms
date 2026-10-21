@@ -41,12 +41,19 @@ class EmailStopView(View):
             return _page(request, self.template_name, {"unknown": True}, status=404)
         return _page(request, self.template_name, {
             "organization": tenant.organization.display_name,
-            "stopped": not services.channel_allowed(tenant, catalog.EMAIL)})
+            "stopped": not services.channel_allowed(tenant, catalog.EMAIL),
+            "reminders_stopped": services.email_reminders_stopped(tenant)})
 
     def post(self, request, token):
         tenant = emails.tenant_for_token(token)
         if tenant is None:
             return _page(request, self.template_name, {"unknown": True}, status=404)
-        services.stop_email_by_link(tenant)
+        # The one-click request from a mail app carries no choice and means every email.
+        reminders_only = request.POST.get("scope") == "reminders"
+        if reminders_only:
+            services.stop_email_reminders_by_link(tenant)
+        else:
+            services.stop_email_by_link(tenant)
         return _page(request, self.template_name, {"organization": tenant.organization.display_name,
-                                                   "stopped": True, "done": True})
+                                                   "stopped": not reminders_only, "done": True,
+                                                   "reminders_only": reminders_only})

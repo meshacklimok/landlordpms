@@ -8,9 +8,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils import timezone
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 
 from accounts.models import Membership, Organization
 from accounts.permissions import can, require
@@ -24,6 +25,7 @@ from .models import (
     PlatformReceipt,
     PlatformSequence,
     PlatformTransaction,
+    SmsPolicy,
     SmsWallet,
     SmsWalletEntry,
     Subscription,
@@ -40,6 +42,8 @@ CENT = Decimal("0.01")
 # The figures in force are the ones in BillingPolicy (Django admin), read with the functions below; these are
 # the defaults it starts with.
 TRIAL_DAYS = 30
+SAME_NETWORK_ORGS = 3  # the third organization made from one network address within the days below gets no new trial
+SAME_NETWORK_DAYS = 30
 TRIAL_PLAN = "business"
 FREE_PLAN = "free"
 RENEW_BEFORE_DAYS = 7
@@ -100,16 +104,58 @@ def plan(key: str) -> Plan:
     return Plan.objects.get(key=key)
 
 
+def repeat_signup(org: Organization) -> bool:
+    """True when this phone number or email already belongs to another organization: its creator's sign-in, or
+    its billing contact (D-202). Stops a landlord restarting the free trial with a new organization name."""
+    from django.db.models import Q
+
+    phones = {p for p in (org.billing_phone, getattr(org.created_by, "phone", "")) if p}
+    emails = {e.lower() for e in (org.billing_email, getattr(org.created_by, "email", "")) if e}
+    match = Q()
+    for p in phones:
+        match |= Q(billing_phone=p) | Q(created_by__phone=p)
+    for e in emails:
+        match |= Q(billing_email__iexact=e) | Q(created_by__email__iexact=e)
+    if org.signup_device:
+        match |= Q(signup_device=org.signup_device)
+    if match and Organization.objects.filter(match).exclude(pk=org.pk).exists():
+        return True
+    # A shared network is common (an office, a cafe, a phone company), so the address only counts once it has made
+    # several organizations lately; the same browser above counts at once.
+    if org.signup_ip_hash:
+        since = timezone.now() - datetime.timedelta(days=SAME_NETWORK_DAYS)
+        return Organization.objects.filter(signup_ip_hash=org.signup_ip_hash, created_at__gte=since).exclude(
+            pk=org.pk).count() >= SAME_NETWORK_ORGS - 1
+    return False
+
+
+def recheck_trial(org: Organization) -> bool:
+    """A trial running on contact details that turn out to belong to another organization is cut back to the repeat
+    sign-up length (details changed after sign-up). True when cut."""
+    sub = Subscription.objects.filter(organization=org, status=Status.TRIAL).first()
+    if sub is None or not sub.trial_ends_on or not repeat_signup(org):
+        return False
+    limit = timezone.localdate() + datetime.timedelta(days=policy().repeat_trial_days)
+    if sub.trial_ends_on <= limit:
+        return False
+    before, sub.trial_ends_on = sub.trial_ends_on, limit
+    sub.save(update_fields=["trial_ends_on", "updated_at"])
+    audit.record("subscription.trial_cut", organization=org, obj=sub,
+                 changes={"trial_ends_on": [str(before), str(limit)], "reason": "repeat sign-up"})
+    return True
+
+
 def subscription_for(org: Organization) -> Subscription:
     """The organization's subscription. One without is given the trial (D-060 item 2)."""
     sub = Subscription.objects.select_related("plan").filter(organization=org).first()
     if sub is not None:
         return sub
+    days = policy().repeat_trial_days if repeat_signup(org) else trial_days()
     try:
         with transaction.atomic():
             return Subscription.objects.create(
                 organization=org, plan=plan(TRIAL_PLAN), status=Status.TRIAL,
-                trial_ends_on=timezone.localdate() + datetime.timedelta(days=trial_days()))
+                trial_ends_on=timezone.localdate() + datetime.timedelta(days=days))
     except IntegrityError:
         return Subscription.objects.select_related("plan").get(organization=org)
 
@@ -226,6 +272,9 @@ def choose_plan(actor: Membership, new_plan: Plan, interval: str, *, request=Non
     if _is_downgrade(sub, new_plan, today):
         return _schedule_change(sub, new_plan, interval, actor, request)
     if new_plan.is_free:
+        owed = open_invoice(sub)
+        if owed is not None and owed.disputed_at is None and sub.status in (Status.PAST_DUE, Status.LAPSED):
+            raise ValidationError(_("Pay the overdue invoice first. Then you can move to the free plan."))
         _void_open(sub, _("Free plan chosen"), actor.user)
         before = sub.plan.name
         sub.plan, sub.interval, sub.status = new_plan, Interval.MONTHLY, Status.ACTIVE
@@ -290,6 +339,7 @@ def _set_org_active(org: Organization, actor=None) -> None:
         org.status = Organization.Status.ACTIVE
         org.save(update_fields=["status", "updated_at"])
         audit.record("organization.reactivate", actor=actor, organization=org, obj=org)
+        _tell_staff(org, lapsed=False)
 
 
 def _set_org_read_only(org: Organization) -> None:
@@ -297,6 +347,20 @@ def _set_org_read_only(org: Organization) -> None:
         org.status = Organization.Status.READ_ONLY
         org.save(update_fields=["status", "updated_at"])
         audit.record("organization.read_only", organization=org, obj=org, changes={"reason": "subscription lapsed"})
+        _tell_staff(org, lapsed=True)
+
+
+def _tell_staff(org: Organization, *, lapsed: bool) -> None:
+    """In-app notice to the owners and the roles the owner chose. A failure never undoes the status change."""
+    from notifications import triggers
+
+    def send():
+        try:
+            triggers.subscription_access(org, lapsed=lapsed)
+        except Exception:
+            logger.exception("Staff notice about the subscription of organization %s failed", org.pk)
+
+    transaction.on_commit(send)
 
 
 # ---------------------------------------------------------------------------
@@ -415,9 +479,74 @@ def sms_balance(org: Organization) -> Decimal:
     return wallet.balance if wallet else Decimal("0")
 
 
+def new_wallet_terms() -> dict:
+    """What a wallet starts with, from the SMS policy (D-200)."""
+    policy = SmsPolicy.get()
+    return {"mode": policy.new_mode, "monthly_cap": policy.new_monthly_parts}
+
+
+def ensure_wallet(org: Organization) -> SmsWallet:
+    """The organization's wallet, made on first use with the policy's terms and, if the policy gives it straight
+    away, the one-off free welcome credit."""
+    wallet = SmsWallet.objects.filter(organization=org).first()
+    if wallet is not None:
+        return wallet
+    with transaction.atomic():
+        wallet, created = SmsWallet.objects.get_or_create(organization=org, defaults=new_wallet_terms())
+        if created and SmsPolicy.get().welcome_when == SmsPolicy.WelcomeWhen.START:
+            _give_welcome(org, wallet)
+    return wallet
+
+
+def _give_welcome(org: Organization, wallet: SmsWallet) -> None:
+    """The free welcome SMS, once per organization and once per person, for Prepaid and Bundled wallets."""
+    parts = SmsPolicy.get().welcome_parts
+    if (not parts or wallet.mode == SmsWallet.Mode.SPONSORED or _had_welcome(org)
+            or SmsWalletEntry.objects.filter(organization=org, kind=SmsWalletEntry.Kind.WELCOME).exists()):
+        return
+    amount = _money(sms_price() * parts)
+    wallet.balance += amount
+    wallet.save(update_fields=["balance"])
+    SmsWalletEntry.objects.create(organization=org, kind=SmsWalletEntry.Kind.WELCOME, amount=amount,
+                                  balance_after=wallet.balance, note=f"{parts} free SMS")
+
+
+def _had_welcome(org: Organization) -> bool:
+    """The free welcome SMS are once per person: not again for another organization made by the same user or with
+    the same billing phone."""
+    who = Q(pk__in=[])
+    if org.created_by_id:
+        who |= Q(organization__created_by_id=org.created_by_id)
+    if org.billing_phone:
+        who |= Q(organization__billing_phone=org.billing_phone)
+    return SmsWalletEntry.objects.filter(who, kind=SmsWalletEntry.Kind.WELCOME).exclude(organization=org).exists()
+
+
 def _wallet(org: Organization) -> SmsWallet:
-    SmsWallet.objects.get_or_create(organization=org)
+    ensure_wallet(org)
     return SmsWallet.objects.select_for_update().get(organization=org)
+
+
+def lock_wallet(org: Organization) -> SmsWallet:
+    """The organization's wallet row, locked until the transaction ends. Inside transaction.atomic()."""
+    return _wallet(org)
+
+
+def own_account_allowed(org: Organization) -> bool:
+    """May this organization send through its own Africa's Talking account? Its wallet row says, else the policy."""
+    return _access(org, "own_account", "own_account_default")
+
+
+def own_sender_allowed(org: Organization) -> bool:
+    """May this organization ask for its own sender name on our account?"""
+    return _access(org, "own_sender", "own_sender_default")
+
+
+def _access(org: Organization, field: str, default_field: str) -> bool:
+    value = SmsWallet.objects.filter(organization=org).values_list(field, flat=True).first()
+    if value:
+        return value == SmsWallet.Access.ALLOWED
+    return getattr(SmsPolicy.get(), default_field)
 
 
 def _entry(org, kind, amount: Decimal, **fields) -> SmsWalletEntry:
@@ -450,6 +579,8 @@ def apply_sms_top_up(org: Organization, *, amount, method: str, reference: str, 
     receipt = _receipt(payment)
     _claim_transaction(payment)
     entry = _entry(org, SmsWalletEntry.Kind.TOP_UP, payment.amount, payment=payment, note=note, created_by=admin)
+    if SmsPolicy.get().welcome_when == SmsPolicy.WelcomeWhen.FIRST_TOP_UP:
+        _give_welcome(org, _wallet(org))  # the bonus on a first real purchase
     # Credit is back, so the "low" and "out" warnings may be sent again.
     SmsWallet.objects.filter(organization=org, alert_level__gt=ALERT_USED_UP).update(alert_level=ALERT_USED_UP)
     audit.record("sms_wallet.top_up", actor=admin, organization=org, obj=payment, request=request,
@@ -487,8 +618,8 @@ def sms_parts_used(org: Organization, today: datetime.date | None = None) -> int
 
 
 def _wallet_row(org: Organization) -> SmsWallet:
-    """The organization's wallet, or the defaults (sponsored) for one that has not sent anything yet."""
-    return SmsWallet.objects.filter(organization=org).first() or SmsWallet(organization=org)
+    """The organization's wallet, made now with the policy's terms if it has not sent anything yet."""
+    return ensure_wallet(org)
 
 
 def sms_summary(org: Organization) -> dict:
@@ -512,6 +643,8 @@ def sms_summary(org: Organization) -> dict:
         "balance": wallet.balance,
         "price": sms_price(),
         "available": sms_available(org),
+        "own_account_allowed": own_account_allowed(org),
+        "own_sender_allowed": own_sender_allowed(org),
         "by_type": [(labels.get(row["message__type"], row["message__type"]), row["parts"]) for row in by_type],
     }
 
@@ -555,8 +688,9 @@ def notify_sms_level(org_pk: int, level: int, mode: str) -> None:
     """Emails the organization's billing contacts, and us when a sponsored cap is reached. Never raises."""
     from django.core.mail import send_mail
 
-    from ops.alerts import recipients
+    from notifications.email_html import send_branded, subscription_link
     from notifications.providers.mail import SYSTEM, mailer_for
+    from ops.alerts import recipients
 
     try:
         org = Organization.objects.get(pk=org_pk)
@@ -576,9 +710,9 @@ def notify_sms_level(org_pk: int, level: int, mode: str) -> None:
               [m.user.email for m in Membership.objects.filter(organization=org, is_active=True, user__is_active=True)
                .select_related("user", "role") if m.user.email and can(m, "subscription.manage")])
         if to:
-            send_mail(_("[NyumbaPMS] SMS: %(org)s") % {"org": org.name},
-                      text + "\n\n" + _("See and top up on the Subscription page."), None, sorted(set(to)),
-                      using=mailer_for(SYSTEM))
+            send_branded(_("[NyumbaPMS] SMS: %(org)s") % {"org": org.name},
+                         text + "\n\n" + _("See and top up on the Subscription page.") + "\n\n" + subscription_link(),
+                         sorted(set(to)), using=mailer_for(SYSTEM), button_label=_("Open Subscription"))
         if sponsored and level == ALERT_USED_UP and recipients():
             send_mail(f"[NyumbaPMS] {org.name} reached its SMS cap",
                       f"{org.name} used {used} of {wallet.monthly_cap} sponsored parts. Raise the cap under SMS "
@@ -589,14 +723,19 @@ def notify_sms_level(org_pk: int, level: int, mode: str) -> None:
 
 
 def charge_message(message) -> SmsWalletEntry | None:
-    """Records a sent SMS against its organization and charges the wallet if the mode says so. Called inside the
-    sending transaction. Sponsored parts are recorded at no charge; bundled parts past the monthly allowance and
-    all prepaid parts cost `SMS_PRICE` a part, taken only when the wallet is enforced. Login codes and security
-    alerts do not come through here: they are never counted or charged (D-142)."""
-    parts = segments(message.body)
+    """Records a queued SMS against its organization and charges the wallet if the mode says so. Called inside the
+    sending transaction. Login codes and security alerts do not come through here: they are never counted or
+    charged (D-142)."""
+    return charge_parts(message.organization, message.body, message=message)
+
+
+def charge_parts(org: Organization, body: str, *, message=None, note: str = "") -> SmsWalletEntry | None:
+    """Sponsored parts are recorded at no charge; bundled parts past the monthly allowance and all prepaid parts
+    cost `SMS_PRICE` a part, taken only when the wallet is enforced. `message` is empty for an SMS sent outside
+    the queue (a signing link, an invitation), which D-200 puts on the wallet too."""
+    parts = segments(body)
     if not parts:
         return None
-    org = message.organization
     wallet = _wallet(org)
     amount = Decimal("0")
     if getattr(settings, "SMS_WALLET_ENFORCED", False):
@@ -605,7 +744,7 @@ def charge_message(message) -> SmsWalletEntry | None:
         elif wallet.mode == SmsWallet.Mode.BUNDLED:
             included_left = max(0, (wallet.monthly_cap or 0) - sms_parts_used(org))
             amount = sms_price() * max(0, parts - included_left)
-    entry = _entry(org, SmsWalletEntry.Kind.MESSAGE, -_money(amount), message=message, segments=parts)
+    entry = _entry(org, SmsWalletEntry.Kind.MESSAGE, -_money(amount), message=message, segments=parts, note=note)
     wallet.refresh_from_db()
     _raise_alert(wallet, sms_parts_used(org))
     return entry
@@ -617,10 +756,10 @@ def sms_available(org: Organization) -> bool:
         return True
     wallet = _wallet_row(org)
     if wallet.mode == SmsWallet.Mode.PREPAID:
-        return wallet.balance > 0
+        return wallet.balance >= sms_price()  # a whole part, so a message cannot start from a few cents
     under = wallet.monthly_cap is None or sms_parts_used(org) < wallet.monthly_cap
     if wallet.mode == SmsWallet.Mode.BUNDLED:
-        return under or wallet.balance > 0
+        return under or wallet.balance >= sms_price()
     return under
 
 
@@ -714,11 +853,163 @@ def _stop_renewing(sub: Subscription, free: Plan) -> str:
 def _grace_over(sub: Subscription, today: datetime.date) -> bool:
     """Whether the grace is used up: the policy's days, any extension a Platform Admin gave, and no open
     dispute on an invoice."""
-    if sub.grace_until and sub.grace_until >= today:
-        return False
-    if sub.invoices.filter(status=SubscriptionInvoice.Status.OPEN, disputed_at__isnull=False).exists():
+    if held_off(sub, today):
         return False
     return (today - sub.past_due_since).days >= grace_days()
+
+
+# ---------------------------------------------------------------------------
+# What stops while a payment is overdue (D-198)
+# ---------------------------------------------------------------------------
+
+# The things that cost us money or reach other people on the landlord's behalf. Each has a number of days after the
+# due date in BillingPolicy (`stop_<key>_days`); an organization can follow its own (Subscription.late_overrides).
+STOPPABLE = {
+    "sms": gettext_lazy("SMS"),
+    "whatsapp": gettext_lazy("WhatsApp"),
+    "email": gettext_lazy("Email to tenants and staff"),
+    "scans": gettext_lazy("Photo scans"),
+    "assistant": gettext_lazy("The assistant"),
+}
+# Sections where *recording something new* is paused (viewing and downloading stay). Each maps to the capability
+# modules of accounts/capabilities.py; only a capability that is not read-only-safe is denied (accounts.permissions).
+SECTIONS = {
+    "expenses": (gettext_lazy("Expenses"), ("expenses",)),
+    "meters": (gettext_lazy("Meter readings and utilities"), ("meters",)),
+    "inspections": (gettext_lazy("Inspections"), ("inspections",)),
+    "documents": (gettext_lazy("Documents"), ("documents",)),
+    "maintenance": (gettext_lazy("Repairs"), ("maintenance",)),
+    "properties": (gettext_lazy("New properties and units"), ("properties", "units")),
+    "tenancy": (gettext_lazy("New tenants, leases and prospects"), ("tenants", "leases", "prospects")),
+    "invoices": (gettext_lazy("Invoicing"), ("invoices",)),
+    "payments": (gettext_lazy("Recording payments by hand"), ("payments", "payment_accounts", "mpesa")),
+}
+STOPPABLE.update({key: label for key, (label, _modules) in SECTIONS.items()})
+DUNNING = {"dunning_email": gettext_lazy("Reminder by email"), "dunning_sms": gettext_lazy("Reminder by SMS")}
+NEVER = None
+
+
+def policy_stop_days(key: str) -> int | None:
+    return getattr(policy(), f"stop_{key}_days")
+
+
+def stop_days(sub: Subscription, key: str) -> int | None:
+    """Days after the due date when `key` stops for this organization: its own number if the owner set one,
+    else the platform's. None means it never stops."""
+    own = sub.late_overrides or {}
+    return own[key] if key in own else policy_stop_days(key)
+
+
+def dunning_on(sub: Subscription, key: str) -> bool:
+    own = sub.late_overrides or {}
+    return bool(own[key]) if key in own else bool(getattr(policy(), key))
+
+
+def days_overdue(sub: Subscription, today: datetime.date | None = None) -> int | None:
+    """Days since payment fell due; None when the account is not overdue."""
+    if sub.status not in (Status.PAST_DUE, Status.LAPSED):
+        return None
+    today = today or timezone.localdate()
+    # A lapsed account always had a due date; an old row without one counts as long overdue.
+    return (today - sub.past_due_since).days if sub.past_due_since else 10_000
+
+
+def held_off(sub: Subscription, today: datetime.date) -> bool:
+    """A Platform Admin's extension, or an open dispute, holds everything off just as it holds off the lapse."""
+    if sub.grace_until and sub.grace_until >= today:
+        return True
+    return sub.invoices.filter(status=SubscriptionInvoice.Status.OPEN, disputed_at__isnull=False).exists()
+
+
+def blocked(org: Organization, key: str, today: datetime.date | None = None) -> bool:
+    """Whether `key` (a STOPPABLE) is stopped for this organization because payment is overdue. Never creates a
+    subscription; an organization without one is not blocked."""
+    if org is None:
+        return False
+    today = today or timezone.localdate()
+    sub = Subscription.objects.filter(organization=org).first()
+    if sub is None:
+        return False
+    overdue = days_overdue(sub, today)
+    if overdue is None:
+        return False
+    limit = stop_days(sub, key)
+    if limit is None or overdue < limit:
+        return False
+    return not held_off(sub, today)
+
+
+def blocked_modules(org: Organization) -> frozenset[str]:
+    """Capability modules whose writes are paused for this organization now. Looked up once per organization
+    object (so once per request) because every permission check asks."""
+    cached = getattr(org, "_late_modules", None)
+    if cached is not None:
+        return cached
+    modules: set[str] = set()
+    sub = Subscription.objects.filter(organization=org, status__in=[Status.PAST_DUE, Status.LAPSED]).first()
+    if sub is not None:
+        today = timezone.localdate()
+        overdue = days_overdue(sub, today)
+        held = None
+        for key, (_label, mods) in SECTIONS.items():
+            limit = stop_days(sub, key)
+            if limit is None or overdue < limit:
+                continue
+            held = held_off(sub, today) if held is None else held
+            if not held:
+                modules.update(mods)
+    org._late_modules = frozenset(modules)
+    return org._late_modules
+
+
+def blocked_features(org: Organization, today: datetime.date | None = None) -> list[str]:
+    """The names of what is stopped now, for the banner."""
+    return [str(label) for key, label in STOPPABLE.items() if blocked(org, key, today)]
+
+
+def stop_plan(sub: Subscription) -> list[tuple[str, int | None]]:
+    """(name, days) for each thing, in order of when it stops; the console and the reminders show it."""
+    rows = [(str(label), stop_days(sub, key)) for key, label in STOPPABLE.items()]
+    return sorted(rows, key=lambda r: (r[1] is None, r[1] or 0))
+
+
+def blocked_message() -> str:
+    return _("This is paused because the subscription payment is overdue. Pay on the Subscription page and it "
+             "starts again straight away.")
+
+
+@transaction.atomic
+def set_late_overrides(actor, org: Organization, values: dict, reason: str, request=None) -> Subscription:
+    """Sets one organization's own late-payment rules (owner only). `values` maps a key to a number of days, NEVER
+    (None) or "default" (drop the override); the dunning keys take True or False. Audited with the reason."""
+    if not (actor and actor.is_active and actor.is_superuser):
+        raise PermissionDenied(_("Only an owner can do this."))
+    reason = (reason or "").strip()
+    if len(reason) < 5:
+        raise ValidationError(_("Write the reason, so the audit trail says why."))
+    sub = Subscription.objects.select_for_update().get(organization=org)
+    before = dict(sub.late_overrides or {})
+    new = dict(before)
+    for key, value in values.items():
+        if key not in STOPPABLE and key not in DUNNING:
+            raise ValidationError(_("Unknown rule."))
+        if isinstance(value, str) and value == "default":
+            new.pop(key, None)
+        elif key in DUNNING:
+            new[key] = bool(value)
+        elif value is NEVER:
+            new[key] = None
+        else:
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= 365:
+                raise ValidationError(_("Days must be a whole number from 0 to 365."))
+            new[key] = value
+    if new == before:
+        return sub
+    sub.late_overrides = new
+    sub.save(update_fields=["late_overrides", "updated_at"])
+    audit.record("console.late_rules", actor=actor, organization=org, obj=sub, request=request,
+                 changes={"late_overrides": [before, new], "reason": [None, reason[:200]]})
+    return sub
 
 
 # ---------------------------------------------------------------------------
@@ -740,6 +1031,26 @@ def set_auto_renew(actor: Membership, on: bool, request=None) -> None:
     sub.save(update_fields=["auto_renew", "updated_at"])
     audit.record("subscription.auto_renew", actor=actor.user, organization=actor.organization, obj=sub,
                  request=request, changes={"auto_renew": on})
+
+
+def lapse_role_choices(org: Organization):
+    """The roles an owner may pick to hear of a lapse: every live role except the owner's, which always hears."""
+    return org.roles.filter(is_owner_role=False).order_by("name")
+
+
+@transaction.atomic
+def set_lapse_notify_roles(actor: Membership, role_ids, request=None) -> list[str]:
+    """Chooses which non-owner roles are told, in the app, when the subscription lapses or is paid again."""
+    require(actor, "subscription.manage")
+    org = actor.organization
+    roles = list(lapse_role_choices(org).filter(public_id__in=list(role_ids)))
+    if len(roles) != len(set(role_ids)):
+        raise ValidationError(_("Choose from the roles listed."))
+    org.lapse_notify_roles.set(roles)
+    names = [r.name for r in roles]
+    audit.record("subscription.lapse_notify_roles", actor=actor.user, organization=org, obj=org, request=request,
+                 changes={"roles": [None, names]})
+    return names
 
 
 @transaction.atomic
@@ -780,19 +1091,36 @@ def _reminder_text(sub: Subscription, kind: str, days: int) -> tuple[str, str]:
         return (_("Your NyumbaPMS %(plan)s plan renews in %(n)s days") % {"plan": sub.plan.name, "n": days},
                 _("Your paid period ends on %(d)s. The renewal invoice is on the Subscription page; paying it "
                   "keeps your plan going without a break.") % {"d": sub.period_end})
-    return (_("Your NyumbaPMS payment is overdue"),
-            _("Your subscription payment fell due %(n)s days ago. %(left)s days remain before the account "
+    text = (_("Your subscription payment fell due %(n)s days ago. %(left)s days remain before the account "
               "becomes read-only: you could still see and download everything, but not add or change records. "
               "Pay on the Subscription page, or reply if you are disputing the invoice.")
             % {"n": days, "left": max(grace_days() - days, 0)})
+    coming = [f"{name} (day {n})" for name, n in stop_plan(sub) if n is not None]
+    if coming:
+        text += " " + _("Until it is paid these stop on their own: %(list)s.") % {"list": ", ".join(coming)}
+    return _("Your NyumbaPMS payment is overdue"), text
+
+
+def billing_phones(org: Organization) -> list[str]:
+    """Phones of the people who manage the subscription, for an SMS reminder."""
+    return sorted({m.user.phone for m in Membership.objects.filter(organization=org, is_active=True,
+                                                                  user__is_active=True).select_related("user", "role")
+                   if m.user.phone and can(m, "subscription.manage")})
+
+
+def _sms_reminder_text(subject: str, body: str) -> str:
+    from notifications.email_html import subscription_link
+
+    first = body.split(". ")[0].rstrip(".")
+    return f"NyumbaPMS: {subject}. {first}. Pay: {subscription_link()}"[:300]
 
 
 def send_reminders(today: datetime.date | None = None) -> int:
-    """Emails each organization's billing contact on the days set in BillingPolicy, once per reminder.
-    Returns how many went out."""
-    from django.core.mail import send_mail
-
+    """Reminds each organization's billing contacts on the days set in BillingPolicy, once per reminder and per
+    channel: email, and SMS from the platform's own sender (D-198). Returns how many went out."""
+    from notifications.email_html import send_branded, subscription_link
     from notifications.providers.mail import SYSTEM, mailer_for
+    from notifications.providers.sms import get_sms_sender
 
     today = today or timezone.localdate()
     pol, sent = policy(), 0
@@ -808,19 +1136,32 @@ def send_reminders(today: datetime.date | None = None) -> int:
         if due is None or due[2] not in due[3]:
             continue
         kind, for_date, days, _wanted = due
-        if SubscriptionReminder.objects.filter(subscription=sub, kind=kind, for_date=for_date, days=days).exists():
-            continue
-        to = billing_contacts(sub.organization)
-        if not to:
-            continue
         subject, body = _reminder_text(sub, kind, days)
-        try:
-            send_mail(f"[NyumbaPMS] {subject}", body, None, to, using=mailer_for(SYSTEM))
-        except Exception:
-            logger.exception("Subscription reminder for organization %s failed", sub.organization_id)
-            continue
-        SubscriptionReminder.objects.create(subscription=sub, kind=kind, for_date=for_date, days=days)
-        sent += 1
+        done = set(SubscriptionReminder.objects.filter(subscription=sub, kind=kind, for_date=for_date, days=days)
+                   .values_list("channel", flat=True))
+        if "EMAIL" not in done and dunning_on(sub, "dunning_email"):
+            to = billing_contacts(sub.organization)
+            if to:
+                try:
+                    send_branded(f"[NyumbaPMS] {subject}", body + "\n\n" + subscription_link(), to,
+                                 using=mailer_for(SYSTEM), button_label=_("Open Subscription"))
+                except Exception:
+                    logger.exception("Subscription reminder for organization %s failed", sub.organization_id)
+                else:
+                    SubscriptionReminder.objects.create(subscription=sub, kind=kind, channel="EMAIL",
+                                                        for_date=for_date, days=days)
+                    sent += 1
+        if "SMS" not in done and dunning_on(sub, "dunning_sms"):
+            delivered = False
+            for phone in billing_phones(sub.organization):
+                try:
+                    delivered = get_sms_sender().send(phone, _sms_reminder_text(subject, body)).ok or delivered
+                except Exception:
+                    logger.exception("Subscription SMS reminder for organization %s failed", sub.organization_id)
+            if delivered:
+                SubscriptionReminder.objects.create(subscription=sub, kind=kind, channel="SMS",
+                                                    for_date=for_date, days=days)
+                sent += 1
     return sent
 
 
@@ -878,12 +1219,19 @@ def banner(org: Organization, today: datetime.date | None = None) -> dict | None
         left = grace_days() - (today - (sub.past_due_since or today)).days
         if sub.grace_until and sub.grace_until >= today:
             left = max(left, (sub.grace_until - today).days)
-        return {"level": "warning", "text": _("Your subscription payment is due. In %(n)s days the account "
-                                              "becomes read-only; you will still see and download everything.")
-                % {"n": max(left, 0)}}
+        text = (_("Your subscription payment is due. In %(n)s days the account becomes read-only; you will still "
+                  "see and download everything.") % {"n": max(left, 0)})
+        stopped = blocked_features(org, today)
+        if stopped:
+            text += " " + _("Paused until you pay: %(list)s.") % {"list": ", ".join(stopped)}
+        return {"level": "warning", "text": text}
     if sub.status == Status.LAPSED:
-        return {"level": "danger", "text": _("Your subscription has lapsed. Your records are safe and can be "
-                                             "viewed and downloaded; pay to start creating again.")}
+        text = _("Your subscription has lapsed. Your records are safe and can be viewed and downloaded; pay to "
+                 "start creating again.")
+        stopped = blocked_features(org, today)
+        if stopped:
+            text += " " + _("Paused until you pay: %(list)s.") % {"list": ", ".join(stopped)}
+        return {"level": "danger", "text": text}
     if sub.status == Status.ACTIVE and sub.period_end and not sub.plan.is_free:
         days = (sub.period_end - today).days
         if 0 <= days < policy().invoice_lead_days:

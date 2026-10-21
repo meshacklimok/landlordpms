@@ -1,20 +1,29 @@
 """Public pages that help a landlord decide (landing, pricing, FAQ, tutorials, demo) and the Refer page (D-133)."""
 
+from urllib.parse import quote
+
 from django.conf import settings
+from django.contrib import messages
+from django.db.models import Count, Q
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views import View
 
+from accounts import demo
 from accounts.mixins import CapabilityRequiredMixin
 from core import ratelimit
+from core.contacts import support_whatsapp
 from subscriptions import services as subscription_services
 
-from . import ads, content, pages, referrals, seo, services, solutions
+from . import ads, articles, content, pages, referrals, seo, services, solutions
 from .forms import DemoRequestForm
+from .models import Article
 
 DEMO_DONE_KEY = "demo_done"
+DEMO_ENTER_PER_HOUR = 30  # sign-ins to the live demo from one connection
 
 
 def _plans():
@@ -36,7 +45,9 @@ def landing(request):
         "facts": content.LANDING_FACTS, "audiences": content.LANDING_AUDIENCES, "blocks": content.LANDING_BLOCKS,
         "more": content.LANDING_MORE, "faq": content.faq_pairs()[:6], "swaps": content.LANDING_SWAPS,
         "works_with": content.LANDING_WORKS_WITH, "solutions": solutions.SOLUTIONS,
-        "invited": referrals.invite_offer(request)})
+        "invited": referrals.invite_offer(request),
+        "support_whatsapp": support_whatsapp(),
+        "wa_text": quote(_("Hello, I would like to know more about NyumbaPMS."))})
 
 
 class PricingView(View):
@@ -65,16 +76,38 @@ class HowItWorksView(View):
 
 class ArticleListView(View):
     def get(self, request):
-        return render(request, "growth/articles.html", {"articles": pages.ARTICLES})
+        rows = articles.published()
+        chosen = request.GET.get("category", "")
+        if chosen in Article.Category.values:
+            rows = rows.filter(category=chosen)
+        else:
+            chosen = ""
+        q = request.GET.get("q", "").strip()[:80]
+        if q:
+            rows = rows.filter(Q(title__icontains=q) | Q(summary__icontains=q) | Q(body__icontains=q))
+        rows = list(rows)
+        # The "start here" piece gets the wide card, but only on the plain list.
+        lead = rows[0] if rows and rows[0].featured and not (chosen or q) else None
+        counts = {c: n for c, n in articles.published().values_list("category").annotate(n=Count("id"))}
+        return render(request, "growth/articles.html", {
+            "articles": rows[1:] if lead else rows, "lead": lead, "chosen": chosen, "q": q,
+            "found": len(rows), "total": sum(counts.values()),
+            "categories": [(value, label, counts[value]) for value, label in Article.Category.choices
+                           if counts.get(value)]})
 
 
 class ArticleView(View):
     def get(self, request, slug):
-        item = pages.article(slug)
+        item = articles.get_published(slug)
         if item is None:
             raise Http404
-        return render(request, "growth/article.html", {
-            "article": item, "others": [a for a in pages.ARTICLES if a["slug"] != slug]})
+        return render(request, "growth/article.html", article_context(item))
+
+
+def article_context(item, preview=False):
+    html, toc = articles.render(item.body)
+    return {"article": item, "article_html": html, "toc": toc if len(toc) > 2 else [], "preview": preview,
+            "others": articles.related(item), "share_url": f"{settings.SITE_URL}{reverse('growth:article', args=[item.slug])}"}
 
 
 class TutorialListView(View):
@@ -111,6 +144,41 @@ class DemoView(View):
         return render(request, self.template_name, {"form": form})
 
 
+class DemoEnterView(View):
+    """"Try the demo": signs the visitor in as the sample landlord, with nothing to type (D-210)."""
+
+    def post(self, request):
+        if not ratelimit.hit(f"demo-enter:{services.ip_key(request)}", DEMO_ENTER_PER_HOUR, 3600):
+            messages.error(request, _("Too many demo sign-ins from this connection. Please try again in an hour."))
+            return redirect("growth:demo")
+        if request.user.is_authenticated and not demo.is_demo(request):
+            return redirect("accounts:home")  # a real landlord is already signed in: leave their session alone
+        if not demo.enter(request):
+            messages.info(request, _("The live demo is not ready yet. Book a demo and we will show you around."))
+            return redirect("growth:demo")
+        return redirect("accounts:home")
+
+
+class DemoSwitchView(View):
+    """Looks around the demo as another sample person: the owner, a manager, an accountant, a caretaker (D-210)."""
+
+    def get(self, request, key):
+        if request.user.is_authenticated and not demo.is_demo(request):
+            return redirect("accounts:home")
+        if not demo.switch(request, key):
+            messages.info(request, _("The live demo is not ready yet. Book a demo and we will show you around."))
+            return redirect("growth:demo")
+        return redirect("portal:home" if key == demo.TENANT_KEY else "accounts:home")
+
+
+class DemoLeaveView(View):
+    """Ends the demo session and opens sign-up: from inside the demo the sign-up page would just bounce back."""
+
+    def get(self, request):
+        demo.leave(request)
+        return redirect("accounts:register")
+
+
 class DemoThanksView(View):
     def get(self, request):
         return render(request, "growth/demo_thanks.html", {"first_name": request.session.get(DEMO_DONE_KEY, "")})
@@ -136,7 +204,7 @@ class SolutionView(View):
             raise Http404
         return render(request, "growth/solution.html", {
             "s": item, "related": [solutions.solution(r) for r in item["related"]],
-            "tutorial": content.tutorial(item["tutorial"]), "article": pages.article(item.get("article", ""))})
+            "tutorial": content.tutorial(item["tutorial"]), "article": articles.get_published(item.get("article", ""))})
 
 
 class RobotsView(View):

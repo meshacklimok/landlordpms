@@ -120,6 +120,9 @@ class Subscription(TimeStampedModel):
     card_expiry = models.CharField(max_length=7, blank=True)
     # The landlord's choice: charge the saved card when a renewal invoice falls due.
     auto_renew = models.BooleanField(default=False)
+    # This organization's own late-payment rules (D-198). Missing key = follow BillingPolicy; an integer = days
+    # after the due date; null = never stop; the "dunning_*" keys are true/false. Set by the owner in the console.
+    late_overrides = models.JSONField(default=dict, blank=True)
 
     def __str__(self):
         return f"{self.organization} · {self.plan} · {self.get_status_display()}"
@@ -136,6 +139,9 @@ class BillingPolicy(models.Model):
     seen and downloaded, and paying (and only creating) is what is blocked (D-060, accounts.permissions)."""
 
     trial_days = models.PositiveSmallIntegerField(_("trial days"), default=30)
+    repeat_trial_days = models.PositiveSmallIntegerField(
+        _("trial days for a repeat sign-up"), default=0,
+        help_text=_("When the phone number or email was already used by another organization's account or billing."))
     invoice_lead_days = models.PositiveSmallIntegerField(
         _("renewal invoice days ahead"), default=7, help_text=_("The renewal invoice is issued this many days "
                                                                 "before the paid period ends."))
@@ -148,6 +154,42 @@ class BillingPolicy(models.Model):
     grace_reminder_days = models.CharField(
         _("reminders while overdue"), max_length=40, default="1,7,12", blank=True,
         help_text=_("Days after the due date when the billing contact is emailed, e.g. 1,7,12."))
+    # What stops working while a payment is overdue, in days after the due date. Empty = never stops (D-198).
+    # A single organization can follow its own days (Subscription.late_overrides). Platform messages (login
+    # codes, invoices, reminders to the landlord) are never stopped.
+    stop_sms_days = models.PositiveSmallIntegerField(
+        _("stop SMS after (days)"), null=True, blank=True, default=7,
+        help_text=_("Days overdue before the landlord's SMS to tenants and staff stop. Empty = never."))
+    stop_whatsapp_days = models.PositiveSmallIntegerField(
+        _("stop WhatsApp after (days)"), null=True, blank=True, default=7)
+    stop_email_days = models.PositiveSmallIntegerField(
+        _("stop email after (days)"), null=True, blank=True, default=14)
+    stop_scans_days = models.PositiveSmallIntegerField(
+        _("stop photo scans after (days)"), null=True, blank=True, default=7)
+    stop_assistant_days = models.PositiveSmallIntegerField(
+        _("stop the assistant after (days)"), null=True, blank=True, default=7)
+    # Sections where recording something new is paused (viewing stays), in days after the due date; empty = never.
+    stop_expenses_days = models.PositiveSmallIntegerField(_("pause expenses after (days)"), null=True, blank=True,
+                                                          default=10)
+    stop_meters_days = models.PositiveSmallIntegerField(_("pause meter readings and utilities after (days)"),
+                                                        null=True, blank=True, default=10)
+    stop_inspections_days = models.PositiveSmallIntegerField(_("pause inspections after (days)"), null=True,
+                                                             blank=True, default=10)
+    stop_documents_days = models.PositiveSmallIntegerField(_("pause documents after (days)"), null=True, blank=True,
+                                                           default=10)
+    stop_maintenance_days = models.PositiveSmallIntegerField(_("pause repairs after (days)"), null=True, blank=True)
+    stop_properties_days = models.PositiveSmallIntegerField(_("pause new properties and units after (days)"),
+                                                            null=True, blank=True, default=10)
+    stop_tenancy_days = models.PositiveSmallIntegerField(_("pause new tenants, leases and prospects after (days)"),
+                                                         null=True, blank=True)
+    stop_invoices_days = models.PositiveSmallIntegerField(_("pause invoicing after (days)"), null=True, blank=True)
+    stop_payments_days = models.PositiveSmallIntegerField(
+        _("pause recording payments by hand after (days)"), null=True, blank=True,
+        help_text=_("Rent that tenants pay through M-Pesa still posts."))
+    dunning_email = models.BooleanField(_("remind the landlord by email"), default=True)
+    dunning_sms = models.BooleanField(
+        _("remind the landlord by SMS"), default=True,
+        help_text=_("Sent from the platform's own sender, on the same days as the email reminders."))
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -175,18 +217,19 @@ class BillingPolicy(models.Model):
 
 
 class SubscriptionReminder(models.Model):
-    """One reminder email sent, so each is sent once."""
+    """One reminder sent on one channel (email or SMS), so each is sent once."""
 
     subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE, related_name="reminders")
     kind = models.CharField(max_length=20)
+    channel = models.CharField(max_length=10, default="EMAIL")
     # The day the reminder is about (trial end, period end or the day payment fell due).
     for_date = models.DateField()
     days = models.SmallIntegerField()
     sent_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint("subscription", "kind", "for_date", "days",
-                                               name="subscriptions_reminder_once")]
+        constraints = [models.UniqueConstraint("subscription", "kind", "channel", "for_date", "days",
+                                               name="subscriptions_reminder_channel_once")]
 
     def __str__(self):
         return f"{self.kind} {self.days}"
@@ -335,13 +378,70 @@ class SmsWallet(models.Model):
     alert_month = models.DateField(null=True, blank=True)
     alert_level = models.PositiveSmallIntegerField(default=0)
 
+    class Access(models.TextChoices):
+        DEFAULT = "", _("Follow the platform setting")
+        ALLOWED = "ON", _("Allowed")
+        BLOCKED = "OFF", _("Not allowed")
+
+    # Whether this organization may use its own Africa's Talking account, and ask for its own sender name (D-200).
+    own_account = models.CharField(_("own SMS account"), max_length=3, choices=Access.choices, blank=True,
+                                   default=Access.DEFAULT)
+    own_sender = models.CharField(_("own sender name"), max_length=3, choices=Access.choices, blank=True,
+                                  default=Access.DEFAULT)
+
     def __str__(self):
         return f"{self.organization} {self.balance}"
+
+
+class SmsPolicy(models.Model):
+    """What a new organization's SMS starts with and whether the two do-it-yourself ways are open (D-200). One
+    row, changed in Django admin. Wallets that already exist keep their own terms."""
+
+    new_mode = models.CharField(_("new organizations start as"), max_length=10, choices=SmsWallet.Mode.choices,
+                                default=SmsWallet.Mode.SPONSORED)
+    new_monthly_parts = models.PositiveIntegerField(
+        _("monthly parts for new organizations"), null=True, blank=True, default=300,
+        help_text=_("Sponsored: the most parts we pay for in a month (empty for no cap). Bundled: parts included "
+                    "each month. Prepaid: not used."))
+    welcome_parts = models.PositiveIntegerField(
+        _("free welcome SMS (once)"), default=0,
+        help_text=_("SMS parts a new organization gets once, as credit in its wallet, to try the service. "
+                    "Worth this many parts at the SMS price. Only for Prepaid and Bundled; a sponsored "
+                    "organization does not need it. 0 for none."))
+    class WelcomeWhen(models.TextChoices):
+        START = "START", _("Straight away")
+        FIRST_TOP_UP = "FIRST_TOP_UP", _("With the first top-up")
+
+    welcome_when = models.CharField(
+        _("welcome SMS given"), max_length=12, choices=WelcomeWhen.choices, default=WelcomeWhen.START,
+        help_text=_("Straight away: free to try, but someone can make many accounts for the free SMS. With the "
+                    "first top-up: a bonus on their first purchase, so a made-up account gets nothing."))
+    own_account_default = models.BooleanField(
+        _("own Africa's Talking account allowed"), default=True,
+        help_text=_("Organizations may send through their own Africa's Talking account. Override per "
+                    "organization under SMS wallets."))
+    own_sender_default = models.BooleanField(
+        _("own sender name allowed"), default=True,
+        help_text=_("Organizations may ask for their own sender name on our account. Override per "
+                    "organization under SMS wallets."))
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "SMS policy"
+        verbose_name_plural = "SMS policy"
+
+    def __str__(self):
+        return "SMS policy"
+
+    @classmethod
+    def get(cls) -> "SmsPolicy":
+        return cls.objects.get_or_create(pk=1)[0]
 
 
 class SmsWalletEntry(models.Model):
     class Kind(models.TextChoices):
         TOP_UP = "TOP_UP", _("Top-up")
+        WELCOME = "WELCOME", _("Free welcome credit")
         MESSAGE = "MESSAGE", _("Message")
         ADJUSTMENT = "ADJUSTMENT", _("Adjustment")
 

@@ -144,6 +144,22 @@ def test_receipt_link_serves_the_pdf_until_the_payment_is_reversed(client, owner
     assert client.get(url).status_code == 404
 
 
+def test_receipt_check_page_shows_only_face_facts_and_the_pdf_carries_a_qr(client, owner, lease):
+    from payments.receipts import check_url, render_pdf
+    payment = pay(owner, lease, "10000")
+    receipt = payment.receipt
+    url = reverse("receipt_check", args=[receipt.share_token])
+    assert check_url(receipt).endswith(url)
+    body = client.get(url).content.decode()
+    assert receipt.number in body and "10,000" in body
+    assert payment.tenant.name not in body and lease.unit.code not in body
+    assert "Balance" not in body
+    assert client.get(reverse("receipt_check", args=["nope"])).status_code == 404
+    assert render_pdf(receipt).startswith(b"%PDF")
+    payment_services.reverse_payment(owner, payment, reason="Bounced")
+    assert "reversed" in client.get(url).content.decode()
+
+
 # ---------------------------------------------------------------------------
 # Daily reminders
 # ---------------------------------------------------------------------------
@@ -259,3 +275,70 @@ def test_no_move_out_reminder_for_a_short_notice(owner, lease):
     lease_services.give_notice(owner, lease, given_on=today, move_out_on=today + datetime.timedelta(days=5),
                                shorter_agreed=True)
     assert triggers.send_reminders(today)["move_out_soon"] == 0
+
+
+def test_payment_fields_give_the_breakdown_by_charge_and_a_signed_balance(owner, lease):
+    bill(lease, FEB)
+    payment = pay(owner, lease, "10000")
+    fields = triggers.payment_fields(payment, lease)
+    assert fields["amount_plain"] == "10,000.00"
+    assert fields["breakdown"].startswith("Rent: ")
+    assert fields["balance_signed"] == "5,000.00"
+    overpaid = pay(owner, lease, "9000")
+    assert triggers.payment_fields(overpaid, lease)["balance_signed"] == "-4,000.00"
+    assert "Advance: 4,000.00" in triggers.payment_fields(overpaid, lease)["breakdown"]
+
+
+def test_a_type_can_go_by_email_only(owner, org, lease, outbox, django_capture_on_commit_callbacks):
+    from notifications import services as notification_services
+
+    tenant = lease.primary_tenant
+    tenant.email = "tenant@example.com"
+    tenant.save()
+    notification_services.save_rule(owner, "payment_received", enabled=True, channels=["EMAIL"])
+    bill(lease, FEB)
+    with django_capture_on_commit_callbacks(execute=True):
+        pay(owner, lease, "10000")
+    [m] = messages("payment_received")
+    assert (m.channel, m.to, m.tenant) == (catalog.EMAIL, "tenant@example.com", tenant)
+    assert not Message.objects.filter(channel=catalog.SMS, type="payment_received").exists()
+
+
+def test_email_only_for_a_tenant_without_an_address_sends_nothing(owner, org, lease, outbox,
+                                                                  django_capture_on_commit_callbacks):
+    from notifications import services as notification_services
+
+    notification_services.save_rule(owner, "payment_received", enabled=True, channels=["EMAIL"])
+    bill(lease, FEB)
+    with django_capture_on_commit_callbacks(execute=True):
+        pay(owner, lease, "10000")
+    assert messages("payment_received") == [] and outbox == []
+
+
+def test_the_balance_can_count_an_unpaid_deposit_and_show_credit(owner, org, lease):
+    from leases.models import Lease
+    from notifications import services as notification_services
+
+    Lease.objects.filter(pk=lease.pk).update(deposit_amount=20000)
+    lease.refresh_from_db()
+    bill(lease, FEB)
+    payment = pay(owner, lease, "20000")  # 5,000 more than the 15,000 invoice
+    plain = triggers.payment_fields(payment, lease)
+    assert (plain["balance"], plain["balance_signed"]) == ("KES 0.00", "-5,000.00")
+    notification_services.set_message_content(owner, includes_deposit=False, shows_credit=True)
+    assert triggers.payment_fields(payment, lease)["balance"] == "KES -5,000.00"
+    notification_services.set_message_content(owner, includes_deposit=True, shows_credit=False)
+    fields = triggers.payment_fields(payment, lease)
+    assert (fields["balance"], fields["balance_signed"]) == ("KES 15,000.00", "15,000.00")
+
+
+def test_settings_page_switches_channels_per_type(client, owner):
+    client.force_login(owner.user)
+    url = reverse("notifications:settings")
+    assert client.get(url).status_code == 200
+    r = client.post(url, {"type": "rent_due_soon", "action": "save", "enabled": "on", "email": "on", "offsets": "3"})
+    assert r.status_code == 302
+    rule = OrganizationNotificationRule.objects.get(organization=owner.organization, type="rent_due_soon")
+    assert rule.channels == ["EMAIL"]
+    r = client.post(url, {"type": "rent_due_soon", "action": "save", "enabled": "on", "offsets": "3"})
+    assert r.status_code == 400  # every way of sending switched off

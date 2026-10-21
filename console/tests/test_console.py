@@ -250,7 +250,6 @@ def test_controls_are_for_superusers_only(client):
     assert client.post(reverse("console:organization_control", args=[org.public_id]),
                        {"action": "status", "status": "FROZEN", "reason": "No right"}).status_code == 403
     assert client.get(reverse("console:audit")).status_code == 403
-    assert client.get(reverse("console:announcements")).status_code == 403
     org.refresh_from_db()
     assert org.status == "ACTIVE"
     assert b"Owner controls" not in client.get(reverse("console:organization", args=[org.public_id])).content
@@ -266,6 +265,34 @@ def test_an_announcement_shows_to_signed_in_people_until_switched_off(client):
     assert b"Maintenance tonight" in other.get(reverse("accounts:security")).content
     client.post(reverse("console:announcements"), {"toggle": item.pk})
     assert b"Maintenance tonight" not in other.get(reverse("accounts:security")).content
+
+
+def test_notices_need_the_notices_page(client):
+    signed_in(client, seat_for(role=PlatformStaff.Role.ANALYST).user)
+    assert client.get(reverse("console:announcements")).status_code == 403
+    assert client.post(reverse("console:announcements"), {"message": "x", "level": "info"}).status_code == 403
+
+
+def test_a_notice_lasts_a_month_can_be_edited_and_goes_to_chosen_organizations(client):
+    import datetime
+
+    from django.utils import timezone
+
+    from console.models import PlatformAnnouncement
+
+    org = make_org("Chosen Homes").organization
+    owner(client)
+    r = client.post(reverse("console:announcements"),
+                    {"message": "Hello Chosen", "level": "info", "organizations": [org.pk]})
+    assert r.status_code == 302, r.context["form"].errors
+    item = PlatformAnnouncement.objects.get()
+    assert list(item.organizations.all()) == [org]
+    assert abs(item.ends_at - (timezone.now() + datetime.timedelta(days=30))) < datetime.timedelta(minutes=5)
+    assert b"Hello Chosen" in client.get(reverse("console:announcements") + f"?edit={item.pk}").content
+    client.post(reverse("console:announcements"),
+                {"edit": item.pk, "message": "Hello again", "level": "warning"})
+    item.refresh_from_db()
+    assert item.message == "Hello again" and item.level == "warning" and item.organizations.count() == 0
 
 
 def test_audit_log_filters(client):
@@ -391,3 +418,108 @@ def test_owner_sets_what_a_referral_earns_from_the_console(client):
 def test_an_analyst_cannot_open_the_referral_policy(client):
     signed_in(client, seat_for().user)
     assert client.get(reverse("console:referrals")).status_code == 403
+
+
+def test_email_previews_open_and_a_test_goes_to_the_signed_in_person(client, mailoutbox):
+    owner_user = make_user(is_superuser=True, is_staff=True, email="boss@example.com")
+    signed_in(client, owner_user)
+    assert client.get(reverse("console:email_previews")).status_code == 200
+    page = client.get(reverse("console:email_preview", args=["receipt"]))
+    assert page.status_code == 200 and b"Receipt" in page.content
+    assert client.get(reverse("console:email_preview", args=["nope"])).status_code == 404
+    assert client.post(reverse("console:email_preview_send", args=["sign-in"])).status_code == 302
+    assert [m.to for m in mailoutbox] == [["boss@example.com"]] and mailoutbox[0].subject.startswith("[Test]")
+    assert mailoutbox[0].alternatives
+
+
+def test_email_previews_need_a_seat(client):
+    signed_in(client, make_user())
+    assert client.get(reverse("console:email_previews")).status_code == 404
+    assert client.post(reverse("console:email_preview_send", args=["sign-in"])).status_code == 404
+
+
+# --- Articles (D-178) ---
+
+def article_post(**kw):
+    data = {"title": "How to read a meter", "slug": "", "category": "UTILITIES", "summary": "Read it right.",
+            "body": "## Step\n\nLook at it.", "author": "NyumbaPMS team"}
+    data.update(kw)
+    return data
+
+
+def test_the_articles_page_needs_its_capability(client):
+    signed_in(client, seat_for(PlatformStaff.Role.SUPPORT).user)
+    assert client.get(reverse("console:articles")).status_code == 403
+    assert client.get(reverse("console:article_new")).status_code == 403
+    assert client.get(reverse("console:article_preview", args=[1])).status_code == 403
+
+
+def test_an_owner_writes_previews_publishes_and_unpublishes_an_article(client):
+    from growth.models import Article
+    owner(client)
+    r = client.post(reverse("console:article_new"), article_post())
+    item = Article.objects.get(title="How to read a meter")
+    assert r.status_code == 302 and item.slug == "how-to-read-a-meter" and not item.is_published
+    assert client.get(reverse("growth:article", args=[item.slug])).status_code == 404
+    assert "Look at it." in client.get(reverse("console:article_preview", args=[item.pk])).content.decode()
+    client.post(reverse("console:article", args=[item.pk]), {**article_post(slug=item.slug), "publish": "1"})
+    item.refresh_from_db()
+    assert item.is_published and item.published_at
+    assert client.get(reverse("growth:article", args=[item.slug])).status_code == 200
+    assert AuditEvent.objects.filter(action="console.article_published").exists()
+    client.post(reverse("console:article", args=[item.pk]), {**article_post(slug=item.slug), "unpublish": "1"})
+    item.refresh_from_db()
+    assert not item.is_published
+    client.post(reverse("console:article", args=[item.pk]), {"delete": "1"})
+    assert not Article.objects.filter(pk=item.pk).exists()
+
+
+def test_a_published_article_cannot_be_deleted_and_a_taken_slug_is_refused(client):
+    from growth.models import Article
+    owner(client)
+    live = Article.objects.get(slug="paybill-or-till")
+    client.post(reverse("console:article", args=[live.pk]), {"delete": "1"})
+    assert Article.objects.filter(pk=live.pk).exists()
+    r = client.post(reverse("console:article_new"), article_post(slug="paybill-or-till"))
+    assert r.status_code == 200 and Article.objects.filter(title="How to read a meter").count() == 0
+    client.post(reverse("console:article_new"), article_post(title="Paybill or till"))
+    assert Article.objects.filter(slug="paybill-or-till-2").exists()
+
+
+def test_owner_sets_subscription_grace_signout_and_seat_by_hand(client):
+    from accounts.tests.factories import add_member
+    from subscriptions.models import Plan
+
+    membership = make_org("Hand Homes")
+    org = membership.organization
+    staff = add_member(org, "caretaker")
+    owner(client)
+    url = reverse("console:organization_access", args=[org.public_id])
+    plan = Plan.objects.exclude(pk=org.subscription.plan_id).first()
+    if plan is not None:
+        client.post(url, {"action": "subscription", "plan": plan.pk, "status": "ACTIVE", "interval": "YEARLY",
+                          "period_end": "2030-01-01", "reason": "Partner free year"})
+        org.subscription.refresh_from_db()
+        assert (org.subscription.plan_id, org.subscription.status, str(org.subscription.period_end)) == (
+            plan.pk, "ACTIVE", "2030-01-01")
+        assert AuditEvent.objects.filter(action="console.subscription_changed", organization=org).exists()
+    client.post(url, {"action": "grace", "days": "20", "reason": "Promised to pay"})
+    org.subscription.refresh_from_db()
+    assert org.subscription.grace_until is not None
+    client.post(url, {"action": "signout", "reason": "Suspected break-in"})
+    assert AuditEvent.objects.filter(action="console.organization_signed_out", organization=org).exists()
+    client.post(url, {"action": "member", "user": staff.user_id, "reason": "Left the company"})
+    staff.refresh_from_db()
+    assert staff.is_active is False
+    client.post(url, {"action": "member", "user": staff.user_id, "active": "on", "reason": "Back at work"})
+    staff.refresh_from_db()
+    assert staff.is_active is True
+    client.post(url, {"action": "grace", "days": "20", "reason": "x"})  # reason too short
+    assert AuditEvent.objects.filter(action="console.grace_extended", organization=org).count() == 1
+
+
+def test_access_controls_are_for_superusers_only(client):
+    org = make_org("Locked Homes").organization
+    signed_in(client, seat_for(role=PlatformStaff.Role.OWNER).user)
+    assert client.post(reverse("console:organization_access", args=[org.public_id]),
+                       {"action": "signout", "reason": "No right"}).status_code == 403

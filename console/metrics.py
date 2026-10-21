@@ -18,7 +18,7 @@ from audit.models import AuditEvent
 from banking.models import BankTransaction
 from billing.models import Invoice
 from core import charts
-from leases.models import Lease
+from leases.models import Lease, LeaseTenant
 from mpesa.models import MpesaTransaction
 from notifications.models import Message
 from ops import pilot
@@ -26,6 +26,7 @@ from payments.models import Payment
 from properties.models import Property, Unit
 from subscriptions.models import Subscription, SubscriptionInvoice, SubscriptionPayment
 from support.models import AppOpen, Incident, SupportRequest
+from tenants.models import Tenant
 
 TREND_MONTHS = 6
 NOISE = ("user.", "mfa.", "console.")  # sign-in and security events are not features
@@ -100,6 +101,11 @@ def overview(today: datetime.date | None = None) -> dict:
         "properties": Property.objects.count(),
         "units": Unit.objects.count(),
         "active_leases": Lease.all_objects.filter(status=Lease.Status.ACTIVE).count(),
+        "tenants_served": Tenant.all_objects.count(),
+        "tenants_housed": LeaseTenant.objects.filter(lease__status=Lease.Status.ACTIVE)
+                          .values("tenant").distinct().count(),
+        "rent_all_time": int(confirmed.aggregate(t=Sum("amount"))["t"] or 0),
+        "payments_all_time": confirmed.count(),
         "rent_through_platform": int(this_month.aggregate(t=Sum("amount"))["t"] or 0),
         "rent_through_platform_prev": int(last_month.aggregate(t=Sum("amount"))["t"] or 0),
         "payments_this_month": this_month.count(),
@@ -140,6 +146,28 @@ def funnel() -> list[dict]:
         (_("Paid us"), SubscriptionPayment.objects.values("organization").distinct().count()),
     ]
     return [{"label": name, "count": n, "share": _share(n, total)} for name, n in steps]
+
+
+def stuck(limit: int = 8, now: datetime.datetime | None = None) -> list[dict]:
+    """For each step, the organizations that reached the step before it but not this one, oldest sign-up first,
+    for a phone call. Organizations under two days old are left alone."""
+    now = now or timezone.now()
+    ids = lambda qs: set(qs.values_list("organization_id", flat=True))  # noqa: E731
+    reached = [
+        ("Added a property", ids(Property.objects.all())),
+        ("Added a unit", ids(Unit.objects.all())),
+        ("Started a lease", ids(Lease.all_objects.filter(activated_at__isnull=False))),
+        ("Sent an invoice", ids(Invoice.objects.exclude(status__in=[Invoice.Status.DRAFT, Invoice.Status.VOID]))),
+        ("Recorded a payment", ids(Payment.objects.filter(status=Payment.Status.CONFIRMED))),
+    ]
+    orgs = list(Organization.objects.filter(created_at__lt=now - datetime.timedelta(days=2)).order_by("created_at"))
+    previous = {o.pk for o in orgs}
+    out = []
+    for name, done in reached:
+        waiting = [o for o in orgs if o.pk in previous and o.pk not in done]
+        out.append({"label": _(name), "count": len(waiting), "items": waiting[:limit]})
+        previous = previous & done
+    return out
 
 
 def funnel_chart(rows: list[dict]) -> dict:
@@ -392,6 +420,8 @@ def organizations(*, query: str = "", status: str = "", today: datetime.date | N
     units = dict(Unit.objects.filter(organization__in=qs).values_list("organization").annotate(n=Count("pk")))
     leases = dict(Lease.all_objects.filter(organization__in=qs, status=Lease.Status.ACTIVE)
                   .values_list("organization").annotate(n=Count("pk")))
+    ever = dict(Payment.objects.filter(organization__in=qs, status=Payment.Status.CONFIRMED)
+                .values_list("organization").annotate(t=Sum("amount")))
     behave = behaviour(today=today)["by_org"]
     now = timezone.now()
     out = []
@@ -403,7 +433,7 @@ def organizations(*, query: str = "", status: str = "", today: datetime.date | N
             "org": org, "plan": sub.plan.name if sub else "—", "sub_status": sub.get_status_display() if sub else "—",
             "units": units.get(org.pk, 0), "leases": leases.get(org.pk, 0), "last_seen": seen,
             "idle_days": (now - seen).days if seen else None, "score": score,
-            "collected": score.collected if score else 0, "on_time": behave.get(org.pk),
+            "collected": score.collected if score else 0, "ever": ever.get(org.pk) or 0, "on_time": behave.get(org.pk),
             "auto_share": score.auto_share if score else None, "staff": score.staff if score else 0,
         })
     return out
@@ -472,6 +502,38 @@ def health() -> dict:
     }
 
 
+def risk_reasons(r: dict, today: datetime.date) -> list[tuple[int, str]]:
+    """Why one organization row may need a call: (weight, words) pairs, empty when it looks well."""
+    org, sub, score = r["org"], getattr(r["org"], "subscription", None), r["score"]
+    age = (today - timezone.localtime(org.created_at).date()).days
+    why: list[tuple[int, str]] = []
+    idle = r["idle_days"]
+    if idle is None and age >= 7:
+        why.append((3, "Never used since signing up"))
+    elif idle is not None and idle >= 30:
+        why.append((3, f"No activity for {idle} days"))
+    elif idle is not None and idle >= 14:
+        why.append((2, f"No activity for {idle} days"))
+    if sub and sub.status == "PAST_DUE":
+        why.append((3, "Subscription payment is due"))
+    elif sub and sub.status == "LAPSED":
+        why.append((3, "Subscription has lapsed"))
+    elif sub and sub.status == "TRIAL" and sub.trial_ends_on and 0 <= (sub.trial_ends_on - today).days <= 7:
+        left = (sub.trial_ends_on - today).days
+        why.append((2 if r["leases"] else 3, f"Trial ends in {left} days" + ("" if r["leases"] else " with no active lease")))
+    if r["leases"] and score and not score.collected and today.day > 10:
+        why.append((2, "No rent collected this month"))
+    if score and score.auto_share is not None and score.waiting >= 5:
+        why.append((1, f"{score.waiting} payments waiting to be matched"))
+    if r["leases"] == 0 and age >= 14 and idle is not None:
+        why.append((1, "No active lease after two weeks"))
+    return why
+
+
+def health_label(risk: int) -> str:
+    return "At risk" if risk >= 4 else "Watch" if risk >= 2 else "Healthy"
+
+
 def watchlist(today: datetime.date | None = None) -> list[dict]:
     """Organizations that look like they may leave or need a call, worst first, each with the reasons (D-136).
 
@@ -480,29 +542,7 @@ def watchlist(today: datetime.date | None = None) -> list[dict]:
     today = today or timezone.localdate()
     out = []
     for r in organizations(today=today):
-        org, sub, score = r["org"], getattr(r["org"], "subscription", None), r["score"]
-        age = (today - timezone.localtime(org.created_at).date()).days
-        why: list[tuple[int, str]] = []
-        idle = r["idle_days"]
-        if idle is None and age >= 7:
-            why.append((3, "Never used since signing up"))
-        elif idle is not None and idle >= 30:
-            why.append((3, f"No activity for {idle} days"))
-        elif idle is not None and idle >= 14:
-            why.append((2, f"No activity for {idle} days"))
-        if sub and sub.status == "PAST_DUE":
-            why.append((3, "Subscription payment is due"))
-        elif sub and sub.status == "LAPSED":
-            why.append((3, "Subscription has lapsed"))
-        elif sub and sub.status == "TRIAL" and sub.trial_ends_on and 0 <= (sub.trial_ends_on - today).days <= 7:
-            left = (sub.trial_ends_on - today).days
-            why.append((2 if r["leases"] else 3, f"Trial ends in {left} days" + ("" if r["leases"] else " with no active lease")))
-        if r["leases"] and score and not score.collected and today.day > 10:
-            why.append((2, "No rent collected this month"))
-        if score and score.auto_share is not None and score.waiting >= 5:
-            why.append((1, f"{score.waiting} payments waiting to be matched"))
-        if r["leases"] == 0 and age >= 14 and idle is not None:
-            why.append((1, "No active lease after two weeks"))
+        why = risk_reasons(r, today)
         if why:
             out.append({**r, "risk": sum(w for w, _ in why), "reasons": [t for _, t in why]})
     return sorted(out, key=lambda x: (-x["risk"], x["org"].name))

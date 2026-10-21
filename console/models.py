@@ -36,7 +36,12 @@ class PlatformStaff(TimeStampedModel):
 
 
 class PlatformAnnouncement(TimeStampedModel):
-    """A notice shown at the top of every signed-in page until it ends or is switched off (D-137)."""
+    """A notice shown at the top of signed-in pages until it ends or is switched off (D-137).
+
+    It stays one month unless the sender picks another end, can be edited, and goes to every organization or only
+    the ones in `organizations`."""
+
+    KEEP_DAYS = 30
 
     class Level(models.TextChoices):
         INFO = "info", _("Information")
@@ -46,7 +51,11 @@ class PlatformAnnouncement(TimeStampedModel):
     message = models.CharField(max_length=300)
     level = models.CharField(max_length=8, choices=Level.choices, default=Level.INFO)
     is_active = models.BooleanField(default=True)
+    # Empty means it shows as soon as it is saved; a later time schedules it ("maintenance tonight at 11").
+    starts_at = models.DateTimeField(null=True, blank=True)
     ends_at = models.DateTimeField(null=True, blank=True)
+    # Empty means everyone signed in; otherwise only people in these organizations see it.
+    organizations = models.ManyToManyField("accounts.Organization", blank=True, related_name="+")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
 
     class Meta:
@@ -121,6 +130,7 @@ class OwnerEmail(TimeStampedModel):
     sent = models.PositiveIntegerField(default=0)
     failed = models.PositiveIntegerField(default=0)
     sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    done_at = models.DateTimeField(null=True, blank=True, help_text="When the last address was tried.")
 
     class Meta:
         ordering = ["-created_at"]
@@ -128,13 +138,25 @@ class OwnerEmail(TimeStampedModel):
     def __str__(self):
         return self.subject
 
+    @property
+    def is_done(self) -> bool:
+        return self.done_at is not None
+
 
 class OwnerEmailRecipient(models.Model):
+    class State(models.TextChoices):
+        PENDING = "pending", "Waiting"
+        SENDING = "sending", "Sending"
+        SENT = "sent", "Delivered"
+        FAILED = "failed", "Failed"
+
     email_log = models.ForeignKey(OwnerEmail, on_delete=models.CASCADE, related_name="deliveries")
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     address = models.EmailField()
     ok = models.BooleanField(default=False)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
+    claimed_at = models.DateTimeField(null=True, blank=True)
     error = models.CharField(max_length=300, blank=True)
 
     class Meta:
@@ -142,3 +164,33 @@ class OwnerEmailRecipient(models.Model):
 
     def __str__(self):
         return self.address
+
+
+class OwnerNote(TimeStampedModel):
+    """A private note about an owner's organization, with an optional date to follow up (D-179)."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.CASCADE, related_name="owner_notes")
+    body = models.TextField(max_length=2000)
+    follow_up_on = models.DateField(null=True, blank=True)
+    done_at = models.DateTimeField(null=True, blank=True)
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+
+    class Meta:
+        ordering = ["done_at", "follow_up_on", "-created_at"]
+
+    def __str__(self):
+        return self.body[:60]
+
+
+class CannedReply(TimeStampedModel):
+    """A saved answer to a question we get often, inserted into a support reply with one click."""
+
+    title = models.CharField(max_length=80)
+    body = models.TextField(max_length=2000)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="+")
+
+    class Meta:
+        ordering = ["title"]
+
+    def __str__(self):
+        return self.title

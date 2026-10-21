@@ -6,19 +6,23 @@ dedupe key, so running any of them twice sends nothing twice.
 """
 
 import datetime
+from decimal import Decimal
 
 from django.conf import settings
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 
 from accounts.models import Organization
 from billing.invoicing import lease_balance
 from billing.models import Invoice
-from core.money import ZERO, format_money
+from core.money import ZERO, format_money, round_money
 from leases.models import Lease
 
 from . import catalog
 from .delivery import effective_rule, notify, staff_with
+from .models import Message
 
 # A daily reminder that was missed (the job did not run) is still sent this many days late, no later.
 CATCH_UP_DAYS = 2
@@ -44,9 +48,33 @@ def _date(day: datetime.date) -> str:
     return day.strftime("%d/%m/%Y")
 
 
+def message_settings(org):
+    from .models import OrganizationMessageSettings
+
+    return OrganizationMessageSettings.objects.filter(organization=org).first()
+
+
+def signed_balance(lease: Lease):
+    """What the tenant owes, negative when in credit. Deposits are never part of the ledger balance
+    (doc 14 A1); an organization may count the part of the agreed deposit not yet paid as owed."""
+    from billing import deposits
+
+    cfg = message_settings(lease.organization)
+    owed = lease_balance(lease)
+    if cfg and cfg.balance_includes_deposit:
+        owed += max(lease.deposit_amount - deposits.held(lease), ZERO)
+    return owed
+
+
+def balance_amount(lease: Lease):
+    """The balance a message shows. Without the credit option, a tenant in credit shows as owing nothing."""
+    cfg = message_settings(lease.organization)
+    owed = signed_balance(lease)
+    return owed if cfg and cfg.balance_shows_credit else max(owed, ZERO)
+
+
 def _balance(lease: Lease) -> str:
-    # A tenant in credit owes nothing; the SMS does not try to explain credit.
-    return format_money(max(lease_balance(lease), ZERO), lease.currency)
+    return format_money(balance_amount(lease), lease.currency)
 
 
 def _tenancy(lease: Lease, tenant) -> dict:
@@ -83,12 +111,47 @@ def invoice_fields(invoice: Invoice, lease: Lease) -> dict:
             "due_date": _date(invoice.due_date), "balance": _balance(lease), "pay_link": _pay_link(lease)}
 
 
+def _plain(value) -> str:
+    """12,500.00: an amount without the currency, for wording that already says it or leaves it out."""
+    return f"{round_money(value):,.2f}"
+
+
+def payment_breakdown(payment) -> str:
+    """What the payment went to, by kind of charge: "Rent: 8,000.00, Water: 500.00".
+
+    A payment settles invoices, not lines, so each invoice's share is spread over its lines in
+    proportion to what they cost. Money not yet put against an invoice is shown as "Advance".
+    """
+    parts: dict[str, Decimal] = {}
+    for alloc in payment.allocations.select_related("invoice").prefetch_related("invoice__lines__charge_type"):
+        lines = [ln for ln in alloc.invoice.lines.all() if not ln.is_void]
+        total = sum((ln.amount + ln.tax_amount for ln in lines), ZERO)
+        left = alloc.amount
+        for i, ln in enumerate(lines):
+            share = left if i == len(lines) - 1 else round_money(alloc.amount * (ln.amount + ln.tax_amount) / total)
+            share = min(share, left)
+            left -= share
+            if share > 0:
+                parts[ln.charge_type.name] = parts.get(ln.charge_type.name, ZERO) + share
+    advance = payment.amount - payment.allocated
+    if advance > 0:
+        parts["Advance"] = advance
+    return ", ".join(f"{name}: {_plain(amount)}" for name, amount in parts.items())
+
+
 def payment_fields(payment, lease: Lease) -> dict:
-    """The fields of the payment message (D-044), also used to start a message staff write (D-125)."""
+    """The fields of the payment message (D-044), also used to start a message staff write (D-125).
+
+    `amount_plain`, `breakdown` and `balance_signed` let an organization word it its own way, e.g.
+    "Thank you for paying {amount_plain} for premise {unit} on {paid_on}. ({breakdown}). Bal c/d: {balance_signed}".
+    """
     receipt = getattr(payment, "receipt", None)
     return {"amount": format_money(payment.amount, lease.currency), "paid_on": _date(payment.paid_at),
             "receipt_number": receipt.number if receipt else "", "balance": _balance(lease),
-            "receipt_link": receipt_link(receipt) if receipt else ""}
+            "receipt_link": receipt_link(receipt) if receipt else "",
+            "amount_plain": _plain(payment.amount), "breakdown": payment_breakdown(payment),
+            # Owed is positive and credit is negative, as on a statement, with the same deposit rule as {balance}.
+            "balance_signed": _plain(signed_balance(lease))}
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +226,17 @@ def payment_received(payment) -> int:
     return sent
 
 
+def message_failed(message: Message) -> int:
+    """Tells the staff who send messages that one could not be delivered, once a day per organization."""
+    org = message.organization
+    day = timezone.localdate()
+    sent = 0
+    for user in staff_with(org, "messages.send"):
+        if notify(org, "messages_failed", user=user, dedupe_key=f"messages_failed:{org.pk}:{user.pk}:{day}"):
+            sent += 1
+    return sent
+
+
 def payment_pending_review(payment) -> int:
     """In-app, to everyone who may confirm payments for the property."""
     lease = _lease(payment.lease)
@@ -202,25 +276,9 @@ def mpesa_unmatched(tx) -> int:
         if notify(org, "mpesa_unmatched", user=m.user, context=context,
                   dedupe_key=f"mpesa_unmatched:{tx.pk}:{m.user.pk}"):
             sent += 1
+        notify(org, "mpesa_unmatched_email", user=m.user, context=context,
+               dedupe_key=f"mpesa_unmatched_email:{tx.pk}:{m.user.pk}")
     return sent
-
-
-def payer_unmatched(tx):
-    """One SMS to whoever paid, when M-Pesa gave their real number (not a hash).
-
-    A number that belongs to exactly one tenant goes to that tenant (their language and consent);
-    otherwise to the bare number, which is still refused if any tenant with it has opted out.
-    """
-    from tenants.models import Tenant
-
-    if not tx.payer_phone:
-        return None
-    org = Organization.objects.get(pk=tx.organization_id)
-    tenants = list(Tenant.objects.filter(organization=org, phone=tx.payer_phone)[:2])
-    recipient = {"tenant": tenants[0]} if len(tenants) == 1 else {"phone": tx.payer_phone}
-    context = {"amount": format_money(tx.amount, org.currency), "trans_id": tx.trans_id,
-               "paid_on": _date(timezone.localdate(tx.paid_at))}
-    return notify(org, "payment_unmatched", context=context, dedupe_key=f"payment_unmatched:{tx.pk}", **recipient)
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +412,26 @@ def renewal_answered(offer) -> int:
     return sent
 
 
+def subscription_access(org: Organization, *, lapsed: bool, today: datetime.date | None = None) -> int:
+    """The account went read-only, or a payment opened it again: the owners and the roles the owner chose are told
+    in the app. Tenants hear nothing. Returns the number of messages written."""
+    from accounts.models import Membership
+
+    today = today or timezone.localdate()
+    what = (_("The subscription has lapsed, so the account is read-only: you can still see and download "
+              "everything, but not add or change records. The owner can pay on the Subscription page.") if lapsed
+            else _("The subscription is paid. The account is open again and you can add and change records."))
+    chosen = org.lapse_notify_roles.values_list("pk", flat=True)
+    members = (Membership.objects.filter(organization=org, is_active=True, user__is_active=True)
+               .filter(Q(role__is_owner_role=True) | Q(role__in=list(chosen))).select_related("user"))
+    sent = 0
+    for member in members:
+        if notify(org, "subscription_access", user=member.user, context={"what": str(what)},
+                  dedupe_key=f"subscription_access:{'lapsed' if lapsed else 'paid'}:{today}:{member.user_id}"):
+            sent += 1
+    return sent
+
+
 def _move_out_reminders(org: Organization, today: datetime.date) -> int:
     ntype = catalog.get("move_out_soon")
     rule = effective_rule(org, ntype)
@@ -408,3 +486,62 @@ def send_reminders(today: datetime.date | None = None) -> dict[str, int]:
                     counts["rent_overdue"] += _remind(org, overdue, rule, invoice, offset)
         counts["move_out_soon"] += _move_out_reminders(org, today)
     return counts
+
+
+def _owner_staff(org, owner) -> list:
+    """Staff who can run the owner desk and see all of the owner's properties."""
+    from accounts.models import Membership
+    from accounts.permissions import can
+    from reports.statements import fully_sees
+
+    members = (Membership.objects.filter(organization=org, is_active=True, user__is_active=True)
+               .select_related("user", "organization", "role"))
+    return [m.user for m in members if can(m, "owners.invite_portal") and fully_sees(m, owner)]
+
+
+def _owner_alert(org, owner, type_codename, key, context, created_by=None) -> int:
+    sent = 0
+    for user in _owner_staff(org, owner):
+        if notify(org, type_codename, user=user, context={"owner_name": owner.name, **context},
+                  created_by=created_by, dedupe_key=f"{type_codename}:{key}:{user.pk}"):
+            sent += 1
+    return sent
+
+
+def owner_message_received(message) -> int:
+    """An owner wrote to the office in the portal (D-211)."""
+    return _owner_alert(message.organization, message.owner, "owner_message_received", message.pk, {},
+                        created_by=message.author)
+
+
+def owner_message_reply(message) -> int:
+    """The office replied to an owner: the owner is told by SMS to open the portal."""
+    owner = message.owner
+    if owner.phone and notify(message.organization, "owner_message_reply", phone=owner.phone,
+                              context={"owner_name": owner.name}, created_by=message.author,
+                              dedupe_key=f"owner_message_reply:{message.pk}"):
+        return 1
+    return 0
+
+
+def owner_approval_asked(approval) -> int:
+    owner = approval.owner
+    amount = format_money(approval.amount, approval.organization.currency) if approval.amount else "-"
+    if owner.phone and notify(approval.organization, "owner_approval_asked", phone=owner.phone,
+                              context={"owner_name": owner.name, "what": approval.title[:60], "amount": amount},
+                              created_by=approval.asked_by, dedupe_key=f"owner_approval_asked:{approval.pk}"):
+        return 1
+    return 0
+
+
+def owner_approval_answered(approval) -> int:
+    answer = _("approved") if approval.status == "APPROVED" else _("declined")
+    if approval.answer_note:
+        answer = f"{answer} ({approval.answer_note})"
+    return _owner_alert(approval.organization, approval.owner, "owner_approval_answered", approval.pk,
+                        {"what": approval.title[:80], "answer": answer}, created_by=approval.answered_by)
+
+
+def owner_payout_event(org, owner, what) -> int:
+    key = f"{timezone.now().timestamp()}"
+    return _owner_alert(org, owner, "owner_payout_event", f"{owner.pk}:{key}", {"what": str(what)})

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, web_api
 
 app_name = "notifications"
 
@@ -17,6 +17,7 @@ urlpatterns = [
          name="template_edit"),
     path("announcements/", views.AnnouncementListView.as_view(), name="announcements"),
     path("announcements/new/", views.AnnouncementNewView.as_view(), name="announcement_new"),
+    path("announcements/web-api/new/", web_api.AnnouncementNewDataView.as_view(), name="web_announcement_new"),
     path("announcements/<uuid:public_id>/", views.AnnouncementDetailView.as_view(), name="announcement"),
     path("send/", views.ComposeView.as_view(), name="compose"),
     path("tenants/<uuid:public_id>/<str:channel>/", views.TenantChannelView.as_view(), name="tenant_channel"),

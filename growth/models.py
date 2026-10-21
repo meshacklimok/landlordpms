@@ -201,3 +201,36 @@ class SignupSource(TimeStampedModel):
         return f"{self.organization}: {self.source or self.referrer_host or 'direct'}"
 
 
+class Article(TimeStampedModel):
+    """A public article under /articles/, written and published from the developer console (D-178).
+
+    The body is plain text with a few marks (see growth.articles.render); nothing the writer types is ever shown as
+    HTML, so an article cannot carry a script.
+    """
+
+    class Category(models.TextChoices):
+        RENT = "RENT", _("Collecting rent")
+        UTILITIES = "UTILITIES", _("Water and electricity")
+        PEOPLE = "PEOPLE", _("Tenants and staff")
+        RECORDS = "RECORDS", _("Records, reports and the law")
+
+    slug = models.SlugField(max_length=80, unique=True, help_text=_("The last part of the web address. Letters, numbers and hyphens."))
+    title = models.CharField(max_length=120)
+    summary = models.CharField(max_length=300, help_text=_("One or two sentences. Shown on the list and used by search engines."))
+    body = models.TextField()
+    category = models.CharField(max_length=10, choices=Category.choices, default=Category.RENT, db_index=True)
+    author = models.CharField(max_length=80, default="NyumbaPMS team", blank=True)
+    is_published = models.BooleanField(default=False, db_index=True)
+    published_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    featured = models.BooleanField(default=False, help_text=_("Shown first on the list."))
+    created_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        ordering = ["-featured", "-published_at", "-created_at"]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def minutes(self) -> int:
+        return max(1, round(len(self.body.split()) / 200))

@@ -45,14 +45,20 @@ LANDING_WORKS_WITH = [
     ("bank", _("Bank statements")), ("file-earmark-spreadsheet", _("Excel and CSV")), ("telephone", _("Short code")),
 ]
 
-# (icon, who, what they get)
+# (icon, who, what they get, slug of the solutions page that answers them)
 LANDING_AUDIENCES = [
-    ("house-door", _("Landlords"), _("From a few units to a plot of flats: bills, receipts and who owes, on your phone.")),
-    ("briefcase", _("Agents and managers"), _("Many owners, one login each. Owner statements and your own fees on one page.")),
-    ("buildings", _("Gated estates"), _("Service charge, water and garbage on one invoice per household.")),
-    ("droplet", _("Water and garbage services"), _("Meter-based bills and monthly charges for hundreds of households.")),
-    ("person-badge", _("Caretakers"), _("Meter readings and repair updates with only the access you give.")),
-    ("globe-europe-africa", _("Landlords abroad"), _("See collections, arrears and photos without calling anyone.")),
+    ("house-door", _("Landlords"), _("From a few units to a plot of flats: bills, receipts and who owes, on your phone."),
+     "mpesa-rent-collection"),
+    ("briefcase", _("Agents and managers"), _("Many owners, one login each. Owner statements and your own fees on one page."),
+     "software-for-agents-and-property-managers"),
+    ("buildings", _("Gated estates"), _("Service charge, water and garbage on one invoice per household."),
+     "estate-service-charge-and-water-billing"),
+    ("droplet", _("Water and garbage services"), _("Meter-based bills and monthly charges for hundreds of households."),
+     "water-vendor-billing-software"),
+    ("person-badge", _("Caretakers"), _("Meter readings and repair updates with only the access you give."),
+     "water-and-electricity-billing"),
+    ("globe-europe-africa", _("Landlords abroad"), _("See collections, arrears and photos without calling anyone."),
+     "manage-rental-property-in-kenya-from-abroad"),
 ]
 
 # Deep sections: (anchor, eyebrow, heading, intro, [(icon, point)]).

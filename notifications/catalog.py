@@ -119,7 +119,8 @@ _TYPES: tuple[NotificationType, ...] = (
     ),
     NotificationType(
         "payment_received", _("Payment received"), TENANT, (WHATSAPP, SMS),
-        (*_TENANCY, "amount", "paid_on", "receipt_number", "balance", "receipt_link"),
+        (*_TENANCY, "amount", "paid_on", "receipt_number", "balance", "receipt_link", "amount_plain", "breakdown",
+         "balance_signed"),
         bodies={
             (SMS, EN): "Dear {tenant_name}, we received {amount} for {unit} on {paid_on}. Receipt "
                        "{receipt_number}. Balance: {balance}. {receipt_link} {org_name}",
@@ -145,20 +146,6 @@ _TYPES: tuple[NotificationType, ...] = (
         ("org_name", "tenant_name", "unit", "amount", "recorded_by"),
         bodies={(IN_APP, EN): "{recorded_by} recorded {amount} from {tenant_name} ({unit}). It needs review."},
     ),
-    # To whoever paid by M-Pesa when the payment could not be matched (D-045 item 7). Often not a
-    # tenant, so SMS only: WhatsApp needs a grant a stranger cannot have given. [VERIFY the Swahili]
-    NotificationType(
-        "payment_unmatched", _("Payment not matched (to the payer)"), TENANT, (SMS,),
-        ("org_name", "amount", "trans_id", "paid_on"),
-        bodies={
-            (SMS, EN): "We received {amount} by M-Pesa ({trans_id}) on {paid_on} but could not tell which "
-                       "unit it is for. Please tell us your unit number, and use it as the account number "
-                       "when you pay. {org_name}",
-            (SMS, SW): "Tumepokea {amount} kwa M-Pesa ({trans_id}) tarehe {paid_on} lakini hatukujua ni ya "
-                       "nyumba gani. Tafadhali tueleze nambari ya nyumba yako, na uitumie kama nambari ya "
-                       "akaunti unapolipa. {org_name}",
-        },
-    ),
     # To a property owner's phone when their monthly statement is sent (D-058). Owners are not
     # tenants or users, so SMS only, as for the M-Pesa payer. [VERIFY the Swahili]
     NotificationType(
@@ -178,6 +165,16 @@ _TYPES: tuple[NotificationType, ...] = (
         ("org_name", "amount", "payer", "reference", "account", "trans_id"),
         bodies={(IN_APP, EN): "{amount} from {payer} (reference “{reference}”) on {account} could not be "
                               "matched. It is waiting in the M-Pesa inbox."},
+    ),
+    # The same alert by email, for staff who are not in the app that day. The payer is told nothing:
+    # they get the usual payment confirmation once someone matches it.
+    NotificationType(
+        "mpesa_unmatched_email", _("M-Pesa payment not matched (email)"), STAFF, (EMAIL,),
+        ("org_name", "amount", "payer", "reference", "account", "trans_id"),
+        bodies={(EMAIL, EN): "{amount} from {payer} (reference “{reference}”) on {account} could not be matched "
+                             "(M-Pesa code {trans_id}).\n\nIt is waiting in the M-Pesa inbox. Open it, pick the "
+                             "right lease and match it, and the tenant gets their receipt."},
+        subjects={EN: "M-Pesa payment not matched"},
     ),
     # Sent by `mpesa_daily` to organization-wide `mpesa.view_transactions` holders (D-045 item 10).
     NotificationType(
@@ -234,6 +231,13 @@ _TYPES: tuple[NotificationType, ...] = (
         ("org_name", "name", "phone", "property", "unit", "source"),
         bodies={(IN_APP, EN): "{name} ({phone}) asked about {property}, {unit} ({source}). Call them back soon."},
     ),
+    # D-190: a hostel texts a waitlisted student when a bed that suits them is free.
+    NotificationType(
+        "hostel_bed_free", _("Bed free (to a waitlisted student)"), TENANT, (SMS,),
+        ("org_name", "name", "property", "contact", "days"),
+        bodies={(SMS, EN): "Hello {name}, a bed is now free at {property}. Contact {contact} within {days} days "
+                           "to take it. {org_name}"},
+    ),
     NotificationType(
         "prospect_assigned", _("Prospect assigned"), STAFF, (IN_APP,),
         ("org_name", "name", "phone", "property", "unit", "assigned_by"),
@@ -289,6 +293,41 @@ _TYPES: tuple[NotificationType, ...] = (
             (SMS, SW): "Mpendwa {tenant_name}, {org_name} wamejibu ujumbe wako. Fungua tovuti yako kusoma.",
         },
     ),
+    # The owner desk (D-217): messages, approvals and payouts between a property owner and the office.
+    NotificationType(
+        "owner_message_received", _("Message from a property owner in the portal"), STAFF, (IN_APP,),
+        ("org_name", "owner_name"),
+        bodies={(IN_APP, EN): "{owner_name} wrote to you in the owner portal. Open their owner desk to read and "
+                              "reply."},
+    ),
+    NotificationType(
+        "owner_message_reply", _("Reply from the office (to the owner)"), TENANT, (SMS,),
+        ("org_name", "owner_name"),
+        bodies={
+            (SMS, EN): "Dear {owner_name}, {org_name} replied to your message. Open your owner portal to read it.",
+            (SMS, SW): "Mpendwa {owner_name}, {org_name} wamejibu ujumbe wako. Fungua tovuti yako kusoma.",
+        },
+    ),
+    NotificationType(
+        "owner_approval_asked", _("Approval asked of the owner"), TENANT, (SMS,),
+        ("org_name", "owner_name", "what", "amount"),
+        bodies={
+            (SMS, EN): "Dear {owner_name}, {org_name} asks you to approve: {what} ({amount}). Open your owner "
+                       "portal to answer.",
+            (SMS, SW): "Mpendwa {owner_name}, {org_name} wanaomba idhini yako: {what} ({amount}). Fungua tovuti "
+                       "yako kujibu.",
+        },
+    ),
+    NotificationType(
+        "owner_approval_answered", _("Owner answered an approval (to staff)"), STAFF, (IN_APP,),
+        ("org_name", "owner_name", "what", "answer"),
+        bodies={(IN_APP, EN): "{owner_name} answered '{what}': {answer}."},
+    ),
+    NotificationType(
+        "owner_payout_event", _("Owner payout details or request (to staff)"), STAFF, (IN_APP,),
+        ("org_name", "owner_name", "what"),
+        bodies={(IN_APP, EN): "{owner_name}: {what}. Open their owner desk."},
+    ),
     NotificationType(
         "renewal_offered", _("Renewal offer (to the tenant)"), TENANT, (SMS,),
         (*_TENANCY, "start_date", "rent", "expires_on"),
@@ -305,12 +344,27 @@ _TYPES: tuple[NotificationType, ...] = (
         bodies={(IN_APP, EN): "{tenant_name} ({property}, {unit}) {answer} the renewal offer. Open the lease to "
                               "carry on."},
     ),
+    # The account went read-only for an unpaid subscription, or was opened again by a payment. Owners and the roles
+    # the owner chose on the Subscription page are told, so nobody learns of it from a refused Save.
+    NotificationType(
+        "subscription_access", _("Subscription lapsed or paid (to staff)"), STAFF, (IN_APP,),
+        ("org_name", "what"),
+        bodies={(IN_APP, EN): "{what}"},
+        mandatory=True, urgent=True,
+    ),
     # Sent by `mpesa_daily` to `mpesa.match` holders who have codes to check (D-066 item 4).
     NotificationType(
         "mpesa_unverified_codes", _("M-Pesa codes to check"), STAFF, (IN_APP,),
         ("org_name", "count"),
         bodies={(IN_APP, EN): "{count} M-Pesa payment(s) typed in by hand were not found in what Safaricom "
                               "sent, or the amount differs. Check them under M-Pesa, Codes to check."},
+    ),
+    # One a day per organization, when a message could not be delivered after its retries.
+    NotificationType(
+        "messages_failed", _("Messages that could not be sent"), STAFF, (IN_APP,),
+        ("org_name",),
+        bodies={(IN_APP, EN): "Some messages could not be delivered today. Open Messages, filter by Failed, and "
+                              "send them again once you have checked the phone number or your SMS credit."},
     ),
     # Sent by `mpesa_daily` to `mpesa.settings` holders whose Paybill or Till setup has stalled (D-174).
     NotificationType(
@@ -370,8 +424,8 @@ _TYPES: tuple[NotificationType, ...] = (
 # Email copies to tenants (D-076): {codename: (subjects, bodies)}. Email is a copy sent as well as the
 # phone channel, never a fallback, so it goes after the phone channels. Line breaks are kept.
 # [VERIFY the Swahili with a native speaker.]
-_PAY = {EN: "Pay with account number {pay_reference}. {pay_link}",
-        SW: "Lipa kwa nambari ya akaunti {pay_reference}. {pay_link}"}
+_PAY = {EN: "Pay with account number {pay_reference}.\n{pay_link}",
+        SW: "Lipa kwa nambari ya akaunti {pay_reference}.\n{pay_link}"}
 _PAID = {EN: "If you have already paid, thank you, and please ignore this email.",
          SW: "Ikiwa umeshalipa, asante, na tafadhali puuza barua pepe hii."}
 _EMAIL: dict[str, tuple[dict[str, str], dict[str, str]]] = {

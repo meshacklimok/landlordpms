@@ -157,7 +157,11 @@ def get_sms_sender() -> SmsSender:
 
 def sender_id_for(org) -> str:
     """The organization's own approved sender name, or blank for the platform's (D-120)."""
-    return org.sms_sender_name if org is not None else ""
+    if org is None or not org.sms_sender_name:
+        return ""
+    from subscriptions import services as billing  # a Platform Admin can close this per organization (D-200)
+
+    return org.sms_sender_name if billing.own_sender_allowed(org) else ""
 
 
 def send_sms(to: str, body: str, org=None) -> SmsResult:

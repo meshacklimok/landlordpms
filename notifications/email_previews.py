@@ -5,10 +5,10 @@ from .email_html import render_html
 SAMPLES = [
     ("sign-in", "Sign-in code", "NyumbaPMS", "Open",
      "Your NyumbaPMS code:\n\n482913\n\nIt expires in 10 minutes. Never share it."),
-    ("invoice", "Rent invoice (to a tenant)", "Sample Estates", "Open",
+    ("invoice", "Rent invoice (to a tenant)", "Sample Estates", "Pay now",
      "Hello Grace,\n\nYour rent invoice for November is ready. The PDF is attached.\n\n"
      "Invoice: INV-2026-0142\nUnit: B4, Sunrise Apartments\nAmount: KES 18,500\nDue: 5 Nov 2026\n\n"
-     "Pay with M-Pesa Paybill 123456, account B4.\n\n"
+     "Pay with account number B4.\nhttps://app.nyumbapms.com/p/sample\n\n"
      "Thank you,\nSample Estates\n-- \nYou get this email because you rent from Sample Estates. "
      "To stop these emails, open: https://app.nyumbapms.com/messages/stop/sample"),
     ("receipt", "Payment received", "Sample Estates", "Open",
@@ -16,9 +16,9 @@ SAMPLES = [
      "Receipt: RCT-2026-0391\nAmount: KES 18,500\nM-Pesa code: SJK4L2M9QX\nBalance: KES 0\n\n"
      "Your receipt is attached.\n-- \nYou get this email because you rent from Sample Estates. "
      "To stop these emails, open: https://app.nyumbapms.com/messages/stop/sample"),
-    ("reminder", "Rent reminder", "Sample Estates", "Open",
+    ("reminder", "Rent reminder", "Sample Estates", "Pay now",
      "Hello Grace,\n\nA gentle reminder: rent of KES 18,500 for unit B4 is due on 5 Nov 2026.\n\n"
-     "Pay with M-Pesa Paybill 123456, account B4. If you have already paid, please ignore this message.\n"
+     "Pay with account number B4.\nhttps://app.nyumbapms.com/p/sample\n\nIf you have already paid, thank you, and please ignore this email.\n"
      "-- \nYou get this email because you rent from Sample Estates. "
      "To stop these emails, open: https://app.nyumbapms.com/messages/stop/sample"),
     ("owner-invite", "Owner portal invitation", "Sample Estates", "Open your owner portal",
@@ -49,3 +49,15 @@ def render(key: str) -> str | None:
         if k == key:
             return render_html(org, body, button_label=button)
     return None
+
+
+def send_test(key: str, to: str) -> bool:
+    """Sends one sample to `to` through the mail account that handles tenant mail. False when the key is unknown."""
+    from .email_html import send_branded
+    from .providers.mail import MESSAGES, mailer_for
+
+    for k, label, org, button, body in SAMPLES:
+        if k == key:
+            send_branded("[Test] " + label, body, [to], using=mailer_for(MESSAGES), org_name=org, button_label=button)
+            return True
+    return False

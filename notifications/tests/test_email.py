@@ -215,18 +215,20 @@ def test_staff_stop_and_resume_email(client, owner, tenant):
 # ---------------------------------------------------------------------------
 
 
-def test_email_alone_is_refused(owner):
+def test_email_alone_is_allowed_and_none_is_not(owner):
+    services.save_rule(owner, "announcement", enabled=True, channels=[catalog.EMAIL])
+    assert delivery.effective_rule(owner.organization, catalog.get("announcement")).channels == (catalog.EMAIL,)
     with pytest.raises(ValidationError):
-        services.save_rule(owner, "announcement", enabled=True, channels=[catalog.EMAIL])
+        services.save_rule(owner, "announcement", enabled=True, channels=["PAGER"])
 
 
 def test_settings_email_box_and_reply_to(client, owner, org):
     login(client, owner)
     url = reverse("notifications:settings")
-    client.post(url, {"type": "announcement", "enabled": "on", "action": "save"})
+    client.post(url, {"type": "announcement", "enabled": "on", "sms": "on", "action": "save"})
     rule = OrganizationNotificationRule.objects.get(organization=org, type="announcement")
     assert catalog.EMAIL not in rule.channels and catalog.SMS in rule.channels
-    client.post(url, {"type": "announcement", "enabled": "on", "email": "on", "action": "save"})
+    client.post(url, {"type": "announcement", "enabled": "on", "sms": "on", "email": "on", "action": "save"})
     assert delivery.effective_rule(org, catalog.get("announcement")).channels[-1] == catalog.EMAIL
 
     assert client.post(url, {"action": "reply_email", "reply_email": "Office@Acacia.Example"}).status_code == 302
@@ -321,3 +323,18 @@ def test_invoice_pdf_shows_earlier_unpaid_and_stamp(client, owner, org, lease):
     r = client.get(reverse("billing:invoice_pdf", args=[feb.public_id]))
     assert r.status_code == 200 and r.content.startswith(b"%PDF-")
     assert account_services.set_stamp(owner, remove=True)
+
+
+def test_stopping_reminders_only_keeps_invoices_and_receipts(client, org, tenant):
+    from notifications.delivery import opted_out
+
+    url = reverse("email_stop", args=[emails.stop_token(tenant)])
+    assert client.post(url, {"scope": "reminders"}).status_code == 200
+    assert services.channel_allowed(tenant, catalog.EMAIL)  # email as a whole is still on
+    assert services.email_reminders_stopped(tenant)
+    for codename, stopped in (("rent_due_soon", True), ("rent_overdue", True), ("invoice_issued", False),
+                              ("payment_received", False)):
+        assert opted_out(org, catalog.get(codename), catalog.EMAIL, tenant=tenant) is stopped
+    assert not services.stop_email_reminders_by_link(tenant)  # again: nothing new
+    assert client.post(url).status_code == 200  # the one-click request from a mail app stops everything
+    assert not services.channel_allowed(tenant, catalog.EMAIL)

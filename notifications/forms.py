@@ -28,6 +28,8 @@ class InboxFilterForm(forms.Form):
 
 class RuleForm(forms.Form):
     enabled = forms.BooleanField(required=False)
+    sms = forms.BooleanField(required=False)
+    whatsapp = forms.BooleanField(required=False)
     email = forms.BooleanField(required=False)
     offsets = forms.CharField(required=False, max_length=30)
     include_co_tenants = forms.BooleanField(required=False)
@@ -35,6 +37,11 @@ class RuleForm(forms.Form):
 
 def _time_input():
     return forms.TimeInput(attrs={"type": "time", "class": "form-control"}, format="%H:%M")
+
+
+class MessageContentForm(forms.Form):
+    balance_includes_deposit = forms.BooleanField(required=False)
+    balance_shows_credit = forms.BooleanField(required=False)
 
 
 class QuietHoursForm(forms.Form):
@@ -117,6 +124,9 @@ class AnnouncementForm(forms.Form):
     ending = forms.BooleanField(label=_("Only leases ending soon"), required=False)
     ending_within = forms.IntegerField(label=_("Ending within (days)"), min_value=0, max_value=365,
                                        required=False, initial=60)
+    due = forms.BooleanField(label=_("Only tenants whose rent falls due soon"), required=False)
+    due_within = forms.IntegerField(label=_("Falling due within (days)"), min_value=1, max_value=60,
+                                    required=False, initial=7)
     include_co_tenants = forms.BooleanField(label=_("Also send to co-tenants"), required=False, initial=True)
     urgent = forms.BooleanField(label=_("Send now, even during quiet hours"), required=False)
     nonce = forms.UUIDField(widget=forms.HiddenInput)
@@ -134,12 +144,24 @@ class AnnouncementForm(forms.Form):
                                              .select_related("property").order_by("property__name", "name"))
         self.fields["buildings"].label_from_instance = lambda b: f"{b.property.name} · {b.name}"
         if not can_target_owing(membership):
-            del self.fields["owing"], self.fields["owing_days"]
+            for name in ("owing", "owing_days", "due", "due_within"):
+                del self.fields[name]
+
+    def clean_text(self):
+        from .announcements import unfilled
+
+        text = self.cleaned_data["text"]
+        blanks = unfilled(text)
+        if blanks:
+            raise forms.ValidationError(_("Fill in %(blanks)s before sending."), params={"blanks": ", ".join(blanks)})
+        return text
 
     def clean(self):
         data = super().clean()
         if data.get("owing") and not data.get("owing_days"):
             data["owing_days"] = 1
+        if data.get("due") and not data.get("due_within"):
+            data["due_within"] = 7
         if data.get("ending") and data.get("ending_within") is None:
             self.add_error("ending_within", _("Enter a number of days."))
         return data
@@ -152,6 +174,7 @@ class AnnouncementForm(forms.Form):
             properties=tuple(data.get("properties") or ()), buildings=tuple(data.get("buildings") or ()),
             owing_days=data.get("owing_days") if data.get("owing") else None,
             ending_within=data.get("ending_within") if data.get("ending") else None,
+            due_within=data.get("due_within") if data.get("due") else None,
             include_co_tenants=data.get("include_co_tenants", False))
 
 

@@ -6,6 +6,7 @@ preview who receives it and what it costs, then send; each recipient's copy is a
 """
 
 import datetime
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -35,6 +36,41 @@ FIELDS = ("tenant_name", "unit", "property")
 BULK_INLINE = 25
 MAX_DAYS = 365
 
+# Ready-made wording (D-194). The [square brackets] are for staff to fill in before sending; the form refuses
+# a notice that still has one. {tenant_name}, {unit} and {property} are filled for each tenant.
+PRESETS = (
+    ("rent_due", _("Rent reminder"),
+     _("Hello {tenant_name}, a friendly reminder that rent for {unit} at {property} falls due soon. "
+       "Please pay by [date]. Thank you.")),
+    ("water", _("Water interruption"),
+     _("Hello {tenant_name}, water at {property} will be off on [date] from [start time] to [end time] for [reason]. "
+       "Please store enough water. Sorry for the inconvenience.")),
+    ("power", _("Power outage"),
+     _("Hello {tenant_name}, KPLC has announced a power outage at {property} on [date] from [start time] to "
+       "[end time]. Please plan for it.")),
+    ("repair", _("Planned repair"),
+     _("Hello {tenant_name}, we will be doing [work] at {property} on [date] from [start time]. "
+       "{unit} may be affected. Please let the caretaker know if the time does not suit you.")),
+    ("meeting", _("Tenants' meeting"),
+     _("Hello {tenant_name}, there will be a meeting of {property} tenants on [date] at [time] at [place]. "
+       "Your attendance is welcome.")),
+    ("emergency", _("Emergency"),
+     _("URGENT: {tenant_name}, [what has happened] at {property}. Please [what to do]. "
+       "Call the caretaker on [phone] for help.")),
+    ("inspection", _("Inspection visit"),
+     _("Hello {tenant_name}, we will inspect the units at {property} on [date] from [start time]. "
+       "Please allow access to {unit}. This is a routine check.")),
+)
+
+
+def preset_text(key: str) -> str:
+    return next((str(text) for k, _label, text in PRESETS if k == key), "")
+
+
+def unfilled(text: str) -> list[str]:
+    """Bracketed blanks left in a notice, e.g. ['[date]']."""
+    return re.findall(r"\[[^\]\n]{1,40}\]", text)
+
 
 @dataclass(frozen=True)
 class Audience:
@@ -46,6 +82,8 @@ class Audience:
     owing_days: int | None = None
     # Lease contract ending within this many days (None: no filter).
     ending_within: int | None = None
+    # An open invoice falling due within this many days and not yet overdue (None: no filter).
+    due_within: int | None = None
     include_co_tenants: bool = True
     # One or more leases only, e.g. a message proposed by the assistant (D-092).
     leases: tuple = ()
@@ -53,7 +91,7 @@ class Audience:
     def as_json(self) -> dict:
         return {"properties": [p.pk for p in self.properties], "buildings": [b.pk for b in self.buildings],
                 "owing_days": self.owing_days, "ending_within": self.ending_within,
-                "include_co_tenants": self.include_co_tenants, "leases": [x.pk for x in self.leases]}
+                "due_within": self.due_within, "include_co_tenants": self.include_co_tenants, "leases": [x.pk for x in self.leases]}
 
     def summary(self) -> str:
         parts = [", ".join(p.name for p in self.properties) if self.properties else _("All properties")]
@@ -67,6 +105,9 @@ class Audience:
         if self.ending_within is not None:
             parts.append(ngettext("lease ending within %(n)s day", "lease ending within %(n)s days",
                                   self.ending_within) % {"n": self.ending_within})
+        if self.due_within is not None:
+            parts.append(ngettext("rent due within %(n)s day", "rent due within %(n)s days", self.due_within)
+                         % {"n": self.due_within})
         if not self.include_co_tenants:
             parts.append(_("main tenants only"))
         return " · ".join(parts)[:300]
@@ -136,10 +177,10 @@ def validate_text(org, text: str) -> str:
 
 
 def _check_audience(actor: Membership, audience: Audience) -> None:
-    for days in (audience.owing_days, audience.ending_within):
+    for days in (audience.owing_days, audience.ending_within, audience.due_within):
         if days is not None and not 0 <= days <= MAX_DAYS:
             raise ValidationError(_("Days must be between 0 and %(n)s.") % {"n": MAX_DAYS})
-    if audience.owing_days is not None and not can_target_owing(actor):
+    if (audience.owing_days is not None or audience.due_within is not None) and not can_target_owing(actor):
         raise ValidationError(_("You cannot choose tenants by what they owe."))
     for obj in (*audience.properties, *audience.buildings):
         if obj.organization_id != actor.organization_id:
@@ -165,6 +206,16 @@ def _owing_lease_ids(actor: Membership, days: int, today: datetime.date) -> set[
     return {row.lease.pk for row in arrears(actor, today) if row.days_overdue(today) >= max(days, 1)}
 
 
+def _due_lease_ids(actor: Membership, days: int, today: datetime.date):
+    """Leases with an open invoice falling due in the next `days` days that is not overdue yet."""
+    from billing.models import Invoice
+    from billing.selectors import visible_invoices
+
+    return visible_invoices(actor).filter(
+        status__in=Invoice.OPEN, due_date__gte=today, due_date__lte=today + datetime.timedelta(days=days),
+        overdue_after__gte=today).order_by().values("lease_id")
+
+
 def recipients(actor: Membership, audience: Audience, today: datetime.date | None = None) -> list[Recipient]:
     """One entry per tenant, by property and unit. The primary tenant first on each lease."""
     today = today or timezone.localdate()
@@ -180,6 +231,8 @@ def recipients(actor: Membership, audience: Audience, today: datetime.date | Non
                                end_date__lte=today + datetime.timedelta(days=audience.ending_within))
     if audience.owing_days is not None:
         leases = leases.filter(pk__in=_owing_lease_ids(actor, audience.owing_days, today))
+    if audience.due_within is not None:
+        leases = leases.filter(pk__in=_due_lease_ids(actor, audience.due_within, today))
     links = (LeaseTenant.objects.filter(lease__in=leases, tenant__archived_at__isnull=True)
              .select_related("tenant", "lease__unit__property")
              .order_by("lease__unit__property__name", "lease__unit__code", "-is_primary", "tenant__name"))

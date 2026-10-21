@@ -16,6 +16,7 @@ from .messaging import (  # noqa: F401
     MessageTemplate,
     NotificationPreference,
     NotificationTypeSetting,
+    OrganizationMessageSettings,
     OrganizationNotificationRule,
     PushSubscription,
 )

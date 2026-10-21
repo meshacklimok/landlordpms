@@ -5,12 +5,11 @@ import logging
 
 from django.conf import settings
 from django.core.mail import send_mail
-
-from notifications.email_html import send_branded
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
 from core.net import client_ip
+from notifications.email_html import send_branded
 from notifications.providers.mail import SYSTEM, mailer_for
 from ops import alerts
 

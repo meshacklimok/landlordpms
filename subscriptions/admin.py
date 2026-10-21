@@ -24,6 +24,7 @@ from .models import (
     PlatformPaySwitch,
     PlatformReceipt,
     PlatformTransaction,
+    SmsPolicy,
     SmsWallet,
     SmsWalletEntry,
     Subscription,
@@ -277,12 +278,13 @@ class SmsWalletAdmin(admin.ModelAdmin):
     """SMS for every organization this month (D-142): who pays, parts used, what Africa's Talking charged us,
     what we billed them, and the wallet. Mode and monthly parts are edited right in the list."""
 
-    list_display = ["organization", "mode", "monthly_cap", "used", "state", "our_cost", "billed", "balance"]
-    list_editable = ["mode", "monthly_cap"]
-    list_filter = ["mode"]
+    list_display = ["organization", "mode", "monthly_cap", "own_account", "own_sender", "used", "state", "our_cost",
+                    "billed", "balance"]
+    list_editable = ["mode", "monthly_cap", "own_account", "own_sender"]
+    list_filter = ["mode", "own_account", "own_sender"]
     search_fields = ["organization__name"]
     readonly_fields = ["organization", "balance"]
-    fields = ["organization", "mode", "monthly_cap", "balance"]
+    fields = ["organization", "mode", "monthly_cap", "own_account", "own_sender", "balance"]
     actions = ["export_csv"]
     ordering = ["organization__name"]
 
@@ -324,7 +326,8 @@ class SmsWalletAdmin(admin.ModelAdmin):
 
     def changelist_view(self, request, extra_context=None):
         missing = Organization.objects.filter(sms_wallet__isnull=True)
-        SmsWallet.objects.bulk_create([SmsWallet(organization=o) for o in missing])
+        for org in missing:
+            services.ensure_wallet(org)
         rows = SmsWalletEntry.objects.filter(kind=SmsWalletEntry.Kind.MESSAGE, created_at__gte=services.month_start())
         everyone = rows.aggregate(parts=Sum("segments"), cost=Sum("message__cost"), billed=Sum("amount"))
         sponsored = rows.filter(organization__sms_wallet__mode=SmsWallet.Mode.SPONSORED).aggregate(
@@ -334,11 +337,13 @@ class SmsWalletAdmin(admin.ModelAdmin):
         return super().changelist_view(request, {**(extra_context or {}), "title": title})
 
     def save_model(self, request, obj, form, change):
-        before = SmsWallet.objects.filter(pk=obj.pk).values("mode", "monthly_cap").first()
+        before = SmsWallet.objects.filter(pk=obj.pk).values("mode", "monthly_cap", "own_account", "own_sender").first()
         super().save_model(request, obj, form, change)
-        now = {"mode": obj.mode, "monthly_cap": obj.monthly_cap}
+        now = {"mode": obj.mode, "monthly_cap": obj.monthly_cap, "own_account": obj.own_account,
+               "own_sender": obj.own_sender}
         if before and before != now:
-            SmsWallet.objects.filter(pk=obj.pk).update(alert_level=0)  # new terms, so warn afresh
+            if (before["mode"], before["monthly_cap"]) != (now["mode"], now["monthly_cap"]):
+                SmsWallet.objects.filter(pk=obj.pk).update(alert_level=0)  # new terms, so warn afresh
             audit.record("sms_wallet.terms", actor=request.user, organization=obj.organization, obj=obj,
                          request=request,
                          changes={k: [str(before[k]), str(now[k])] for k in now if before[k] != now[k]})
@@ -384,7 +389,11 @@ class BillingPolicyAdmin(admin.ModelAdmin):
 
     list_display = ["__str__", "trial_days", "invoice_lead_days", "grace_days", "reminder_days",
                     "grace_reminder_days", "updated_at"]
-    fields = ["trial_days", "invoice_lead_days", "grace_days", "reminder_days", "grace_reminder_days"]
+    fields = ["trial_days", "repeat_trial_days", "invoice_lead_days", "grace_days", "reminder_days", "grace_reminder_days",
+              "stop_sms_days", "stop_whatsapp_days", "stop_email_days", "stop_scans_days", "stop_assistant_days",
+              "stop_expenses_days", "stop_meters_days", "stop_inspections_days", "stop_documents_days",
+              "stop_maintenance_days", "stop_properties_days", "stop_tenancy_days", "stop_invoices_days",
+              "stop_payments_days", "dunning_email", "dunning_sms"]
 
     def changelist_view(self, request, extra_context=None):
         BillingPolicy.get()
@@ -397,6 +406,33 @@ class BillingPolicyAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return not BillingPolicy.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SmsPolicy)
+class SmsPolicyAdmin(admin.ModelAdmin):
+    """How a new organization's SMS starts (free, a few free then paid, or paid from the first SMS) and whether
+    own Africa's Talking accounts and own sender names are open (D-200). One row. Organizations that already
+    have a wallet keep their terms; change those, and the two permissions for one organization, under SMS wallets."""
+
+    list_display = ["__str__", "new_mode", "new_monthly_parts", "welcome_parts", "welcome_when",
+                    "own_account_default", "own_sender_default", "updated_at"]
+    fields = ["new_mode", "new_monthly_parts", "welcome_parts", "welcome_when", "own_account_default",
+              "own_sender_default"]
+
+    def changelist_view(self, request, extra_context=None):
+        SmsPolicy.get()
+        return super().changelist_view(request, extra_context)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        audit.record("platform.sms_policy", actor=request.user, obj=obj,
+                     changes={f: str(getattr(obj, f)) for f in self.fields})
+
+    def has_add_permission(self, request):
+        return not SmsPolicy.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

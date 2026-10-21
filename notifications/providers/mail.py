@@ -18,6 +18,6 @@ def mailer_for(purpose: str = SYSTEM) -> str:
         from core.models import EmailRouting
 
         choice = EmailRouting.get().alias_for(purpose)
-    except Exception:  # noqa: BLE001 - mail must still go out if the table is missing or the database is down
+    except Exception:  # noqa: BLE001, S110 - mail must still go out if the table is missing or the database is down
         pass
     return choice if choice in settings.MAILERS else SYSTEM

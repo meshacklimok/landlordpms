@@ -123,7 +123,7 @@ def test_retry(client, owner, org, tenant, outbox, django_capture_on_commit_call
 def test_settings_save_rule_and_reset(client, owner, org):
     login(client, owner)
     url = reverse("notifications:settings")
-    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "offsets": "7, 3", "action": "save"})
+    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "sms": "on", "offsets": "7, 3", "action": "save"})
     assert r.status_code == 302
     assert delivery.effective_rule(org, catalog.get("rent_due_soon")).offsets == (7, 3)
     r = client.post(url, {"type": "rent_due_soon", "action": "reset"})
@@ -132,7 +132,7 @@ def test_settings_save_rule_and_reset(client, owner, org):
     client.post(url, {"type": "announcement", "action": "save"})  # switch unticked
     assert not delivery.effective_rule(org, catalog.get("announcement")).enabled
 
-    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "offsets": "99", "action": "save"})
+    r = client.post(url, {"type": "rent_due_soon", "enabled": "on", "sms": "on", "offsets": "99", "action": "save"})
     assert r.status_code == 400 and "between" in r.content.decode()
     assert client.post(url, {"type": "nope"}).status_code == 404
 

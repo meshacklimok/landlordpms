@@ -12,7 +12,7 @@ def faq_jsonld(pairs):
     page's script policy does not apply; `<` is escaped so an answer can never close the tag."""
     data = {"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": [
         {"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in pairs]}
-    return mark_safe(json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")
+    return mark_safe(json.dumps(data, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e")  # noqa: S308 - JSON with <, > and & escaped
                      .replace("&", "\\u0026"))
 
 

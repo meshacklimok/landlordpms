@@ -46,6 +46,26 @@ class OrganizationNotificationRule(TimeStampedModel):
         return f"{self.organization} · {self.type}"
 
 
+class OrganizationMessageSettings(TimeStampedModel):
+    """What the figures in an organization's messages mean. No row means the defaults.
+
+    The wording is edited as a template; these decide the value a field such as ``{balance}`` carries.
+    """
+
+    organization = models.OneToOneField("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    # An agreed deposit not yet paid counts as owed in {balance}. Off: rent and charges only.
+    balance_includes_deposit = models.BooleanField(_("count an unpaid deposit in the balance"), default=False)
+    # A tenant who paid ahead shows as a credit (-1,000.00) in {balance}. Off: the balance stops at zero.
+    balance_shows_credit = models.BooleanField(_("show credit in the balance"), default=False)
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="+")
+
+    objects = ScopedQuerySet.as_manager()
+
+    def __str__(self):
+        return f"{self.organization} · message settings"
+
+
 class NotificationTypeSetting(TimeStampedModel):
     """The platform owner's change to one catalog type, for every organization (set in Django admin).
 

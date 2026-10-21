@@ -413,9 +413,9 @@ def test_the_referrer_never_sees_the_referred_business_name(client):
 # --- About, How it works, articles, advanced FAQ, delete account (D-135) ---
 
 def test_public_info_pages_open_without_signing_in(client):
-    from growth import pages
+    from growth import articles
     names = [reverse(n) for n in ("growth:about", "growth:how_it_works", "growth:articles", "support:delete_account")]
-    names += [reverse("growth:article", args=[a["slug"]]) for a in pages.ARTICLES]
+    names += [reverse("growth:article", args=[a.slug]) for a in articles.published()]
     for path in names:
         assert client.get(path).status_code == 200, path
     assert client.get(reverse("growth:article", args=["nope"])).status_code == 404

@@ -68,7 +68,7 @@ def test_the_page_and_csv(client, usage):
     response = client.get(url, {"month": month, "format": "csv"})
     lines = response.content.decode("utf-8-sig").splitlines()
     assert lines[0].startswith("Organization,SMS parts")
-    assert lines[1] == "Big Lets,2,0.8000,1.00,2,0.9300,1,1000000,0,260.0000,261.7300"
+    assert lines[1] == "Big Lets,2,0.8000,1.00,2,0.9300,1,1000000,0,260.0000,261.7300,0,-261.7300"
     assert AuditEvent.objects.filter(action="console.export").exists()
 
 

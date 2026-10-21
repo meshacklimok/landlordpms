@@ -40,6 +40,7 @@ from mpesa import c2b as mpesa_c2b
 from mpesa import daraja
 from mpesa import stk as mpesa_stk
 from mpesa.models import FORBIDDEN_URL_WORDS
+from notifications.email_html import send_branded, subscription_link
 from notifications.providers.mail import SYSTEM, mailer_for
 from subscriptions import paystack
 
@@ -571,7 +572,8 @@ def _tell_owner(checkout: PlatformCheckout) -> None:
     if not to:
         return
     try:
-        send_mail(f"[NyumbaPMS] {subject}", body, None, to, using=mailer_for(SYSTEM))
+        send_branded(f"[NyumbaPMS] {subject}", body + "\n\n" + subscription_link(), to,
+                     using=mailer_for(SYSTEM), button_label=_("Open Subscription"))
     except Exception:
         logger.exception("Card renewal email for invoice %s failed", invoice.number)
 

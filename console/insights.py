@@ -7,7 +7,7 @@ from collections import Counter, defaultdict
 from decimal import Decimal
 
 from django.conf import settings
-from django.db.models import Count, Q, Sum
+from django.db.models import Case, CharField, Count, Q, Sum, Value, When
 from django.db.models.functions import TruncMonth
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -19,14 +19,16 @@ from core import charts
 from core.kenya import County
 from leases.models import Lease
 from meters.models import Scan
+from mpesa.models import MpesaTransaction
 from notifications import catalog
 from notifications.models import Message
 from payments.models import Payment
 from properties.models import Property, Unit
 from subscriptions.models import SmsWalletEntry, Subscription, SubscriptionPayment
+from support.models import SupportRequest
 from tenants.models import Tenant
 
-from .metrics import _aware, _day, _keyed, _share, label, months, revenue_mrr
+from .metrics import _aware, _day, _keyed, _share, first_of, label, months, revenue_mrr
 from .models import PlatformExpense
 
 SENT = [Message.Status.SENT, Message.Status.DELIVERED]
@@ -64,7 +66,7 @@ def money(count: int = 12, today: datetime.date | None = None) -> dict:
             if e.applies_in(m):
                 by_cat[e.category][i] += int(e.amount)
     costs = [sum(v[i] for v in by_cat.values()) for i in range(len(ms))]
-    net = [r - c for r, c in zip(received, costs)]
+    net = [r - c for r, c in zip(received, costs, strict=False)]
     names = dict(PlatformExpense.Category.choices)
     cat_totals = sorted(((str(names[c]), sum(v)) for c, v in by_cat.items()), key=lambda r: -r[1])
     running, cumulative = 0, []
@@ -92,6 +94,61 @@ def money(count: int = 12, today: datetime.date | None = None) -> dict:
     }
 
 
+def statement(count: int = 12, today: datetime.date | None = None) -> dict:
+    """Everything that came in and everything that went out, month by month, on one page.
+
+    Income is what landlords paid us. Expenses are what you entered, except SMS, assistant questions and photo scans,
+    which are taken from what the providers charged (so they need not be entered by hand). In a month that has a
+    tracked SMS or AI figure, a hand-entered SMS or AI cost for that month is left out so nothing counts twice."""
+    today = today or timezone.localdate()
+    ms = months(count, today)
+    start, end = _aware(ms[0]), _aware(first_of(today + datetime.timedelta(days=32)))
+    window = {"created_at__gte": start, "created_at__lt": end}
+
+    def by_month(qs, field="created_at", value="t"):
+        rows = _keyed(qs.annotate(m=TruncMonth(field)).values_list("m").annotate(t=Sum(value)))
+        return [rows.get(m, 0) or 0 for m in ms]
+
+    income = [int(v) for v in by_month(SubscriptionPayment.objects.filter(paid_on__gte=ms[0]), "paid_on", "amount")]
+    sms = [Decimal(v) for v in by_month(Message.objects.filter(channel=catalog.SMS, status__in=SENT, **window),
+                                        value="cost")]
+    scans = [Decimal(v) for v in by_month(Scan.objects.filter(**window), value="cost")]
+    questions = Question.objects.filter(**window).exclude(status=Question.Status.LIMITED)
+    ai_in = by_month(questions, value="input_tokens")
+    ai_out = by_month(questions, value="output_tokens")
+    ai = [cost_kes(i, o) + s for i, o, s in zip(ai_in, ai_out, scans, strict=False)]
+    names = dict(PlatformExpense.Category.choices)
+    entered: dict[str, list[Decimal]] = defaultdict(lambda: [Decimal("0")] * len(ms))
+    for e in PlatformExpense.objects.all():
+        for i, m in enumerate(ms):
+            if not e.applies_in(m):
+                continue
+            if ((e.category == PlatformExpense.Category.SMS and sms[i] > 0)
+                    or (e.category == PlatformExpense.Category.AI and ai[i] > 0)):
+                continue
+            entered[e.category][i] += e.amount
+    rows = [{"name": _("SMS sent (from the provider's charges)"), "tracked": True, "values": sms},
+            {"name": _("Assistant and photo scans (from OpenAI use)"), "tracked": True, "values": ai}]
+    rows += [{"name": str(names[c]), "tracked": False, "values": v}
+             for c, v in sorted(entered.items(), key=lambda kv: -sum(kv[1])) if sum(v)]
+    for r in rows:
+        r["values"] = [int(round(v)) for v in r["values"]]
+        r["total"] = sum(r["values"])
+    expenses = [sum(r["values"][i] for r in rows) for i in range(len(ms))]
+    net = [a - b for a, b in zip(income, expenses, strict=False)]
+    labels = [label(m) for m in ms]
+    return {
+        "months": labels, "income": income, "expenses": expenses, "net": net, "rows": rows,
+        "income_total": sum(income), "expenses_total": sum(expenses), "net_total": sum(net),
+        "this_month": {"income": income[-1], "expenses": expenses[-1], "net": net[-1]},
+        "table": [{"month": labels[i], "income": income[i], "expenses": expenses[i], "net": net[i]}
+                  for i in range(len(ms))],
+        "chart": charts.chart("bar", labels, [charts.series(_("Income"), income, "1"),
+                                              charts.series(_("Expenses"), expenses, "late-3"),
+                                              charts.series(_("Net"), net, "3", type="line")]),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Growth
 # ---------------------------------------------------------------------------
@@ -113,7 +170,7 @@ def growth(count: int = 12, today: datetime.date | None = None) -> dict:
     cum_users = _cumulative(User.objects.filter(date_joined__lt=start).count(), users_new)
     cum_tenants = _cumulative(Tenant.all_objects.filter(created_at__lt=start).count(), tenants_new)
     cum_units = _cumulative(Unit.all_objects.filter(created_at__lt=start).count(), units_new)
-    pace = [_share(n * 100, c - n) if c - n else None for n, c in zip(orgs_new, cum_orgs)]  # % growth a month
+    pace = [_share(n * 100, c - n) if c - n else None for n, c in zip(orgs_new, cum_orgs, strict=False)]  # % growth a month
 
     # Who the staff are: caretakers, owners, agents and so on, counted once per person.
     role_rows = (Membership.objects.filter(is_active=True)
@@ -239,6 +296,37 @@ def payment_methods(count: int = 6, today: datetime.date | None = None) -> dict:
                                            [str(i) for i in range(1, 6)], axis="count")}
 
 
+def rent_collected(count: int = 12, today: datetime.date | None = None) -> dict:
+    """Confirmed tenant rent across every organization, by how it reached us: through the site (a Paybill/Till
+    payment or a payment request), from an imported statement, or recorded by hand. Amounts only, no names."""
+    today = today or timezone.localdate()
+    ms = months(count, today)
+    live = Q(mpesa_transaction__source__in=[MpesaTransaction.Source.C2B, MpesaTransaction.Source.STK])
+    statement = Q(mpesa_transaction__source=MpesaTransaction.Source.STATEMENT) | Q(bank_transaction__isnull=False)
+    channel = Case(When(live, then=Value("site")), When(statement, then=Value("statement")), default=Value("hand"),
+                   output_field=CharField())
+    qs = Payment.objects.filter(status=Payment.Status.CONFIRMED).annotate(channel=channel)
+    names = {"site": _("Through the site"), "statement": _("Statement imports"), "hand": _("Recorded by hand")}
+
+    ever = {c: int(t or 0) for c, t in qs.values_list("channel").annotate(t=Sum("amount"))}
+    this_month = {c: int(t or 0) for c, t in qs.filter(paid_at__gte=ms[-1]).values_list("channel").annotate(t=Sum("amount"))}
+    by_month: dict[str, dict] = defaultdict(dict)
+    for m, c, t in (qs.filter(paid_at__gte=ms[0]).annotate(m=TruncMonth("paid_at"))
+                    .values_list("m", "channel").annotate(t=Sum("amount"))):
+        by_month[c][_day(m)] = t
+    series = {c: [int(by_month[c].get(m, 0)) for m in ms] for c in names}
+    rows = [{"channel": str(names[c]), "ever": ever.get(c, 0), "this_month": this_month.get(c, 0),
+             "last_12": sum(series[c])} for c in names]
+    return {
+        "rows": rows, "ever_total": sum(ever.values()), "month_total": sum(this_month.values()),
+        "last_total": sum(r["last_12"] for r in rows), "site_share": _share(ever.get("site", 0), sum(ever.values())),
+        "months": [label(m) for m in ms],
+        "chart": charts.chart("bar", [label(m) for m in ms],
+                              [charts.series(str(names[c]), series[c], str(1 + i)) for i, c in enumerate(names)],
+                              stacked=True),
+    }
+
+
 # ---------------------------------------------------------------------------
 # Messages and AI against their limits
 # ---------------------------------------------------------------------------
@@ -289,6 +377,50 @@ def channels(count: int = 6, today: datetime.date | None = None) -> dict:
         })
     return {"months": [label(m) for m in ms], "channels": out,
             "chart": charts.chart("bar", [label(m) for m in ms], series, axis="count", stacked=True)}
+
+
+def message_categories(today: datetime.date | None = None) -> dict:
+    """Every kind of message (invoice issued, reminder, receipt...) with how many went out by email, SMS and
+    WhatsApp, this month and since the start. Counts only; no recipient is named."""
+    today = today or timezone.localdate()
+    since = _aware(first_of(today))
+    labels = {code: str(name) for code, name in catalog.CHOICES}
+    sent = Message.objects.filter(status__in=SENT, channel__in=CHANNELS)
+    rows: dict[str, dict] = defaultdict(lambda: {c: {"month": 0, "ever": 0} for c in CHANNELS})
+    for kind, ch, n in sent.values_list("type", "channel").annotate(n=Count("pk")):
+        rows[kind][ch]["ever"] = n
+    for kind, ch, n in sent.filter(created_at__gte=since).values_list("type", "channel").annotate(n=Count("pk")):
+        rows[kind][ch]["month"] = n
+    out = [{"type": labels.get(kind, kind.replace("_", " ").capitalize()),
+            "counts": [rows[kind][c] for c in CHANNELS],
+            "month": sum(rows[kind][c]["month"] for c in CHANNELS),
+            "ever": sum(rows[kind][c]["ever"] for c in CHANNELS)} for kind in rows]
+    out.sort(key=lambda r: (-r["month"], -r["ever"]))
+    names = dict(catalog.CHANNEL_CHOICES)
+    return {"channels": [str(names[c]) for c in CHANNELS], "rows": out,
+            "totals": [{"month": sum(r["counts"][i]["month"] for r in out),
+                        "ever": sum(r["counts"][i]["ever"] for r in out)} for i in range(len(CHANNELS))]}
+
+
+def support_speed(today: datetime.date | None = None) -> dict:
+    """How fast the team answers and closes support requests (last 90 days), and what is waiting too long.
+    Hours to the first reply only count requests answered from the console."""
+    now = timezone.now()
+    since = now - datetime.timedelta(days=90)
+    recent = SupportRequest.objects.filter(created_at__gte=since)
+    replied = [(r - c).total_seconds() / 3600 for c, r in recent.filter(first_reply_at__isnull=False)
+               .values_list("created_at", "first_reply_at")]
+    closed = [(r - c).total_seconds() / 86400 for c, r in recent.filter(closed_at__isnull=False)
+              .values_list("created_at", "closed_at")]
+    open_ = SupportRequest.objects.exclude(status=SupportRequest.Status.CLOSED)
+    return {
+        "received": recent.count(), "closed": len(closed),
+        "avg_reply_hours": round(sum(replied) / len(replied), 1) if replied else None,
+        "avg_close_days": round(sum(closed) / len(closed), 1) if closed else None,
+        "open": open_.count(),
+        "unanswered_24h": open_.filter(first_reply_at__isnull=True, created_at__lt=now - datetime.timedelta(hours=24)).count(),
+        "older_than_3_days": open_.filter(created_at__lt=now - datetime.timedelta(days=3)).count(),
+    }
 
 
 def ai_usage(count: int = 6, today: datetime.date | None = None) -> dict:
@@ -354,16 +486,22 @@ def costs_by_organization(month: datetime.date) -> dict:
                               .values_list("organization")
                               .annotate(n=Count("pk"), i=Sum("input_tokens"), o=Sum("output_tokens"))):
         rows[org].update(questions=n, tokens_in=tin or 0, tokens_out=tout or 0, ai_cost=cost_kes(tin or 0, tout or 0))
+    paid = dict(SubscriptionPayment.objects.filter(paid_on__gte=start, paid_on__lt=until.date())
+                .values_list("organization").annotate(t=Sum("amount")))
+    for pk in paid:
+        rows[pk]  # noqa: B018 - a landlord who paid but used nothing still belongs in the list
     names = Organization.objects.in_bulk(list(rows))
     out = []
     for pk, r in rows.items():
         r["org"] = names.get(pk)
         r["total"] = r["sms_cost"] + r["scan_cost"] + r["ai_cost"]
+        r["income"] = paid.get(pk) or Decimal("0")
+        r["margin"] = r["income"] - r["total"]
         if r["org"] is not None:
             out.append(r)
     out.sort(key=lambda r: (-r["total"], r["org"].name.lower()))
     keys = ("sms_parts", "sms_cost", "sms_billed", "scans", "scan_cost", "questions", "tokens_in", "tokens_out",
-            "ai_cost", "total")
+            "ai_cost", "total", "income", "margin")
     totals = {k: sum(r[k] for r in out) for k in keys}
     return {"month": start, "rows": out, "totals": totals,
             "prices": {"input": settings.AI_PRICE_INPUT_PER_M, "output": settings.AI_PRICE_OUTPUT_PER_M,

@@ -15,15 +15,21 @@ CAPABILITIES = {
     "finance": _("Money: what the app costs you, and your net profit"),
     "growth": _("Growth: who signs up, where, how big they are, and who leaves"),
     "channels": _("Messages and AI: emails, SMS, WhatsApp and assistant use against limits"),
+    "fix": _("Fix problems: send failed messages and webhooks again (needs Health to see them)"),
+    "support": _("Support and feedback: read what landlords send us"),
+    "support_solve": _("Support and feedback: reply, add notes and close requests (needs the page above)"),
+    "tools": _("Tools: links to Sentry errors, PostHog and Google Analytics"),
     "staff": _("Console team: add people and choose what they see"),
+    "articles": _("Articles: write, publish and edit the public articles"),
+    "announce": _("Notices: write, edit and send notices to one owner, some or all"),
 }
 
 ROLE_PRESETS = {
     "OWNER": list(CAPABILITIES),
-    "ANALYST": ["overview", "behaviour", "engagement", "organizations", "growth", "channels"],
+    "ANALYST": ["overview", "behaviour", "engagement", "organizations", "growth", "channels", "articles", "tools"],
     "FINANCE": ["overview", "revenue", "behaviour", "finance"],
-    "SUPPORT": ["organizations", "health"],
-    "ENGINEER": ["overview", "engagement", "health", "channels"],
+    "SUPPORT": ["organizations", "health", "support", "support_solve"],
+    "ENGINEER": ["overview", "engagement", "health", "channels", "fix", "tools"],
 }
 
 
