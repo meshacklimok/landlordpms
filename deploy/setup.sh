@@ -188,6 +188,8 @@ DEFAULT_FROM_EMAIL="NyumbaPMS <no-reply@nyumbapms.com>"
 #EMAIL_MESSAGES_PORT=587
 OPS_ALERT_EMAILS=FILL_ME
 SUPPORT_EMAIL=support@nyumbapms.com
+HELLO_EMAIL=hello@nyumbapms.com
+SUPPORT_PHONE="0748 578 190"
 
 # SMS: your live Africa's Talking account. AT_SENDER_ID stays empty until NYUMBAPMS is approved.
 SMS_BACKEND=notifications.providers.sms.AfricasTalkingSmsSender

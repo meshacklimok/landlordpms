@@ -95,10 +95,13 @@ def test_thresholds_raise_problems(settings):
     assert any(line.startswith("database connections at") for line in lines)
     assert any(line.startswith("disk for") for line in lines)
     assert any("DB_ALERT_SIZE_MB" in line for line in lines)
-    # The size line carries the live size in MB, which can move between the two calls: compare it by its start.
-    stable = {line for line in lines if not line.startswith("database is ")}
+    # The size and disk lines carry live figures (MB, GB, % free) that can move between the two calls: compare
+    # them by their start.
+    live = ("database is ", "disk for ")
+    stable = {line for line in lines if not line.startswith(live)}
     assert stable <= set(alerts.current_problems())
     assert any(line.startswith("database is ") for line in alerts.current_problems())
+    assert any(line.startswith("disk for ") for line in alerts.current_problems())
 
 
 def test_long_running_never_shows_query_text():

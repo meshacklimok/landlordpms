@@ -4,7 +4,7 @@ name: Dependency audit
 # weekly, since new advisories appear for packages that have not changed.
 on:
   push:
-    branches: [master]
+    branches: [main, master]
     paths: ["requirements*.txt", ".github/workflows/audit.yml"]
   pull_request:
     paths: ["requirements*.txt", ".github/workflows/audit.yml"]

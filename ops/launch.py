@@ -145,14 +145,20 @@ def _providers() -> list[tuple[bool, str]]:
     results = []
     if settings.SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender":
         results.append((False, f"SMS goes to {settings.SMS_BACKEND.rsplit('.', 1)[-1]}: set SMS_BACKEND to "
-                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY."))
+                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY "
+                               "(Django admin > Platform settings, or the environment file)."))
     elif settings.AT_USERNAME == "sandbox":
         results.append((False, "AT_USERNAME is sandbox: put in your live Africa's Talking username and API key."))
     else:
         sender = settings.AT_SENDER_ID or "Africa's Talking's shared sender (AT_SENDER_ID is empty)"
         results.append((True, f"SMS go out through Africa's Talking as {settings.AT_USERNAME}, from {sender}."))
+    if settings.SMS_WALLET_ENFORCED:
+        results.append((True, "The SMS wallet is enforced: prepaid SMS are charged and stop at zero credit."))
+    else:
+        results.append((False, "SMS_WALLET_ENFORCED is off: every landlord's SMS go out free at our cost. Remove "
+                               "SMS_WALLET_ENFORCED=0 from the server's environment file."))
     live = DarajaCredentials.Environment.PRODUCTION
-    daraja = DarajaCredentials.objects.filter(environment=live).exclude(consumer_key_encrypted="")
+    daraja =DarajaCredentials.objects.filter(environment=live).exclude(consumer_key_encrypted="")
     registered = daraja.filter(urls_registered_at__isnull=False).count()
     if registered:
         results.append((True, f"Live M-Pesa: {registered} Paybill/Till(s) on Daraja with callbacks registered."))

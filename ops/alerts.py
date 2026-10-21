@@ -3,6 +3,7 @@ under attack (D-108 item 3)."""
 
 import datetime
 import hashlib
+import logging
 
 from django.conf import settings
 from django.core.cache import cache
@@ -11,9 +12,11 @@ from django.utils import timezone
 
 from core import jobs, watch
 from notifications.providers.mail import SYSTEM, mailer_for
+from notifications.providers.sms import send_sms
 
 from . import dbhealth, health
 
+logger = logging.getLogger(__name__)
 STATE_KEY = "ops:alert"
 REPEAT = datetime.timedelta(hours=6)
 
@@ -23,12 +26,27 @@ def recipients() -> list[str]:
     return emails or [email for _name, email in getattr(settings, "ADMINS", [])]
 
 
+def phones() -> list[str]:
+    return [p.strip() for p in getattr(settings, "OPS_ALERT_PHONES", "").split(",") if p.strip()]
+
+
 def current_problems(now=None) -> list[str]:
+    from console import alerts as console_alerts  # console imports ops, so not at the top
+
     lines = jobs.problems(now)
     lines += [f"health check failed: {name}" for name, ok in health.checks().items() if not ok]
     lines += dbhealth.problems()
     lines += watch.problems(now)
+    lines += console_alerts.problems(now)
     return lines
+
+
+def text(to: list[str], body: str) -> None:
+    for number in to:
+        try:
+            send_sms(number, body[:300])
+        except Exception:  # noqa: BLE001 - the email is the main alert; a failed text must not stop it
+            logger.exception("Alert SMS to %s failed", number)
 
 
 def check_and_alert(now: datetime.datetime | None = None) -> str:
@@ -44,12 +62,14 @@ def check_and_alert(now: datetime.datetime | None = None) -> str:
             return "quiet"
         if to:
             send_mail("[NyumbaPMS] Problem: " + lines[0][:80], "\n".join(lines), None, to, using=mailer_for(SYSTEM))
+        text(phones(), "NyumbaPMS: " + "; ".join(lines))
         cache.set(STATE_KEY, {"digest": digest, "at": now}, None)
         return "alert"
     if state:
         if to:
             send_mail("[NyumbaPMS] All clear", "Every job and health check is fine again.", None, to,
                       using=mailer_for(SYSTEM))
+        text(phones(), "NyumbaPMS: all clear, every check is fine again.")
         cache.delete(STATE_KEY)
         return "all clear"
     return "ok"

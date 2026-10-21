@@ -59,11 +59,13 @@ def test_late_failed_and_missing_jobs_are_problems():
     JobRun.objects.create(name="billing_daily", started_at=now, finished_at=now, ok=False, error="x")
     later = now + datetime.timedelta(hours=1)
     lines = jobs.problems(later)
-    assert len(lines) == 4  # billing_daily failed; send_due_messages, send_webhooks and run_data_exports are 60 minutes old
+    # billing_daily failed; four 30-minute jobs are 60 minutes old
+    assert len(lines) == 5
     assert any(line.startswith("billing_daily: last run failed") for line in lines)
     assert any(line.startswith("send_due_messages: no successful run") for line in lines)
     assert any(line.startswith("send_webhooks: no successful run") for line in lines)
     assert any(line.startswith("run_data_exports: no successful run") for line in lines)
+    assert any(line.startswith("send_owner_emails: no successful run") for line in lines)
     assert jobs.job_states(later)["billing_daily"] == "failed"
 
 

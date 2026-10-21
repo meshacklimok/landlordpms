@@ -186,3 +186,10 @@ def test_the_server_settings_file_has_every_setting_production_requires():
     assert required <= written, required - written
     for optional in ("OPENAI_API_KEY", "USSD_CODE", "LEGAL_NAME", "WHATSAPP_BACKEND", "VAPID_SUBJECT"):
         assert optional in written
+
+
+def test_the_launch_check_fails_when_the_sms_wallet_is_not_enforced(settings, db):
+    settings.SMS_WALLET_ENFORCED = False
+    assert any("SMS_WALLET_ENFORCED is off" in text for done, text in launch.checks() if not done)
+    settings.SMS_WALLET_ENFORCED = True
+    assert any("SMS wallet is enforced" in text for done, text in launch.checks() if done)

@@ -4,17 +4,21 @@
 MAILTO=""
 */5  *  *  *  *  sh /srv/landlordpms/deploy/run.sh send_due_messages
 */5  *  *  *  *  sh /srv/landlordpms/deploy/run.sh send_webhooks
+30   7  *  *  *  sh /srv/landlordpms/deploy/run.sh send_owner_digest
 */15 *  *  *  *  sh /srv/landlordpms/deploy/run.sh maintenance_alerts
 */5  *  *  *  *  sh /srv/landlordpms/deploy/run.sh run_data_exports
+*/5  *  *  *  *  sh /srv/landlordpms/deploy/run.sh send_owner_emails
 10   2  *  *  *  sh /srv/landlordpms/deploy/run.sh backup
 30   5  *  *  *  sh /srv/landlordpms/deploy/run.sh subscriptions_daily
 0    6  *  *  *  sh /srv/landlordpms/deploy/run.sh billing_daily
 30   6  *  *  *  sh /srv/landlordpms/deploy/run.sh mpesa_daily
 45   23 *  *  *  sh /srv/landlordpms/deploy/run.sh reports_daily
+0    7  1  *  *  sh /srv/landlordpms/deploy/run.sh monthly_reports
 0    3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_otp_codes
 15   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_import_previews
 30   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_assistant
 45   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_sessions
 50   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_messages
+30   4  *  *  1  sh /srv/landlordpms/deploy/run.sh reset_public_demo
 0    4  1  *  *  sh /srv/landlordpms/deploy/run.sh restore_test
 */15 *  *  *  *  sh /srv/landlordpms/deploy/run.sh check_jobs
