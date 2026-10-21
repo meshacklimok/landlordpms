@@ -59,7 +59,7 @@
   <div class="col-12{% if specs.places %} col-lg-7{% endif %}">
     <div class="chart-card">
       <h2>{% trans "Money received each month" %}</h2>
-      <p class="chart-sub">{% trans "Rent and other money received (charges, deposits, money not yet applied), with the rent billed as a line. The figures are in the table below." %}</p>
+      <p class="chart-sub">{% trans "Rent, utilities and other money received (other charges, deposits, money not yet applied), with the rent billed as a line. The figures are in the table below." %}</p>
       <div class="chart-box"><canvas data-chart="chart-income" role="img" aria-label="{% trans 'Money received each month against the rent billed. The same figures are in the By month table.' %}"></canvas></div>
     </div>
   </div>
@@ -81,8 +81,8 @@
 <div class="table-responsive mb-3">
 <table class="table table-sm align-middle small">
   <thead><tr>
-    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
-    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
+    <th>{% trans "Month" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Utilities billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
+    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Utilities received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
     <th class="text-end">{% trans "Rate" %}</th><th class="text-end">{% trans "Tax estimate" %}</th>
   </tr></thead>
   <tbody>
@@ -90,9 +90,11 @@
     <tr>
       <td class="text-nowrap">{{ row.label }}</td>
       <td class="text-end text-nowrap">{{ row.rent_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.utilities_billed|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.other_billed|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.received|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.rent_received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.utilities_received|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.taxable|money:pack.currency }}</td>
       <td class="text-end">{{ row.rate_label }}</td>
       <td class="text-end text-nowrap">{% if row.tax is not None %}{{ row.tax|money:pack.currency }}{% else %}—{% endif %}</td>
@@ -102,9 +104,11 @@
   <tfoot><tr class="fw-semibold">
     <td>{% trans "Total" %}</td>
     <td class="text-end text-nowrap">{{ pack.total.rent_billed|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.utilities_billed|money:pack.currency }}</td>
     <td class="text-end text-nowrap">{{ pack.total.other_billed|money:pack.currency }}</td>
     <td class="text-end text-nowrap">{{ pack.total.received|money:pack.currency }}</td>
     <td class="text-end text-nowrap">{{ pack.total.rent_received|money:pack.currency }}</td>
+    <td class="text-end text-nowrap">{{ pack.total.utilities_received|money:pack.currency }}</td>
     <td class="text-end text-nowrap">{{ pack.total.taxable|money:pack.currency }}</td>
     <td></td>
     <td class="text-end text-nowrap">{% if pack.total.tax is not None %}{{ pack.total.tax|money:pack.currency }}{% else %}—{% endif %}</td>
@@ -116,21 +120,23 @@
 <div class="table-responsive mb-3">
 <table class="table table-sm align-middle small">
   <thead><tr>
-    <th>{% trans "Property" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
-    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
+    <th>{% trans "Property" %}</th><th class="text-end">{% trans "Rent billed" %}</th><th class="text-end">{% trans "Utilities billed" %}</th><th class="text-end">{% trans "Other billed" %}</th>
+    <th class="text-end">{% trans "Received" %}</th><th class="text-end">{% trans "Rent received" %}</th><th class="text-end">{% trans "Utilities received" %}</th><th class="text-end">{% trans "Taxable rent" %}</th>
   </tr></thead>
   <tbody>
     {% for row in pack.properties %}
     <tr>
       <td>{{ row.label }}</td>
       <td class="text-end text-nowrap">{{ row.rent_billed|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.utilities_billed|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.other_billed|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.received|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.rent_received|money:pack.currency }}</td>
+      <td class="text-end text-nowrap">{{ row.utilities_received|money:pack.currency }}</td>
       <td class="text-end text-nowrap">{{ row.taxable|money:pack.currency }}</td>
     </tr>
     {% empty %}
-    <tr><td colspan="6" class="text-muted">{% trans "Nothing billed or received in this year." %}</td></tr>
+    <tr><td colspan="8" class="text-muted">{% trans "Nothing billed or received in this year." %}</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -1,0 +1,13 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Add rooms" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:rooms' property.public_id %}" class="small">← {{ property.name }}</a>
+  <h1 class="h4 mt-2">{% trans "Add rooms" %}</h1>
+  <p class="small text-muted">{% blocktrans with code=property.code %}A bed's payment reference is {{ code }}-&lt;room&gt;-&lt;bed letter&gt;, e.g. {{ code }}-R101-A. A room let whole uses {{ code }}-&lt;room&gt;.{% endblocktrans %}</p>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <button class="btn btn-primary w-100">{% trans "Add rooms" %}</button>
+  </form>
+</div>
+{% endblock %}

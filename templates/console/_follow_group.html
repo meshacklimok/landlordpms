@@ -1,0 +1,16 @@
+{% load i18n %}{% if items %}
+<h2 class="h6 mt-3{% if tone %} text-{{ tone }}{% endif %}">{{ title }} <span class="badge text-bg-light border">{{ items|length }}</span></h2>
+<ul class="list-unstyled small">
+{% for n in items %}
+  <li class="border-top py-2 d-flex flex-wrap gap-2 align-items-start">
+    <div class="flex-grow-1">
+      <strong>{% if n.owner_pk %}<a href="{% url 'console:owner' n.owner_pk %}">{{ n.organization.name }}</a>{% else %}{{ n.organization.name }}{% endif %}</strong>
+      {% if n.follow_up_on %}<span class="text-muted">· {{ n.follow_up_on|date:"j M Y" }}</span>{% endif %}
+      <div style="white-space:pre-wrap">{{ n.body }}</div>
+      <div class="text-muted">{{ n.author.full_name|default:"—" }}</div>
+    </div>
+    <form method="post">{% csrf_token %}<input type="hidden" name="note" value="{{ n.pk }}">
+      <button class="btn btn-sm btn-outline-success" name="action" value="done">{% trans "Mark done" %}</button></form>
+  </li>
+{% endfor %}
+</ul>{% endif %}

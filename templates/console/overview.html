@@ -2,6 +2,8 @@
 {% block title %}{% trans "Console overview" %}{% endblock %}
 {% block console_title %}{% trans "Overview" %}{% endblock %}
 {% block console %}
+{% if follow_ups_due %}<div class="alert alert-warning py-2 small" role="status">{% blocktrans count n=follow_ups_due %}{{ n }} owner follow-up is due.{% plural %}{{ n }} owner follow-ups are due.{% endblocktrans %} <a href="{% url 'console:owner_follow_ups' %}">{% trans "Open the list" %}</a></div>{% endif %}
+{% if problems_total %}<div class="alert alert-danger py-2 small" role="status">{% blocktrans count n=problems_total %}{{ n }} thing needs a retry or a look.{% plural %}{{ n }} things need a retry or a look.{% endblocktrans %} <a href="{% url 'console:problems' %}">{% trans "Open the queue" %}</a></div>{% endif %}
 {% with f=figures %}
 <div class="row g-3 mb-3">
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
@@ -25,7 +27,28 @@
     <div class="small">{% blocktrans with p=f.paying_organizations t=f.trials d=f.past_due %}{{ p }} paying · {{ t }} on trial · {{ d }} payment due{% endblocktrans %}</div>
   </div></div></div>
 </div>
-<p class="small text-muted">{% blocktrans with p=f.properties u=f.units l=f.active_leases %}Managing {{ p }} properties, {{ u }} units, {{ l }} active leases.{% endblocktrans %}</p>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Landlords paying us" %}</div>
+    <div class="h4 mb-0">{{ f.paying_organizations }}</div>
+    <div class="small">{% blocktrans with t=f.organizations %}of {{ t }} signed up{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Tenants served" %}</div>
+    <div class="h4 mb-0">{{ f.tenants_served }}</div>
+    <div class="small">{% blocktrans with n=f.tenants_housed %}{{ n }} in a lease now{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Rent collected, all time" %}</div>
+    <div class="h4 mb-0">{{ f.rent_all_time|money }}</div>
+    <div class="small">{% blocktrans with n=f.payments_all_time %}{{ n }} payments{% endblocktrans %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Units managed" %}</div>
+    <div class="h4 mb-0">{{ f.units }}</div>
+    <div class="small">{% blocktrans with p=f.properties l=f.active_leases %}{{ p }} properties · {{ l }} active leases{% endblocktrans %}</div>
+  </div></div></div>
+</div>
 
 <div class="row g-3 mb-3">
   <div class="col-lg-6">{% include "console/_chart.html" with spec="signups" title=_("Sign-ups by month") note=_("New organizations as bars, new people as a line.") label=_("The same figures are in the table below.") %}</div>

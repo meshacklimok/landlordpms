@@ -1,0 +1,21 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Agreement wording" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <h1 class="h4">{% trans "Agreement wording" %}</h1>
+  <p class="small text-muted">{% trans "These conditions are printed on every tenancy agreement, after the rent and deposit details. Change them to suit you; agreements made from now on use the new wording. Have an advocate review it." %}</p>
+  <p class="small">{% if custom %}<span class="badge text-bg-primary">{% trans "Your own wording" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Standard wording" %}</span>{% endif %}
+    <a class="ms-2" href="{% url 'leases:agreement_blank' %}">{% trans "Print a blank agreement" %}</a></p>
+  <div class="card shadow-sm mb-3"><div class="card-body">
+    <form method="post" novalidate>{% csrf_token %}
+      {% include "partials/form.html" %}
+      <p class="small text-muted">{% trans "Markers filled in from each lease:" %}
+        {% for m in markers %}<code>&#123;{{ m }}&#125;</code>{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+      <button class="btn btn-primary w-100">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+  {% if custom %}
+  <form method="post">{% csrf_token %}<button name="reset" value="1" class="btn btn-link px-0" data-confirm="{% trans 'Go back to the standard wording? Your own text will be removed.' %}">{% trans "Use the standard wording again" %}</button></form>
+  {% endif %}
+</div>
+{% endblock %}

@@ -41,8 +41,13 @@
         <dt>{% trans "ID" %}</dt><dd>{% if tenant.id_number %}{{ tenant.get_id_type_display }} {{ tenant.id_number }}{% else %}—{% endif %}</dd>
         <dt>{% trans "KRA PIN" %}</dt><dd>{{ tenant.kra_pin|default:"—" }}</dd>
         {% endif %}
+        {% if tenant.organization.org_type == "HOSTEL" %}
+        {% if tenant.student_number %}<dt>{% trans "Student number" %}</dt><dd>{{ tenant.student_number }}</dd>{% endif %}
+        {% if tenant.institution %}<dt>{% trans "College or university" %}</dt><dd>{{ tenant.institution }}</dd>{% endif %}
+        {% if tenant.course %}<dt>{% trans "Course" %}</dt><dd>{{ tenant.course }}{% if tenant.year_of_study %} · {% blocktrans with y=tenant.year_of_study %}year {{ y }}{% endblocktrans %}{% endif %}</dd>{% endif %}
+        {% endif %}
         {% if tenant.emergency_contact_name or tenant.emergency_contact_phone %}
-        <dt>{% trans "Emergency contact" %}</dt><dd>{{ tenant.emergency_contact_name }} {% if tenant.emergency_contact_phone %}<a href="tel:{{ tenant.emergency_contact_phone }}">{{ tenant.emergency_contact_phone }}</a>{% endif %}</dd>
+        <dt>{% if tenant.organization.org_type == "HOSTEL" %}{% trans "Parent or guardian" %}{% else %}{% trans "Emergency contact" %}{% endif %}</dt><dd>{{ tenant.emergency_contact_name }} {% if tenant.emergency_contact_phone %}<a href="tel:{{ tenant.emergency_contact_phone }}">{{ tenant.emergency_contact_phone }}</a>{% endif %}</dd>
         {% endif %}
       </dl>
       {% if tenant.notes %}<hr><p class="small mb-0 pre-line">{{ tenant.notes }}</p>{% endif %}

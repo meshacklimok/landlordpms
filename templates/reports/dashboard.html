@@ -34,7 +34,7 @@
   {% endif %}
 </div>
 
-<nav class="report-nav" aria-label="{% trans 'Sections' %}">
+<nav class="report-nav" data-section-nav {% if report_next %}data-next-report-url="{{ report_next.url }}" data-next-report-name="{{ report_next.label }}" {% endif %}data-menu-label="{% trans 'Jump to' %}" data-here-label="{% trans 'On this page' %}" data-close-label="{% trans 'Close' %}" data-next-label="{% trans 'Next' %}" data-top-label="{% trans 'Back to top' %}" aria-label="{% trans 'Sections' %}">
   <a href="#overview">{% trans "Overview" %}</a>
   <a href="#rent">{% trans "Rent" %}</a>
   {% if money %}<a href="#profit">{% trans "Profit" %}</a>{% endif %}

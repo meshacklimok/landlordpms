@@ -27,6 +27,10 @@
     {% for p in properties %}<option value="{{ p.public_id }}" {% if prop and p.pk == prop.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
   </select>
   {% endif %}
+  <select name="sort" class="form-select" aria-label="{% trans 'Sort' %}">
+    <option value="name" {% if sort == "name" %}selected{% endif %}>{% trans "Name A–Z" %}</option>
+    <option value="new" {% if sort == "new" %}selected{% endif %}>{% trans "Newest first" %}</option>
+  </select>
   {% if show_archived %}<input type="hidden" name="archived" value="on">{% endif %}
   <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
 </form>

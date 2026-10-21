@@ -10,6 +10,9 @@
     {% if form.non_field_errors %}<div class="alert alert-danger small">{{ form.non_field_errors|join:" " }}</div>{% endif %}
 
     <div class="card shadow-sm mb-3"><div class="card-body">
+      {% if presets %}<div class="small mb-2"><span class="text-body-secondary">{% trans "Start from:" %}</span>
+        {% for key, label, _text in presets %}<a class="btn btn-sm btn-outline-secondary ms-1 mb-1" href="?template={{ key }}">{{ label }}</a>{% endfor %}
+        <div class="form-text">{% trans "Fill in the [square brackets] before you send." %}</div></div>{% endif %}
       <label class="form-label fw-medium" for="ann-text">{% trans "Message" %}</label>
       <textarea name="text" id="ann-text" data-sms-box data-trim data-extra="{{ org_name|length|add:1 }}" data-count="#ann-count" data-count-format="{% trans '~{n} characters with your name · ~{parts} SMS each' %}" rows="4" maxlength="1000" class="form-control{% if form.text.errors %} is-invalid{% endif %}" required>{{ form.text.value|default:'' }}</textarea>
       {% for e in form.text.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
@@ -47,6 +50,18 @@
         <span class="small">{% trans "days" %}</span>
       </div>
       {% for e in form.owing_days.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
+      {% endif %}
+
+      {% if form.due %}
+      <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" name="due" id="ann-due" {% if form.due.value %}checked{% endif %}>
+          <label class="form-check-label" for="ann-due">{% trans "Only tenants whose rent falls due within" %}</label>
+        </div>
+        <input type="number" name="due_within" min="1" max="60" value="{{ form.due_within.value|default:7 }}" class="form-control form-control-sm{% if form.due_within.errors %} is-invalid{% endif %} w-5-5r" aria-label="{% trans 'Days until rent falls due' %}">
+        <span class="small">{% trans "days (not late yet)" %}</span>
+      </div>
+      {% for e in form.due_within.errors %}<div class="invalid-feedback d-block">{{ e }}</div>{% endfor %}
       {% endif %}
 
       <div class="d-flex flex-wrap align-items-center gap-2 mb-2">

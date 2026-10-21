@@ -7,7 +7,10 @@
     <h1 class="h4">{% trans "Report centre" %}</h1>
     <p class="lead-text">{% trans "Pick a report on the left to read it here. Step through them all with Previous and Next, or the arrow keys. You see only the reports your role allows." %}</p>
   </div>
-  <span class="code-tag">{% blocktrans with m=month|date:"F Y" %}Figures for {{ m }}{% endblocktrans %}</span>
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <span class="code-tag">{% blocktrans with m=month|date:"F Y" %}Figures for {{ m }}{% endblocktrans %}</span>
+    <a class="btn btn-sm btn-outline-primary" href="{% url 'reports:print_all' %}"><i class="bi bi-printer" aria-hidden="true"></i> {% trans "Print all reports (one PDF)" %}</a>
+  </div>
 </div>
 
 {% if current %}
@@ -47,9 +50,17 @@
     <div class="reader-frame-wrap" data-reader-wrap>
       <iframe class="reader-frame" data-reader-frame src="{{ current.url }}?pane=1" title="{{ current.label }}"></iframe>
       <div class="reader-failed" data-reader-failed>
-        <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
-        <p class="mb-2">{% trans "This report could not be shown here. Your login may have ended, or the report failed to load." %}</p>
-        <a class="btn btn-sm btn-primary" data-reader-full href="{{ current.url }}">{% trans "Open it on its own page" %}</a>
+        <span class="state-icon is-warn" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></span>
+        <h3>{% trans "This report could not be shown here" %}</h3>
+        <p data-reader-reason
+           data-text-login="{% trans 'Your login has ended. Sign in again and this report will open.' %}"
+           data-text-server="{% trans 'Something went wrong on our side while building this report. Try again in a moment; if it keeps happening, tell support which report it was.' %}"
+           data-text-offline="{% trans 'The report could not be reached. Check your connection and try again.' %}">{% trans "Your login may have ended, or the report failed to load." %}</p>
+        <div class="reader-failed-actions">
+          <a class="btn btn-primary" data-reader-signin hidden href="{% url 'accounts:login' %}?next={{ request.path|urlencode }}%3Fr%3D{{ current.key|urlencode }}">{% trans "Sign in again" %}</a>
+          <button type="button" class="btn btn-primary" data-reader-retry><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> {% trans "Try again" %}</button>
+          <a class="btn btn-outline-secondary" data-reader-full href="{{ current.url }}">{% trans "Open it on its own page" %}</a>
+        </div>
       </div>
       <div class="reader-loading" aria-hidden="true"><span class="spinner-border spinner-border-sm" role="presentation"></span> {% trans "Loading the report…" %}</div>
     </div>
@@ -59,6 +70,23 @@
     </div>
     <p class="visually-hidden" aria-live="polite" data-reader-status></p>
   </section>
+
+  {# The floating button and the sheet behind it: every report. Sits here, not in the frame, so it stays on screen. #}
+  <button type="button" class="report-nav-menu report-fab" data-bs-toggle="offcanvas" data-bs-target="#reader-sheet" aria-controls="reader-sheet" aria-label="{% trans 'Jump to' %}" title="{% trans 'Jump to' %}"><i class="bi bi-list" aria-hidden="true"></i></button>
+  <div class="offcanvas offcanvas-start report-sheet d-print-none" tabindex="-1" id="reader-sheet" aria-label="{% trans 'Jump to' %}" data-reader-sheet>
+    <div class="offcanvas-header">
+      <a class="app-brand p-0" href="{% url 'accounts:home' %}" id="reader-sheet-title">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span></span></a>
+      <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="{% trans 'Close' %}"></button>
+    </div>
+    <div class="offcanvas-body">
+      {% for title, items in groups %}
+      <div class="app-nav-label">{{ title }}</div>
+      <ul class="app-nav">
+        {% for r in items %}<li><a class="app-nav-link{% if r.key == current.key %} active{% endif %}" href="{% url 'reports:centre' %}?r={{ r.key }}" data-report="{{ r.key }}" data-bs-dismiss="offcanvas"{% if r.key == current.key %} aria-current="page"{% endif %}><i class="bi {{ r.icon }}" aria-hidden="true"></i>{{ r.label }}</a></li>{% endfor %}
+      </ul>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 {{ reader|json_script:"reader-reports" }}
 {% else %}

@@ -3,6 +3,10 @@
 {% block console_title %}{% trans "Owners, their teams and their units" %}{% endblock %}
 {% block console %}
 {% with d=data %}
+<div class="d-flex flex-wrap gap-2 mb-3" role="group" aria-label="{% trans 'Owners that need attention' %}">
+  <a class="btn btn-sm {% if not segment %}btn-dark{% else %}btn-outline-secondary{% endif %}" href="?{{ segment_query }}">{% trans "All" %}</a>
+  {% for g in segments %}<a class="btn btn-sm {% if segment == g.key %}btn-dark{% else %}btn-outline-secondary{% endif %}{% if not g.count %} text-muted{% endif %}" href="?{% if segment_query %}{{ segment_query }}&{% endif %}segment={{ g.key }}"{% if segment == g.key %} aria-current="true"{% endif %}>{{ g.label }} <span class="badge text-bg-light border">{{ g.count }}</span></a>{% endfor %}
+</div>
 <div class="row g-3 mb-3">
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="small text-muted">{% trans "Owners shown" %}</div><div class="h4 mb-0">{{ d.owners }}</div>
@@ -17,23 +21,56 @@
     <div class="small">{% blocktrans with a=d.avg_team %}{{ a }} helpers per owner on average{% endblocktrans %}</div>
   </div></div></div>
   <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Monthly value (shown owners)" %}</div><div class="h4 mb-0">KES {{ d.value_total|floatformat:0 }}</div>
+    <div class="small">{% blocktrans with p=d.paying_owners %}{{ p }} paying{% endblocktrans %}{% if d.top5_share is not None %} · {% blocktrans with t=d.top5_share %}top 5 are {{ t }}%{% endblocktrans %}{% endif %}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
     <div class="small text-muted">{% trans "Two-step login on" %}</div><div class="h4 mb-0">{% if d.mfa_share is not None %}{{ d.mfa_share }}%{% else %}—{% endif %}</div>
     <div class="small">{% blocktrans with n=d.never_used v=d.verified_email %}{{ n }} never used it · {{ v }} verified emails{% endblocktrans %}</div>
   </div></div></div>
 </div>
 
 <div class="row g-3 mb-3">
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Average health score" %}</div><div class="h4 mb-0">{% if d.avg_score is not None %}{{ d.avg_score }}{% else %}—{% endif %}</div>
+    <div class="small">{% for name, n in d.health_bands %}{{ name }}: {{ n }}{% if not forloop.last %} · {% endif %}{% endfor %}</div>
+  </div></div></div>
+  <div class="col-md-6"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted mb-1">{% trans "Where owners are stuck in setup" %}</div>
+    <div class="small d-flex flex-wrap gap-2">{% for name, n in d.stuck %}<span>{{ name }}: <strong>{{ n }}</strong></span>{% endfor %}</div>
+  </div></div></div>
+</div>
+<div class="mb-3">{% include "console/_chart.html" with spec="joined" title=_("Owners joined each month") note=_("How many joined, and how many of those used it in the last 30 days.") label=_("Counts are in the figures below.") %}</div>
+<div class="row g-3 mb-3">
   <div class="col-lg-3">{% include "console/_chart.html" with spec="team" title=_("Team size") note=_("Owners by how many people they have added.") label=_("Counts are in the table below.") %}</div>
   <div class="col-lg-3">{% include "console/_chart.html" with spec="top" title=_("Most units") note=_("The ten owners serving the most units.") label=_("Counts are in the table below.") %}</div>
   <div class="col-lg-3">{% include "console/_chart.html" with spec="plans" title=_("Plans") note=_("Owners by the plan they are on.") label=_("Counts are in the table below.") %}</div>
   <div class="col-lg-3">{% include "console/_chart.html" with spec="activity" title=_("When they last used it") note=_("Owners by days since anything happened in their organization.") label=_("Counts are in the table below.") %}</div>
 </div>
+<div class="row g-3 mb-3">
+  <div class="col-lg-5">{% include "console/_chart.html" with spec="counties" title=_("Counties") note=_("Organizations with a property in each county (top 10).") label=_("The full list is in the table beside it.") %}</div>
+  <div class="col-lg-7"><div class="card shadow-sm h-100"><div class="card-body">
+    <h2 class="h6">{% trans "Where they are" %}</h2>
+    <div class="row g-3 small">
+      <div class="col-md-6"><div class="table-responsive" style="max-height:18rem;overflow:auto"><table class="table table-sm mb-0">
+        <thead><tr><th>{% trans "County" %}</th><th class="text-end">{% trans "Orgs" %}</th><th class="text-end">{% trans "Units" %}</th></tr></thead>
+        <tbody>{% for c in places.counties %}<tr><td><a href="?{% if segment_query %}{{ segment_query }}&{% endif %}county={{ c.key }}">{{ c.name }}</a></td><td class="text-end">{{ c.orgs }}</td><td class="text-end">{{ c.units }}</td></tr>{% empty %}<tr><td colspan="3" class="text-muted">—</td></tr>{% endfor %}</tbody>
+      </table></div></div>
+      <div class="col-md-6"><div class="table-responsive" style="max-height:18rem;overflow:auto"><table class="table table-sm mb-0">
+        <thead><tr><th>{% trans "Town or area" %}</th><th class="text-end">{% trans "Orgs" %}</th><th class="text-end">{% trans "Units" %}</th></tr></thead>
+        <tbody>{% for t in places.towns %}<tr><td>{{ t.name }}{% if t.county %}<div class="text-muted">{{ t.county }}</div>{% endif %}</td><td class="text-end">{{ t.orgs }}</td><td class="text-end">{{ t.units }}</td></tr>{% empty %}<tr><td colspan="3" class="text-muted">{% trans "No town or area entered yet." %}</td></tr>{% endfor %}</tbody>
+      </table></div></div>
+    </div>
+    {% if places.no_property %}<p class="small text-muted mb-0 mt-2">{% blocktrans with n=places.no_property %}{{ n }} organizations have no property yet.{% endblocktrans %}</p>{% endif %}
+  </div></div></div>
+</div>
 <details class="mb-3 small"><summary>{% trans "The figures behind the charts" %}</summary>
+  <div class="table-responsive"><table class="table table-sm mt-1"><thead><tr><th>{% trans "Month" %}</th><th class="text-end">{% trans "Joined" %}</th><th class="text-end">{% trans "Still active" %}</th></tr></thead><tbody>{% for l, j, a in trend.table %}<tr><td>{{ l }}</td><td class="text-end">{{ j }}</td><td class="text-end">{{ a }}</td></tr>{% endfor %}</tbody></table></div>
   <div class="row g-3 mt-1">
-    <div class="col-md-3"><table class="table table-sm"><tbody>{% for name, n in d.sizes %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
-    <div class="col-md-3"><table class="table table-sm"><tbody>{% for name, n in d.top_units %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
-    <div class="col-md-3"><table class="table table-sm"><tbody>{% for name, n in d.plans %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
-    <div class="col-md-3"><table class="table table-sm"><tbody>{% for name, n in d.bands %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
+    <div class="col-md-3"><div class="table-responsive"><table class="table table-sm"><tbody>{% for name, n in d.sizes %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>
+    <div class="col-md-3"><div class="table-responsive"><table class="table table-sm"><tbody>{% for name, n in d.top_units %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>
+    <div class="col-md-3"><div class="table-responsive"><table class="table table-sm"><tbody>{% for name, n in d.plans %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>
+    <div class="col-md-3"><div class="table-responsive"><table class="table table-sm"><tbody>{% for name, n in d.bands %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div></div>
   </div>
 </details>
 {% endwith %}
@@ -41,38 +78,52 @@
 <form method="get" class="d-flex flex-wrap gap-2 mb-3" aria-label="{% trans 'Filter owners' %}">
   <label class="visually-hidden" for="id_q">{% trans "Search" %}</label>
   <input type="search" name="q" id="id_q" class="form-control form-control-sm w-auto" placeholder="{% trans 'Name, email, phone or organization' %}" value="{{ form.q.value|default:'' }}">
-  {{ form.status }} {{ form.plan }} {{ form.org_type }} {{ form.activity }} {{ form.email }} {{ form.sort }}
+  {{ form.status }} {{ form.plan }} {{ form.org_type }} {{ form.activity }} {{ form.email }} {{ form.segment }} {{ form.step }} {{ form.county }} {{ form.sort }}
   <button class="btn btn-sm btn-outline-secondary">{% trans "Show" %}</button>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:owners_export' %}{% if query %}?{{ query }}{% endif %}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Download (CSV)" %}</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:owner_follow_ups' %}">{% trans "Follow-ups" %}</a>
+  <a class="btn btn-sm btn-primary" href="{% url 'console:owner_new' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Add owner" %}</a>
   <a class="btn btn-sm btn-outline-secondary" href="{% url 'console:owner_emails' %}">{% trans "Emails sent" %}</a>
 </form>
 
-<form method="get" action="{% url 'console:owner_email' %}">
+<form method="post" action="{% url 'console:owner_bulk' %}">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}">
   <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
-    <button class="btn btn-sm btn-primary"><i class="bi bi-envelope" aria-hidden="true"></i> {% trans "Email the ticked owners" %}</button>
+    <button class="btn btn-sm btn-primary" formaction="{% url 'console:owner_email' %}"><i class="bi bi-envelope" aria-hidden="true"></i> {% trans "Email the ticked owners" %}</button>
     <a class="btn btn-sm btn-outline-primary" href="{% url 'console:owner_email' %}{% if query %}?{{ query }}{% endif %}">{% blocktrans with n=count %}Email all {{ n }} shown{% endblocktrans %}</a>
     <span class="small text-muted">{% trans "Owners with no email are skipped." %}</span>
   </div>
+  <details class="mb-2 small"><summary>{% trans "Add one note to the ticked owners" %}</summary>
+    <div class="d-flex flex-wrap gap-2 mt-2 align-items-start">
+      <label class="visually-hidden" for="bulk_body">{% trans "Note" %}</label>
+      <textarea name="body" id="bulk_body" rows="2" maxlength="2000" class="form-control form-control-sm w-auto" style="min-width:18rem" placeholder="{% trans 'Note for every ticked owner' %}"></textarea>
+      <label class="visually-hidden" for="bulk_date">{% trans "Follow up on" %}</label>
+      <input type="date" name="follow_up_on" id="bulk_date" class="form-control form-control-sm w-auto">
+      <button class="btn btn-sm btn-outline-primary">{% trans "Add the note" %}</button>
+    </div>
+  </details>
   <div class="table-responsive"><table class="table table-sm align-middle small">
     <thead><tr>
       <th><span class="visually-hidden">{% trans "Pick" %}</span></th>
       <th>{% trans "Owner" %}</th><th>{% trans "Email" %}</th><th>{% trans "Organization" %}</th><th>{% trans "Plan" %}</th>
-      <th class="text-end">{% trans "Team" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Leases" %}</th><th class="text-end">{% trans "Last active" %}</th>
+      <th class="text-end">{% trans "Team" %}</th><th class="text-end">{% trans "Units" %}</th><th class="text-end">{% trans "Value / month" %}</th><th class="text-end">{% trans "Leases" %}</th><th>{% trans "Setup" %}</th><th class="text-end">{% trans "Health" %}</th><th class="text-end">{% trans "Last active" %}</th>
     </tr></thead>
     <tbody>
     {% for r in page %}
       <tr>
         <td>{% if r.email %}<input type="checkbox" class="form-check-input" name="m" value="{{ r.pk }}" aria-label="{% blocktrans with n=r.user.full_name %}Pick {{ n }}{% endblocktrans %}">{% endif %}</td>
-        <td>{{ r.user.full_name }}<div class="text-muted">{{ r.user.phone }}</div></td>
+        <td><a href="{% url 'console:owner' r.pk %}">{{ r.user.full_name }}</a><div class="text-muted">{{ r.user.phone }}</div></td>
         <td class="text-break">{% if r.email %}<a href="mailto:{{ r.email }}">{{ r.email }}</a>{% if not r.user.email_verified_at %} <span class="badge text-bg-light border">{% trans "unverified" %}</span>{% endif %}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-        <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}<div class="text-muted">{{ r.org.get_org_type_display }}</div></td>
+        <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}<div class="text-muted">{{ r.org.get_org_type_display }}</div>{% for t in r.tags %}<span class="badge text-bg-light border">{{ t }}</span> {% endfor %}</td>
         <td>{{ r.plan }} <span class="text-muted">{{ r.sub_status }}</span></td>
         <td class="text-end">{{ r.team }}</td>
-        <td class="text-end">{{ r.units }}<div class="text-muted">{% blocktrans with p=r.properties %}{{ p }} properties{% endblocktrans %}</div></td>
+        <td class="text-end">{{ r.units }}{% if r.limit %} <span class="text-muted">/ {{ r.limit }}</span>{% endif %}<div class="text-muted">{% blocktrans with p=r.properties %}{{ p }} properties{% endblocktrans %}</div></td>
+        <td class="text-end text-nowrap">{% if r.value %}KES {{ r.value }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
         <td class="text-end">{{ r.leases }}</td>
+        <td class="text-nowrap">{{ r.steps_done }}/{{ r.steps_total }}{% if r.stuck_label %}<div class="text-muted">{{ r.stuck_label }}</div>{% else %}<div class="text-success">{% trans "Done" %}</div>{% endif %}</td>
+        <td class="text-end"><span class="badge {% if r.band == 'healthy' %}text-bg-success{% elif r.band == 'watch' %}text-bg-warning{% else %}text-bg-danger{% endif %}" title="{{ r.band_label }}">{{ r.score }}</span></td>
         <td class="text-end text-nowrap">{% if r.idle_days is None %}{% trans "Never" %}{% elif r.idle_days == 0 %}{% trans "Today" %}{% else %}{% blocktrans with d=r.idle_days %}{{ d }} days ago{% endblocktrans %}{% endif %}</td>
       </tr>
-    {% empty %}<tr><td colspan="9" class="text-muted">{% trans "No owners match." %}</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="12" class="text-muted">{% trans "No owners match." %}</td></tr>{% endfor %}
     </tbody>
   </table></div>
 </form>

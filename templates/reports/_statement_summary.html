@@ -2,6 +2,7 @@
 <div class="table-responsive"><table class="table table-sm small mb-0">
   <tbody>
     <tr><td>{% trans "Rent collected" %}</td><td class="text-end text-nowrap">{{ st.rent|money:cur }}</td></tr>
+    <tr><td>{% trans "Utilities collected (water, electricity)" %}</td><td class="text-end text-nowrap">{{ st.utilities|money:cur }}</td></tr>
     <tr><td>{% trans "Other charges collected" %}</td><td class="text-end text-nowrap">{{ st.other|money:cur }}</td></tr>
     <tr class="fw-semibold"><td>{% trans "Total collected" %}</td><td class="text-end text-nowrap">{{ st.collected|money:cur }}</td></tr>
     {% if st.has_fee %}<tr><td>{% trans "Less management fee" %}</td><td class="text-end text-nowrap">−{{ st.fee|money:cur }}</td></tr>{% endif %}

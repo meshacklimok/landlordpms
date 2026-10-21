@@ -231,6 +231,7 @@
     {% endif %}
     <p class="small mb-0">{% if assistant.on or assistant.asked %}{% blocktrans count n=assistant.asked %}{{ n }} question asked of the assistant this month{% plural %}{{ n }} questions asked of the assistant this month{% endblocktrans %}{% if assistant.tenants %} <span class="text-muted">{% blocktrans with s=assistant.staff t=assistant.tenants %}(staff {{ s }}, tenants {{ t }}){% endblocktrans %}</span>{% endif %}.{% else %}{% trans "The assistant is off." %}{% endif %}</p>
     <p class="small text-muted mb-0">{% trans "Photos and questions are read by OpenAI. A scan that fails is not counted." %}</p>
+    {% if sms.own_sender_allowed %}
     <hr class="sub-rule">
     <p class="sub-eyebrow" id="sender-name">{% trans "SMS sender name" %}</p>
     {% with s=org %}
@@ -265,6 +266,21 @@
       {% endif %}
     {% endif %}
     {% endwith %}
+    {% endif %}
+    {% if can_manage and lapse_roles %}
+    <hr class="sub-rule">
+    <p class="sub-eyebrow" id="lapse-notify">{% trans "Who is told if the subscription lapses" %}</p>
+    <p class="small mb-2">{% trans "If payment is missed the account becomes read-only after the grace days. Owners are always told, in the app, and again when it is paid. Tick the other roles that should be told too, so nobody is surprised when Save stops working. Tenants are never told." %}</p>
+    <form method="post" action="{% url 'subscriptions:lapse_notify' %}">{% csrf_token %}
+      {% for item in lapse_roles %}
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="roles" value="{{ item.role.public_id }}" id="lapse-role-{{ item.role.pk }}"{% if item.on %} checked{% endif %}>
+        <label class="form-check-label" for="lapse-role-{{ item.role.pk }}">{{ item.role.name }}</label>
+      </div>
+      {% endfor %}
+      <button class="btn btn-sm btn-outline-primary mt-2">{% trans "Save" %}</button>
+    </form>
+    {% endif %}
 </div></div></div>
 </div>
 

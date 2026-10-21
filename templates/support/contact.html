@@ -2,7 +2,11 @@
 {% block title %}{% trans "Contact support" %}{% endblock %}
 {% block content %}
 <div class="mx-auto mw-640">
-<h1 class="h4 mb-3">{% trans "Contact support" %}</h1>
+<header class="doc-head">
+  <p class="about-eyebrow">{% trans "Support" %}</p>
+  <h1 class="doc-title">{% trans "Contact support" %}</h1>
+  <p class="doc-lead">{% trans "Tell us what you need and we will reply within one working day. Include the unit, tenant or payment concerned if there is one." %}</p>
+</header>
 <div class="card shadow-sm"><div class="card-body">
 <form method="post" enctype="multipart/form-data" novalidate>{% csrf_token %}
   {% for error in form.non_field_errors %}<div class="alert alert-danger">{{ error }}</div>{% endfor %}
@@ -18,12 +22,13 @@
     {% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}
   </div>
   {% endfor %}
-  <button class="btn btn-primary">{% trans "Send" %}</button>
+  <button class="btn btn-primary">{% trans "Send message" %}</button>
 </form>
 </div></div>
-<p class="small text-muted mt-3">{% trans "We reply within one working day." %}
+<p class="small text-muted mt-3">
 {% if support_email %}{% trans "Email" %} <a href="mailto:{{ support_email }}">{{ support_email }}</a>.{% endif %}
-{% if support_whatsapp %}<a href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">WhatsApp</a>.{% endif %}
+{% if hello_email %}{% trans "For sales and general questions:" %} <a href="mailto:{{ hello_email }}">{{ hello_email }}</a>.{% endif %}
+{% if support_whatsapp %}<a href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">WhatsApp</a>{% if support_phone %} {{ support_phone }}{% endif %}.{% endif %}
 <a href="{% url 'support:help' %}">{% trans "Help pages" %}</a></p>
 </div>
 {% endblock %}

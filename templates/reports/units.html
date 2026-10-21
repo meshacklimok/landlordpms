@@ -105,7 +105,7 @@
           {% elif row.status == "reserved" %}{% trans "Reserved" %}{% elif row.status == "maintenance" %}{% trans "Under maintenance" %}{% else %}{% trans "Empty" %}{% endif %}
         </div>
       </td>
-      <td><div class="unit-months">{% for c in row.cells %}<span class="unit-month {{ c.state|state_class }}" title="{{ c.month|date:'M Y' }}: {{ c.label }}{% if c.expected %} · {{ c.collected|money:cur }} / {{ c.expected|money:cur }}{% endif %}"><span aria-hidden="true">{{ c.state|state_mark }}</span><span class="visually-hidden">{{ c.month|date:'M Y' }}: {{ c.label }}</span></span>{% endfor %}</div></td>
+      <td><div class="unit-months">{% unit_months row.cells cur %}</div></td>
       <td class="text-end num text-nowrap">{% if row.rent %}{{ row.rent|money:cur }}{% if row.rent_since %}<div class="text-body-secondary">{% blocktrans with d=row.rent_since|date:"M Y" %}since {{ d }}{% endblocktrans %}</div>{% endif %}{% else %}—{% endif %}</td>
       <td class="text-end num text-nowrap">{% if row.unit.list_rent %}{{ row.unit.list_rent|money:cur }}{% if row.below_asking %}<div class="text-warning-emphasis">−{{ row.below_asking|money:cur }}</div>{% endif %}{% else %}—{% endif %}</td>
       <td class="text-end">{{ row.rate|percent }}<div class="text-body-secondary">{% blocktrans with p=row.months_paid_in_time b=row.months_billed %}{{ p }}/{{ b }} in time{% endblocktrans %}</div></td>

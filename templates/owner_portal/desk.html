@@ -1,0 +1,81 @@
+{% extends "base.html" %}{% load i18n money %}
+{% block title %}{% trans "Talk to the office" %}{% endblock %}
+{% block content %}{% with cur=currency %}
+<a href="{% url 'owner_portal:account' account.public_id %}" class="small">← {{ owner.name }}</a>
+<h1 class="h4 mt-1 mb-3">{% trans "Talk to the office" %}</h1>
+
+<div class="row g-3">
+  <div class="col-lg-6">
+    <div class="card mb-3"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Your approval is asked" %}</h2>
+      {% for a in approvals %}
+      <div class="border-bottom py-2 small">
+        <div class="d-flex justify-content-between gap-2">
+          <div><strong>{{ a.get_kind_display }}</strong>: {{ a.title }}<br>
+            <span class="text-muted">{{ a.property.name }}{% if a.amount %} · {{ a.amount|money:cur }}{% endif %}{% if a.note %} · {{ a.note }}{% endif %}</span></div>
+          <span class="badge text-bg-{% if a.status == 'APPROVED' %}success{% elif a.status == 'DECLINED' %}danger{% elif a.status == 'ASKED' %}warning{% else %}secondary{% endif %} align-self-start">{{ a.get_status_display }}</span>
+        </div>
+        {% if a.status == asked %}
+        <form method="post" action="{% url 'owner_portal:desk_answer' account.public_id a.public_id %}" class="mt-2">{% csrf_token %}
+          <input class="form-control form-control-sm mb-2" name="note" maxlength="300" placeholder="{% trans 'Add a note (optional)' %}" aria-label="{% trans 'Note' %}">
+          <button class="btn btn-sm btn-success" name="decision" value="approve">{% trans "Approve" %}</button>
+          <button class="btn btn-sm btn-outline-danger" name="decision" value="decline">{% trans "Decline" %}</button>
+        </form>
+        {% elif a.answer_note %}<div class="text-muted">“{{ a.answer_note }}”</div>{% endif %}
+      </div>
+      {% empty %}<p class="small text-muted mb-0">{% trans "Nothing is waiting for you." %}</p>{% endfor %}
+    </div></div>
+
+    <div class="card"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Where to send your money" %}</h2>
+      {% if confirmed %}<p class="small mb-2">{{ confirmed.get_method_display }} · {{ confirmed.account_name }} · {% if confirmed.bank_name %}{{ confirmed.bank_name }} {% endif %}{{ confirmed.masked }} <span class="badge text-bg-success">{% trans "Confirmed" %}</span></p>{% endif %}
+      {% if pending %}<p class="small mb-2">{{ pending.get_method_display }} · {{ pending.account_name }} · {{ pending.masked }} <span class="badge text-bg-warning">{% trans "Waiting to be confirmed" %}</span></p>{% endif %}
+      <form method="post" action="{% url 'owner_portal:desk_detail' account.public_id %}" class="row g-2 mb-3">{% csrf_token %}
+        <div class="col-6"><label class="form-label small mb-0" for="d-method">{% trans "Method" %}</label>
+          <select class="form-select form-select-sm" id="d-method" name="method">{% for v, l in methods %}<option value="{{ v }}">{{ l }}</option>{% endfor %}</select></div>
+        <div class="col-6"><label class="form-label small mb-0" for="d-name">{% trans "Name on the account" %}</label>
+          <input class="form-control form-control-sm" id="d-name" name="account_name" maxlength="120" required></div>
+        <div class="col-6"><label class="form-label small mb-0" for="d-number">{% trans "Phone or account number" %}</label>
+          <input class="form-control form-control-sm" id="d-number" name="account_number" maxlength="40" required></div>
+        <div class="col-6"><label class="form-label small mb-0" for="d-bank">{% trans "Bank (bank transfer only)" %}</label>
+          <input class="form-control form-control-sm" id="d-bank" name="bank_name" maxlength="80"></div>
+        <div class="col-12"><button class="btn btn-sm btn-outline-primary">{% trans "Send for confirmation" %}</button>
+          <span class="small text-muted ms-2">{% trans "The office confirms these with you before they are used." %}</span></div>
+      </form>
+      <h3 class="h6">{% trans "Ask to be paid" %}</h3>
+      {% if open_request %}
+        <p class="small">{% trans "Waiting for the office" %}{% if open_request.amount %}: {{ open_request.amount|money:cur }}{% endif %}</p>
+        <form method="post" action="{% url 'owner_portal:desk_request_withdraw' account.public_id %}">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary">{% trans "Withdraw" %}</button></form>
+      {% elif confirmed %}
+        <form method="post" action="{% url 'owner_portal:desk_request' account.public_id %}" class="row g-2">{% csrf_token %}
+          <div class="col-5"><label class="form-label small mb-0" for="r-amount">{% trans "Amount (blank: all that is due)" %}</label>
+            <input class="form-control form-control-sm" id="r-amount" name="amount" inputmode="decimal"></div>
+          <div class="col-7"><label class="form-label small mb-0" for="r-note">{% trans "Note" %}</label>
+            <input class="form-control form-control-sm" id="r-note" name="note" maxlength="300"></div>
+          <div class="col-12"><button class="btn btn-sm btn-primary">{% trans "Ask the office to pay me" %}</button></div>
+        </form>
+      {% else %}<p class="small text-muted mb-0">{% trans "You can ask to be paid once your payout details are confirmed." %}</p>{% endif %}
+      {% if requests %}<ul class="list-unstyled small mt-2 mb-0">{% for r in requests %}<li>{{ r.created_at|date:"d M Y" }} · {% if r.amount %}{{ r.amount|money:cur }} · {% endif %}{{ r.get_status_display }}{% if r.answer_note %} · {{ r.answer_note }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+    </div></div>
+  </div>
+
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body p-3">
+      <h2 class="h6">{% trans "Messages" %}</h2>
+      <div class="mb-3" style="max-height:360px;overflow:auto">
+        {% for m in thread %}
+        <div class="small mb-2 {% if m.side == 'OWNER' %}text-end{% endif %}">
+          <div class="d-inline-block rounded p-2 {% if m.side == 'OWNER' %}bg-primary-subtle{% else %}bg-body-secondary{% endif %}" style="max-width:85%;white-space:pre-wrap">{{ m.body }}</div>
+          <div class="text-muted" style="font-size:.75rem">{% if m.side == 'STAFF' %}{% trans "Office" %} · {% endif %}{{ m.created_at|date:"d M, H:i" }}</div>
+        </div>
+        {% empty %}<p class="small text-muted">{% trans "No messages yet." %}</p>{% endfor %}
+      </div>
+      <form method="post" action="{% url 'owner_portal:desk_send' account.public_id %}">{% csrf_token %}
+        <label class="form-label small" for="o-body">{% trans "Write to the office" %}</label>
+        <textarea class="form-control mb-2" id="o-body" name="body" rows="3" maxlength="{{ max_length }}" required></textarea>
+        <button class="btn btn-sm btn-primary">{% trans "Send" %}</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+{% endwith %}{% endblock %}

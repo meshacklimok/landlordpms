@@ -9,7 +9,7 @@
   <tbody>{% for e in items %}<tr>
     <td><a href="{% url 'console:owner_email_detail' e.pk %}">{{ e.subject }}</a></td>
     <td class="text-nowrap">{{ e.created_at|date:"j M Y H:i" }}</td><td>{{ e.sent_by.full_name|default:"—" }}</td>
-    <td>{{ e.audience }}</td><td class="text-end">{{ e.sent }}</td><td class="text-end">{{ e.failed }}</td>
+    <td>{{ e.audience }}</td><td class="text-end">{{ e.sent }}{% if not e.is_done %} <span class="text-muted">/ {{ e.recipients }}</span>{% endif %}</td><td class="text-end">{{ e.failed }}</td>
   </tr>{% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nothing sent yet." %}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endblock %}

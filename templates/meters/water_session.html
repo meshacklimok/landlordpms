@@ -49,6 +49,11 @@
 </div></section>
 
 {% if can_record and has_meters %}
+{% if next_to_read %}
+<a class="btn btn-primary btn-lg w-100 water-next mb-3" href="{% url 'meters:quick' next_to_read.public_id %}">
+  <i class="bi bi-droplet" aria-hidden="true"></i> {% blocktrans with m=next_to_read.label %}Read next: {{ m }}{% endblocktrans %}
+  <span class="water-next-left">{% blocktrans count n=counts.missing %}{{ n }} left{% plural %}{{ n }} left{% endblocktrans %}</span></a>
+{% endif %}
 <h2 class="h6 mb-2">{% trans "Record readings" %}</h2>
 <div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-2 mb-4">
   <div class="col"><a class="water-way" href="{% url 'meters:round' property.public_id %}?utility=WATER">
@@ -123,7 +128,7 @@
           {% if row.status == "approved" %}<span class="wstate wstate-approved">{% trans "Approved" %}</span>
           {% elif row.status == "waiting" %}<span class="wstate wstate-waiting">{% trans "Waiting" %}</span>
           {% elif row.status == "flagged" %}<a class="wstate wstate-flagged" href="{% url 'meters:detail' row.meter.public_id %}">{% trans "Flagged" %}: {{ row.reading.flag_labels|join:", " }}</a>
-          {% elif row.status == "missing" %}{% if can_record %}<a class="btn btn-sm btn-outline-primary py-0" href="{% url 'meters:quick' row.meter.public_id %}">{% trans "Read now" %}</a>{% else %}<span class="wstate wstate-missing">{% trans "Not read" %}</span>{% endif %}
+          {% elif row.status == "missing" %}{% if can_record %}<a class="btn btn-sm btn-outline-primary water-read-now" href="{% url 'meters:quick' row.meter.public_id %}">{% trans "Read now" %}</a>{% else %}<span class="wstate wstate-missing">{% trans "Not read" %}</span>{% endif %}
           {% elif row.status == "vacant" %}<span class="wstate">{% trans "Vacant" %}</span>
           {% elif row.status == "flat" %}<span class="wstate wstate-info">{% trans "Flat rate" %}</span>
           {% elif row.status == "free" %}<span class="wstate">{% trans "No water charge" %}</span>

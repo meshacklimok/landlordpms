@@ -6,17 +6,29 @@
     <h1 class="h4">{% if show_archived %}{% trans "Archived" %} {{ vocab.leases|lower }}{% elif under_notice %}{{ vocab.tenants }} {% trans "moving out" %}{% else %}{{ vocab.leases }}{% endif %}</h1>
     <p class="lead-text">{% blocktrans count n=page.paginator.count %}{{ n }} match{% plural %}{{ n }} matches{% endblocktrans %}</p>
   </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{% url 'leases:agreement_blank' %}">{% trans "Blank agreement to print" %}</a>
 </div>
 <form method="get" data-autosubmit class="filter-bar" role="search">
   {% if show_archived %}<input type="hidden" name="archived" value="on">{% endif %}
   {% if under_notice %}<input type="hidden" name="notice" value="1">{% endif %}
+  {% if ending %}<input type="hidden" name="ending" value="1">{% endif %}
   <div class="filter-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" name="q" value="{{ q }}" class="form-control" placeholder="{% trans 'Search tenant, unit or lease number' %}" aria-label="{% trans 'Search' %}"></div>
   <select name="status" class="form-select" aria-label="{% trans 'Status' %}">
     <option value="">{% trans "All statuses" %}</option>
     {% for value, label in status_choices %}<option value="{{ value }}" {% if value == status %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
+  {% if properties|length > 1 %}<select name="property" class="form-select" aria-label="{% trans 'Property' %}">
+    <option value="">{% blocktrans with w=vocab.properties|lower %}All {{ w }}{% endblocktrans %}</option>
+    {% for p in properties %}<option value="{{ p.public_id }}" {% if prop and p.pk == prop.pk %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+  </select>{% endif %}
   <button class="btn btn-outline-secondary">{% trans "Search" %}</button>
 </form>
+{% if not show_archived and not under_notice %}
+<div class="chip-row">
+  <a href="{% querystring ending=None page=None %}" class="chip{% if not ending %} active{% endif %}">{% trans "All" %}</a>
+  <a href="{% querystring ending=1 status=None page=None %}" class="chip{% if ending %} active{% endif %}"{% if ending %} aria-current="true"{% endif %}>{% blocktrans with n=expiring_days %}Ending in {{ n }} days{% endblocktrans %}</a>
+</div>
+{% endif %}
 {% if page %}
 <ul class="item-list">
   {% for lease in page %}

@@ -3,7 +3,7 @@
 {% block content %}
 <div class="wide mx-auto">
   <h1 class="h3 mb-0">{% trans "Import a statement" %}</h1>
-  <p class="small text-body-secondary">{% trans "Upload a bank statement, or an M-Pesa statement from the M-Pesa organization portal, saved as CSV. You see what it contains before anything is imported. Payments whose unit reference is found are confirmed and receipted; the rest wait in the inbox." %}</p>
+  <p class="small text-body-secondary">{% trans "Upload a bank statement, or an M-Pesa statement from the M-Pesa organization portal, as an Excel, CSV or PDF file. You see what it contains before anything is imported. Payments whose unit reference is found are confirmed and receipted; the rest wait in the inbox." %}</p>
   {% include "banking/_nav.html" with section="import" %}
 
   <div class="row g-3">
@@ -11,7 +11,7 @@
       {% if has_accounts %}
       <form method="post" enctype="multipart/form-data" class="card shadow-sm" novalidate>{% csrf_token %}<div class="card-body">
         {% include "partials/form.html" %}
-        <p class="small text-body-secondary">{% trans "A bank statement needs a header row with a date, and a Credit (or Money in) or Amount column. Lines already imported from an earlier statement are skipped, so overlapping statements are fine." %}</p>
+        <p class="small text-body-secondary">{% trans "Download the statement from your bank’s app or website as Excel, CSV or PDF (a PDF must be the bank’s own, not a photo or scan). It needs a header row with a date, and a Credit (or Money in) or Amount column. Lines already imported from an earlier statement are skipped, so overlapping statements are fine." %}</p>
         <button class="btn btn-outline-secondary"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "Check the file" %}</button>
       </div></form>
       {% else %}

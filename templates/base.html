@@ -138,9 +138,20 @@
 {% endif %}
 <main id="main" tabindex="-1" class="container page{% block page_class %}{% endblock %}{% if report_steps %} has-report-steps{% endif %} py-3 py-lg-4">
   {% if not report_pane %}
+  {% if request.viewing_as %}<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status"><span>{% blocktrans with n=request.organization.name %}You are viewing {{ n }} as its owner. Nothing can be changed.{% endblocktrans %}</span>
+    <form method="post" action="{% url 'console:view_as_stop' %}" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-dark">{% trans "Stop viewing" %}</button></form></div>{% endif %}
   {% for a in announcements %}<div class="alert alert-{{ a.level }}" role="status">{{ a.message }}</div>{% endfor %}
+  {% if in_demo %}
+  <div class="alert alert-info" role="status">
+    {% trans "You are looking at a demo with sample data. Nothing here is real and nothing can be changed." %}
+    <a href="{% url 'growth:demo_leave' %}" class="alert-link">{% trans "Start your free trial" %}</a>
+    <div class="mt-1 small">{% trans "Look around as:" %}
+      {% for p in demo_people %}{% if p.current %}<strong>{{ p.name }} ({{ p.role }})</strong>{% else %}<a href="{{ p.url }}" class="alert-link">{{ p.name }} ({{ p.role }})</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </div>
+  </div>
+  {% endif %}
   {% if organization and organization.status == "READ_ONLY" %}
-  <div class="alert alert-warning">{% trans "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created." %}</div>
+  <div class="alert alert-warning">{% trans "Your subscription has lapsed. Data stays visible and exportable, but nothing new can be created." %} <a href="{% url 'subscriptions:page' %}" class="alert-link">{% trans "Pay to restore access" %}</a></div>
   {% elif organization and organization.status == "FROZEN" %}
   <div class="alert alert-danger">{% trans "This organization is frozen. Contact support." %}</div>
   {% elif subscription_banner %}
@@ -182,7 +193,7 @@
       <li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>
     </ul>
   </nav>
-  <p class="footer-note">© {% now "Y" %} NyumbaPMS · {% trans "Rent, tenants and payments for Kenyan landlords" %}</p>
+  <p class="footer-note">© {% now "Y" %} NyumbaPMS · {% trans "Rent, tenants and payments for Kenyan landlords" %}{% if support_email %} · <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% endif %}</p>
   </div>
 </footer>
 {% else %}
@@ -196,6 +207,11 @@
           <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
           <a class="btn btn-outline-secondary btn-sm" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
         </div>
+        <ul class="footer-links footer-contact mt-3">
+          {% if hello_email %}<li>{% trans "Sales" %}: <a href="mailto:{{ hello_email }}">{{ hello_email }}</a></li>{% endif %}
+          {% if support_email %}<li>{% trans "Support" %}: <a href="mailto:{{ support_email }}">{{ support_email }}</a></li>{% endif %}
+          {% if support_whatsapp %}<li>WhatsApp: <a href="https://wa.me/{{ support_whatsapp }}" rel="noopener" target="_blank">{{ support_phone|default:support_whatsapp }}</a></li>{% endif %}
+        </ul>
       </div>
       <nav class="site-footer-cols" aria-label="{% trans 'Footer' %}">
         <div>
@@ -210,7 +226,6 @@
         <div>
           <h2 class="site-footer-h">{% trans "Solutions" %}</h2>
           <ul class="footer-links">
-            {% footer_solutions as solution_links %}{% for s in solution_links %}<li><a href="{% url 'growth:solution' s.slug %}">{{ s.title }}</a></li>{% endfor %}
             <li><a href="{% url 'growth:solutions' %}">{% trans "All solutions" %}</a></li>
           </ul>
         </div>
@@ -251,12 +266,36 @@
 </div>
 {% endwith %}
 {# Shown by ui.js once a long page is scrolled down; takes keyboard focus back to the top of the content. #}
+{% if membership and not report_pane and request.resolver_match.app_name != "ai_assistant" and show_ask_button %}
+<section class="ask-panel" data-ask-panel hidden role="dialog" aria-label="{% trans 'NyumbaPMS AI' %}"
+         data-loading="{% trans 'Loading…' %}" data-failed="{% trans 'Something went wrong. Try again.' %}"
+         data-open="{% trans 'Open' %}" data-dismissed="{% trans 'Dismissed. Nothing was done.' %}"
+         data-expired="{% trans 'This has expired. Ask again if it is still needed.' %}" data-message="{% trans 'Message' %}"
+         data-careful="{% trans 'Nothing is done until you confirm. Check the details first.' %}"
+         data-t-confirm="{% trans 'Confirm' %}" data-t-dismiss="{% trans 'Dismiss' %}" data-pages="{% trans 'Pages used:' %}"
+         data-not-set-up="{% trans 'The assistant is not set up on this service yet.' %}"
+         data-off-owner="{% trans 'The assistant is off for your organization. You can switch it on in Ask settings.' %}"
+         data-off="{% trans 'The assistant is off for your organization. An owner can switch it on.' %}"
+         data-placeholder="{% trans 'Who owes more than 30 days?' %}" data-question="{% trans 'Your question' %}"
+         data-try="{% trans 'Try asking:' %}" data-ask="{% trans 'Ask' %}" data-thinking="{% trans 'Thinking…' %}" data-new="{% trans 'New conversation' %}">
+  <header class="ask-panel-head">
+    <strong class="ask-panel-brand">{% include "_brand_mark.html" %}<span>Nyumba<span class="brand-pms">PMS</span> AI</span></strong>
+    <span class="ask-panel-tools">
+      <button type="button" class="ask-icon-btn" data-ask-new hidden aria-label="{% trans 'New conversation' %}" title="{% trans 'New conversation' %}"><i class="bi bi-pencil-square" aria-hidden="true"></i></button>
+      <a href="{% url 'ai_assistant:ask' %}" class="ask-icon-btn" aria-label="{% trans 'Open full page' %}" title="{% trans 'Open full page' %}"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+      <button type="button" class="ask-icon-btn" data-ask-close aria-label="{% trans 'Close' %}" title="{% trans 'Close' %}"><i class="bi bi-x-lg" aria-hidden="true"></i></button></span>
+  </header>
+  <div class="ask-panel-body" data-ask-body aria-live="polite"></div>
+</section>
+<button type="button" class="ask-fab" data-ask-fab data-api="{% url 'ai_assistant:web_ask' %}" aria-expanded="false" aria-label="{% trans 'Open NyumbaPMS AI' %}"><i class="bi bi-stars" aria-hidden="true"></i><span>Nyumba<b>PMS</b> AI</span></button>
+{% endif %}
 {% if not report_pane %}<button type="button" class="back-to-top" data-back-to-top aria-label="{% trans 'Back to top' %}" title="{% trans 'Back to top' %}"><i class="bi bi-arrow-up" aria-hidden="true"></i></button>{% endif %}
 <script src="{% static 'vendor/bootstrap-5.3.3/bootstrap.bundle.min.js' %}"></script>
 <script src="{% static 'js/ui.js' %}" defer></script>
 <script src="{% static 'js/pwa.js' %}" data-sw="{% url 'support:sw' %}"></script>
 {% if report_pane %}<script src="{% static 'js/report_pane.js' %}" defer></script>
 {% elif membership %}<script src="{% static 'js/search.js' %}" defer></script>
+{% if show_ask_button %}<script src="{% static 'js/ask_widget.js' %}" defer></script>{% endif %}
 <script src="{% static 'js/offline.js' %}" data-user="{{ user.public_id }}" data-logout-text="{% trans 'Meter readings typed without a connection are still on this phone. They will be sent when you log in again here. Log out anyway?' %}" defer></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>

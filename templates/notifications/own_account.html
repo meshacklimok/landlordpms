@@ -31,6 +31,10 @@
     </p>
     {% if account.check_error %}<div class="alert alert-danger small" role="alert">{{ account.check_error }}</div>{% endif %}
 
+    {% if not_allowed %}
+    <div class="alert alert-info small mb-0" role="status">{% trans "Using your own SMS account is not switched on for your organization. Your SMS go through NyumbaPMS and use your SMS credit." %}
+      <a href="{% url 'subscriptions:page' %}#extras">{% trans "Top up on the Subscription page" %}</a>. {% trans "To use your own account instead, ask us to switch it on." %}</div>
+    {% else %}
     <form method="post" novalidate>{% csrf_token %}
       <input type="hidden" name="action" value="save">
       {% if form.non_field_errors %}<div class="alert alert-danger small" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
@@ -54,8 +58,9 @@
       </div>
       <button class="btn btn-primary mt-3">{% trans "Save" %}</button>
     </form>
+    {% endif %}
 
-    {% if account %}
+    {% if account and not not_allowed %}
     <div class="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
       <form method="post">{% csrf_token %}<input type="hidden" name="action" value="test"><button class="btn btn-outline-primary btn-sm">{% if kind == "email" %}{% trans "Send a test to my email" %}{% else %}{% trans "Send a test to my phone" %}{% endif %}</button></form>
       <form method="post" data-confirm='{% trans "Remove it? Messages go back through NyumbaPMS." %}'>{% csrf_token %}<input type="hidden" name="action" value="remove"><button class="btn btn-outline-danger btn-sm">{% trans "Remove" %}</button></form>

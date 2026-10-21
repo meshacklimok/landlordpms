@@ -20,6 +20,7 @@
     <h2 class="h6">{% trans "Owner portal" %}</h2>
     {% if owner_portal.account %}
       <p class="mb-2">{% blocktrans with since=owner_portal.account.created_at|date:"d M Y" %}The owner logs in to see their statements, payments and properties. Since {{ since }}.{% endblocktrans %}</p>
+      <p class="mb-2"><a class="btn btn-sm btn-outline-primary" href="{% url 'owner_portal:staff_desk' owner.public_id %}">{% trans "Owner desk: messages, approvals, payout" %}</a></p>
       {% if fully_sees %}
       <form method="post" action="{% url 'owner_portal:revoke' owner.public_id %}" data-confirm="{% trans 'Stop this owner seeing their statements online?' %}">{% csrf_token %}
         <button class="btn btn-sm btn-outline-danger">{% trans "Remove access" %}</button>

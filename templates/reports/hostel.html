@@ -1,0 +1,52 @@
+{% extends "base.html" %}{% load i18n money reports %}
+{% block title %}{% trans "Hostel" %}{% endblock %}
+{% block content %}
+<h1 class="h4 mb-0">{% trans "Hostel" %}</h1>
+<p class="small text-body-secondary">{% trans "Beds taken and free, what this term's students have paid, the parents who owe, who is waiting and the bookings about to end." %}</p>
+{% include "reports/_finance_filter.html" %}
+{% for r in rows %}
+<section class="panel">
+  <div class="panel-head"><h2>{{ r.prop.name }}</h2></div>
+  <div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3"><div class="stat">
+      <div class="stat-label">{% trans "Beds taken" %}</div>
+      <div class="stat-value">{{ r.taken }} / {{ r.beds }}</div>
+      <div class="small text-body-secondary">{% blocktrans with n=r.free c=r.rooms %}{{ n }} free in {{ c }} rooms{% endblocktrans %}{% if r.occupancy is not None %} · {{ r.occupancy|percent }}{% endif %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat">
+      <div class="stat-label">{% trans "Paid this term" %}</div>
+      <div class="stat-value text-nowrap">{{ r.paid|money:currency }}</div>
+      <div class="small text-body-secondary">{% blocktrans with b=r.billed|money:currency %}of {{ b }} billed{% endblocktrans %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat">
+      <div class="stat-label">{% trans "Overdue" %}</div>
+      <div class="stat-value text-nowrap">{{ r.owed|money:currency }}</div>
+      <div class="small text-body-secondary">{% blocktrans count n=r.owing|length %}{{ n }} invoice{% plural %}{{ n }} invoices{% endblocktrans %}</div>
+    </div></div>
+    <div class="col-6 col-lg-3"><div class="stat">
+      <div class="stat-label">{% trans "Waitlist" %}</div>
+      <div class="stat-value">{{ r.waiting_total }}</div>
+      <div class="small text-body-secondary">{% blocktrans with n=r.ready %}{{ n }} can be offered a bed now{% endblocktrans %}</div>
+    </div></div>
+  </div>
+  <h3 class="h6">{% trans "Beds by room type" %}</h3>
+  <div class="table-responsive"><table class="table table-sm mb-3"><thead><tr><th>{% trans "Rooms for" %}</th><th class="text-end">{% trans "Beds" %}</th><th class="text-end">{% trans "Taken" %}</th><th class="text-end">{% trans "Waiting" %}</th></tr></thead><tbody>
+    {% for g, cell in r.by_gender.items %}<tr><td>{% if g == "F" %}{% trans "Women" %}{% elif g == "M" %}{% trans "Men" %}{% else %}{% trans "Anyone" %}{% endif %}</td><td class="text-end">{{ cell.0 }}</td><td class="text-end">{{ cell.1 }}</td><td class="text-end">{{ cell.2 }}</td></tr>
+    {% empty %}<tr><td colspan="4" class="text-body-secondary">{% trans "No rooms yet." %}</td></tr>{% endfor %}
+  </tbody></table></div>
+  <h3 class="h6">{% trans "Parents and guardians who owe" %}</h3>
+  {% if r.owing %}
+  <div class="table-responsive"><table class="table table-sm"><thead><tr><th>{% trans "Student" %}</th><th>{% trans "Parent or guardian" %}</th><th>{% trans "Bed or room" %}</th><th class="text-end">{% trans "Owed" %}</th><th class="text-end">{% trans "Days late" %}</th></tr></thead><tbody>
+    {% for o in r.owing %}<tr><td>{% if show_names %}{{ o.student }}{% else %}–{% endif %}</td><td>{% if show_names %}{{ o.guardian }}{% if o.guardian_phone %} · {{ o.guardian_phone }}{% endif %}{% else %}–{% endif %}</td><td>{{ o.unit }}</td><td class="text-end">{{ o.owed|money:currency }}</td><td class="text-end">{{ o.days_late }}</td></tr>{% endfor %}
+  </tbody></table></div>
+  {% else %}<p class="small text-body-secondary">{% trans "Nobody is overdue." %}</p>{% endif %}
+  <h3 class="h6">{% blocktrans with d=ending_within %}Bookings ending in the next {{ d }} days{% endblocktrans %}</h3>
+  {% if r.ending %}
+  <ul class="item-list">{% for who, unit, end, drafted in r.ending %}<li class="item"><span class="item-main"><span class="item-title">{% if show_names %}{{ who }}{% else %}{{ unit }}{% endif %}</span><span class="item-meta d-block">{{ unit }} · {{ end|date:"j M Y" }}{% if drafted %} · {% trans "renewal drafted" %}{% endif %}</span></span></li>{% endfor %}</ul>
+  <a class="btn btn-outline-secondary btn-sm" href="{% url 'properties:rollover' r.prop.public_id %}">{% trans "Next term" %}</a>
+  {% else %}<p class="small text-body-secondary">{% trans "None." %}</p>{% endif %}
+</section>
+{% empty %}
+<div class="card shadow-sm"><div class="card-body text-center py-5"><h2 class="h6 mb-0">{% trans "No hostels yet" %}</h2></div></div>
+{% endfor %}
+{% endblock %}

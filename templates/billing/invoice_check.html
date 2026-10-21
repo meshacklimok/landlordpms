@@ -1,0 +1,25 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Check an invoice" %}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    {% if not invoice %}
+    <div class="alert alert-warning small mb-0">{% trans "We have no invoice with this code. If you were given a printed or forwarded copy, it may not be genuine. Ask the landlord to confirm." %}</div>
+    {% else %}
+    {% if void %}
+    <div class="alert alert-danger small">{% trans "This invoice was cancelled. Do not pay it." %}</div>
+    {% else %}
+    <div class="alert alert-success small">{% blocktrans with day=invoice.issue_date|date:"j M Y" %}This invoice was issued by {{ organization }} on {{ day }}.{% endblocktrans %}</div>
+    {% endif %}
+    <h1 class="h5">{% trans "Invoice" %} {{ invoice.number }}</h1>
+    <p class="small text-body-secondary">{% trans "Compare these facts with the copy you were given. If anything differs, the copy was changed." %}</p>
+    <dl class="row small mb-0">
+      <dt class="col-sm-4">{% trans "Issued by" %}</dt><dd class="col-sm-8">{{ organization }}</dd>
+      <dt class="col-sm-4">{% trans "Total" %}</dt><dd class="col-sm-8">{{ total }}</dd>
+      <dt class="col-sm-4">{% trans "Due date" %}</dt><dd class="col-sm-8">{{ invoice.due_date|date:"j M Y" }}</dd>
+    </dl>
+    {% endif %}
+  </div></div>
+</div>
+{% endblock %}

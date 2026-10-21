@@ -1,0 +1,39 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Next term" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'properties:rooms' property.public_id %}" class="small">← {% trans "Room map" %}</a>
+  <h1 class="h4 mt-2">{% trans "Next term" %} <span class="text-muted small">{{ property.name }}</span></h1>
+  <p class="small text-muted">{% trans "Tick the students who are staying. Each gets a renewal draft for the same bed or room, the same guardian and the same charges. Check and activate the drafts under Leases." %}</p>
+  <form method="post" novalidate>{% csrf_token %}
+    {% include "partials/form.html" %}
+    <h2 class="h6 mt-3">{% trans "Students staying" %}</h2>
+    <ul class="item-list">
+      {% for r in rows %}
+      <li><label class="item">
+        <span class="item-mark"><input type="checkbox" name="lease" value="{{ r.lease.public_id }}" class="form-check-input"{% if r.has_draft %} disabled{% else %} checked{% endif %}></span>
+        <span class="item-main"><span class="item-title">{{ r.student.name|default:"–" }}</span>
+          <span class="item-meta d-block">{{ r.lease.unit.code }} · {% trans "ends" %} {{ r.lease.end_date|date:"j M Y" }}{% if r.has_draft %} · {% trans "renewal already drafted" %}{% endif %}</span></span>
+      </label></li>
+      {% empty %}<li class="item-empty">{% trans "No active bookings with an end date." %}</li>
+      {% endfor %}
+    </ul>
+    <button class="btn btn-primary w-100 mt-3">{% trans "Make renewal drafts" %}</button>
+  </form>
+  {% if drafts %}
+  <h2 class="h6 mt-4">{% trans "Renewal drafts waiting" %}</h2>
+  <form method="post">{% csrf_token %}<input type="hidden" name="action" value="activate">
+    <ul class="item-list">
+      {% for d in drafts %}
+      <li><label class="item">
+        <span class="item-mark">{% if can_activate %}<input type="checkbox" name="lease" value="{{ d.public_id }}" class="form-check-input" checked>{% endif %}</span>
+        <span class="item-main"><span class="item-title">{{ d.primary_tenant.name|default:"–" }}</span>
+          <span class="item-meta d-block">{{ d.unit.code }} · {{ d.start_date|date:"j M Y" }}{% if d.end_date %} – {{ d.end_date|date:"j M Y" }}{% endif %}</span></span>
+      </label></li>
+      {% endfor %}
+    </ul>
+    {% if can_activate %}<button class="btn btn-outline-primary w-100 mt-3">{% trans "Activate the ticked drafts" %}</button>{% endif %}
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

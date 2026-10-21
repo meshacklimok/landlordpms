@@ -1,7 +1,8 @@
 {% extends "accounts/_auth_page.html" %}{% load i18n %}
 {% block title %}{% trans "Create account" %}{% endblock %}
-{% block heading %}{% trans "Create your account" %}{% endblock %}
+{% block heading %}{% if as_tenant %}{% trans "Tenant sign-up" %}{% else %}{% trans "Create your account" %}{% endif %}{% endblock %}
 {% block card %}
+{% if as_tenant %}<p class="small text-muted">{% trans "Use the phone number your landlord has on file. We send one code to confirm it, then you log in with the phone number and your password. No invitation link needed." %}</p>{% endif %}
 {% if invited %}<div class="alert alert-success small" data-referral-applied>{{ invited }}</div>{% endif %}
 <form method="post" novalidate>{% csrf_token %}{% include "partials/form.html" %}
   {% if not invited %}

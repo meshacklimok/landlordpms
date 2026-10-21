@@ -24,5 +24,6 @@
     </div>
   </div></div>
   {% endfor %}
+  {% if not show_sw %}<p class="small text-body-secondary">{% trans "Messages go out in English. If some tenants prefer Swahili," %} <a href="?lang=sw">{% trans "show the Swahili wording" %}</a>.</p>{% endif %}
 </div>
 {% endblock %}

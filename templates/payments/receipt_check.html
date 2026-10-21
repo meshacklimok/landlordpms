@@ -1,0 +1,26 @@
+{% extends "base.html" %}{% load i18n %}
+{% block title %}{% trans "Check a receipt" %}{% endblock %}
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <div class="card shadow-sm"><div class="card-body">
+    {% if not receipt %}
+    <div class="alert alert-warning small mb-0">{% trans "We have no receipt with this code. If you were given a printed or forwarded copy, it may not be genuine. Ask the landlord to confirm." %}</div>
+    {% else %}
+    {% if reversed %}
+    <div class="alert alert-danger small">{% blocktrans %}This receipt was issued, but the payment was later reversed. Do not rely on it as proof of payment.{% endblocktrans %}</div>
+    {% else %}
+    <div class="alert alert-success small">{% blocktrans with day=receipt.issued_at|date:"j M Y" %}This receipt was issued by {{ organization }} on {{ day }}.{% endblocktrans %}</div>
+    {% endif %}
+    <h1 class="h5">{% trans "Receipt" %} {{ receipt.number }}</h1>
+    <p class="small text-body-secondary">{% trans "Compare these facts with the copy you were given. If anything differs, the copy was changed." %}</p>
+    <dl class="row small mb-0">
+      <dt class="col-sm-4">{% trans "Issued by" %}</dt><dd class="col-sm-8">{{ organization }}</dd>
+      <dt class="col-sm-4">{% trans "Amount" %}</dt><dd class="col-sm-8">{{ amount }}</dd>
+      <dt class="col-sm-4">{% trans "Date paid" %}</dt><dd class="col-sm-8">{{ payment.paid_at|date:"j M Y" }}</dd>
+      <dt class="col-sm-4">{% trans "Method" %}</dt><dd class="col-sm-8">{{ payment.get_method_display }}</dd>
+    </dl>
+    {% endif %}
+  </div></div>
+</div>
+{% endblock %}

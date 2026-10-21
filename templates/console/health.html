@@ -2,6 +2,7 @@
 {% block title %}{% trans "Console health" %}{% endblock %}
 {% block console_title %}{% trans "Platform health" %}{% endblock %}
 {% block console %}
+<p class="small"><a class="btn btn-sm btn-outline-danger" href="{% url 'console:problems' %}">{% trans "Open the failures queue" %}</a></p>
 <div class="row g-3">
   <div class="col-lg-6">
     <h2 class="h6">{% trans "Messages, last 7 days" %}</h2>

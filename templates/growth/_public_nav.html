@@ -7,6 +7,7 @@
     <div class="collapse navbar-collapse" id="public-nav">
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'pricing' %} active" aria-current="page{% endif %}" href="{% url 'growth:pricing' %}">{% trans "Pricing" %}</a></li>
+        <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'solutions' or request.resolver_match.url_name == 'solution' %} active" aria-current="page{% endif %}" href="{% url 'growth:solutions' %}">{% trans "Solutions" %}</a></li>
         <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'tutorials' %} active" aria-current="page{% endif %}" href="{% url 'growth:tutorials' %}">{% trans "Tutorials" %}</a></li>
         <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'how_it_works' %} active" aria-current="page{% endif %}" href="{% url 'growth:how_it_works' %}">{% trans "How it works" %}</a></li>
         <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'articles' %} active" aria-current="page{% endif %}" href="{% url 'growth:articles' %}">{% trans "Articles" %}</a></li>
@@ -15,6 +16,7 @@
         <li class="nav-item"><a class="nav-link{% if request.resolver_match.url_name == 'demo' %} active" aria-current="page{% endif %}" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a></li>
       </ul>
       <div class="d-flex gap-2 py-2 py-xl-0">
+        <form method="post" action="{% url 'growth:demo_enter' %}" class="d-inline">{% csrf_token %}<button class="btn btn-outline-primary btn-sm">{% trans "Try the demo" %}</button></form>
         <a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts:login' %}">{% trans "Log in" %}</a>
         <a class="btn btn-primary btn-sm" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
       </div>

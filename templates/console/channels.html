@@ -35,6 +35,16 @@
   </div>
 </div>
 
+<h2 class="h6">{% trans "Messages by category" %}</h2>
+<p class="small text-muted">{% trans "Sent (not failed or skipped) this month, and since the start. Each column is a channel." %}</p>
+<div class="table-responsive"><table class="table table-sm small">
+  <thead><tr><th rowspan="2">{% trans "Category" %}</th>{% for c in categories.channels %}<th colspan="2" class="text-center">{{ c }}</th>{% endfor %}<th colspan="2" class="text-center">{% trans "All channels" %}</th></tr>
+  <tr>{% for c in categories.channels %}<th class="text-end">{% trans "Month" %}</th><th class="text-end">{% trans "Ever" %}</th>{% endfor %}<th class="text-end">{% trans "Month" %}</th><th class="text-end">{% trans "Ever" %}</th></tr></thead>
+  <tbody>{% for r in categories.rows %}<tr><td>{{ r.type }}</td>{% for c in r.counts %}<td class="text-end">{{ c.month }}</td><td class="text-end">{{ c.ever }}</td>{% endfor %}<td class="text-end">{{ r.month }}</td><td class="text-end">{{ r.ever }}</td></tr>
+  {% empty %}<tr><td colspan="8" class="text-muted">{% trans "Nothing sent yet." %}</td></tr>{% endfor %}</tbody>
+  {% if categories.rows %}<tfoot><tr class="fw-semibold"><td>{% trans "Total" %}</td>{% for t in categories.totals %}<td class="text-end">{{ t.month }}</td><td class="text-end">{{ t.ever }}</td>{% endfor %}<td></td><td></td></tr></tfoot>{% endif %}
+</table></div>
+
 <h2 class="h5 mt-4">{% trans "The AI assistant" %}</h2>
 {% with a=ai %}
 <div class="row g-3 mb-3">

@@ -51,7 +51,7 @@
         </div>
         {% if r.status == "PAID" %}<span class="badge text-bg-success">{{ r.get_status_display }}</span>
           {% if r.transaction and membership|can:"mpesa.view_transactions" %}<a href="{% url 'mpesa:transaction' r.transaction.trans_id %}"><code>{{ r.transaction.trans_id }}</code></a>{% endif %}
-        {% elif r.status == "FAILED" %}<span class="badge text-bg-secondary">{{ r.get_status_display }}</span>
+        {% elif r.status == "FAILED" %}<span class="badge text-bg-danger">{{ r.get_status_display }}</span>
         {% else %}<span class="badge text-bg-warning">{{ r.get_status_display }}</span>
           {% if r.checkout_request_id %}
           <form method="post" class="d-inline">{% csrf_token %}<input type="hidden" name="action" value="check"><input type="hidden" name="request" value="{{ r.public_id }}">

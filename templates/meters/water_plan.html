@@ -25,7 +25,7 @@
               <span class="choice-card-text d-block" id="method-{{ value }}-help">
                 {% if value == "METERED" %}{% trans "Each month's readings are billed on the next invoice: a unit's own meter, or a shared meter divided equally, by weight or by percentage (set on each meter)." %}
                 {% elif value == "FLAT" %}{% trans "The same amount every month on each invoice, with no readings needed. Meters can still be read to follow the use." %}
-                {% else %}{% trans "Tenants pay nothing extra for water. Meters can still be read to see how much is used." %}{% endif %}
+                {% else %}{% blocktrans with w=vocab.tenants %}{{ w }} pay nothing extra for water. Meters can still be read to see how much is used.{% endblocktrans %}{% endif %}
               </span>
             </span>
           </label>

@@ -1,0 +1,37 @@
+{% extends "console/base.html" %}{% load i18n money %}
+{% block title %}{% trans "Console payments to chase" %}{% endblock %}
+{% block console_title %}{% trans "Payments to chase" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:organizations' %}">&larr; {% trans "All organizations" %}</a></p>
+<p class="small text-muted">{% trans "Landlords whose subscription payment is overdue. Those closest to going read-only come first, then the ones already read-only. A call or a WhatsApp message recovers more than reminders do." %}</p>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr>
+    <th>{% trans "Organization" %}</th><th>{% trans "Owner" %}</th><th class="text-end">{% trans "Owes" %}</th>
+    <th class="text-end">{% trans "Overdue" %}</th><th>{% trans "Read-only" %}</th><th>{% trans "Reach" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for r in rows %}
+    <tr>
+      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>
+        <div class="text-muted">{{ r.sub.plan.name }}{% if r.invoice %} &middot; {{ r.invoice.number }}{% endif %}</div></td>
+      <td>{% if r.owner %}<a href="{% url 'console:owner' r.owner.public_id %}">{{ r.name|default:r.phone }}</a>{% else %}&mdash;{% endif %}
+        <div class="text-muted">{{ r.phone }}</div></td>
+      <td class="text-end text-nowrap">{{ r.amount|money }}</td>
+      <td class="text-end text-nowrap">{% if r.overdue is not None %}{% blocktrans count n=r.overdue %}{{ n }} day{% plural %}{{ n }} days{% endblocktrans %}{% else %}&mdash;{% endif %}</td>
+      <td>
+        {% if r.lapsed %}<span class="badge text-bg-danger">{% trans "Already" %}</span>
+        {% elif r.left <= 2 %}<span class="badge text-bg-danger">{% blocktrans count n=r.left %}in {{ n }} day{% plural %}in {{ n }} days{% endblocktrans %}</span>
+        {% else %}<span class="badge text-bg-warning">{% blocktrans with n=r.left %}in {{ n }} days{% endblocktrans %}</span>{% endif %}
+        {% if r.disputed %}<span class="badge text-bg-secondary">{% trans "Disputed" %}</span>{% endif %}
+        {% if r.extended_to %}<div class="text-muted">{% blocktrans with d=r.extended_to|date:"j M" %}extended to {{ d }}{% endblocktrans %}</div>{% endif %}
+      </td>
+      <td class="text-nowrap">
+        {% if r.phone %}<a class="btn btn-sm btn-outline-secondary py-0" href="tel:{{ r.phone }}">{% trans "Call" %}</a>{% endif %}
+        {% if r.whatsapp %}<a class="btn btn-sm btn-outline-success py-0" href="{{ r.whatsapp }}" target="_blank" rel="noopener">WhatsApp</a>{% endif %}
+        {% if r.email %}<a class="btn btn-sm btn-outline-secondary py-0" href="mailto:{{ r.email }}">{% trans "Email" %}</a>{% endif %}
+      </td>
+    </tr>
+  {% empty %}<tr><td colspan="6" class="text-muted">{% trans "Nobody is behind on their subscription." %}</td></tr>{% endfor %}
+  </tbody>
+</table></div>
+{% endblock %}

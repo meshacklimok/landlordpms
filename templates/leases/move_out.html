@@ -45,7 +45,7 @@
     <div class="table-responsive"><table class="table table-sm small mb-0">
       <tr><td>{% trans "Received" %}</td><td class="text-end text-nowrap">{{ t.received|money:s.currency }}</td></tr>
       {% for e in t.entries %}{% if e.kind == "DEPOSIT_DEDUCTION" %}
-      <tr><td>{% blocktrans with day=e.entry_date|date:"j M Y" %}Deducted {{ day }}{% endblocktrans %}<div class="text-muted">{{ e.reason }}</div>{% if e.condition_report %}<a href="{% url 'inspections:report' e.condition_report.public_id %}"><i class="bi bi-clipboard-check" aria-hidden="true"></i> {% trans "Move-out report" %}</a>{% endif %}</td><td class="text-end text-nowrap">{{ e.amount|money:s.currency }}</td></tr>
+      <tr><td>{% blocktrans with day=e.entry_date|date:"j M Y" %}Deducted {{ day }}{% endblocktrans %}<div class="text-muted">{{ e.reason }}</div>{% if e.condition_report %}<a href="{% url 'inspections:report' e.condition_report.public_id %}"><i class="bi bi-clipboard-check" aria-hidden="true"></i> {% trans "Move-out report" %}</a>{% endif %}</td><td class="text-end text-nowrap text-danger">-{{ e.amount|money:s.currency }}</td></tr>
       {% endif %}{% endfor %}
       {% if t.refunded %}<tr><td>{% trans "Refunded" %}</td><td class="text-end text-nowrap">-{{ t.refunded|money:s.currency }}</td></tr>{% endif %}
       {% if t.transferred %}<tr><td>{% trans "Transferred" %}</td><td class="text-end text-nowrap">{{ t.transferred|money:s.currency }}</td></tr>{% endif %}

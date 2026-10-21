@@ -1,0 +1,22 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Console team activity" %}{% endblock %}
+{% block console_title %}{% trans "What the team did" %}{% endblock %}
+{% block console %}
+<p class="small"><a href="{% url 'console:team' %}">&larr; {% trans "Team" %}</a></p>
+<p class="small text-muted">{% trans "Changes and downloads made in the console, from the audit log. Looking at a page is not logged; “Last seen” shows when they were last in." %}</p>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Person" %}</th><th>{% trans "Role" %}</th><th>{% trans "Last seen" %}</th><th class="text-end">{% trans "This week" %}</th><th class="text-end">{% trans "30 days" %}</th><th>{% trans "Most this week" %}</th></tr></thead>
+  <tbody>{% for p in people %}<tr>
+    <td><a href="?person={{ p.seat.user_id }}">{{ p.seat.user.full_name }}</a>{% if not p.seat.is_active %} <span class="badge text-bg-secondary">{% trans "Off" %}</span>{% endif %}</td>
+    <td>{{ p.seat.get_role_display }}</td>
+    <td class="text-nowrap">{{ p.seat.last_seen_at|date:"j M H:i"|default:"—" }}</td>
+    <td class="text-end">{{ p.week }}</td><td class="text-end">{{ p.month }}</td>
+    <td>{% for a, n in p.top %}{{ a }} ({{ n }}){% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+  </tr>{% empty %}<tr><td colspan="6" class="text-muted">{% trans "No team members yet." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+<h2 class="h6 mt-4">{% trans "Latest" %}{% if person %} · <a href="{% url 'console:team_activity' %}">{% trans "everyone" %}</a>{% endif %}</h2>
+<div class="table-responsive"><table class="table table-sm small">
+  <tbody>{% for e in recent %}<tr><td class="text-nowrap">{{ e.created_at|date:"j M H:i" }}</td><td>{{ e.actor.full_name }}</td><td>{{ e.action }}</td><td>{{ e.organization.name|default:"" }}</td><td class="text-muted">{{ e.object_repr }}</td></tr>
+  {% empty %}<tr><td class="text-muted">{% trans "Nothing in the last 30 days." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

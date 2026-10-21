@@ -1,0 +1,20 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% trans "Articles" %}{% endblock %}
+{% block console_title %}{% trans "Articles" %}{% endblock %}
+{% block console %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <p class="small text-muted mb-0">{% trans "The public articles at /articles/. Visitors, search engines and AI assistants see only the published ones." %}</p>
+  <a class="btn btn-primary btn-sm" href="{% url 'console:article_new' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Write an article" %}</a>
+</div>
+<div class="table-responsive"><table class="table table-sm align-middle small">
+  <thead><tr><th>{% trans "Title" %}</th><th>{% trans "Topic" %}</th><th>{% trans "Status" %}</th><th>{% trans "Published" %}</th><th>{% trans "Edited" %}</th><th></th></tr></thead>
+  <tbody>{% for a in items %}<tr>
+    <td><a href="{% url 'console:article' a.pk %}">{{ a.title }}</a>{% if a.featured %} <span class="badge text-bg-secondary">{% trans "Start here" %}</span>{% endif %}<div class="text-muted">/articles/{{ a.slug }}/</div></td>
+    <td>{{ a.get_category_display }}</td>
+    <td>{% if a.is_published %}<span class="badge text-bg-success">{% trans "Published" %}</span>{% else %}<span class="badge text-bg-warning">{% trans "Draft" %}</span>{% endif %}</td>
+    <td>{{ a.published_at|date:"j M Y"|default:"—" }}</td>
+    <td>{{ a.updated_at|date:"j M Y" }}</td>
+    <td class="text-end text-nowrap">{% if a.is_published %}<a href="{% url 'growth:article' a.slug %}" target="_blank" rel="noopener">{% trans "View" %}</a> · {% endif %}<a href="{% url 'console:article_preview' a.pk %}">{% trans "Preview" %}</a></td>
+  </tr>{% empty %}<tr><td colspan="6" class="text-muted">{% trans "No articles yet." %}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% endblock %}

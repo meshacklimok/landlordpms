@@ -21,7 +21,12 @@
   {% elif report.status == "COMPLETED" %}
   <div class="alert alert-success small">{% blocktrans with by=report.completed_by.full_name on=report.completed_at|date:"j M Y H:i" %}Completed by {{ by }} on {{ on }}. It can no longer be changed.{% endblocktrans %}</div>
   {% elif can_edit and left_count %}
-  <div class="alert alert-info small d-print-none">{% blocktrans count n=left_count %}{{ n }} item still needs a condition before the report can be completed.{% plural %}{{ n }} items still need a condition before the report can be completed.{% endblocktrans %}</div>
+  <div class="alert alert-info small d-print-none">{% blocktrans count n=left_count %}{{ n }} item still needs a condition before the report can be completed.{% plural %}{{ n }} items still need a condition before the report can be completed.{% endblocktrans %}
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      <button form="details" name="action" value="fill_good" class="btn btn-sm btn-outline-primary">{% trans "Mark the rest as Good" %}</button>
+      <button form="details" name="action" value="fill_not_checked" class="btn btn-sm btn-outline-secondary">{% trans "Mark the rest as Not checked" %}</button>
+    </div>
+  </div>
   {% endif %}
 
   {% if report.kind == "MOVE_OUT" %}

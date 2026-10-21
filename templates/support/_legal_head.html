@@ -1,5 +1,5 @@
-{% load i18n %}<h1 class="h4 mb-1">{{ legal_title }}</h1>
-<p class="small text-muted mb-3">{% blocktrans with version=legal_version %}Effective {{ version }}{% endblocktrans %} · {{ legal_name }}</p>
+{% load i18n %}<header class="doc-head"><p class="about-eyebrow">{% trans "Legal" %}</p><h1 class="doc-title">{{ legal_title }}</h1>
+<p class="small text-muted mb-0">{% blocktrans with version=legal_version %}Effective {{ version }}{% endblocktrans %} · {{ legal_name }}</p></header>
 {% if not legal_reviewed %}
 <div class="alert alert-warning small" data-legal-draft>{% trans "Draft: this text is still being checked by a lawyer and may change before launch. If it changes, signed-in users are asked to accept the new version." %}</div>
 {% endif %}

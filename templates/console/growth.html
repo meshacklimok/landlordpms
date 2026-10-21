@@ -50,6 +50,8 @@
     <div class="table-responsive"><table class="table table-sm small"><tbody>{% for name, n in data.buckets %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td></tr>{% endfor %}</tbody></table></div>
     <h2 class="h6 mt-3">{% trans "Sign-up to paying" %}</h2>
     <div class="table-responsive"><table class="table table-sm small"><tbody>{% for r in funnel %}<tr><td>{{ r.label }}</td><td class="text-end">{{ r.count }}{% if r.share is not None %} <span class="text-muted">({{ r.share }}%)</span>{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+    <h2 class="h6 mt-3">{% trans "Stuck, worth a call" %}</h2>
+    {% for s in stuck %}{% if s.count %}<p class="small mb-1"><strong>{% blocktrans with n=s.count l=s.label %}{{ n }} signed up but have not: {{ l }}{% endblocktrans %}</strong><br>{% for o in s.items %}{% if "organizations" in allowed %}<a href="{% url 'console:organization' o.public_id %}">{{ o.name }}</a>{% else %}{{ o.name }}{% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}{% if s.count > s.items|length %} …{% endif %}</p>{% endif %}{% endfor %}
   </div>
   <div class="col-lg-5">
     <h2 class="h6">{% trans "By county" %}</h2>

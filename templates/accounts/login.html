@@ -7,4 +7,4 @@
   <button class="btn btn-primary w-100">{% trans "Log in" %}</button>
 </form>
 {% endblock %}
-{% block links %}<a href="{% url 'accounts:password_reset' %}">{% trans "Forgot password?" %}</a> · <a href="{% url 'accounts:register' %}">{% trans "Create account" %}</a>{% endblock %}
+{% block links %}<a href="{% url 'accounts:password_reset' %}">{% trans "Forgot password?" %}</a> · <a href="{% url 'accounts:register' %}">{% trans "Create account" %}</a><br><span class="small">{% trans "Tenant?" %} <a href="{% url 'accounts:register' %}?as=tenant">{% trans "Sign up with your phone number" %}</a></span>{% endblock %}

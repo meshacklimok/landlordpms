@@ -2,6 +2,7 @@
 {% block title %}{% trans "Console team" %}{% endblock %}
 {% block console_title %}{% trans "Console team" %}{% endblock %}
 {% block console %}
+<p class="small"><a href="{% url 'console:team_activity' %}">{% trans "What each person did" %} &rarr;</a></p>
 <p class="small text-muted">{% trans "People you add here can open the console pages you choose, after signing in with two-step login. Landlords and tenants never see it. Owners signed in as superusers always have every page." %}</p>
 <a class="btn btn-sm btn-primary mb-3" href="{% url 'console:team_add' %}">{% trans "Add a person" %}</a>
 <div class="table-responsive"><table class="table table-sm align-middle small">

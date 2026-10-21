@@ -45,9 +45,29 @@
     <div class="table-responsive"><table class="table table-sm small"><thead><tr><th>{% trans "Account" %}</th><th class="text-end">{% trans "Payments" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
     <tbody>{% for name, n, amount in report.accounts %}<tr><td>{{ name }}</td><td class="text-end">{{ n }}</td><td class="text-end num text-nowrap">{{ amount|money:cur }}</td></tr>{% endfor %}</tbody></table></div></div>
 </div>
+<h2 class="h6 mt-3">{% trans "Payment statement" %}</h2>
+<p class="small text-body-secondary">{% trans "Every payment dated in this period, whatever its state, newest first." %}</p>
+<div class="table-responsive mb-2"><table class="table table-sm small align-middle">
+  <thead><tr><th>{% trans "Date" %}</th><th>{% trans "Lease" %}</th><th>{% trans "Unit" %}</th>{% if show_tenants %}<th>{% trans "Tenant" %}</th>{% endif %}<th>{% trans "Method" %}</th><th>{% trans "Reference" %}</th><th>{% trans "State" %}</th><th class="text-end">{% trans "Amount" %}</th></tr></thead>
+  <tbody>{% for p in shown_lines %}<tr>
+    <td class="text-nowrap">{{ p.paid_at|date:"j M Y" }}</td>
+    <td><a href="{% url 'payments:detail' p.public_id %}">{{ p.lease.number|default:"—" }}</a></td>
+    <td>{{ p.lease.unit.code }}, {{ p.lease.unit.property.name }}</td>
+    {% if show_tenants %}<td>{{ p.tenant.name|default:"—" }}</td>{% endif %}
+    <td>{{ p.get_method_display }}</td><td>{{ p.reference|default:"—" }}</td><td>{{ p.get_state_display }}</td>
+    <td class="text-end num text-nowrap">{{ p.amount|money:cur }}</td></tr>{% endfor %}</tbody>
+</table></div>
+{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total %}The newest {{ n }} of {{ t }} payments are shown. Download the report for all of them.{% endblocktrans %}</p>{% endif %}
 <p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
 {% else %}
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No payments are dated in this period. Choose another period, or record payments to see this report." %}</div></div>
 {% endif %}
 {% endwith %}
+{% endblock %}
+
+{% block scripts %}{{ block.super }}
+{% if specs %}{% load static %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
 {% endblock %}

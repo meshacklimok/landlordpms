@@ -1,6 +1,7 @@
 {% load money reports %}<tr>
   <td class="text-nowrap">{{ row.label }}</td>
   <td class="text-end num text-nowrap">{{ row.rent|money:cur }}</td>
+  <td class="text-end num text-nowrap">{{ row.utilities|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.other|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.unapplied|money:cur }}</td>
   <td class="text-end num text-nowrap">{{ row.income|money:cur }}</td>

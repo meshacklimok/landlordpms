@@ -23,6 +23,16 @@
   </div>
   {% endif %}
 
+  <h2 class="h6 mt-4">{% trans "Monthly report email" %}</h2>
+  <div class="card shadow-sm"><div class="card-body">
+    <p class="small mb-2">{% trans "On the 1st of each month we email you last month's figures for the properties you can see: what the records show, what stands out, and suggested next steps." %}</p>
+    <form method="post" action="{% url 'accounts:monthly_report_pref' %}">{% csrf_token %}
+      <div class="form-check form-switch mb-2"><input class="form-check-input" type="checkbox" role="switch" id="monthly_report" name="monthly_report"{% if monthly_report %} checked{% endif %}>
+        <label class="form-check-label" for="monthly_report">{% trans "Email me the monthly report" %}</label></div>
+      <button class="btn btn-outline-primary btn-sm">{% trans "Save" %}</button>
+    </form>
+  </div></div>
+
   {% if can_export %}
   <h2 class="h6 mt-4" id="your-data">{% trans "Your data" %}</h2>
   <div class="card shadow-sm"><div class="card-body">

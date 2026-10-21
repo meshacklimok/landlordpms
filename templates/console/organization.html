@@ -44,6 +44,10 @@
 </div>
 {% endwith %}
 {% if control %}
+<form method="post" action="{% url 'console:view_as' org.public_id %}" class="mt-3">{% csrf_token %}
+  <button class="btn btn-sm btn-outline-secondary"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "View as this landlord (read only)" %}</button>
+  <span class="small text-muted ms-2">{% trans "You see what their owner sees. Nothing can be changed, and it is logged." %}</span>
+</form>
 <h2 class="h6 mt-4">{% trans "Owner controls" %}</h2>
 <div class="row g-3">
   <form method="post" action="{% url 'console:organization_control' org.public_id %}" class="col-lg-5">{% csrf_token %}
@@ -62,6 +66,100 @@
     <label class="form-label small" for="id_reason_t">{% trans "Reason" %}</label>
     <input name="reason" id="id_reason_t" maxlength="200" required class="form-control form-control-sm mb-2">
     <button class="btn btn-sm btn-outline-primary">{% trans "Extend trial" %}</button>
+  </form>
+  <form method="post" action="{% url 'console:organization_login_contact' org.public_id %}" class="col-lg-10">{% csrf_token %}
+    <h3 class="h6">{% trans "Lost phone number or email" %}</h3>
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small" for="lc_user">{% trans "Person" %}</label>
+        <select name="user" id="lc_user" class="form-select form-select-sm">{% for p in login_people %}<option value="{{ p.pk }}">{{ p.full_name }} ({{ p.phone }})</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small" for="lc_phone">{% trans "New phone number" %}</label>
+        <input name="phone" id="lc_phone" class="form-control form-control-sm" inputmode="tel"></div>
+      <div class="col-md-3"><label class="form-label small" for="lc_email">{% trans "New email" %}</label>
+        <input name="email" id="lc_email" type="email" class="form-control form-control-sm"></div>
+      <div class="col-md-3"><label class="form-label small" for="lc_reason">{% trans "How you checked it is them" %}</label>
+        <input name="reason" id="lc_reason" maxlength="200" required class="form-control form-control-sm"></div>
+    </div>
+    <div class="form-check mt-2"><input class="form-check-input" type="checkbox" name="reset_mfa" id="lc_mfa">
+      <label class="form-check-label small" for="lc_mfa">{% trans "Also reset two-step login (they lost the authenticator app too)" %}</label></div>
+    <button class="btn btn-sm btn-outline-danger mt-2">{% trans "Change sign-in details" %}</button>
+    <div class="form-text">{% trans "They are signed out everywhere, the old number and email are warned, and they confirm the new number with a code. Leave a field empty to keep it." %}</div>
+  </form>
+  {% if late_rows %}
+  <form method="post" action="{% url 'console:organization_late_rules' org.public_id %}" class="col-lg-10">{% csrf_token %}
+    <div class="form-label small fw-semibold">{% trans "If this landlord pays late" %}{% if late_overdue is not None %} <span class="badge text-bg-warning">{% blocktrans with n=late_overdue %}{{ n }} days overdue{% endblocktrans %}</span>{% endif %}</div>
+    <div class="form-text mb-2">{% trans "Days after the due date when each one stops. Leave empty to follow the platform, type a number for this landlord only, or type never. Login codes and our own bills and reminders are never stopped." %}</div>
+    <div class="row g-2">
+      {% for r in late_rows %}
+      <div class="col-sm-6 col-md-4">
+        <label class="form-label small mb-0" for="id_late_{{ r.key }}">{{ r.label }}</label>
+        <input name="{{ r.key }}" id="id_late_{{ r.key }}" value="{{ r.own_text }}" maxlength="5" class="form-control form-control-sm" placeholder="{% if r.default is None %}{% trans 'never' %}{% else %}{{ r.default }}{% endif %}">
+        <div class="form-text">{% if r.own_text != "" %}{% trans "Own rule" %}{% else %}{% trans "Follows the platform" %}{% endif %} · {% trans "now" %}: {% if r.now is None %}{% trans "never" %}{% else %}{% blocktrans with n=r.now %}day {{ n }}{% endblocktrans %}{% endif %}</div>
+      </div>
+      {% endfor %}
+      {% for r in dunning_rows %}
+      <div class="col-sm-6 col-md-4">
+        <label class="form-label small mb-0" for="id_late_{{ r.key }}">{{ r.label }}</label>
+        <select name="{{ r.key }}" id="id_late_{{ r.key }}" class="form-select form-select-sm">
+          <option value=""{% if r.value == "default" %} selected{% endif %}>{% trans "Follow the platform" %} ({% if r.default %}{% trans "yes" %}{% else %}{% trans "no" %}{% endif %})</option>
+          <option value="on"{% if r.value == "on" %} selected{% endif %}>{% trans "Yes" %}</option>
+          <option value="off"{% if r.value == "off" %} selected{% endif %}>{% trans "No" %}</option>
+        </select>
+      </div>
+      {% endfor %}
+    </div>
+    <label class="form-label small mt-2 mb-0" for="id_reason_l">{% trans "Reason" %}</label>
+    <input name="reason" id="id_reason_l" maxlength="200" required class="form-control form-control-sm mb-2">
+    <button class="btn btn-sm btn-outline-primary">{% trans "Save late-payment rules" %}</button>
+  </form>
+  {% endif %}
+  {% if sub %}
+  <form method="post" action="{% url 'console:organization_access' org.public_id %}" class="col-lg-10">{% csrf_token %}
+    <input type="hidden" name="action" value="subscription">
+    <h3 class="h6">{% trans "Subscription by hand" %}</h3>
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small" for="sb_plan">{% trans "Plan" %}</label>
+        <select name="plan" id="sb_plan" class="form-select form-select-sm">{% for v, t in access.fields.plan.choices %}{% if v %}<option value="{{ v }}"{% if v == sub.plan_id %} selected{% endif %}>{{ t }}</option>{% endif %}{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small" for="sb_status">{% trans "Status" %}</label>
+        <select name="status" id="sb_status" class="form-select form-select-sm">{% for v, t in access.fields.status.choices %}<option value="{{ v }}"{% if v == sub.status %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small" for="sb_interval">{% trans "Billed" %}</label>
+        <select name="interval" id="sb_interval" class="form-select form-select-sm">{% for v, t in access.fields.interval.choices %}<option value="{{ v }}"{% if v == sub.interval %} selected{% endif %}>{{ t }}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small" for="sb_end">{% trans "Paid until" %}</label>
+        <input type="date" name="period_end" id="sb_end" value="{{ sub.period_end|date:'Y-m-d' }}" class="form-control form-control-sm"></div>
+      <div class="col-12"><label class="form-label small" for="sb_reason">{% trans "Reason" %}</label>
+        <input name="reason" id="sb_reason" maxlength="200" required class="form-control form-control-sm"></div>
+    </div>
+    <button class="btn btn-sm btn-outline-danger mt-2">{% trans "Change subscription" %}</button>
+    <div class="form-text">{% trans "Sets it as written, without charging or invoicing the landlord. Use it for a free period or to fix a mistake." %}</div>
+  </form>
+  <form method="post" action="{% url 'console:organization_access' org.public_id %}" class="col-lg-5">{% csrf_token %}
+    <input type="hidden" name="action" value="grace">
+    <label class="form-label small" for="gr_days">{% trans "Do not lapse for (days from today)" %}</label>
+    <input type="number" name="days" id="gr_days" min="1" max="90" required class="form-control form-control-sm mb-2">
+    <label class="form-label small" for="gr_reason">{% trans "Reason" %}</label>
+    <input name="reason" id="gr_reason" maxlength="200" required class="form-control form-control-sm mb-2">
+    <button class="btn btn-sm btn-outline-primary">{% trans "Extend grace" %}</button>
+    {% if sub.grace_until %}<div class="form-text">{% blocktrans with d=sub.grace_until|date:"j M Y" %}Now until {{ d }}.{% endblocktrans %}</div>{% endif %}
+  </form>
+  {% endif %}
+  <form method="post" action="{% url 'console:organization_access' org.public_id %}" class="col-lg-5">{% csrf_token %}
+    <input type="hidden" name="action" value="signout">
+    <label class="form-label small" for="so_reason">{% trans "Sign everyone out" %}</label>
+    <input name="reason" id="so_reason" maxlength="200" required placeholder="{% trans 'Reason' %}" class="form-control form-control-sm mb-2">
+    <button class="btn btn-sm btn-outline-danger">{% trans "End all sessions" %}</button>
+    <div class="form-text">{% trans "Every person in this organization has to sign in again." %}</div>
+  </form>
+  <form method="post" action="{% url 'console:organization_access' org.public_id %}" class="col-lg-10">{% csrf_token %}
+    <input type="hidden" name="action" value="member">
+    <h3 class="h6">{% trans "Suspend or restore one person" %}</h3>
+    <div class="row g-2">
+      <div class="col-md-4"><label class="form-label small" for="mb_user">{% trans "Person" %}</label>
+        <select name="user" id="mb_user" class="form-select form-select-sm">{% for p in login_people %}<option value="{{ p.pk }}">{{ p.full_name }} ({{ p.phone }}){% if p.suspended %} — {% trans "suspended" %}{% endif %}</option>{% endfor %}</select></div>
+      <div class="col-md-3"><label class="form-label small" for="mb_do">{% trans "Do" %}</label>
+        <select name="active" id="mb_do" class="form-select form-select-sm"><option value="">{% trans "Suspend" %}</option><option value="on">{% trans "Restore" %}</option></select></div>
+      <div class="col-md-5"><label class="form-label small" for="mb_reason">{% trans "Reason" %}</label>
+        <input name="reason" id="mb_reason" maxlength="200" required class="form-control form-control-sm"></div>
+    </div>
+    <button class="btn btn-sm btn-outline-danger mt-2">{% trans "Save" %}</button>
   </form>
   <form method="post" action="{% url 'console:organization_export' org.public_id %}" class="col-lg-5">{% csrf_token %}
     <div class="form-label small">{% trans "This organization's data" %}</div>

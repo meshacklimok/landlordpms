@@ -1,18 +1,20 @@
 {% extends "console/base.html" %}{% load i18n %}
 {% block title %}{% trans "Announcements" %}{% endblock %}
-{% block console_title %}{% trans "Announcements to everyone" %}{% endblock %}
+{% block console_title %}{% trans "Notices to owners" %}{% endblock %}
 {% block console %}
-<p class="small text-muted">{% trans "A notice shown at the top of every page for everyone signed in, until it ends or you switch it off. Use it for planned downtime or a change landlords and tenants must know about." %}</p>
+<p class="small text-muted">{% trans "A notice shown at the top of every page, for everyone signed in or only the organizations you pick. Set a start time to schedule it (for example “maintenance tonight at 11”). It stays one month unless you set another end, and you can edit or switch it off at any time." %}</p>
 <form method="post" class="col-lg-6 p-0 mb-4">{% csrf_token %}
+  {% if editing %}<input type="hidden" name="edit" value="{{ editing.pk }}">{% endif %}
   {% include "partials/form.html" %}
-  <button class="btn btn-primary">{% trans "Show to everyone" %}</button>
+  <button class="btn btn-primary">{% if editing %}{% trans "Save changes" %}{% else %}{% trans "Send notice" %}{% endif %}</button>
+  {% if editing %}<a href="{% url 'console:announcements' %}" class="btn btn-link">{% trans "Cancel" %}</a>{% endif %}
 </form>
 <div class="table-responsive"><table class="table table-sm align-middle small">
-  <thead><tr><th>{% trans "Message" %}</th><th>{% trans "Kind" %}</th><th>{% trans "Ends" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
+  <thead><tr><th>{% trans "Message" %}</th><th>{% trans "Kind" %}</th><th>{% trans "To" %}</th><th>{% trans "Shows from" %}</th><th>{% trans "Ends" %}</th><th>{% trans "Status" %}</th><th></th></tr></thead>
   <tbody>{% for a in items %}<tr>
-    <td>{{ a.message }}</td><td>{{ a.get_level_display }}</td><td>{{ a.ends_at|date:"j M H:i"|default:"—" }}</td>
-    <td>{% if a.is_active %}{% trans "Showing" %}{% else %}<span class="text-muted">{% trans "Off" %}</span>{% endif %}</td>
-    <td class="text-end"><form method="post">{% csrf_token %}<button name="toggle" value="{{ a.pk }}" class="btn btn-sm btn-link p-0">{% if a.is_active %}{% trans "Switch off" %}{% else %}{% trans "Switch on" %}{% endif %}</button></form></td>
-  </tr>{% empty %}<tr><td colspan="5" class="text-muted">{% trans "None yet." %}</td></tr>{% endfor %}</tbody>
+    <td>{{ a.message }}</td><td>{{ a.get_level_display }}</td><td>{% for o in a.organizations.all %}{{ o.name }}{% if not forloop.last %}, {% endif %}{% empty %}{% trans "Everyone" %}{% endfor %}</td><td>{{ a.starts_at|date:"j M H:i"|default:"—" }}</td><td>{{ a.ends_at|date:"j M H:i"|default:"—" }}</td>
+    <td>{% if a.is_active and a.ends_at and a.ends_at < now %}<span class="text-muted">{% trans "Ended" %}</span>{% elif a.is_active and a.starts_at and a.starts_at > now %}{% trans "Scheduled" %}{% elif a.is_active %}{% trans "Showing" %}{% else %}<span class="text-muted">{% trans "Off" %}</span>{% endif %}</td>
+    <td class="text-end text-nowrap"><a href="?edit={{ a.pk }}" class="me-2">{% trans "Edit" %}</a><form method="post" class="d-inline">{% csrf_token %}<button name="toggle" value="{{ a.pk }}" class="btn btn-sm btn-link p-0">{% if a.is_active %}{% trans "Switch off" %}{% else %}{% trans "Switch on" %}{% endif %}</button></form></td>
+  </tr>{% empty %}<tr><td colspan="7" class="text-muted">{% trans "None yet." %}</td></tr>{% endfor %}</tbody>
 </table></div>
 {% endblock %}

@@ -13,7 +13,8 @@
       <li>{% trans "Shaped around how you collect rent today" %}</li>
       <li>{% trans "No obligation and no card needed" %}</li>
     </ul>
-    <p class="mt-4 mb-0">{% trans "Rather try it yourself?" %} <a href="{% url 'accounts:register' %}">{% trans "Start the free trial" %}</a></p>
+    <form method="post" action="{% url 'growth:demo_enter' %}" class="mt-4">{% csrf_token %}<button class="btn btn-outline-primary">{% trans "Try the live demo now" %}</button> <span class="text-muted small ms-2">{% trans "Sample landlord, 74 units, no sign-up." %}</span></form>
+    <p class="mt-3 mb-0">{% trans "Rather use your own data?" %} <a href="{% url 'accounts:register' %}">{% trans "Start the free trial" %}</a></p>
   </div>
   <div class="about-card pub-demo-form">
     <h2 class="about-card-title mt-0 mb-3">{% trans "Request a demo" %}</h2>

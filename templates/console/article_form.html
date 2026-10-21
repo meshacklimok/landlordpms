@@ -1,0 +1,43 @@
+{% extends "console/base.html" %}{% load i18n %}
+{% block title %}{% if article %}{% trans "Edit article" %}{% else %}{% trans "New article" %}{% endif %}{% endblock %}
+{% block console_title %}{% if article %}{% trans "Edit article" %}{% else %}{% trans "Write an article" %}{% endif %}{% endblock %}
+{% block console %}
+<p class="small mb-3"><a href="{% url 'console:articles' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All articles" %}</a>
+{% if article %} · {% if article.is_published %}<span class="badge text-bg-success">{% trans "Published" %}</span> <a href="{% url 'growth:article' article.slug %}" target="_blank" rel="noopener">{% trans "View on the site" %}</a>{% else %}<span class="badge text-bg-warning">{% trans "Draft" %}</span>{% endif %}{% endif %}</p>
+<div class="row g-4">
+  <form method="post" class="col-lg-8">{% csrf_token %}
+    {% include "partials/form.html" %}
+    <div class="d-flex flex-wrap gap-2">
+      <button class="btn btn-outline-secondary" name="save" value="1">{% trans "Save" %}</button>
+      <button class="btn btn-outline-secondary" name="preview" value="1">{% trans "Save and preview" %}</button>
+      {% if article.is_published %}<button class="btn btn-outline-danger" name="unpublish" value="1">{% trans "Take off the site" %}</button>
+      <button class="btn btn-primary" name="publish" value="1">{% trans "Save changes to the live article" %}</button>
+      {% else %}<button class="btn btn-primary" name="publish" value="1">{% trans "Publish" %}</button>{% endif %}
+    </div>
+    {% if article and not article.is_published %}
+    <div class="mt-4"><button class="btn btn-link text-danger p-0 small" name="delete" value="1">{% trans "Delete this draft" %}</button></div>
+    {% endif %}
+  </form>
+  <aside class="col-lg-4">
+    <div class="card"><div class="card-body small">
+      <h2 class="h6">{% trans "How to write" %}</h2>
+      <p class="text-muted">{% trans "Plain text. A blank line starts a new paragraph. Nothing typed here is shown as code." %}</p>
+      <pre class="mb-2 p-2 bg-body-tertiary rounded small">## A heading
+### A smaller heading
+
+- A bullet
+- Another bullet
+
+1. A numbered step
+2. The next step
+
+**bold**  *italic*
+[link text](https://example.com)
+[inside the site](/pricing/)
+
+&gt; A note set apart</pre>
+      <p class="text-muted mb-0">{% trans "Reading time is worked out from the length. Search engines see the title and the summary, so make both say what the article is about, in the words a landlord would search for." %}</p>
+    </div></div>
+  </aside>
+</div>
+{% endblock %}

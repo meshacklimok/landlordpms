@@ -24,6 +24,37 @@
   </div></div></div>
 </div>
 
+<h2 class="h6">{% trans "Tenant rent collected, all organizations" %}</h2>
+<p class="small text-muted">{% trans "Confirmed rent payments only, amounts with no tenant named. 'Through the site' is M-Pesa that arrived by Paybill, Till or a payment request; the rest was imported from a statement or recorded by hand." %}</p>
+<div class="row g-3 mb-3">
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "All time" %}</div>
+    <div class="h4 mb-0">{{ rent.ever_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "This month" %}</div>
+    <div class="h4 mb-0">{{ rent.month_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Last 12 months" %}</div>
+    <div class="h4 mb-0">{{ rent.last_total|money }}</div>
+  </div></div></div>
+  <div class="col-6 col-lg-3"><div class="card shadow-sm h-100"><div class="card-body">
+    <div class="small text-muted">{% trans "Through the site" %}</div>
+    <div class="h4 mb-0">{% if rent.site_share is not None %}{{ rent.site_share }}%{% else %}—{% endif %}</div>
+    <div class="small">{% trans "of all rent collected" %}</div>
+  </div></div></div>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">{% include "console/_chart.html" with spec="rent" title=_("Rent collected by month") note=_("Split by how the money reached the site.") label=_("The same figures are in the table beside it.") %}</div>
+  <div class="col-lg-5">
+    <div class="table-responsive"><table class="table table-sm small">
+      <thead><tr><th>{% trans "How it arrived" %}</th><th class="text-end">{% trans "This month" %}</th><th class="text-end">{% trans "12 months" %}</th><th class="text-end">{% trans "All time" %}</th></tr></thead>
+      <tbody>{% for r in rent.rows %}<tr><td>{{ r.channel }}</td><td class="text-end">{{ r.this_month|money }}</td><td class="text-end">{{ r.last_12|money }}</td><td class="text-end">{{ r.ever|money }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  </div>
+</div>
+
 <div class="row g-3 mb-3">
   <div class="col-lg-8">{% include "console/_chart.html" with spec="collected" title=_("Subscription money collected") note=_("By month, split by how it was paid.") label=_("The same figures are in the table below.") %}</div>
   <div class="col-lg-4">{% include "console/_chart.html" with spec="plans" title=_("Organizations by plan") note="" label=_("The same figures are in the plan table.") %}</div>

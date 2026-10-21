@@ -9,7 +9,7 @@
 {% include "reports/_period_filter.html" %}
 
 {% if report.rows or f.score.income or f.score.expenses or b.potential %}
-<nav class="report-nav d-print-none" aria-label="{% trans 'Sections' %}">
+<nav class="report-nav d-print-none" data-section-nav data-menu-label="{% trans 'Jump to' %}" data-here-label="{% trans 'On this page' %}" data-close-label="{% trans 'Close' %}" data-next-label="{% trans 'Next' %}" data-top-label="{% trans 'Back to top' %}" aria-label="{% trans 'Sections' %}">
   <a href="#rent">{% trans "Rent" %}</a><a href="#profit">{% trans "Profit" %}</a><a href="#trend">{% trans "Collection and occupancy" %}</a>
   {% if report.benchmarks %}<a href="#compare">{% trans "Against the rest" %}</a>{% endif %}
   {% if report.rows|length > 1 %}<a href="#ranking">{% trans "Ranking" %}</a>{% endif %}

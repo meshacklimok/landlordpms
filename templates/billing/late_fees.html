@@ -56,7 +56,7 @@
     <tr>
       <td><a href="{% url 'billing:invoice' fee.invoice.public_id %}">{{ fee.invoice.number }}</a></td>
       <td>{{ fee.lease.unit.property.name }} {{ fee.lease.unit.code }}</td>
-      <td>{% if fee.fee_invoice %}{% trans "Charged on" %} <a href="{% url 'billing:invoice' fee.fee_invoice.public_id %}">{{ fee.fee_invoice.number }}</a>{% else %}{{ fee.get_status_display }}{% if fee.reason %}: {{ fee.reason }}{% endif %}{% endif %}</td>
+      <td>{% if fee.fee_invoice %}{% trans "Charged on" %} <a href="{% url 'billing:invoice' fee.fee_invoice.public_id %}">{{ fee.fee_invoice.number }}</a>{% else %}<span class="badge text-bg-secondary">{{ fee.get_status_display }}</span>{% if fee.reason %}: {{ fee.reason }}{% endif %}{% endif %}</td>
       <td class="text-end num text-nowrap">{{ fee.amount|money:cur }}</td>
       <td>{{ fee.decided_by.full_name|default:_("Daily job") }} · {{ fee.decided_at|date:"j M" }}</td>
     </tr>

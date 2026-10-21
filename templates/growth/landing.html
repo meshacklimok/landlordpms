@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n static %}
 {% block title %}NyumbaPMS · {% trans "Rent collection and property management for Kenya" %}{% endblock %}
 {% block page_class %} page-wide{% endblock %}
 {% block content %}
@@ -13,12 +13,15 @@
     {% if invited %}<div class="alert alert-success small mt-3 mb-0" data-referral-applied>{{ invited }}</div>{% endif %}
     <div class="land-cta-row">
       <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% blocktrans with d=trial_days %}Start your {{ d }}-day free trial{% endblocktrans %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+      <form method="post" action="{% url 'growth:demo_enter' %}" class="d-inline">{% csrf_token %}<button class="btn btn-outline-primary btn-lg"><i class="bi bi-play-circle" aria-hidden="true"></i> {% trans "Try the demo" %}</button></form>
       <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}"><i class="bi bi-calendar-event" aria-hidden="true"></i> {% trans "Book a demo" %}</a>
     </div>
+    <p class="small text-muted mt-2 mb-0">{% trans "Try the demo opens a full sample landlord with 74 units. No sign-up, nothing is sent to anyone." %}</p>
     <ul class="land-assure">
       <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "No card needed" %}</li>
       <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Rent goes to your own Paybill" %}</li>
       <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Every feature on every plan" %}</li>
+      <li><i class="bi bi-check2" aria-hidden="true"></i>{% trans "Import your spreadsheet" %}</li>
     </ul>
   </div>
 
@@ -77,6 +80,25 @@
   </div>
 </section>
 
+{# 3b. What waiting for rent costs, worked out from the visitor's own figures #}
+<section class="land-section" aria-labelledby="calc-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Try your numbers" %}</p><h2 id="calc-h" class="about-h2">{% trans "How much rent sits unpaid while you chase?" %}</h2>
+    <p class="mt-2 mb-0 text-muted">{% trans "Worked out only from what you type. Nothing is saved or sent." %}</p></div>
+  <form class="land-calc" data-land-calc>
+    <div class="land-calc-fields">
+      <div><label class="form-label" for="calc-units">{% trans "Units you manage" %}</label><input class="form-control" id="calc-units" type="number" inputmode="numeric" min="1" max="100000" value="30"></div>
+      <div><label class="form-label" for="calc-rent">{% trans "Average rent per unit (KSh)" %}</label><input class="form-control" id="calc-rent" type="number" inputmode="numeric" min="0" step="500" value="15000"></div>
+      <div><label class="form-label" for="calc-late">{% trans "Tenants who pay after the due date (%)" %}</label><input class="form-control" id="calc-late" type="number" inputmode="numeric" min="0" max="100" value="30"></div>
+    </div>
+    <div class="land-calc-out" aria-live="polite">
+      <p class="land-k">{% trans "Rent waiting every month" %}</p>
+      <p class="land-calc-big" data-calc-out>KSh 0</p>
+      <p class="land-s" data-calc-note></p>
+      <a class="btn btn-primary" href="{% url 'accounts:register' %}">{% trans "Start your free trial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    </div>
+  </form>
+</section>
+
 {# 4. The four jobs as tabs, each with a picture of that part of the product #}
 <section class="land-section" id="features" aria-labelledby="feat-h">
   <div class="land-head land-head-center"><p class="about-eyebrow">{% trans "What it does" %}</p><h2 id="feat-h" class="about-h2">{% trans "Everything from the M-Pesa message to the year-end figures" %}</h2></div>
@@ -105,8 +127,8 @@
 <section class="land-section" aria-labelledby="who-h">
   <div class="land-head"><p class="about-eyebrow">{% trans "Built for you" %}</p><h2 id="who-h" class="about-h2">{% trans "Whether you have six units or six hundred" %}</h2></div>
   <div class="land-who">
-  {% for icon, who, what in audiences %}
-    <article class="land-who-card"><span class="about-icon" aria-hidden="true"><i class="bi bi-{{ icon }}"></i></span><div><h3 class="about-card-title">{{ who }}</h3><p>{{ what }}</p></div></article>
+  {% for icon, who, what, slug in audiences %}
+    <a class="land-who-card" href="{% url 'growth:solution' slug %}"><span class="about-icon" aria-hidden="true"><i class="bi bi-{{ icon }}"></i></span><div><h3 class="about-card-title">{{ who }}</h3><p>{{ what }}</p><span class="pub-card-go">{% trans "See how" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span></div></a>
   {% endfor %}
   </div>
 </section>
@@ -132,6 +154,20 @@
   {% for icon, label in more %}<li><i class="bi bi-{{ icon }}" aria-hidden="true"></i>{{ label }}</li>{% endfor %}
   </ul>
   <p class="mt-3 mb-0"><a class="pub-more" href="{% url 'growth:how_it_works' %}">{% trans "See how it works, and what is not built yet" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a></p>
+</section>
+
+{# 7b. Pages for the specific job a visitor came to get done #}
+<section class="land-section" aria-labelledby="jobs-h">
+  <div class="land-head"><p class="about-eyebrow">{% trans "Pick your job" %}</p><h2 id="jobs-h" class="about-h2">{% trans "Start with the problem you have today" %}</h2></div>
+  <div class="pub-cards">
+  {% for s in solutions %}
+    <a class="pub-card" href="{% url 'growth:solution' s.slug %}">
+      <h3 class="pub-card-title">{{ s.title }}</h3>
+      <p>{{ s.description }}</p>
+      <span class="pub-card-go">{% trans "Read more" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>
+    </a>
+  {% endfor %}
+  </div>
 </section>
 
 {# 8. Start #}
@@ -170,8 +206,16 @@
   <p>{% blocktrans with d=trial_days %}{{ d }} days free, every feature switched on, no card needed. Or ask us to walk you through it.{% endblocktrans %}</p>
   <div class="land-cta-row justify-content-center">
     <a class="btn btn-lg land-btn-on-deep" href="{% url 'accounts:register' %}">{% trans "Start free trial" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+    <form method="post" action="{% url 'growth:demo_enter' %}" class="d-inline">{% csrf_token %}<button class="btn btn-lg land-btn-ghost">{% trans "Try the demo" %}</button></form>
     <a class="btn btn-lg land-btn-ghost" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
+    {% if support_whatsapp %}<a class="btn btn-lg land-btn-ghost" href="https://wa.me/{{ support_whatsapp }}?text={{ wa_text }}" rel="noopener"><i class="bi bi-whatsapp" aria-hidden="true"></i> {% trans "Chat on WhatsApp" %}</a>{% endif %}
   </div>
 </section>
 </div>
+{% if not user.is_authenticated %}
+<div class="land-sticky" data-land-sticky hidden>
+  <a class="btn btn-primary" href="{% url 'accounts:register' %}">{% blocktrans with d=trial_days %}Start your {{ d }}-day free trial{% endblocktrans %}</a>
+</div>
+{% endif %}
+<script src="{% static 'js/landing.js' %}" defer></script>
 {% endblock %}

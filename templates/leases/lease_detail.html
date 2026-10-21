@@ -237,7 +237,7 @@
   <section class="panel" id="paperwork">
     <h2 class="h6 mb-2">{% trans "Paperwork" %}</h2>
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-      <div class="small text-muted">{% trans "The agreement as a PDF, from what is recorded on this lease. Print it, sign it, then upload the signed copy." %}</div>
+      <div class="small text-muted">{% trans "The agreement as a PDF, from what is recorded on this lease and your standard conditions. Print it, sign it, then upload the signed copy." %}</div>
       <a class="btn btn-sm btn-outline-primary text-nowrap" href="{% url 'leases:agreement' lease.public_id %}">{% trans "Agreement PDF" %}</a>
     </div>
     {% if can_save_agreement %}

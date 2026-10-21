@@ -6,7 +6,8 @@
     <h1 class="h3 mb-0">{% trans "Expenses" %}</h1>
     <span class="d-flex gap-2">
       {% if to_approve %}<a class="btn btn-sm btn-warning" href="?status=SUBMITTED">{% blocktrans count n=to_approve %}{{ n }} to approve{% plural %}{{ n }} to approve{% endblocktrans %}</a>{% endif %}
-      {% if can_record %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Record an expense" %}</a>{% endif %}
+      {% if can_record %}<a class="btn btn-sm btn-primary" href="{% url 'expenses:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Record an expense" %}</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'expenses:create_split' %}">{% trans "Shared expense" %}</a>{% endif %}
     </span>
   </div>
   <p class="small text-body-secondary">{% trans "Money paid out for a property. Only approved expenses count in reports and owner statements." %}</p>
@@ -106,7 +107,7 @@
           <tr data-href="{% url 'expenses:detail' expense.public_id %}">
             <td class="num text-nowrap">{{ expense.paid_on|date:"j M Y" }}</td>
             <td><a class="fw-medium link-body-emphasis link-underline link-underline-opacity-0 link-underline-opacity-75-hover" href="{% url 'expenses:detail' expense.public_id %}">{{ expense.description|truncatechars:70 }}</a>
-              <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }}{% if expense.supplier %} · {{ expense.supplier.name }}{% endif %}{% if expense.receipt %} · <i class="bi bi-paperclip" role="img" title="{% trans 'Has a receipt' %}" aria-label="{% trans 'Has a receipt' %}"></i>{% endif %}</div></td>
+              <div class="small text-body-secondary">{{ expense.number }} · {{ expense.property.name }}{% if expense.split_key %} · <span class="badge text-bg-secondary">{% trans "Shared" %}</span>{% endif %}{% if expense.supplier %} · {{ expense.supplier.name }}{% endif %}{% if expense.receipt %} · <i class="bi bi-paperclip" role="img" title="{% trans 'Has a receipt' %}" aria-label="{% trans 'Has a receipt' %}"></i>{% endif %}</div></td>
             <td class="d-none d-lg-table-cell small">{{ expense.category.name }}</td>
             <td>{% include "expenses/_status.html" %}</td>
             <td class="text-end num fw-semibold">{{ expense.amount|money:currency }}</td>
