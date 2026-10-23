@@ -24,6 +24,8 @@ PRECACHE_STATIC = ("vendor/bootstrap-5.3.3/bootstrap.min.css", "vendor/bootstrap
                    "vendor/bootstrap-icons-1.11.3/fonts/bootstrap-icons.woff2",
                    "css/app.css", "fonts/inter-latin-wght-normal.woff2", "js/theme.js", "js/pwa.js", "js/offline.js", "js/ui.js",
                    "icons/icon-192.png", "icons/favicon-32.png")
+# Bump when the icon files change: the icons are cached for 30 days at the same address, so phones keep the old one.
+ICON_VERSION = "2"
 ICONS = (
     ("icons/icon-192.png", "192x192", "any"),
     ("icons/icon-512.png", "512x512", "any"),
@@ -42,7 +44,7 @@ def manifest() -> dict:
         "display": "standalone",
         "theme_color": THEME_COLOR,
         "background_color": BACKGROUND_COLOR,
-        "icons": [{"src": static(path), "sizes": sizes, "type": "image/png", "purpose": purpose}
+        "icons": [{"src": f"{static(path)}?v={ICON_VERSION}", "sizes": sizes, "type": "image/png", "purpose": purpose}
                   for path, sizes, purpose in ICONS],
     }
 
@@ -78,7 +80,7 @@ def service_worker() -> str:
 class ManifestView(View):
     def get(self, request):
         response = JsonResponse(manifest(), content_type="application/manifest+json")
-        response["Cache-Control"] = "public, max-age=86400"
+        response["Cache-Control"] = "public, max-age=3600"
         return response
 
 

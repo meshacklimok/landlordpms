@@ -120,7 +120,7 @@ FAQ = [
            "give a card to start.")),
         (_("What does it cost?"),
          _("Plans are by the number of units you manage and every plan has every feature. Prices are on the "
-           "pricing page, before VAT. Small landlords can pay once for five years instead of monthly.")),
+           "pricing page, before VAT.")),
         (_("Do I need to install anything?"),
          _("No. It opens in the browser, and you can add it to your phone's home screen like an app. Tenants do not "
            "need to install anything either.")),

@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from django.conf import settings
+from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count
 from django.utils import timezone
@@ -126,6 +127,10 @@ def read_photo(actor: Membership, kind: str, prop, upload, instructions: str, sc
         scan.save()
         raise ValidationError(_("This month's %(n)s photo scans are used. Type or paste the figures instead; scans "
                                 "start again on the 1st.") % {"n": limit(org)})
+    # One photo at a time per organization, so photos sent together cannot all pass the limit check above.
+    lock = f"scan-busy:{org.pk}"
+    if not cache.add(lock, 1, 90):
+        raise ValidationError(_("Another photo is being read. Wait a moment and try again."))
     try:
         result = client.get_client().read_image(instructions=instructions, image=image.read(), schema=schema,
                                                 max_tokens=max_tokens)
@@ -133,6 +138,8 @@ def read_photo(actor: Membership, kind: str, prop, upload, instructions: str, sc
         scan.status = Scan.Status.FAILED
         scan.save()
         raise ValidationError(_("The photo could not be read just now. Try again, or type the figures.")) from None
+    finally:
+        cache.delete(lock)
     usage = result.get("usage") or {}
     scan.input_tokens, scan.output_tokens = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
     scan.cost = client.cost_kes(scan.input_tokens, scan.output_tokens)

@@ -5,6 +5,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from accounts.models import Organization
+from core import exports
 from ops import pilot
 from support.models import AppOpen
 
@@ -35,7 +36,7 @@ class Command(BaseCommand):
         if options["csv"]:
             writer = csv.DictWriter(self.stdout, fieldnames=COLUMNS, lineterminator="\n")
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows({k: exports.safe(v) for k, v in row.items()} for row in rows)
             return
         self.stdout.write(f"Pilot measures for {month:%B %Y}: set-up under {pilot.SETUP_MINUTES} minutes, "
                           f"rent cycle in the app, {pilot.AUTO_SHARE}%+ matched without work.")

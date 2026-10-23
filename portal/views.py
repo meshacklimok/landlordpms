@@ -19,6 +19,7 @@ from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import PORTAL_INVITE_KEY
 from ai_assistant import tenant as tenant_assistant
 from billing import deposits
+from billing.invoicing import lease_balance
 from core import exports, ratelimit
 from documents.views import file_response
 from esign import services as esign
@@ -29,7 +30,10 @@ from leases import services as lease_services
 from leases.models import Lease
 from maintenance import forms as maintenance_forms
 from maintenance import services as maintenance
+from maintenance.models import MaintenanceRequest
 from maintenance.views import photo_response
+from payments.forms import accounts_for
+from payments.models import PaymentAccount
 from reports import patterns
 from tenants.models import Tenant
 from tenants.services import visible_tenants
@@ -63,8 +67,35 @@ class HomeView(PortalRequiredMixin, View):
 
     def get(self, request):
         leases = list(selectors.own_leases(request.user))
+        unread = conversation.unread_for_tenant(request.user)
+        cards = []
+        for lease in leases:
+            active = lease.status == Lease.Status.ACTIVE
+            repairs = list(selectors.own_requests(request.user).filter(
+                lease=lease, status__in=MaintenanceRequest.UNFINISHED)[:3])
+            cards.append({
+                "summary": selectors.summary(lease),
+                "lease": lease,
+                "months": _rent_months(lease),
+                "payments": selectors.payments(lease)[:3],
+                "pending": selectors.pending_payments(lease),
+                "repairs": repairs,
+                "unread": unread.get(lease.pk, 0),
+                "offer": offers.open_offer(lease) if active else None,
+                "notice": lease_services.open_notice(lease) if active else None,
+                "signings": [(r, s) for r, s in esign.portal_requests(request.user, lease)
+                             if r.is_open and not s.has_signed and not s.declined_at],
+                "can_report": active,
+                "ways": _pay_ways(lease) if active or lease_balance(lease) > 0 else [],
+                "news": conversation.received(lease)[:2],
+                "rent": lease.rent_on(timezone.localdate()),
+                "days_left": (lease.end_date - timezone.localdate()).days if active and lease.end_date else None,
+                "deposit": _deposit_statement(lease),
+                "documents": selectors.own_documents(lease),
+            })
         return _no_store(render(request, self.template_name, {
-            "summaries": [selectors.summary(lease) for lease in leases],
+            "cards": cards,
+            "summaries": cards,
             "ussd_code": getattr(settings, "USSD_CODE", ""),
             "can_ask": tenant_assistant.portal_caller(request.user) is not None,
         }))
@@ -156,6 +187,25 @@ class SigningPdfView(SigningView):
         if not req.is_open:
             raise Http404
         return pdf_response(req.original_pdf, f"{req.number}.pdf", download=download)
+
+
+def _pay_ways(lease):
+    """Where the tenant can pay by hand: Paybill and Till numbers, bank accounts, with the unit's account reference (D-100)."""
+    reference = lease.unit.payment_reference
+    ways = []
+    for account in accounts_for(lease).exclude(type=PaymentAccount.Type.CASH).exclude(number="")[:3]:
+        kind = account.type
+        if kind == PaymentAccount.Type.PAYBILL:
+            ways.append({"title": _("M-Pesa Paybill"), "number_label": _("Business number"), "number": account.number,
+                         "reference": reference})
+        elif kind == PaymentAccount.Type.TILL:
+            ways.append({"title": _("M-Pesa Buy Goods"), "number_label": _("Till number"), "number": account.number})
+        elif kind == PaymentAccount.Type.BANK:
+            ways.append({"title": account.display_name, "number_label": _("Account number"), "number": account.number,
+                         "reference": reference})
+        else:
+            ways.append({"title": "M-Pesa", "number_label": _("Send to"), "number": account.number})
+    return ways
 
 
 def _deposit_statement(lease):

@@ -123,6 +123,19 @@
   </form>
   {% endif %}
   {% if sub %}
+  <form method="post" action="{% url 'console:organization_custom_price' org.public_id %}" class="col-lg-10">{% csrf_token %}
+    <h3 class="h6">{% trans "This landlord's price" %}</h3>
+    <div class="form-text mb-2">{% blocktrans with plan=sub.plan.name m=sub.plan.monthly_price|floatformat:"0g" y=sub.plan.yearly_price|floatformat:"0g" %}On the {{ plan }} plan the price is KSh {{ m }} a month or KSh {{ y }} a year (before VAT). Type a price below to charge this landlord something different, or leave both empty to follow the plan. It applies to invoices issued from now on, and only while they stay on this plan.{% endblocktrans %}</div>
+    <div class="row g-2">
+      <div class="col-md-3"><label class="form-label small" for="cp_monthly">{% trans "Monthly price (KSh)" %}</label>
+        <input type="number" name="monthly" id="cp_monthly" min="0" step="0.01" value="{{ sub.custom_monthly_price|default_if_none:''|stringformat:'s' }}" class="form-control form-control-sm"></div>
+      <div class="col-md-3"><label class="form-label small" for="cp_yearly">{% trans "Yearly price (KSh)" %}</label>
+        <input type="number" name="yearly" id="cp_yearly" min="0" step="0.01" value="{{ sub.custom_yearly_price|default_if_none:''|stringformat:'s' }}" class="form-control form-control-sm"></div>
+      <div class="col-md-6"><label class="form-label small" for="cp_reason">{% trans "Reason" %}</label>
+        <input name="reason" id="cp_reason" maxlength="200" required class="form-control form-control-sm"></div>
+    </div>
+    <button class="btn btn-sm btn-outline-primary mt-2">{% trans "Save price" %}</button>
+  </form>
   <form method="post" action="{% url 'console:organization_access' org.public_id %}" class="col-lg-10">{% csrf_token %}
     <input type="hidden" name="action" value="subscription">
     <h3 class="h6">{% trans "Subscription by hand" %}</h3>

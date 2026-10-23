@@ -5,6 +5,8 @@ on the period's last day (or today); turnover is move-outs over leases in force,
 Properties are ranked by net operating income per unit.
 """
 
+from __future__ import annotations
+
 import datetime
 from dataclasses import dataclass
 from decimal import Decimal

@@ -143,9 +143,17 @@ def _providers() -> list[tuple[bool, str]]:
     from mpesa.models import DarajaCredentials
 
     results = []
-    if settings.SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender":
+    if settings.SMS_BACKEND == "notifications.providers.sms.CelcomSmsSender":
+        if settings.CELCOM_API_KEY and settings.CELCOM_PARTNER_ID:
+            sender = settings.CELCOM_SENDER_ID or "Celcom's default sender (CELCOM_SENDER_ID is empty)"
+            results.append((True, f"SMS go out through Celcom Africa as partner {settings.CELCOM_PARTNER_ID}, from {sender}."))
+        else:
+            results.append((False, "SMS_BACKEND is Celcom Africa but CELCOM_API_KEY or CELCOM_PARTNER_ID is empty "
+                                   "(Django admin > Platform settings, or the environment file)."))
+    elif settings.SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender":
         results.append((False, f"SMS goes to {settings.SMS_BACKEND.rsplit('.', 1)[-1]}: set SMS_BACKEND to "
-                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY "
+                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY, "
+                               "or to CelcomSmsSender with CELCOM_API_KEY and CELCOM_PARTNER_ID "
                                "(Django admin > Platform settings, or the environment file)."))
     elif settings.AT_USERNAME == "sandbox":
         results.append((False, "AT_USERNAME is sandbox: put in your live Africa's Talking username and API key."))

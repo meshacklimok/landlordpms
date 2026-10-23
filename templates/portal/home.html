@@ -1,24 +1,150 @@
-{% extends "base.html" %}{% load i18n %}
+{% extends "base.html" %}{% load i18n money access %}
 {% block title %}{% trans "My home" %}{% endblock %}
 {% block content %}
 <div class="narrow mx-auto">
   <h1 class="h4 mb-3">{% trans "My home" %}</h1>
-  {% if can_ask %}<a class="btn btn-outline-primary btn-sm mb-3" href="{% url 'portal:ask' %}">{% trans "Ask about your rent or a repair" %}</a>{% endif %}
-  {% for summary in summaries %}
-  <div class="mb-4">
+  {% if can_ask %}<a class="btn btn-outline-primary btn-sm mb-3" href="{% url 'portal:ask' %}"><i class="bi bi-chat-dots" aria-hidden="true"></i> {% trans "Ask about your rent or a repair" %}</a>{% endif %}
+  {% for card in cards %}
+  {% with summary=card.summary lease=card.lease months=card.months %}
+  <section class="mb-5" aria-label="{{ lease.unit.property.name }} · {{ lease.unit.code }}">
     <div class="d-flex justify-content-between align-items-baseline gap-2 mb-2">
       <div>
-        <div class="fw-semibold">{{ summary.lease.unit.property.name }} · {{ summary.lease.unit.code }}</div>
-        <div class="small text-muted">{{ summary.lease.organization.name }} · {{ summary.lease.get_status_display }}</div>
+        <div class="fw-semibold">{{ lease.unit.property.name }} · {{ lease.unit.code }}</div>
+        <div class="small text-muted">{{ lease.organization.name }} · {{ lease.get_status_display }}</div>
       </div>
-      <a class="small text-nowrap" href="{% url 'portal:lease' summary.lease.public_id %}">{% trans "Statement and receipts" %} →</a>
+      <a class="small text-nowrap" href="{% url 'portal:lease' lease.public_id %}">{% trans "Statement and receipts" %} →</a>
     </div>
+
     {% include "portal/_summary.html" %}
-    {% if summary.lease.status == "ACTIVE" %}<a class="small" href="{% url 'portal:repair_create' summary.lease.public_id %}">{% trans "Something broken? Report a problem" %} →</a>{% endif %}
-  </div>
+
+    {% if card.ways %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "How to pay" %}</h2>
+      {% for w in card.ways %}
+      <div class="{% if not forloop.last %}mb-3 pb-3 border-bottom{% endif %}">
+        <div class="small text-muted mb-1">{{ w.title }}</div>
+        <div class="d-flex align-items-center justify-content-between gap-2 mb-2">
+          <div><div class="small text-muted">{{ w.number_label }}</div><div class="h5 mb-0 num" id="pn-{{ lease.pk }}-{{ forloop.counter }}">{{ w.number }}</div></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm px-3 py-2" data-copy="#pn-{{ lease.pk }}-{{ forloop.counter }}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+        </div>
+        {% if w.reference %}
+        <div class="d-flex align-items-center justify-content-between gap-2">
+          <div><div class="small text-muted">{% trans "Account number (type this exactly)" %}</div><div class="h5 mb-0 num" id="pr-{{ lease.pk }}-{{ forloop.counter }}">{{ w.reference }}</div></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm px-3 py-2" data-copy="#pr-{{ lease.pk }}-{{ forloop.counter }}"><i class="bi bi-clipboard" aria-hidden="true"></i> <span data-copy-label>{% trans "Copy" %}</span></button>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+      <p class="small text-muted mt-2 mb-0">{% trans "Pay with the account number above so your payment lands on your own account and your receipt is sent." %}</p>
+    </div></div>
+    {% endif %}
+
+    {% if card.offer %}
+    <div class="alert alert-info small py-2" role="status">{% blocktrans with org=lease.organization.name %}{{ org }} sent you a renewal offer.{% endblocktrans %} <a href="{% url 'portal:lease' lease.public_id %}">{% trans "Answer it" %} →</a></div>
+    {% endif %}
+    {% for r, s in card.signings %}
+    <div class="alert alert-info small py-2 d-flex justify-content-between align-items-center gap-2" role="status"><span>{% blocktrans with title=r.title %}To sign: {{ title }}{% endblocktrans %}</span><a class="btn btn-primary btn-sm" href="{% url 'portal:signing' lease.public_id r.public_id %}">{% trans "Read and sign" %}</a></div>
+    {% endfor %}
+    {% if card.notice %}
+    <div class="alert alert-secondary small py-2" role="status">{% blocktrans with day=card.notice.move_out_on|date:"j M Y" %}You gave notice to vacate. Move-out day: {{ day }}.{% endblocktrans %}</div>
+    {% endif %}
+    {% for p in card.pending %}
+    <div class="alert alert-warning small py-2" role="status">{% blocktrans with amount=p.amount|money:lease.currency day=p.paid_at|date:"j M" %}Your payment of {{ amount }} on {{ day }} is with the office to confirm.{% endblocktrans %}</div>
+    {% endfor %}
+
+    <div class="row g-2 mb-3 text-center">
+      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:messages' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-chat-left-text fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Messages" %}{% if card.unread %} <span class="badge text-bg-primary">{{ card.unread }}</span>{% endif %}</div>
+      </div></a></div>
+      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:payments' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-receipt fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Payments and receipts" %}</div>
+      </div></a></div>
+      <div class="col-6 col-sm-3">{% if card.can_report %}<a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:repair_create' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-tools fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Report a problem" %}</div>
+      </div></a>{% else %}<a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:lease' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-file-text fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Statement" %}</div>
+      </div></a>{% endif %}</div>
+      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:lease_terms' lease.public_id %}" target="_blank" rel="noopener"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-file-earmark-pdf fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Agreement (PDF)" %}</div>
+      </div></a></div>
+    </div>
+
+    {% include "portal/_months.html" %}
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h6 mb-0">{% trans "Latest payments" %}</h2>
+        <a class="small" href="{% url 'portal:payments' lease.public_id %}">{% trans "All payments" %} →</a>
+      </div>
+      <ul class="list-unstyled small mb-0">
+        {% for payment in card.payments %}
+        <li class="d-flex justify-content-between gap-2 py-1">
+          <span>{{ payment.paid_at|date:"j M Y" }} · {{ payment.get_method_display }}</span>
+          <span class="text-nowrap">{{ payment.amount|money:lease.currency }}{% if payment.receipt.pdf %} · <a href="{% url 'portal:receipt' payment.public_id %}">{% trans "Receipt" %}</a>{% endif %}</span>
+        </li>
+        {% empty %}<li class="text-muted">{% trans "No payments yet." %}</li>{% endfor %}
+      </ul>
+    </div></div>
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Repairs in progress" %}</h2>
+      <ul class="list-unstyled small mb-0">
+        {% for req in card.repairs %}
+        <li class="d-flex justify-content-between gap-2 py-1">
+          <a href="{% url 'portal:repair' req.public_id %}">{{ req.title|truncatechars:50 }}</a>
+          <span class="text-nowrap text-muted">{{ req.created_at|date:"j M" }} · {% include "maintenance/_status.html" %}</span>
+        </li>
+        {% empty %}<li class="text-muted">{% trans "No open repairs." %}</li>{% endfor %}
+      </ul>
+    </div></div>
+    {% if card.news %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "From the office" %}</h2>
+      {% for m in card.news %}
+      <div class="small {% if not forloop.last %}mb-2 pb-2 border-bottom{% endif %}">
+        <div class="text-muted">{{ m.created_at|date:"j M Y" }}</div>
+        <div style="white-space: pre-wrap">{{ m.body|truncatechars:240 }}</div>
+      </div>
+      {% endfor %}
+      <a class="small" href="{% url 'portal:messages' lease.public_id %}">{% trans "Open messages" %} →</a>
+    </div></div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Your tenancy at a glance" %}</h2>
+      <dl class="row small mb-0">
+        {% if card.rent %}<dt class="col-6 fw-normal text-muted">{{ lease.organization|word:"rent" }}</dt><dd class="col-6 text-end">{{ card.rent|money:lease.currency }} · {{ lease.get_billing_frequency_display }}</dd>{% endif %}
+        <dt class="col-6 fw-normal text-muted">{% trans "Due on" %}</dt><dd class="col-6 text-end">{% blocktrans with day=lease.due_day %}day {{ day }} of the month{% endblocktrans %}</dd>
+        <dt class="col-6 fw-normal text-muted">{% trans "Lease ends" %}</dt><dd class="col-6 text-end">{% if lease.end_date %}{{ lease.end_date|date:"j M Y" }}{% if card.days_left is not None and card.days_left >= 0 %} <span class="text-muted">({% blocktrans count n=card.days_left %}{{ n }} day left{% plural %}{{ n }} days left{% endblocktrans %})</span>{% endif %}{% else %}{% trans "Month to month" %}{% endif %}</dd>
+        {% if card.deposit %}<dt class="col-6 fw-normal text-muted">{% trans "Deposit held" %}</dt><dd class="col-6 text-end">{{ card.deposit.clearance.held|money:lease.currency }}</dd>{% endif %}
+      </dl>
+    </div></div>
+
+    {% if card.documents %}
+    <div class="card shadow-sm mb-3"><div class="card-body">
+      <h2 class="h6">{% trans "Documents" %}</h2>
+      <ul class="list-unstyled small mb-0">
+        {% for doc in card.documents|slice:":4" %}
+        <li class="d-flex justify-content-between gap-2 py-1"><a href="{% url 'portal:document' doc.public_id %}"{% if doc.is_photo %} target="_blank" rel="noopener"{% endif %}>{{ doc.title }}</a><span class="text-muted text-nowrap">{{ doc.get_category_display }}</span></li>
+        {% endfor %}
+      </ul>
+      {% if card.documents|length > 4 %}<a class="small" href="{% url 'portal:lease' lease.public_id %}">{% trans "See all documents" %} →</a>{% endif %}
+    </div></div>
+    {% endif %}
+
+    {% if card.can_report and lease.organization.bills_rent and not card.notice %}
+    <p class="small text-muted mb-0">{% trans "Planning to leave?" %} <a href="{% url 'portal:notice_create' lease.public_id %}">{% trans "Give notice to vacate" %}</a></p>
+    {% endif %}
+  </section>
+  {% endwith %}
   {% empty %}
   <p class="text-muted">{% trans "You have no leases to show yet." %}</p>
   {% endfor %}
-  {% if ussd_code and summaries %}<p class="small text-muted">{% blocktrans %}No smartphone at hand? Dial {{ ussd_code }} from the phone number your landlord has for you to check your balance, how to pay and your last payment.{% endblocktrans %}</p>{% endif %}
+  {% if ussd_code and cards %}<p class="small text-muted">{% blocktrans %}No smartphone at hand? Dial {{ ussd_code }} from the phone number your landlord has for you to check your balance, how to pay and your last payment.{% endblocktrans %}</p>{% endif %}
 </div>
 {% endblock %}

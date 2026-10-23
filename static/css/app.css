@@ -97,12 +97,13 @@
 
 /* Brand palette (adopted): overrides the light values above. Dark mode is separate. */
 :root, [data-bs-theme=light] {
-  --app-canvas: #f1f5f2;                      /* main background */
-  --bs-tertiary-bg: #f1f5f2;
-  --bs-body-bg: #fcfdfc;  --bs-body-bg-rgb: 252, 253, 252;   /* cards and panels */
+  --app-canvas: #eef3ef;                      /* main background: a touch deeper so white cards lift off it */
+  --bs-tertiary-bg: #f3f7f4;
+  --bs-body-bg: #ffffff;  --bs-body-bg-rgb: 255, 255, 255;   /* cards and panels */
   --bs-body-color: #182522;  --bs-body-color-rgb: 24, 37, 34; /* primary text */
-  --bs-secondary-color: #65736d;  --bs-secondary-color-rgb: 101, 115, 109;
-  --bs-border-color: #d7e1da;
+  --bs-secondary-color: #56645e;  --bs-secondary-color-rgb: 86, 100, 94;   /* 5.2:1 on the page (was 4.3:1) */
+  --bs-tertiary-color: #66746e;
+  --bs-border-color: #d0dbd3;
   --bs-primary: #126b50;  --bs-primary-rgb: 18, 107, 80;
   --bs-primary-bg-subtle: #ddf2e6;            /* selected menu background */
   --bs-primary-text-emphasis: #0b4f3c;
@@ -273,6 +274,12 @@ main { overflow-wrap: break-word; }
 }
 @media (max-width: 767.98px) {
   .app-topbar .global-search { order: 10; flex: 1 0 100%; }
+  /* On a phone the bar slides away when scrolling down and comes back as soon as the person scrolls up (ui.js). */
+  .app-topbar { position: sticky; top: 0; z-index: 1030; transition: transform .2s ease; }
+  .app-topbar.is-tucked { transform: translateY(-100%); }
+}
+@media (max-width: 767.98px) and (prefers-reduced-motion: reduce) {
+  .app-topbar { transition: none; }
 }
 /* Round icon buttons: menu, bell */
 .btn-icon { position: relative; display: inline-grid; place-items: center; flex: 0 0 auto; width: 2.5rem; height: 2.5rem; padding: 0; border: 0;
