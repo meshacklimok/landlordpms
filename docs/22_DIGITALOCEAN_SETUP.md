@@ -177,3 +177,14 @@ Do it a day before the client starts, not on the day.
 ### 2026-10-12 - Swapping the two mail accounts in admin
 
 Django admin > Core > Email routing chooses which account sends which mail: "Sign-in codes, alerts and support" and "Mail to tenants and owners", each Resend or Brevo. The logins stay in `/etc/landlordpms.env` (`EMAIL_*` is Resend, `EMAIL_MESSAGES_*` is Brevo); the page shows whether each is set up. A choice whose account is missing falls back to the first one. Takes effect at once, no restart. Each change is in the audit log (`platform.email_routing`).
+
+### 2026-10-22 - Next.js screens, status check and empty settings
+
+An audit of the live server found `web/.next` missing, nothing on port 3000, and nginx sending every page to Django, so the Next.js screens (D-168 onwards, all hostel screens) were not live. The repo now has the fix; the server needs these steps once (the server folder is not a git checkout, so it comes by tar):
+
+1. On your computer, make the tar as in step 4 (it now leaves out `node_modules` and `.next`), upload it, and run `bash /srv/landlordpms/deploy/update.sh` as root. It installs Node.js 22 if missing, runs `npm ci && npm run build` in `web/`, installs and starts `nyumbapms-web.service` (port 3000, Django on 8000), and reloads Django.
+2. nginx is not overwritten by `update.sh` (certbot edited the live copy). Add the routes once: `sed -e "s/DOMAIN/app.nyumbapms.com/g" /srv/landlordpms/deploy/nginx.conf` shows the new file; the pieces to copy into the live https server block are the `/_next/` location, the "Screens Next.js draws" location, and `location = /`, placed before `location / {`. Then `nginx -t && systemctl reload nginx`. Only those screens go to Next.js; webhooks, USSD, static files and sign-in still go straight to Django, so `TRUSTED_PROXY_COUNT=1` stays right.
+3. Check: `bash /srv/landlordpms/deploy/status.sh` lists the services, port 3000 and 8000 answers, any pending migrations (run as the owner role, so the environment file is loaded) and every setting still empty.
+4. When a new screen is added under `web/src/app`, add its path to the regex in the "Screens Next.js draws" location of `deploy/nginx.conf` and in the live copy. Pages from Next.js carry no Django CSP header yet.
+
+Settings that only you can fill in `/etc/landlordpms.env` (credentials from the provider), then `systemctl restart landlordpms`: Africa's Talking `AT_USERNAME`, `AT_API_KEY`, `AT_SENDER_ID`, `USSD_CODE`; our Paybill `PLATFORM_PAYBILL`, `PLATFORM_DARAJA_*` (then `manage.py platform_payments --register`); `PLATFORM_PAYSTACK_SECRET_KEY`; Meta WhatsApp `WHATSAPP_BACKEND=notifications.providers.whatsapp.CloudApiWhatsAppSender`, `WA_PHONE_NUMBER_ID`, `WA_ACCESS_TOKEN`, `WA_APP_SECRET`; legal text `LEGAL_NAME`, `DATA_PROTECTION_EMAIL`, `PLATFORM_KRA_PIN`; optional `MPESA_ALLOWED_IPS`, `PAYSTACK_ALLOWED_IPS`.

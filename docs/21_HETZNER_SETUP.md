@@ -54,7 +54,7 @@ In a **new** PowerShell window, from the project folder, pack the code without t
 
 ```powershell
 cd C:\Users\user\OneDrive\Desktop\webdev2025\landlordpms
-tar -czf $env:USERPROFILE\nyumbapms.tar.gz --exclude=venv --exclude=media --exclude=backups --exclude=staticfiles --exclude=.env --exclude=.env.production --exclude=.git --exclude=__pycache__ --exclude=.pytest_cache --exclude=.vscode --exclude=*.dump .
+tar -czf $env:USERPROFILE\nyumbapms.tar.gz --exclude=venv --exclude=node_modules --exclude=.next --exclude=media --exclude=backups --exclude=staticfiles --exclude=.env --exclude=.env.production --exclude=.git --exclude=__pycache__ --exclude=.pytest_cache --exclude=.vscode --exclude=*.dump .
 scp $env:USERPROFILE\nyumbapms.tar.gz deploy\setup.sh root@<IP>:/root/
 ```
 

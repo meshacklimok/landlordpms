@@ -36,7 +36,12 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 apt-get upgrade -yq
 apt-get install -yq python3 python3-venv git rsync postgresql postgresql-contrib redis-server nginx \
-    certbot python3-certbot-nginx ufw fail2ban unattended-upgrades rclone
+    certbot python3-certbot-nginx ufw fail2ban unattended-upgrades rclone curl ca-certificates
+# Node.js 22 for the Next.js screens (D-168); Ubuntu's own package is too old for Next.js 16.
+if ! command -v node >/dev/null || [ "$(node -p 'process.versions.node.split(".")[0]')" -lt 20 ]; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -yq nodejs
+fi
 cat > /etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
 APT::Periodic::Update-Package-Lists "1";
 APT::Periodic::Unattended-Upgrade "1";
@@ -258,11 +263,15 @@ as_app sh "$APP_DIR/deploy/run.sh" sync_access_catalog
 as_app sh "$APP_DIR/deploy/run.sh" collectstatic --noinput -v 0
 as_app sh "$APP_DIR/deploy/run.sh" check --deploy
 
-step "Web service and nginx"
+step "Next.js screens: install packages and build"
+as_app sh -c "cd $APP_DIR/web && npm ci --no-audit --no-fund && npm run build"
+
+step "Web services and nginx"
 cp "$APP_DIR/deploy/landlordpms.service" /etc/systemd/system/landlordpms.service
+cp "$APP_DIR/deploy/nyumbapms-web.service" /etc/systemd/system/nyumbapms-web.service
 systemctl daemon-reload
-systemctl enable landlordpms >/dev/null
-systemctl restart landlordpms
+systemctl enable landlordpms nyumbapms-web >/dev/null
+systemctl restart landlordpms nyumbapms-web
 if [ ! -f /etc/nginx/sites-available/landlordpms ]; then
     if [ -n "$ALIASES" ]; then
         sed -e "s/ALIASES/$ALIASES/g" -e "s/DOMAIN/$DOMAIN/g" "$APP_DIR/deploy/nginx.conf" > /etc/nginx/sites-available/landlordpms

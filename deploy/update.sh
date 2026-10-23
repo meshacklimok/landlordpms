@@ -28,7 +28,7 @@ elif [ -f "$CODE_TAR" ]; then
     tar -xzf "$CODE_TAR" -C "$tmp"
     [ -f "$tmp/manage.py" ] || stop "$CODE_TAR has no manage.py at the top. Make it from the project folder (doc 21 step 4)."
     # --delete removes files the new version no longer has; venv, uploads and static files stay.
-    rsync -a --delete --exclude /venv/ --exclude /media/ --exclude /staticfiles/ --exclude /backups/ "$tmp"/ "$APP_DIR"/
+    rsync -a --delete --exclude /venv/ --exclude /media/ --exclude /staticfiles/ --exclude /backups/ --exclude /web/node_modules/ --exclude /web/.next/ "$tmp"/ "$APP_DIR"/
     rm -rf "$tmp"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
     mv "$CODE_TAR" "$CODE_TAR.installed"
@@ -38,6 +38,13 @@ fi
 
 step "Python packages"
 as_app "$APP_DIR/venv/bin/pip" install -q -r "$APP_DIR/requirements.txt"
+
+step "Next.js screens: packages and build"
+if ! command -v node >/dev/null; then
+    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    apt-get install -yq nodejs
+fi
+as_app sh -c "cd $APP_DIR/web && npm ci --no-audit --no-fund && npm run build"
 
 step "Database tables (as the owner role)"
 (
@@ -53,6 +60,11 @@ as_app sh "$APP_DIR/deploy/run.sh" check --deploy
 crontab -u "$APP_USER" "$APP_DIR/deploy/crontab"
 
 step "Reload the web workers"
+cp "$APP_DIR/deploy/nyumbapms-web.service" /etc/systemd/system/nyumbapms-web.service
+systemctl daemon-reload
+systemctl enable nyumbapms-web >/dev/null
+systemctl restart nyumbapms-web
+# nginx routes come from deploy/nginx.conf; certbot edited the live copy, so it is not overwritten here (doc 22).
 if ! cmp -s "$APP_DIR/deploy/landlordpms.service" /etc/systemd/system/landlordpms.service; then
     cp "$APP_DIR/deploy/landlordpms.service" /etc/systemd/system/landlordpms.service
     systemctl daemon-reload
@@ -65,3 +77,4 @@ domain=$(sed -n 's/^ALLOWED_HOSTS=\([^,]*\).*/\1/p' "$ENV_FILE")
 curl -fsS -o /dev/null -H "Host: $domain" http://127.0.0.1:8000/healthz \
     && echo "Updated; the site answers." \
     || stop "The site does not answer. See: journalctl -u landlordpms -n 50"
+systemctl is-active --quiet nyumbapms-web     && echo "Next.js screens are running."     || stop "The Next.js screens are not running. See: journalctl -u nyumbapms-web -n 50"

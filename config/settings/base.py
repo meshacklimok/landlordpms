@@ -338,6 +338,10 @@ SMS_PRICE_ESTIMATE = os.getenv("SMS_PRICE_ESTIMATE", "0.80")
 AT_USERNAME = os.getenv("AT_USERNAME", "")
 AT_API_KEY = os.getenv("AT_API_KEY", "")
 AT_SENDER_ID = os.getenv("AT_SENDER_ID", "")
+# Celcom Africa (SMS_BACKEND=notifications.providers.sms.CelcomSmsSender).
+CELCOM_API_KEY = os.getenv("CELCOM_API_KEY", "")
+CELCOM_PARTNER_ID = os.getenv("CELCOM_PARTNER_ID", "")
+CELCOM_SENDER_ID = os.getenv("CELCOM_SENDER_ID", "")
 # Messages a month the plan allows, per channel, so the console can show how near the limit is (D-138). 0: unknown.
 MESSAGE_MONTHLY_LIMITS = {
     "EMAIL": int(os.getenv("EMAIL_MONTHLY_LIMIT", "0") or 0),
