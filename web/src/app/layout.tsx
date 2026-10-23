@@ -14,6 +14,7 @@ const inter = localFont({
 export const metadata: Metadata = {
   title: { default: "Home", template: "%s · NyumbaPMS" },
   description: "Rent, tenants and repairs for landlords and agents in Kenya.",
+  manifest: "/manifest.webmanifest", // Django's, so the browser can offer to install from these screens too (D-080)
   robots: { index: false, follow: false }, // signed-in screens; the public pages stay on Django (D-158)
 };
 
