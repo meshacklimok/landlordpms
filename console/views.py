@@ -426,6 +426,25 @@ class OrganizationLateRulesView(OwnerMixin, View):
         return redirect("console:organization", public_id=org.public_id)
 
 
+class OrganizationCustomPriceView(OwnerMixin, View):
+    """This organization's own monthly and yearly price on its plan, over the plan's price."""
+
+    def post(self, request, public_id):
+        org = get_object_or_404(Organization.objects.select_related("subscription"), public_id=public_id)
+        form = forms.CustomPriceForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                billing.set_custom_prices(request.user, org, d["monthly"], d["yearly"], d["reason"], request=request)
+                messages.success(request, _("Saved. The next invoice for this organization uses these prices."))
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+        else:
+            messages.error(request, _("Check the form: ") + " ".join(
+                m for errs in form.errors.values() for m in errs))
+        return redirect("console:organization", public_id=org.public_id)
+
+
 class LatePolicyView(OwnerMixin, TemplateView):
     """What stops, and after how many days, while a landlord has not paid; and how they are reminded (D-198).
     These are the defaults for everyone; an organization's own page can override each one."""
@@ -1426,6 +1445,8 @@ class OwnerView(OwnerMixin, TemplateView):
 class EmailPreviewsView(ConsoleMixin, TemplateView):
     """Every kind of email we send, drawn as the recipient sees it (made-up words)."""
 
+    required_capability = "channels"
+
     template_name = "console/email_previews.html"
 
     def get_context_data(self, **kwargs):
@@ -1437,6 +1458,8 @@ class EmailPreviewsView(ConsoleMixin, TemplateView):
 
 
 class EmailPreviewView(ConsoleMixin, View):
+    required_capability = "channels"
+
     def get(self, request, key):
         from django.http import HttpResponse
 
@@ -1450,6 +1473,8 @@ class EmailPreviewView(ConsoleMixin, View):
 
 class EmailPreviewSendView(ConsoleMixin, View):
     """Sends a sample to the signed-in person, to see it in a real inbox on a phone."""
+
+    required_capability = "channels"
 
     def post(self, request, key):
         from core import ratelimit

@@ -70,11 +70,12 @@ class Plan(TimeStampedModel):
             return self.one_off_price
         return self.yearly_price if interval == Subscription.Interval.YEARLY else self.monthly_price
 
-    def offers(self) -> list[tuple[str, Decimal, int]]:
-        """What the page shows: (interval, price, percent saved against paying monthly for the same time)."""
+    def offers(self, sub: "Subscription | None" = None) -> list[tuple[str, Decimal, int]]:
+        """What the page shows: (interval, price, percent saved against paying monthly for the same time). With
+        `sub`, the organization's own price on its current plan is shown."""
         out = []
         for interval, months in (("MONTHLY", 1), ("YEARLY", 12), ("ONCE", 12 * self.one_off_years)):
-            price = self.price(interval)
+            price = sub.price_for(self, interval) if sub else self.price(interval)
             if price <= 0 or (interval == "ONCE" and not self.has_one_off):
                 continue
             saved = 0 if interval == "MONTHLY" or not self.monthly_price else int(
@@ -123,9 +124,24 @@ class Subscription(TimeStampedModel):
     # This organization's own late-payment rules (D-198). Missing key = follow BillingPolicy; an integer = days
     # after the due date; null = never stop; the "dunning_*" keys are true/false. Set by the owner in the console.
     late_overrides = models.JSONField(default=dict, blank=True)
+    # This organization's own price (before VAT) on its current plan, set by a Platform Owner. Empty = the plan's
+    # price. 0 is allowed (a free-of-charge arrangement). It follows the plan the organization is on: choosing
+    # another plan is charged that plan's price.
+    custom_monthly_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    custom_yearly_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     def __str__(self):
         return f"{self.organization} · {self.plan} · {self.get_status_display()}"
+
+    def price_for(self, plan: "Plan", interval: str) -> Decimal:
+        """What this organization pays for `plan` billed `interval`: its own price on its current plan, else the
+        plan's."""
+        if plan.pk == self.plan_id:
+            if interval == Subscription.Interval.MONTHLY and self.custom_monthly_price is not None:
+                return self.custom_monthly_price
+            if interval == Subscription.Interval.YEARLY and self.custom_yearly_price is not None:
+                return self.custom_yearly_price
+        return plan.price(interval)
 
     @property
     def has_card(self) -> bool:
@@ -343,7 +359,7 @@ class PlatformReceipt(PublicIdModel):
 
 
 class PlatformSequence(models.Model):
-    """Our own document numbers (LPM-INV-2026-000001). Not per organization, unlike core.NumberSequence."""
+    """Our own document numbers (NPMS-INV-2026-000001). Not per organization, unlike core.NumberSequence."""
 
     key = models.CharField(max_length=30)
     period = models.CharField(max_length=10, blank=True)
@@ -482,6 +498,10 @@ class PlatformPaySwitch(models.Model):
 
     mpesa_on = models.BooleanField(_("M-Pesa prompt and Paybill (Daraja)"), default=True)
     paystack_on = models.BooleanField(_("Paystack (card or M-Pesa)"), default=True)
+    paystack_backup = models.BooleanField(
+        _("Paystack backup for the M-Pesa prompt"), default=False,
+        help_text=_("When our Daraja prompt fails or is not set up, the same Send M-Pesa prompt button sends it "
+                    "through Paystack instead. Landlords are not told which way it went."))
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

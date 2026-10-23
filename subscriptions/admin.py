@@ -3,10 +3,11 @@
 
 from django import forms
 from django.contrib import admin, messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import DecimalField, IntegerField, OuterRef, Subquery, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import HttpResponse
+from django.shortcuts import redirect
 from django.urls import path, reverse
 from django.utils import timezone
 from django.utils.html import format_html
@@ -442,9 +443,29 @@ class SmsPolicyAdmin(admin.ModelAdmin):
 class PlatformPaySwitchAdmin(admin.ModelAdmin):
     """Turns each online way of paying the subscription on or off (D-126). Keys stay in the environment."""
 
-    list_display = ["__str__", "mpesa_on", "paystack_on", "configured", "updated_at"]
-    fields = ["mpesa_on", "paystack_on", "configured"]
+    list_display = ["__str__", "mpesa_on", "paystack_on", "paystack_backup", "configured", "updated_at"]
+    fields = ["mpesa_on", "paystack_on", "paystack_backup", "configured"]
     readonly_fields = ["configured"]
+    change_list_template = "admin/subscriptions/platformpayswitch/change_list.html"
+
+    def get_urls(self):
+        return [path("toggle-paystack-backup/", self.admin_site.admin_view(self.toggle_backup),
+                     name="subscriptions_payswitch_toggle_backup"),
+                *super().get_urls()]
+
+    def toggle_backup(self, request):
+        """The one-click button on the list page: flips the Paystack backup for the M-Pesa prompt."""
+        if request.method != "POST" or not self.has_change_permission(request):
+            raise PermissionDenied
+        switch = PlatformPaySwitch.get()
+        switch.paystack_backup = not switch.paystack_backup
+        switch.save(update_fields=["paystack_backup", "updated_at"])
+        audit.record("platform.pay_switch", actor=request.user, obj=switch, request=request,
+                     changes={"paystack_backup": switch.paystack_backup})
+        self.message_user(request, "Paystack backup for the M-Pesa prompt is now "
+                          + ("ON: a failed or missing Daraja prompt goes through Paystack and landlords are not told."
+                             if switch.paystack_backup else "OFF: only Daraja sends M-Pesa prompts."))
+        return redirect("admin:subscriptions_platformpayswitch_changelist")
 
     @admin.display(description="Keys set on the server")
     def configured(self, obj):
@@ -461,7 +482,8 @@ class PlatformPaySwitchAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         audit.record("platform.pay_switch", actor=request.user, obj=obj,
-                     changes={"mpesa_on": obj.mpesa_on, "paystack_on": obj.paystack_on})
+                     changes={"mpesa_on": obj.mpesa_on, "paystack_on": obj.paystack_on,
+                              "paystack_backup": obj.paystack_backup})
 
     def has_add_permission(self, request):
         return not PlatformPaySwitch.objects.exists()

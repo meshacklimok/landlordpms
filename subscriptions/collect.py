@@ -117,6 +117,24 @@ def methods() -> dict[str, bool]:
             "paystack": switch.paystack_on and paystack_configured()}
 
 
+def backup_ready() -> bool:
+    """True when a failed or missing Daraja prompt is quietly sent through Paystack instead."""
+    return PlatformPaySwitch.get().paystack_backup and methods()["paystack"]
+
+
+def page_methods() -> dict[str, bool]:
+    """What the subscription page shows. "mpesa" means a landlord can get an M-Pesa prompt by either route, so the
+    page never tells them which one carries it; "backup" hides the separate Paystack prompt form."""
+    now = methods()
+    backup = backup_ready()
+    return {**now, "mpesa": now["mpesa"] or backup, "backup": backup}
+
+
+class PromptUnavailable(ValidationError):
+    """Our own M-Pesa prompt could not be sent (not set up, switched off, or Daraja refused), as against a
+    landlord's own mistake such as a wrong number. Only this one may fall back to Paystack."""
+
+
 def callback_url(kind: str) -> str:
     return settings.SITE_URL + reverse("hook_platform", args=[settings.PLATFORM_CALLBACK_TOKEN, kind])
 
@@ -140,7 +158,7 @@ def check_callback_url(kind: str) -> str:
 
 def account_number(invoice: SubscriptionInvoice) -> str:
     """What a landlord types as the Paybill account: the invoice number's digits, 2026000123. It fits
-    M-Pesa's 12-character account reference; the full number (LPM-INV-2026-000123) is accepted too."""
+    M-Pesa's 12-character account reference; the full number (NPMS-INV-2026-000123) is accepted too."""
     return re.sub(r"\D", "", invoice.number)[-12:]
 
 
@@ -197,7 +215,7 @@ def _prompt(actor: Membership, invoice: SubscriptionInvoice | None, amount: Deci
             request) -> PlatformCheckout:
     """Sends the M-Pesa prompt and keeps the request; `invoice` is None for an SMS top-up."""
     if not methods()["mpesa"]:
-        raise ValidationError(_("Paying by M-Pesa prompt is not available right now."))
+        raise PromptUnavailable(_("Paying by M-Pesa prompt is not available right now."))
     try:
         phone = normalize_phone(phone)
     except InvalidPhoneNumber:
@@ -219,7 +237,7 @@ def _prompt(actor: Membership, invoice: SubscriptionInvoice | None, amount: Deci
             description="Subscription" if invoice else "SMS credit", callback_url=url)
     except daraja.DarajaError as e:
         logger.warning("Subscription M-Pesa prompt for %s refused: %s", label, e)
-        raise ValidationError(_("Safaricom did not send the prompt: %(error)s") % {"error": e}) from None
+        raise PromptUnavailable(_("Safaricom did not send the prompt: %(error)s") % {"error": e}) from None
     checkout = PlatformCheckout.objects.create(
         organization=actor.organization, invoice=invoice, provider=Provider.MPESA,
         reference=str(data["CheckoutRequestID"])[:80], phone=phone, amount=amount, created_by=actor.user)
@@ -255,7 +273,7 @@ def _paystack_page(actor: Membership, invoice: SubscriptionInvoice | None, amoun
 
 
 def _paystack_prompt(actor: Membership, invoice: SubscriptionInvoice, amount: Decimal, phone: str,
-                     request) -> PlatformCheckout:
+                     request, *, backup: bool = False) -> PlatformCheckout:
     """Paystack sends the M-Pesa prompt: the way to pay when our own Daraja prompt is down."""
     if not methods()["paystack"]:
         raise ValidationError(_("Paying by Paystack is not available right now."))
@@ -281,11 +299,11 @@ def _paystack_prompt(actor: Membership, invoice: SubscriptionInvoice, amount: De
             metadata={"kind": "subscription", "invoice": invoice.number})
     except paystack.PaystackError as e:
         logger.warning("Subscription Paystack M-Pesa prompt for %s refused: %s", invoice.number, e)
-        raise ValidationError(_("Paystack did not send the prompt: %(error)s") % {"error": e}) from None
+        raise PromptUnavailable(_("Paystack did not send the prompt: %(error)s") % {"error": e}) from None
     checkout = PlatformCheckout.objects.create(
         organization=org, invoice=invoice, provider=Provider.PAYSTACK, reference=reference, phone=phone,
         amount=amount, created_by=actor.user)
-    _audit(actor, checkout, request, phone=phone)
+    _audit(actor, checkout, request, phone=phone, **({"backup_for_daraja": True} if backup else {}))
     return checkout
 
 
@@ -302,7 +320,20 @@ def start_mpesa(actor: Membership, invoice: SubscriptionInvoice, phone: str, *, 
     """Sends an M-Pesa prompt for what is left on the invoice, in whole shillings rounded up."""
     invoice = SubscriptionInvoice.objects.select_for_update().get(pk=invoice.pk)
     outstanding = _payable(actor, invoice)
-    return _prompt(actor, invoice, Decimal(math.ceil(outstanding)), phone, request)
+    amount = Decimal(math.ceil(outstanding))
+    try:
+        return _prompt(actor, invoice, amount, phone, request)
+    except PromptUnavailable:
+        if not backup_ready():
+            raise
+    # Daraja is down or not set up and the owner has switched the backup on: Paystack sends the same prompt and
+    # the landlord is told nothing different. A wrong number or a repeat within two minutes never gets here.
+    logger.warning("M-Pesa prompt for %s sent through Paystack instead of Daraja", invoice.number)
+    try:
+        return _paystack_prompt(actor, invoice, amount, phone, request, backup=True)
+    except PromptUnavailable:
+        raise ValidationError(_("We could not send the prompt right now. Try again in a few minutes, or pay "
+                                "from your M-Pesa menu.")) from None
 
 
 @transaction.atomic

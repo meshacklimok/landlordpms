@@ -6,6 +6,7 @@ Read only: every change is refused while it lasts. Starting and stopping are aud
 
 from django.contrib import messages
 from django.http import HttpResponse, HttpResponseRedirect
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 
 SESSION_KEY = "console_view_as"  # the organization's public id
@@ -87,6 +88,10 @@ class ViewAsReadOnlyMiddleware:
             text = _("You are viewing this account as one of its people, so nothing can be changed. Stop viewing first.")
             if "text/html" in request.headers.get("Accept", ""):
                 messages.info(request, text)
-                return HttpResponseRedirect(request.headers.get("Referer") or "/")
+                back = request.headers.get("Referer") or "/"
+                if not url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()},
+                                                       require_https=request.is_secure()):
+                    back = "/"
+                return HttpResponseRedirect(back)
             return HttpResponse(text, status=403)
         return self.get_response(request)

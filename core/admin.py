@@ -134,6 +134,10 @@ class PlatformSettingsForm(forms.Form):
             for key in ("AT_USERNAME", "AT_API_KEY", "AT_CALLBACK_TOKEN"):
                 if not self.effective(key):
                     self.add_error(key, "Needed while the SMS provider is Africa's Talking.")
+        if self.effective("SMS_BACKEND") == pc.SMS_CELCOM:
+            for key in ("CELCOM_API_KEY", "CELCOM_PARTNER_ID"):
+                if not self.effective(key):
+                    self.add_error(key, "Needed while the SMS provider is Celcom Africa.")
         if self.effective("WHATSAPP_BACKEND") == pc.WA_CLOUD:
             for key in ("WA_PHONE_NUMBER_ID", "WA_ACCESS_TOKEN", "WA_APP_SECRET", "WA_VERIFY_TOKEN"):
                 if not self.effective(key):

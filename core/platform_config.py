@@ -17,7 +17,8 @@ import time
 from dataclasses import dataclass, field
 
 SMS_AT = "notifications.providers.sms.AfricasTalkingSmsSender"
-SMS_CONSOLE = "notifications.providers.sms.ConsoleSmsSender"
+SMS_CELCOM = "notifications.providers.sms.CelcomSmsSender"
+SMS_CONSOLE ="notifications.providers.sms.ConsoleSmsSender"
 WA_CLOUD = "notifications.providers.whatsapp.CloudApiWhatsAppSender"
 
 TTL = 20
@@ -37,7 +38,7 @@ class Item:
     prefixes: tuple = field(default_factory=tuple)
 
 
-SMS = "SMS (Africa's Talking)"
+SMS = "SMS (Africa's Talking, Celcom Africa)"
 WHATSAPP = "WhatsApp (Meta Cloud API)"
 AI = "Assistant and scans (OpenAI)"
 PAY = "Subscription payments to us (Paybill, Paystack)"
@@ -45,8 +46,13 @@ PUSH = "Phone alerts"
 CONTACT = "Contacts and legal details"
 
 REGISTRY: tuple[Item, ...] = (
-    Item("SMS_BACKEND", "SMS provider", SMS, "Choose Africa's Talking to send real SMS.", kind="choice",
-         choices=((SMS_AT, "Africa's Talking (real SMS)"), (SMS_CONSOLE, "Console (prints, sends nothing)"))),
+    Item("SMS_BACKEND", "SMS provider", SMS, "Choose Africa's Talking or Celcom Africa to send real SMS.", kind="choice",
+         choices=((SMS_AT, "Africa's Talking (real SMS)"), (SMS_CELCOM, "Celcom Africa (real SMS)"),
+                  (SMS_CONSOLE, "Console (prints, sends nothing)"))),
+    Item("CELCOM_API_KEY", "Celcom Africa API key", SMS, secret=True),
+    Item("CELCOM_PARTNER_ID", "Celcom Africa partner ID", SMS),
+    Item("CELCOM_SENDER_ID", "Celcom Africa sender name", SMS,
+         "The name tenants see when a landlord has no approved name of their own (Celcom must approve it)."),
     Item("AT_USERNAME", "Africa's Talking username", SMS, "'sandbox' uses their test environment."),
     Item("AT_API_KEY", "Africa's Talking API key", SMS, secret=True),
     Item("AT_SENDER_ID", "Platform SMS sender name", SMS, "The name tenants see when a landlord has no approved name of their own."),

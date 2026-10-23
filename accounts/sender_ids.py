@@ -9,7 +9,6 @@ organization's tenant messages use it. Login codes and security alerts always sp
 import logging
 import re
 
-from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.utils import timezone
@@ -33,7 +32,9 @@ def clean_name(name: str) -> str:
     name = (name or "").strip()
     if not NAME_RE.match(name):
         raise ValidationError(_("Use 3 to 11 letters or digits, with no spaces or symbols, e.g. KAMAUHOMES."))
-    if name.lower() == (getattr(settings, "AT_SENDER_ID", "") or "").lower():
+    from notifications.providers.sms import platform_sender_name
+
+    if name.lower() == platform_sender_name().lower():
         raise ValidationError(_("That is already the name your messages go out under."))
     return name
 

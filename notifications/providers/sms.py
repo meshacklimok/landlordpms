@@ -1,6 +1,6 @@
 """SMS provider interface (doc 11 §11). Swapping providers touches only an adapter.
 
-Console adapter for development, memory adapter for tests, Africa's Talking for real sends (Phase 5).
+Console adapter for development, memory adapter for tests, Africa's Talking or Celcom Africa for real sends.
 An organization with an approved sender name of its own sends under it (D-120); everyone else, and every
 login or security message, sends under the platform's AT_SENDER_ID.
 """
@@ -137,6 +137,79 @@ class AfricasTalkingSmsSender(SmsSender):
                              cost=parse_cost(r.get("cost")), sender_id=sender_id)
         return SmsResult(ok=False, provider=self.name, error=f"{code} {r.get('status', '')}".strip(),
                          permanent=code in self.PERMANENT)
+
+
+class CelcomSmsSender(SmsSender):
+    """Celcom Africa bulk SMS (JSON API, /api/services/sendsms/). Settings: CELCOM_API_KEY, CELCOM_PARTNER_ID,
+    optional CELCOM_SENDER_ID (their "shortcode"). [VERIFY endpoint, fields and codes with a live test.]
+    """
+
+    name = "celcom"
+    URL = "https://isms.celcomafrica.com/api/services/sendsms/"
+    TIMEOUT = 15
+    ACCEPTED = {200}
+    # Invalid or blocked number, do-not-disturb: retrying will not help.
+    PERMANENT = {1003, 1012}
+    # Sender name not registered on that network.
+    INVALID_SENDER = 1001
+
+    def __init__(self):
+        self.api_key = getattr(settings, "CELCOM_API_KEY", "")
+        self.partner_id = getattr(settings, "CELCOM_PARTNER_ID", "")
+        self.sender_id = getattr(settings, "CELCOM_SENDER_ID", "")
+        if not self.api_key or not self.partner_id:
+            raise ImproperlyConfigured("Set CELCOM_API_KEY and CELCOM_PARTNER_ID to use Celcom Africa.")
+
+    def _post(self, fields: dict) -> dict:
+        request = urllib.request.Request(  # noqa: S310 - a fixed https URL
+            self.URL, data=json.dumps(fields).encode(), method="POST",
+            headers={"Accept": "application/json", "Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=self.TIMEOUT) as response:  # noqa: S310 - fixed https URL
+            return json.loads(response.read().decode())
+
+    def send(self, to: str, body: str, sender_id: str = "") -> SmsResult:
+        """Sends under `sender_id` if given, else the platform's. A refused organization name goes again under
+        the platform's, as with Africa's Talking."""
+        result = self._send(to, body, sender_id or self.sender_id)
+        if sender_id and sender_id != self.sender_id and result.error.split(" ", 1)[0] == str(self.INVALID_SENDER):
+            logger.warning("Sender name %s refused for %s; sending under the platform name", sender_id, to)
+            result = self._send(to, body, self.sender_id)
+        return result
+
+    def _send(self, to: str, body: str, sender_id: str) -> SmsResult:
+        fields = {"apikey": self.api_key, "partnerID": self.partner_id, "pass_type": "plain",
+                  "mobile": to.lstrip("+"), "message": body}
+        if sender_id:
+            fields["shortcode"] = sender_id
+        try:
+            data = self._post(fields)
+        except urllib.error.HTTPError as e:
+            return SmsResult(ok=False, provider=self.name, error=f"HTTP {e.code}", permanent=400 <= e.code < 500)
+        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+            return SmsResult(ok=False, provider=self.name, error=str(e)[:300] or e.__class__.__name__)
+        responses = data.get("responses") if isinstance(data, dict) else None
+        if not responses or not isinstance(responses[0], dict):
+            return SmsResult(ok=False, provider=self.name, error="No response entry from Celcom")
+        r = responses[0]
+        # Their field is spelled "respose-code" in some replies.
+        raw = r.get("response-code", r.get("respose-code"))
+        try:
+            code = int(raw or 0)
+        except (TypeError, ValueError):
+            code = 0
+        if code in self.ACCEPTED:
+            return SmsResult(ok=True, provider=self.name, provider_id=str(r.get("messageid") or ""),
+                             sender_id=sender_id)
+        description = str(r.get("response-description") or r.get("respose-description") or "")
+        return SmsResult(ok=False, provider=self.name, error=f"{code} {description}".strip()[:300],
+                         permanent=code in self.PERMANENT)
+
+
+def platform_sender_name() -> str:
+    """The name tenants see when an organization has none of its own, from whichever provider is active."""
+    if getattr(settings, "SMS_BACKEND", "").endswith("CelcomSmsSender"):
+        return getattr(settings, "CELCOM_SENDER_ID", "") or ""
+    return getattr(settings, "AT_SENDER_ID", "") or ""
 
 
 def parse_cost(value) -> Decimal | None:

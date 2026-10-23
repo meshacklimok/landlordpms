@@ -73,6 +73,16 @@ class LateRulesForm(forms.Form):
         return data
 
 
+class CustomPriceForm(forms.Form):
+    """One organization's own price on its current plan, before VAT. Empty = the plan's price."""
+
+    monthly = forms.DecimalField(label=_("Monthly price (KSh)"), required=False, min_value=0, max_value=10000000,
+                                 max_digits=12, decimal_places=2)
+    yearly = forms.DecimalField(label=_("Yearly price (KSh)"), required=False, min_value=0, max_value=10000000,
+                                max_digits=12, decimal_places=2)
+    reason = forms.CharField(label=_("Reason"), max_length=200, help_text=_("Kept in the audit trail."))
+
+
 class SeatForm(forms.Form):
     role = forms.ChoiceField(label=_("Role"), choices=PlatformStaff.Role.choices)
     capabilities = forms.MultipleChoiceField(

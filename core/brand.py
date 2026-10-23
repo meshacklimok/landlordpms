@@ -7,14 +7,16 @@ and colour sit in the letterhead; ours is a small mark in the footer.
 
 from xml.sax.saxutils import escape
 
+from django.conf import settings
 from django.utils.translation import gettext as _
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
+from reportlab.lib.utils import ImageReader, simpleSplit
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
     BaseDocTemplate,
+    Flowable,
     Frame,
     Image,
     PageTemplate,
@@ -86,14 +88,34 @@ def draw_mark(canvas, x, y, size, tile=PRIMARY, glyph=colors.white):
     canvas.restoreState()
 
 
+class Mark(Flowable):
+    """Our mark as a flowable, for documents whose organization has no logo of its own."""
+
+    def __init__(self, size):
+        super().__init__()
+        self.size = size
+        self.width = self.height = size
+        self.hAlign = "LEFT"
+
+    def draw(self):
+        draw_mark(self.canv, 0, 0, self.size)
+
+
+def site_link() -> tuple[str, str]:
+    """Our address as (shown text, full URL) for the footer."""
+    url = settings.SITE_URL
+    return url.split("://", 1)[-1], url
+
+
 def letterhead(name, *, org=None, kind="", number="", lines=(), width=None):
     """The top of a document: logo, name and contact on the left, what the document is on the right, an accent rule."""
     colour = accent(org)
     left = []
     logo = picture(getattr(org, "logo", None), 15 * mm) if org is not None else None
-    if logo is not None:
-        logo.hAlign = "LEFT"
-        left += [logo, Spacer(1, 2 * mm)]
+    if logo is None:
+        logo = Mark(12 * mm)  # no logo of their own: ours, so the page never starts bare
+    logo.hAlign = "LEFT"
+    left += [logo, Spacer(1, 2 * mm)]
     left.append(Paragraph(escape(str(name)), _NAME))
     left += [Paragraph(escape(str(line)), _SMALL) for line in lines if line]
     right = []
@@ -116,6 +138,23 @@ def org_lines(org) -> list[str]:
     contact = " · ".join(x for x in (org.billing_phone, org.billing_email) if x)
     pin = _("KRA PIN %(pin)s") % {"pin": org.kra_pin} if org.kra_pin else ""
     return [x for x in (org.address, contact, pin) if x]
+
+
+def _draw_tagline(canvas, centre, y):
+    """Our motto and a clickable address, centred on `centre`, on the last line of the page."""
+    shown, url = site_link()
+    motto = _("Every shilling accounted for.")
+    font, size, gap = "Helvetica", 7, 2 * mm
+    motto_width = canvas.stringWidth(motto, font, size)
+    link_width = canvas.stringWidth(shown, font, size)
+    x = centre - (motto_width + gap + link_width) / 2
+    canvas.setFont(font, size)
+    canvas.setFillColor(MUTED)
+    canvas.drawString(x, y, motto)
+    x += motto_width + gap
+    canvas.setFillColor(PRIMARY)
+    canvas.drawString(x, y, shown)
+    canvas.linkURL(url, (x, y - 1.5, x + link_width, y + size), relative=0)
 
 
 def _footer_canvas(label, left, right):
@@ -156,6 +195,9 @@ def _footer_canvas(label, left, right):
             self.setFont("Helvetica-Bold", 7.5)
             self.setFillColor(MUTED)
             self.drawString(centre - 11.8 * mm, 7.5 * mm, "NyumbaPMS")
+            # The page state was restored from a snapshot, so the annotation counter restarted: keep link names unique.
+            self._annotationCount = self._pageNumber * 10
+            _draw_tagline(self, centre, 3.4 * mm)
             self.restoreState()
 
     return NumberedCanvas
@@ -233,18 +275,27 @@ class Stub:
                           width=logo.drawWidth, height=logo.drawHeight, mask="auto", preserveAspectRatio=True)
             x += logo.drawWidth + 3 * mm
             y -= logo.drawHeight / 2 - 2 * mm
-        else:
+        else:  # no logo of their own: ours
+            draw_mark(pdf, x, y - 10 * mm, 10 * mm)
+            x += 10 * mm + 3 * mm
             y -= 5 * mm
         kind_width = 38 * mm
         pdf.setFillColor(INK)
         pdf.setFont("Helvetica-Bold", 13)
-        pdf.drawString(x, y, fit(name, "Helvetica-Bold", 13, self.right - x - kind_width))
+        room = self.right - x - kind_width
+        name_lines = simpleSplit(str(name), "Helvetica-Bold", 13, room) or [""]
+        if len(name_lines) > 2:  # a long name takes two lines; only a very long one is cut
+            name_lines = [name_lines[0], fit(" ".join(name_lines[1:]), "Helvetica-Bold", 13, room)]
+        line_y = y
+        for text in name_lines:
+            pdf.drawString(x, line_y, text)
+            line_y -= 5 * mm
         pdf.setFillColor(self.colour)
         pdf.setFont("Helvetica-Bold", 12)
         pdf.drawRightString(self.right, y, kind)
         pdf.setFillColor(MUTED)
         pdf.setFont("Helvetica", 8.5)
-        sub = y - 4.5 * mm
+        sub = line_y + 0.5 * mm
         for line in lines:
             pdf.drawString(x, sub, fit(line, "Helvetica", 8.5, self.right - x - kind_width))
             sub -= 4 * mm
@@ -328,6 +379,7 @@ class Stub:
         draw_mark(pdf, self.right - 22.5 * mm, 6.2 * mm, 4.4 * mm)
         pdf.setFont("Helvetica-Bold", 7.5)
         pdf.drawString(self.right - 17.3 * mm, 7.5 * mm, "NyumbaPMS")
+        _draw_tagline(pdf, self.width / 2, 3.4 * mm)
         pdf.showPage()
         pdf.save()
         return self.buf.getvalue()
