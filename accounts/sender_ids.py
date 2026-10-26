@@ -100,10 +100,11 @@ def _tell_operators(org: Organization, actor: Membership) -> None:
     to = recipients()
     if not to:
         return
+    provider = "Celcom Africa" if settings.SMS_BACKEND.endswith("CelcomSmsSender") else "Africa's Talking"
     try:
         send_mail(f"SMS sender name requested: {org.sms_sender_id}",
                   f"{org.name} ({actor.user.full_name}, {actor.user.phone}) asked to send SMS as "
-                  f"{org.sms_sender_id}.\n\nRegister it with Africa's Talking, then approve it in Django admin "
+                  f"{org.sms_sender_id}.\n\nRegister it with {provider}, then approve it in Django admin "
                   f"(Organizations, action \"Approve SMS sender names\").",
                   None, to, fail_silently=False, using=mailer_for(SYSTEM))
     except Exception:  # the request is saved; a mail outage must not undo it

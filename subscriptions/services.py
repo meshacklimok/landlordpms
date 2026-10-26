@@ -202,7 +202,7 @@ def issue_invoice(sub: Subscription, new_plan: Plan, interval: str, *, reason: s
     org = sub.organization
     from growth import referrals
 
-    price = _money(new_plan.price(interval))
+    price = _money(sub.price_for(new_plan, interval))
     credit = min(_money(credit), price)
     with transaction.atomic():
         # A referral credit (D-133) is a percent off what is left after the unused days; one per invoice.
@@ -1009,6 +1009,35 @@ def set_late_overrides(actor, org: Organization, values: dict, reason: str, requ
     sub.save(update_fields=["late_overrides", "updated_at"])
     audit.record("console.late_rules", actor=actor, organization=org, obj=sub, request=request,
                  changes={"late_overrides": [before, new], "reason": [None, reason[:200]]})
+    return sub
+
+
+@transaction.atomic
+def set_custom_prices(actor, org: Organization, monthly: Decimal | None, yearly: Decimal | None, reason: str,
+                      request=None) -> Subscription:
+    """Sets one organization's own price on its current plan (owner only); None drops it, so the plan's price
+    applies again. Applies to invoices issued from now on, not to ones already issued. Audited with the reason."""
+    if not (actor and actor.is_active and actor.is_superuser):
+        raise PermissionDenied(_("Only an owner can do this."))
+    reason = (reason or "").strip()
+    if len(reason) < 5:
+        raise ValidationError(_("Write the reason, so the audit trail says why."))
+    for value in (monthly, yearly):
+        if value is not None and not Decimal("0") <= value <= Decimal("10000000"):
+            raise ValidationError(_("A price must be zero or more."))
+    sub = Subscription.objects.select_for_update().get(organization=org)
+    before = [str(sub.custom_monthly_price) if sub.custom_monthly_price is not None else None,
+              str(sub.custom_yearly_price) if sub.custom_yearly_price is not None else None]
+    monthly = _money(monthly) if monthly is not None else None
+    yearly = _money(yearly) if yearly is not None else None
+    if (sub.custom_monthly_price, sub.custom_yearly_price) == (monthly, yearly):
+        return sub
+    sub.custom_monthly_price, sub.custom_yearly_price = monthly, yearly
+    sub.save(update_fields=["custom_monthly_price", "custom_yearly_price", "updated_at"])
+    audit.record("console.custom_price", actor=actor, organization=org, obj=sub, request=request,
+                 changes={"monthly": [before[0], str(monthly) if monthly is not None else None],
+                          "yearly": [before[1], str(yearly) if yearly is not None else None],
+                          "reason": [None, reason[:200]]})
     return sub
 
 

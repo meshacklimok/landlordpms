@@ -1,6 +1,7 @@
 // Landing page: the sticky trial bar on phones and the rent-delay calculator.
 (function () {
   calculator();
+  openTabFromLink();
   var bar = document.querySelector("[data-land-sticky]"), hero = document.querySelector(".land-cta-row"),
       end = document.querySelector(".land-final");
   if (!bar || !hero || !("IntersectionObserver" in window)) return;
@@ -19,10 +20,18 @@ function calculator() {
   function num(el, max) { var n = parseFloat(el.value); return isNaN(n) || n < 0 ? 0 : Math.min(n, max); }
   function show() {
     var u = num(units, 100000), r = num(rent, 10000000), p = num(late, 100);
-    out.textContent = "KSh " + Math.round(u * r * p / 100).toLocaleString("en-KE");
+    out.textContent = "KES " + Math.round(u * r * p / 100).toLocaleString("en-KE");
     note.textContent = Math.round(u * p / 100) + " of " + u + " tenants pay late. Matching payments to units and reminding by SMS is what brings this down.";
   }
   [units, rent, late].forEach(function (el) { el.addEventListener("input", show); });
   form.addEventListener("submit", function (e) { e.preventDefault(); });
   show();
+}
+
+// /#manage (a feature tab's name) opens that tab and scrolls to it, so a tab can be linked to.
+function openTabFromLink() {
+  var name = location.hash.slice(1), tab = name && document.getElementById("tab-" + name);
+  if (!tab || !tab.classList.contains("land-tab")) return;
+  tab.click();
+  document.getElementById("features").scrollIntoView();
 }

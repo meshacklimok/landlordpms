@@ -1,0 +1,98 @@
+{
+  "shots": {
+    "behaviour": {
+      "height": 702,
+      "width": 1032
+    },
+    "call-list": {
+      "height": 702,
+      "width": 1032
+    },
+    "collect": {
+      "height": 704,
+      "width": 1036
+    },
+    "dashboard": {
+      "height": 800,
+      "width": 1280
+    },
+    "follow-up": {
+      "height": 702,
+      "width": 1032
+    },
+    "inbox": {
+      "height": 702,
+      "width": 1032
+    },
+    "invoices": {
+      "height": 702,
+      "width": 1032
+    },
+    "manage": {
+      "height": 702,
+      "width": 1032
+    },
+    "messages": {
+      "height": 702,
+      "width": 1032
+    },
+    "meter-round": {
+      "height": 844,
+      "width": 390
+    },
+    "meters": {
+      "height": 702,
+      "width": 1032
+    },
+    "mpesa-phone": {
+      "height": 844,
+      "width": 390
+    },
+    "owner-phone": {
+      "height": 844,
+      "width": 390
+    },
+    "owner-statement": {
+      "height": 702,
+      "width": 1032
+    },
+    "payments": {
+      "height": 702,
+      "width": 1032
+    },
+    "performance": {
+      "height": 702,
+      "width": 1032
+    },
+    "properties": {
+      "height": 702,
+      "width": 1032
+    },
+    "receipts": {
+      "height": 844,
+      "width": 390
+    },
+    "see": {
+      "height": 704,
+      "width": 1036
+    },
+    "tenant": {
+      "height": 844,
+      "width": 390
+    },
+    "transactions": {
+      "height": 702,
+      "width": 1032
+    },
+    "usage": {
+      "height": 702,
+      "width": 1032
+    },
+    "water-session": {
+      "height": 702,
+      "width": 1032
+    }
+  },
+  "taken": "2026-10-25T10:43:51+00:00",
+  "version": "202610251043"
+}

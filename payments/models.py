@@ -120,6 +120,8 @@ class Payment(PublicIdModel, TimeStampedModel):
         indexes = [
             models.Index(fields=["organization", "status"]),
             models.Index(fields=["lease", "paid_at"]),
+            # Money in for a month: the dashboard, profit, payments report and owner statements.
+            models.Index(fields=["organization", "status", "paid_at"], name="pay_org_status_paidat_idx"),
         ]
 
     def __str__(self):

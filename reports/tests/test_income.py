@@ -124,7 +124,7 @@ def test_the_resident_estimate_is_monthly_rent_times_the_rate(owner, year_2025):
 def test_a_reversed_payment_is_left_out(owner, year_2025):
     last = year_2025.payments.order_by("pk").last()
     payment_services.reverse_payment(owner, last, reason="Bounced")
-    pack = income.income_pack(owner, 2025)
+    pack = income.income_pack(owner, 2025, receipts=True)
     assert pack.total.received == money(46000) and pack.total.unapplied == 0
     assert len(pack.receipts) == 2
 

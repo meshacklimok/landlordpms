@@ -19,7 +19,8 @@ from accounts.mixins import CapabilityRequiredMixin, VerifiedUserRequiredMixin
 from accounts.views import PORTAL_INVITE_KEY
 from ai_assistant import tenant as tenant_assistant
 from billing import deposits
-from core import exports, ratelimit
+from billing.invoicing import lease_balance
+from core import charts, exports, ratelimit
 from documents.views import file_response
 from esign import services as esign
 from esign.models import SigningRequest
@@ -29,13 +30,17 @@ from leases import services as lease_services
 from leases.models import Lease
 from maintenance import forms as maintenance_forms
 from maintenance import services as maintenance
+from maintenance.models import MaintenanceRequest
 from maintenance.views import photo_response
+from payments.forms import accounts_for
+from payments.models import PaymentAccount
 from reports import patterns
 from tenants.models import Tenant
 from tenants.services import visible_tenants
 
-from . import conversation, offers, selectors, services
+from . import conversation, offers, own_use, selectors, services
 from . import forms as portal_forms
+from .models import OwnUse
 
 
 def _error_text(exc) -> str:
@@ -63,8 +68,35 @@ class HomeView(PortalRequiredMixin, View):
 
     def get(self, request):
         leases = list(selectors.own_leases(request.user))
+        unread = conversation.unread_for_tenant(request.user)
+        cards = []
+        for lease in leases:
+            active = lease.status == Lease.Status.ACTIVE
+            repairs = list(selectors.own_requests(request.user).filter(
+                lease=lease, status__in=MaintenanceRequest.UNFINISHED)[:3])
+            cards.append({
+                "summary": selectors.summary(lease),
+                "lease": lease,
+                "months": _rent_months(lease),
+                "payments": selectors.payments(lease)[:3],
+                "pending": selectors.pending_payments(lease),
+                "repairs": repairs,
+                "unread": unread.get(lease.pk, 0),
+                "offer": offers.open_offer(lease) if active else None,
+                "notice": lease_services.open_notice(lease) if active else None,
+                "signings": [(r, s) for r, s in esign.portal_requests(request.user, lease)
+                             if r.is_open and not s.has_signed and not s.declined_at],
+                "can_report": active,
+                "ways": _pay_ways(lease) if active or lease_balance(lease) > 0 else [],
+                "news": conversation.received(lease)[:2],
+                "rent": lease.rent_on(timezone.localdate()),
+                "days_left": (lease.end_date - timezone.localdate()).days if active and lease.end_date else None,
+                "deposit": _deposit_statement(lease),
+                "documents": selectors.own_documents(lease),
+            })
         return _no_store(render(request, self.template_name, {
-            "summaries": [selectors.summary(lease) for lease in leases],
+            "cards": cards,
+            "summaries": cards,
             "ussd_code": getattr(settings, "USSD_CODE", ""),
             "can_ask": tenant_assistant.portal_caller(request.user) is not None,
         }))
@@ -158,6 +190,25 @@ class SigningPdfView(SigningView):
         return pdf_response(req.original_pdf, f"{req.number}.pdf", download=download)
 
 
+def _pay_ways(lease):
+    """Where the tenant can pay by hand: Paybill and Till numbers, bank accounts, with the unit's account reference (D-100)."""
+    reference = lease.unit.payment_reference
+    ways = []
+    for account in accounts_for(lease).exclude(type=PaymentAccount.Type.CASH).exclude(number="")[:3]:
+        kind = account.type
+        if kind == PaymentAccount.Type.PAYBILL:
+            ways.append({"title": _("M-Pesa Paybill"), "number_label": _("Business number"), "number": account.number,
+                         "reference": reference})
+        elif kind == PaymentAccount.Type.TILL:
+            ways.append({"title": _("M-Pesa Buy Goods"), "number_label": _("Till number"), "number": account.number})
+        elif kind == PaymentAccount.Type.BANK:
+            ways.append({"title": account.display_name, "number_label": _("Account number"), "number": account.number,
+                         "reference": reference})
+        else:
+            ways.append({"title": "M-Pesa", "number_label": _("Send to"), "number": account.number})
+    return ways
+
+
 def _deposit_statement(lease):
     """What the tenant sees of their deposit (D-150): held, each deduction with its reason, and the refund deadline."""
     if not lease.organization.takes_deposits:
@@ -207,6 +258,65 @@ class PaymentsView(PortalRequiredMixin, View):
             writer.writerow([payment.paid_at.isoformat(), payment.get_method_display(), payment.reference,
                              payment.amount, receipt.number if receipt and receipt.pdf else ""])
         return _no_store(response)
+
+
+class UtilitiesView(PortalRequiredMixin, View):
+    """Month by month: the water the office bills, and the tenant's own private notes on electricity or water
+    they pay for themselves (D-219). The notes never reach staff, invoices or reports."""
+
+    template_name = "portal/utilities.html"
+
+    def _context(self, request, lease, form=None):
+        own = [own_use.summarize(lease, u) for u in (OwnUse.Utility.ELECTRICITY, OwnUse.Utility.WATER)]
+        specs = {}
+        for item in own:
+            if not item.has_data:
+                continue
+            labels = [m.month.strftime("%b %y") for m in item.months]
+            specs[f"chart-{item.utility}-units"] = charts.chart(
+                "bar", labels, [charts.series(item.unit_label, [m.units for m in item.months], "1")], axis="count")
+        billed = own_use.billed_water(lease)
+        bill_spec = None
+        if billed:
+            ordered = list(reversed(billed))
+            bill_spec = charts.chart("bar", [b.month.strftime("%b %y") for b in ordered],
+                                     [charts.series(_("Billed"), [b.amount for b in ordered], "1")],
+                                     currency=lease.currency)
+        return {"lease": lease, "summary": selectors.summary(lease), "own": own, "specs": specs, "billed": billed,
+                "bill_spec": bill_spec, "can_write": lease.status == Lease.Status.ACTIVE,
+                "form": form or portal_forms.OwnUseForm(initial={"on": timezone.localdate(), "kind": "READING",
+                                                                  "utility": request.GET.get("utility", "ELECTRICITY")})}
+
+    def get(self, request, public_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None:
+            raise Http404
+        return _no_store(render(request, self.template_name, self._context(request, lease)))
+
+    def post(self, request, public_id):
+        lease = selectors.own_lease(request.user, public_id)
+        if lease is None or lease.status != Lease.Status.ACTIVE:
+            raise Http404
+        form = portal_forms.OwnUseForm(request.POST)
+        if form.is_valid():
+            try:
+                own_use.add_entry(request.user, lease, **form.cleaned_data)
+            except ValidationError as exc:
+                form.add_error(None, _error_text(exc))
+            else:
+                messages.success(request, _("Saved. Only you can see this."))
+                return redirect("portal:utilities", public_id=lease.public_id)
+        return _no_store(render(request, self.template_name, self._context(request, lease, form), status=400))
+
+
+class OwnUseDeleteView(PortalRequiredMixin, View):
+    def post(self, request, public_id):
+        entry = get_object_or_404(OwnUse, public_id=public_id,
+                                  lease_id__in=selectors.own_lease_ids(request.user))
+        lease = entry.lease
+        own_use.delete_entry(entry)
+        messages.success(request, _("Removed."))
+        return redirect("portal:utilities", public_id=lease.public_id)
 
 
 class PaymentReportView(PortalRequiredMixin, View):

@@ -261,6 +261,32 @@ def test_a_sent_message_is_never_sent_again(org, tenant, outbox):
     assert len(MemorySmsSender.outbox) == 1
 
 
+def test_a_failed_charge_after_sending_does_not_send_the_text_twice(org, tenant, outbox, monkeypatch):
+    from subscriptions import services as billing
+
+    def boom(message):
+        raise RuntimeError("wallet locked")
+
+    monkeypatch.setattr(billing, "charge_message", boom)
+    m = announce(org, tenant)
+    assert delivery.send_one(m.pk, NOON) == Status.SENT
+    m.refresh_from_db()
+    assert m.status == Status.SENT
+    assert delivery.send_one(m.pk, NOON) is None
+    assert len(MemorySmsSender.outbox) == 1
+
+
+def test_a_number_that_replied_stop_is_not_texted_by_bare_number(org):
+    from notifications import sms_hooks
+
+    ntype = catalog.BY_CODENAME["announcement"]
+    assert delivery._phone_blocked(org, ntype, catalog.SMS, "+254799000111") is None
+    sms_hooks.inbound("0799000111", "STOP")  # an owner or supplier: no tenant has this number
+    assert delivery._phone_blocked(org, ntype, catalog.SMS, "+254799000111") == Skip.OPTED_OUT
+    sms_hooks.inbound("0799000111", "START")
+    assert delivery._phone_blocked(org, ntype, catalog.SMS, "+254799000111") is None
+
+
 # ---------------------------------------------------------------------------
 # Staff recipients
 # ---------------------------------------------------------------------------

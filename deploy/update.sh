@@ -31,6 +31,8 @@ elif [ -f "$CODE_TAR" ]; then
     rsync -a --delete --exclude /venv/ --exclude /media/ --exclude /staticfiles/ --exclude /backups/ "$tmp"/ "$APP_DIR"/
     rm -rf "$tmp"
     chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+    # mktemp makes the folder 700 and rsync -a copies that onto $APP_DIR; nginx then gets 403 on static files.
+    chmod 755 "$APP_DIR"
     mv "$CODE_TAR" "$CODE_TAR.installed"
 else
     stop "No new code: upload $CODE_TAR first (doc 21), or make $APP_DIR a git clone."
@@ -49,6 +51,7 @@ step "Database tables (as the owner role)"
 step "Static files, deploy check, scheduled jobs"
 as_app sh "$APP_DIR/deploy/run.sh" sync_access_catalog
 as_app sh "$APP_DIR/deploy/run.sh" collectstatic --noinput -v 0
+chmod -R go+rX "$APP_DIR/staticfiles"
 as_app sh "$APP_DIR/deploy/run.sh" check --deploy
 crontab -u "$APP_USER" "$APP_DIR/deploy/crontab"
 

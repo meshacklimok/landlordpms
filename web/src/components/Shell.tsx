@@ -3,6 +3,7 @@ import { djangoGet } from "@/lib/django";
 import type { Session } from "@/lib/types";
 import { AskButton } from "./AskButton";
 import { HelpButton } from "./HelpButton";
+import { InstallPrompt } from "./InstallPrompt";
 import { Notices } from "./Notices";
 import { ShellFrame } from "./ShellFrame";
 
@@ -14,7 +15,8 @@ export async function Shell({ children }: { children: ReactNode }) {
       <Notices session={session} />
       {children}
       <HelpButton url={session.urls.contact} />
-      <AskButton />
+      {session.show_ask && <AskButton />}
+      <InstallPrompt />
     </ShellFrame>
   );
 }

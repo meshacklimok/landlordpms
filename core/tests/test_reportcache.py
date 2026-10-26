@@ -32,11 +32,13 @@ def test_second_load_asks_the_database_less(client):
     assert [p for p in PAGES if p != "/reports/cash-flow/" and second[p]["queries"] >= first[p]["queries"]] == []
 
 
-def test_saving_a_payment_makes_the_next_load_fresh(client):
+def test_saving_a_payment_makes_the_next_load_fresh(client, django_capture_on_commit_callbacks, monkeypatch):
     owner, _prop = _setup(client)
+    monkeypatch.setattr(reportcache, "BUMP_AT_COMMIT", True)
     before = reportcache.version(owner.organization_id)
     payment = Payment.objects.filter(organization=owner.organization).first()
-    payment.save()
+    with django_capture_on_commit_callbacks(execute=True):
+        payment.save()
     assert reportcache.version(owner.organization_id) == before + 1
     assert reportcache.version(owner.organization_id + 999) == 0  # other organizations are untouched
 
@@ -66,3 +68,46 @@ def test_a_broken_cache_still_gives_the_report(client, monkeypatch):
     monkeypatch.setattr(reportcache.cache, "get", boom)
     monkeypatch.setattr(reportcache.cache, "set", boom)
     assert reportcache.cached(owner, "x", (), lambda: 5) == 5
+
+
+def test_many_saves_in_one_transaction_bump_once(client, django_capture_on_commit_callbacks, monkeypatch):
+    owner, _prop = _setup(client)
+    monkeypatch.setattr(reportcache, "BUMP_AT_COMMIT", True)
+    before = reportcache.version(owner.organization_id)
+    payments = list(Payment.objects.filter(organization=owner.organization)[:3])
+    with django_capture_on_commit_callbacks(execute=True) as callbacks:
+        for payment in payments:
+            payment.save()
+    assert len(callbacks) == 1
+    assert reportcache.version(owner.organization_id) == before + 1
+
+
+def test_polled_rows_do_not_clear_the_figures(client, django_capture_on_commit_callbacks, monkeypatch):
+    from mpesa.models import StkRequest
+
+    owner, _prop = _setup(client)
+    monkeypatch.setattr(reportcache, "BUMP_AT_COMMIT", True)
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        reportcache._changed(StkRequest, StkRequest(organization=owner.organization))
+    assert callbacks == []
+
+
+def test_while_redis_is_down_figures_are_kept_in_this_worker(client, monkeypatch):
+    owner, _prop = _setup(client)
+
+    def boom(*a, **k):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(reportcache.cache, "get", boom)
+    monkeypatch.setattr(reportcache.cache, "set", boom)
+    monkeypatch.setattr(reportcache.cache, "incr", boom)
+    calls = []
+
+    def build():
+        calls.append(1)
+        return len(calls)
+
+    assert reportcache.cached(owner, "down", (), build) == 1
+    assert reportcache.cached(owner, "down", (), build) == 1  # reused, not rebuilt
+    reportcache.bump(owner.organization_id)
+    assert reportcache.cached(owner, "down", (), build) == 2  # a save here still shows

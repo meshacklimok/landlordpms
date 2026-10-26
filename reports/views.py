@@ -141,8 +141,7 @@ class DashboardView(CapabilityRequiredMixin, View):
         money = None
         if can(m, "reports.view_financial"):
             money_from = metrics.add_months(board.month, 1 - metrics.TREND_MONTHS)
-            money = reportcache.cached(m, "dashboard-money", (money_from, board.month, prop and prop.pk),
-                                       lambda: finance.money_report(m, money_from, board.month, prop))
+            money = finance.money_report(m, money_from, board.month, prop)
             chart["money"] = {
                 "labels": [row.label for row in money.months],
                 "income": [float(row.income) for row in money.months],
@@ -354,7 +353,7 @@ class IncomeExportView(CapabilityRequiredMixin, View):
             raise PermissionDenied("reports.view_financial")
         if year not in income.years(m) or kind not in (*CSV_KINDS, "pdf"):
             raise Http404
-        pack = income.income_pack(m, year)
+        pack = income.income_pack(m, year, receipts=kind in ("receipts", "pdf"))
         if kind == "pdf":
             response = HttpResponse(render_pack(pack), content_type="application/pdf")
             response["Content-Disposition"] = f'attachment; filename="rental-income-{year}.pdf"'
@@ -646,8 +645,7 @@ class _FinanceView(CapabilityRequiredMixin, View):
         today = timezone.localdate()
         start, end = finance.period(request.GET.get("from", ""), request.GET.get("to", ""), today)
         m = request.membership
-        return reportcache.cached(m, "money", (start, end, prop and prop.pk, compare),
-                                  lambda: finance.money_report(m, start, end, prop, compare=compare))
+        return finance.money_report(m, start, end, prop, compare=compare)
 
     def filename(self, report) -> str:
         return f"{self.slug}-{report.start:%Y-%m}-to-{report.end:%Y-%m}.csv"
@@ -731,8 +729,7 @@ class MonthOnMonthView(_FinanceView):
         start, end = finance.period(request.GET.get("from", ""), request.GET.get("to", ""), today)
         m = request.membership
         first = metrics.add_months(start, -1)
-        wide = reportcache.cached(m, "money", (first, end, prop and prop.pk, False),
-                                  lambda: finance.money_report(m, first, end, prop))
+        wide = finance.money_report(m, first, end, prop)
         report = copy.copy(report)  # the cached report is shared; keep the extra month on our own copy
         report.lead = wide.months[0]
         return report

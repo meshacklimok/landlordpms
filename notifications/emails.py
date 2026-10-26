@@ -116,6 +116,11 @@ def attachments(message) -> list[tuple[str, bytes, str]]:
 
 
 def send(message) -> SmsResult:
+    from .suppression import is_suppressed
+
+    if is_suppressed(message.to):  # it bounced for good or marked us as spam: trying again cannot help
+        return SmsResult(ok=False, provider="email", error="This address bounced earlier or reported spam",
+                         permanent=True)
     org = message.organization
     headers = {}
     if message.tenant_id:

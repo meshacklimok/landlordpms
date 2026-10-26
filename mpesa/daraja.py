@@ -50,7 +50,10 @@ class DarajaClient:
     def _open(self, request: urllib.request.Request) -> dict:
         try:
             with urllib.request.urlopen(request, timeout=self.TIMEOUT) as response:  # noqa: S310 - fixed https
-                return json.loads(response.read().decode() or "{}")
+                data = json.loads(response.read().decode() or "{}")
+            if not isinstance(data, dict):
+                raise ValueError("not an object")
+            return data
         except urllib.error.HTTPError as e:
             raise DarajaError(self._http_error(e)) from None
         except (urllib.error.URLError, TimeoutError) as e:
@@ -64,8 +67,12 @@ class DarajaClient:
             body = json.loads(e.read().decode())
         except (ValueError, AttributeError, OSError):
             body = {}
+        if not isinstance(body, dict):
+            body = {}
         detail = body.get("errorMessage") or body.get("ResponseDescription") or ""
         code = body.get("errorCode") or ""
+        if e.code == 429 and not detail:  # seen live: the status query is rate limited, with an empty body
+            return "Safaricom is limiting requests. Wait a minute and try again."
         return (f"{code} {detail}".strip() or f"HTTP {e.code}")[:300]
 
     def token(self) -> str:

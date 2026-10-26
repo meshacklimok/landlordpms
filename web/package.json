@@ -9,18 +9,18 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "bootstrap-icons": "^1.11.3",
-    "next": "16.4.2",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "bootstrap-icons": "^1.13.2",
+    "next": "^16.4.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "server-only": "^0.0.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
+    "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.4.2",
-    "typescript": "^5"
+    "eslint": "^10.13.0",
+    "eslint-config-next": "^16.4.3",
+    "typescript": "6.0"
   }
 }

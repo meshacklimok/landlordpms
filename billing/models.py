@@ -175,6 +175,8 @@ class Invoice(PublicIdModel, TimeStampedModel):
         indexes = [
             models.Index(fields=["organization", "status", "overdue_after"]),
             models.Index(fields=["lease", "period_start"]),
+            models.Index(fields=["organization", "status", "due_date"], name="inv_org_status_due_idx"),
+            models.Index(fields=["organization", "period_start"], name="inv_org_period_idx"),
         ]
 
     def __str__(self):
@@ -227,6 +229,7 @@ class InvoiceLine(models.Model):
 
     class Meta:
         ordering = ["pk"]
+        indexes = [models.Index(fields=["organization", "billing_month"], name="invline_org_month_idx")]
         constraints = [
             models.UniqueConstraint("lease", "billing_month", "charge_type",
                                     condition=Q(is_void=False, meter_charge__isnull=True),
@@ -308,7 +311,8 @@ class LedgerEntry(AppendOnlyModel):
             models.UniqueConstraint("payment", "kind", condition=Q(kind__in=["PAYMENT", "PAYMENT_REVERSAL"]),
                                     name="billing_ledger_payment_posted_once"),
         ]
-        indexes = [models.Index(fields=["lease", "entry_date"]), models.Index(fields=["organization", "kind"])]
+        indexes = [models.Index(fields=["lease", "entry_date"]), models.Index(fields=["organization", "kind"]),
+                   models.Index(fields=["organization", "entry_date"], name="ledger_org_date_idx")]
 
     def __str__(self):
         return f"{self.get_kind_display()} {self.amount}"

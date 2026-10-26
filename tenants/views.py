@@ -242,7 +242,7 @@ class TenantAssignView(CapabilityRequiredMixin, View):
     def get(self, request, public_id):
         tenant = _get_tenant(request, public_id)
         unit = (_assignable_units(request.membership) or Unit.objects.none()).filter(
-            public_id=request.GET.get("unit") or None).first()
+            public_id=uuid_or_none(request.GET.get("unit"))).first()
         if unit is None:
             messages.error(request, _("Choose a vacant unit."))
             return redirect("tenants:detail", public_id=tenant.public_id)

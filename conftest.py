@@ -41,6 +41,14 @@ def pytest_configure(config):
 
 
 @pytest.fixture(autouse=True)
+def _report_cache_bumps_at_once(monkeypatch):
+    """A test's transaction never commits, so the report cache cannot wait for the commit (core/reportcache.py)."""
+    from core import reportcache
+
+    monkeypatch.setattr(reportcache, "BUMP_AT_COMMIT", False)
+
+
+@pytest.fixture(autouse=True)
 def _test_settings(settings):
     settings.PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
     settings.SMS_BACKEND = "notifications.providers.sms.MemorySmsSender"

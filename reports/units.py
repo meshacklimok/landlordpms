@@ -229,6 +229,7 @@ def rent_states(organization, where: Q, key: str, first: datetime.date, last: da
     lines = (InvoiceLine.objects
              .filter(where, organization=organization, is_void=False, invoice__status__in=metrics.LIVE_INVOICE,
                      charge_type__category=ChargeType.Category.RENT)
+             .filter(metrics._billed_since(first))
              .annotate(month=metrics._billed_month()).filter(month__gte=first, month__lte=last)
              .values("invoice_id", "month", key).annotate(total=Sum("amount")))
     rent: dict[int, dict[datetime.date, Decimal]] = defaultdict(dict)

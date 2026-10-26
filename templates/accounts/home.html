@@ -16,11 +16,11 @@
   {% if membership|can:"invoices.generate" %}<a class="home-action" href="{% url 'billing:generate' %}"><i class="bi bi-receipt" aria-hidden="true"></i>{% trans "Send invoices" %}</a>{% endif %}
   {% if membership|can:"tenants.manage" %}<a class="home-action" href="{% url 'tenants:create' %}"><i class="bi bi-person-plus" aria-hidden="true"></i>{% trans "Add a tenant" %}</a>{% endif %}
   {% if membership|can:"messages.send" %}<a class="home-action" href="{% url 'notifications:compose' %}"><i class="bi bi-chat-left-text" aria-hidden="true"></i>{% trans "Message a tenant" %}</a>{% endif %}
-  {% if membership|can:"maintenance.create" %}<a class="home-action" href="{% url 'maintenance:create' %}"><i class="bi bi-tools" aria-hidden="true"></i>{% trans "Report a repair" %}</a>{% endif %}
+  {% if membership|can:"maintenance.create" %}<a class="home-action" href="{% url 'maintenance:create' %}" data-offline-keep><i class="bi bi-tools" aria-hidden="true"></i>{% trans "Report a repair" %}</a>{% endif %}
   {% if membership|can:"expenses.submit" %}<a class="home-action" href="{% url 'expenses:create' %}"><i class="bi bi-wallet2" aria-hidden="true"></i>{% trans "Add an expense" %}</a>{% endif %}
 </nav>{% endif %}
 
-{% if suggest_mfa %}
+{% if suggest_mfa and not in_demo %}
 <div class="alert alert-info d-flex flex-wrap justify-content-between align-items-center gap-2">
   <span>{% trans "Your role can move money and see private records. Protect your account with two-step login." %}</span>
   <a class="btn btn-sm btn-primary" href="{% url 'accounts:security' %}">{% trans "Set it up" %}</a>

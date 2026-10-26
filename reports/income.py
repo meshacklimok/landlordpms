@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db.models import DateField, Min, Sum
+from django.db.models import DateField, Min, Prefetch, Sum
 from django.db.models.functions import Cast, Coalesce, TruncMonth
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -28,8 +28,9 @@ from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require, visible_properties
 from audit import services as audit
 from billing.models import ChargeType, Invoice, InvoiceLine
+from core import reportcache
 from core.money import ZERO, format_money, round_money
-from payments.models import Payment
+from payments.models import Payment, PaymentAllocation
 from properties.models import Property
 
 D = datetime.date
@@ -157,8 +158,15 @@ def years(membership: Membership) -> list[int]:
     return list(range(this_year, start - 1, -1))
 
 
-def income_pack(membership: Membership, year: int) -> Pack:
+def income_pack(membership: Membership, year: int, *, receipts: bool = False) -> Pack:
+    """The year's figures. `receipts` also loads every payment in full, for the payments CSV and the PDF; the page
+    itself only needs the sums, and building the full payment, lease, unit and tenant objects is most of its cost."""
     require(membership, "reports.view_financial")
+    return reportcache.cached(membership, "income-pack", (year, receipts),
+                              lambda: _income_pack(membership, year, receipts=receipts))
+
+
+def _income_pack(membership: Membership, year: int, *, receipts: bool) -> Pack:
     org = membership.organization
     properties = visible_properties(membership, Property.all_objects.all())
     start, end = D(year, 1, 1), D(year, 12, 31)
@@ -190,15 +198,19 @@ def income_pack(membership: Membership, year: int) -> Pack:
             setattr(row, name, getattr(row, name) + r["total"])
 
     # Received, split by what each payment paid.
-    payments = list(
-        Payment.objects.filter(organization=org, status=Payment.Status.CONFIRMED, paid_at__gte=start,
-                               paid_at__lte=end, lease__unit__property__in=properties)
-        .select_related("lease__unit__property", "tenant", "receipt")
-        .prefetch_related("allocations").order_by("paid_at", "pk")
-    )
+    paid = (Payment.objects.filter(organization=org, status=Payment.Status.CONFIRMED, paid_at__gte=start,
+                                   paid_at__lte=end, lease__unit__property__in=properties)
+            .order_by("paid_at", "pk"))
+    if receipts:
+        paid = paid.select_related("lease__unit__property", "tenant", "receipt").prefetch_related("allocations")
+    else:
+        paid = (paid.select_related("lease__unit__property").only("paid_at", "amount", "lease__unit__property__name")
+                .prefetch_related(Prefetch("allocations",
+                                           queryset=PaymentAllocation.objects.only("payment", "invoice", "amount"))))
+    payments = list(paid)
     shares = _invoice_shares(payments)
-    receipts = [_split(p, shares) for p in payments]
-    for part in receipts:
+    parts = [_split(p, shares) for p in payments]
+    for part in parts:
         p = part.payment
         months[D(p.paid_at.year, p.paid_at.month, 1)].add_received(part)
         prop_row(p.lease.unit.property).add_received(part)
@@ -215,38 +227,47 @@ def income_pack(membership: Membership, year: int) -> Pack:
 
     pack = Pack(organization=org, year=year, residence=org.landlord_tax_residence, months=list(months.values()),
                 properties=sorted(by_property.values(), key=lambda r: r.label.lower()), total=total,
-                receipts=receipts)
+                receipts=parts if receipts else [])
     pack.notes = _notes(pack, membership)
     return pack
 
 
 def _invoice_shares(payments) -> dict[int, dict[str, Decimal]]:
-    ids = {a.invoice_id for p in payments for a in p.allocations.all()}
+    return invoice_shares({a.invoice_id for p in payments for a in p.allocations.all()})
+
+
+def invoice_shares(invoice_ids) -> dict[int, dict[str, Decimal]]:
+    """What each invoice is made of, by kind of charge, for the invoices a set of payments paid."""
     shares: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(lambda: ZERO))
-    for r in (InvoiceLine.objects.filter(invoice_id__in=ids, is_void=False)
+    for r in (InvoiceLine.objects.filter(invoice_id__in=invoice_ids, is_void=False)
               .values("invoice_id", "charge_type__category").annotate(total=Sum("amount"))):
         shares[r["invoice_id"]][_bucket(r["charge_type__category"])] += r["total"]
     return shares
 
 
 def _split(payment: Payment, shares) -> Split:
-    part = Split(payment=payment)
+    return divide(Split(payment=payment), payment.amount,
+                  [(a.invoice_id, a.amount) for a in payment.allocations.all()], shares)
+
+
+def divide(part: Split, amount: Decimal, allocations, shares) -> Split:
+    """Splits one payment of `amount` over what it paid, given its (invoice id, amount) allocations."""
     applied = ZERO
-    for a in payment.allocations.all():
-        applied += a.amount
-        parts = shares.get(a.invoice_id, {})
+    for invoice_id, share in allocations:
+        applied += share
+        parts = shares.get(invoice_id, {})
         whole = sum(parts.values(), ZERO)
         if not whole:
-            part.other += a.amount
+            part.other += share
             continue
-        rent = round_money(a.amount * parts.get("rent", ZERO) / whole)
-        deposit = round_money(a.amount * parts.get("deposit", ZERO) / whole)
-        utilities = round_money(a.amount * parts.get("utilities", ZERO) / whole)
+        rent = round_money(share * parts.get("rent", ZERO) / whole)
+        deposit = round_money(share * parts.get("deposit", ZERO) / whole)
+        utilities = round_money(share * parts.get("utilities", ZERO) / whole)
         part.rent += rent
         part.deposit += deposit
         part.utilities += utilities
-        part.other += a.amount - rent - deposit - utilities
-    part.unapplied = payment.amount - applied
+        part.other += share - rent - deposit - utilities
+    part.unapplied = amount - applied
     return part
 
 

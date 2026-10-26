@@ -143,9 +143,18 @@ def _providers() -> list[tuple[bool, str]]:
     from mpesa.models import DarajaCredentials
 
     results = []
-    if settings.SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender":
+    if settings.SMS_BACKEND == "notifications.providers.sms.CelcomSmsSender":
+        if settings.CELCOM_API_KEY and settings.CELCOM_PARTNER_ID and settings.CELCOM_SENDER_ID:
+            results.append((True, f"SMS go out through Celcom Africa as partner {settings.CELCOM_PARTNER_ID}, "
+                                  f"from {settings.CELCOM_SENDER_ID}."))
+        else:
+            results.append((False, "SMS_BACKEND is Celcom Africa but CELCOM_API_KEY, CELCOM_PARTNER_ID or "
+                                   "CELCOM_SENDER_ID (Celcom needs one on every message) is empty "
+                                   "(Django admin > Platform settings, or the environment file)."))
+    elif settings.SMS_BACKEND != "notifications.providers.sms.AfricasTalkingSmsSender":
         results.append((False, f"SMS goes to {settings.SMS_BACKEND.rsplit('.', 1)[-1]}: set SMS_BACKEND to "
-                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY "
+                               "notifications.providers.sms.AfricasTalkingSmsSender with AT_USERNAME and AT_API_KEY, "
+                               "or to CelcomSmsSender with CELCOM_API_KEY and CELCOM_PARTNER_ID "
                                "(Django admin > Platform settings, or the environment file)."))
     elif settings.AT_USERNAME == "sandbox":
         results.append((False, "AT_USERNAME is sandbox: put in your live Africa's Talking username and API key."))
@@ -168,9 +177,21 @@ def _providers() -> list[tuple[bool, str]]:
     else:
         results.append((False, "No landlord has live M-Pesa yet: enter live Daraja keys in M-Pesa > Settings."))
     results.append(_platform_payments())
+    results.append(_callback_guards())
     results.append((True, "The assistant is offered (OPENAI_API_KEY is set)." if settings.OPENAI_API_KEY else
                     "The assistant is not offered (no OPENAI_API_KEY); that is fine."))
     return results
+
+
+def _callback_guards() -> tuple[bool, str]:
+    """Payment callbacks and error tracking: the IP allow-lists and Sentry (final production check, doc 24)."""
+    missing = [name for name in ("MPESA_ALLOWED_IPS", "PAYSTACK_ALLOWED_IPS") if not getattr(settings, name)]
+    if not settings.SENTRY_DSN:
+        missing.append("SENTRY_DSN")
+    if missing:
+        return (False, f"{', '.join(missing)} empty: callbacks are then guarded only by the secret in the URL and "
+                       "errors reach only the server log (set them in /etc/landlordpms.env).")
+    return (True, "Payment callbacks are limited to Safaricom's and Paystack's addresses; Sentry is on.")
 
 
 def _platform_payments() -> tuple[bool, str]:

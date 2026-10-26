@@ -21,4 +21,21 @@
   {% endfor %}
   <div class="submit-row"><input type="submit" value="Save" class="default"></div>
 </form>
+<form method="post" autocomplete="off">{% csrf_token %}
+  <fieldset class="module aligned">
+    <h2>Send a test</h2>
+    <div class="form-row"><div>
+      <label for="test_sms">Phone number:</label>
+      <input type="text" id="test_sms" name="test_sms" placeholder="0712345678">
+      <button type="submit" name="send_test" value="sms">Send test SMS</button>
+      <div class="help">Uses the saved SMS provider. Sends one real message. Save changes first.</div>
+    </div></div>
+    <div class="form-row"><div>
+      <label for="test_email">Email:</label>
+      <input type="email" id="test_email" name="test_email" value="{{ my_email }}">
+      <button type="submit" name="send_test" value="email">Send test email</button>
+      <div class="help">Uses the server's mail settings.</div>
+    </div></div>
+  </fieldset>
+</form>
 {% endblock %}

@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.views import View
 
+from accounts.demo import is_demo
 from accounts.mixins import CapabilityRequiredMixin
 from accounts.permissions import can
 from billing.invoicing import lease_balance
@@ -94,7 +95,7 @@ class OverviewView(CapabilityRequiredMixin, View):
             "day_rows": list(zip(data["days"], data["per_day"], data["per_day_avg"], strict=True)),
             "pattern_rows": [(d, a) for d, a in enumerate(data["month_days"], start=1) if a],
             "pattern_days": overview.PATTERN_DAYS, "hand_days": overview.HAND_MATCH_DAYS,
-            "can_match": can(m, "mpesa.match"), "can_settings": can(m, "mpesa.settings")})
+            "can_match": can(m, "mpesa.match"), "can_settings": can(m, "mpesa.settings") and not is_demo(request)})
 
 
 class SettingsView(CapabilityRequiredMixin, View):

@@ -14,9 +14,9 @@ Doc 21 is the same setup written for Hetzner. Its steps 1 and 3–10 (login key,
 | Image | Ubuntu 24.04 (LTS) x64 |
 | Test size | Basic, Regular, **$6/mo**: 1 vCPU, 1 GB RAM, 25 GB SSD (swap of 2 GB is added by `setup.sh`) |
 | First-client size | **$12/mo**: 1 vCPU, 2 GB RAM, 50 GB SSD (or $24: 2 vCPU, 4 GB, for several clients) |
-| IPv4 | `64.226.127.102` |
+| IPv4 | `165.245.221.108` |
 | Domain | `app.nyumbapms.com` (A record to the IPv4 above) |
-| Login | `ssh root@64.226.127.102`, with the key made in step 1 |
+| Login | `ssh root@165.245.221.108`, with the key made in step 1 |
 | Extras | Monitoring on (free). Backups off while testing. No managed database: PostgreSQL runs on the Droplet. |
 
 ## Why Frankfurt, and why these sizes
@@ -62,20 +62,20 @@ Press Enter for the default file (a passphrase is optional but better). Copy the
 ## Step 3 — Log in
 
 ```powershell
-ssh root@64.226.127.102
+ssh root@165.245.221.108
 ```
 
 Type `yes` **at the question the command asks**, not afterwards at the PowerShell prompt (typing it afterwards gives "yes is not recognized" and the login fails; run `ssh` again). You are in when the prompt reads `root@nyumbapms:~#`. `exit` comes back to your computer.
 
 ## Step 4 — Point the domain at the server
 
-In the DNS page of wherever `nyumbapms.com` is managed, add an **A record**: name `app`, value `64.226.127.102`, TTL 300. If the DNS is on Cloudflare, set it to **DNS only** (grey cloud) until the certificate is issued. Check from your computer after a few minutes:
+In the DNS page of wherever `nyumbapms.com` is managed, add an **A record**: name `app`, value `165.245.221.108`, TTL 300. If the DNS is on Cloudflare, set it to **DNS only** (grey cloud) until the certificate is issued. Check from your computer after a few minutes:
 
 ```
 nslookup app.nyumbapms.com
 ```
 
-It must show `64.226.127.102`. `setup.sh` stops at the https step until it does.
+It must show `165.245.221.108`. `setup.sh` stops at the https step until it does.
 
 ## Step 5 — Upload the code
 
@@ -84,7 +84,7 @@ On your computer, in the project folder, **in cmd** (the terminal that shows `(v
 ```
 tar --exclude=./venv --exclude=./.git --exclude=./.env --exclude=./.env.production --exclude=./.claude --exclude=./media --exclude=./backups --exclude=__pycache__ --exclude=.pytest_cache --exclude=.ruff_cache -czf %TEMP%\nyumbapms.tar.gz .
 dir %TEMP%\nyumbapms.tar.gz
-scp %TEMP%\nyumbapms.tar.gz root@64.226.127.102:/root/
+scp %TEMP%\nyumbapms.tar.gz root@165.245.221.108:/root/
 ```
 
 The archive was about 2.2 MB. The two secret files (`.env`, `.env.production`) are left out on purpose. In PowerShell the same command uses `$env:TEMP\nyumbapms.tar.gz`.
@@ -152,7 +152,7 @@ Do it a day before the client starts, not on the day.
 | You see | Do |
 |---|---|
 | "Add Payment Method" will not complete, "insufficient funds" | See *Paying with a card* above: stop retrying, check the card and the holds |
-| `yes : The term 'yes' is not recognized` | You typed `yes` at the PowerShell prompt; run `ssh root@64.226.127.102` again and type it at the question |
+| `yes : The term 'yes' is not recognized` | You typed `yes` at the PowerShell prompt; run `ssh root@165.245.221.108` again and type it at the question |
 | `tar: Failed to open '$env:TEMP\...'` | You are in cmd; use `%TEMP%` |
 | `ssh` asks for a password | The SSH key was not attached; use the Droplet's **Console** (Droplet page › Access › Launch Droplet Console) and add it to `/root/.ssh/authorized_keys` |
 | Locked out, or ssh will not connect | Droplet page › **Access › Launch Droplet Console** gives a terminal without ssh |
@@ -164,11 +164,11 @@ Do it a day before the client starts, not on the day.
 
 ## Progress log
 
-- 2026-10-11: account created and card added (verification hold of $11.02). Droplet `nyumbapms-1` created at Frankfurt, $6, IPv4 `64.226.127.102`. SSH login works. Code (2.2 MB) uploaded and unpacked to `/srv/landlordpms`.
+- 2026-10-11: account created and card added (verification hold of $11.02). Droplet `nyumbapms-1` created at Frankfurt, $6, IPv4 `165.245.221.108`. SSH login works. Code (2.2 MB) uploaded and unpacked to `/srv/landlordpms`.
 - 2026-10-11: first `setup.sh` run installed packages, swap and firewall, then stopped on a permissions error (code unpacked as root); `chown` alone did not fix it; `chmod -R u+rwX,go+rX` plus `chown` did, and the script now does both. Second run went through to the settings file (`FILL_ME` stop).
 - 2026-10-11: settings filled with stand-ins (email `localhost`, SMS console backend with `ALLOW_CONSOLE_SMS=1`, alerts to `mlcodeprojectsapi@gmail.com`). `setup.sh` kept stopping at the FILL_ME check because of a comment line in the settings file; check fixed to look for `NAME=FILL_ME` only.
 - 2026-10-11: `setup.sh` ran through the database tables (all migrations OK), web service and nginx, and scheduled jobs. It then stopped at the https certificate because the DNS A record for `app` is not added yet. Script fixed to print the message.
-- 2026-10-11: Cloudflare A record `app` -> `64.226.127.102` added as **DNS only**. `setup.sh` finished: https certificate issued (expires 2027-01-09, renews by itself), first backup taken, launch check ran. 13 launch-check TODOs remain, all expected on day one: live SMS, live M-Pesa, subscription payments, the 10 scheduled jobs that have not run yet, plus the off-site copy and uptime monitor. Note: the SSH window dropped once mid-run (idle `Connection reset`); log in again and re-run `setup.sh`, it skips finished steps. Next: `createsuperuser`, log in at https://app.nyumbapms.com, off-site backup to Spaces, uptime monitor.
+- 2026-10-11: Cloudflare A record `app` -> `165.245.221.108` added as **DNS only**. `setup.sh` finished: https certificate issued (expires 2027-01-09, renews by itself), first backup taken, launch check ran. 13 launch-check TODOs remain, all expected on day one: live SMS, live M-Pesa, subscription payments, the 10 scheduled jobs that have not run yet, plus the off-site copy and uptime monitor. Note: the SSH window dropped once mid-run (idle `Connection reset`); log in again and re-run `setup.sh`, it skips finished steps. Next: `createsuperuser`, log in at https://app.nyumbapms.com, off-site backup to Spaces, uptime monitor.
 - 2026-10-11: superuser created (`createsuperuser`, phone login), logged in at https://app.nyumbapms.com and turned on two-step login. The site is live; automatic scanners already probe `/.env` paths and get 404 (normal). While SMS is in console mode, login codes are in `journalctl -u landlordpms -f | grep --line-buffered "SMS to"`. Next: uptime monitor, Spaces off-site backups, Brevo email, Africa's Talking live SMS, resize to $12.
 - 2026-10-11: email now supports two providers (`notifications/providers/mail.py`). `EMAIL_*` is the `default` mailer (sign-in codes, alerts, support, demo requests; Resend); optional `EMAIL_MESSAGES_*` is the `messages` mailer (tenant messages and receipts, owner statements, owner invitations; Brevo). Without `EMAIL_MESSAGES_HOST` everything uses `default`. Both send from `DEFAULT_FROM_EMAIL`, so both need nyumbapms.com verified, with ONE merged SPF record including both providers. In Cloudflare set every email record to DNS only. `manage.py launch_check` now signs in to each mail server (sends nothing) and fails on a wrong password. After editing `/etc/landlordpms.env`: `systemctl restart landlordpms`, then `manage.py sendtestemail you@gmail.com` (tests `default`).
 - 2026-10-12: Resend set up as the `default` mailer with `deploy/set_email.sh` (asks only for the API key). DigitalOcean blocks outgoing SMTP on ports 25, 465 and 587 (the app timed out on 587), so the script sets `EMAIL_PORT=2587` (Resend's STARTTLS port; same encryption). Brevo uses 2525 for the same reason. A `535 Authentication credentials invalid` error means the key was wrong; make a new one. Do not re-run an old copy of the script: it deletes the `EMAIL_PORT` line. `sendtestemail` prints nothing when it works; check the inbox. Still to do: confirm SPF/DKIM/DMARC pass in Gmail "Show original", delete `/etc/landlordpms.env.bak`, Brevo as the `messages` mailer.

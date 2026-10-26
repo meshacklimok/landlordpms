@@ -7,6 +7,7 @@ from django.contrib.auth import login, logout
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -15,6 +16,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.utils.translation import gettext_lazy as _lazy
 from django.views import View
+from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.generic import TemplateView
 
@@ -24,7 +26,7 @@ from core.net import client_ip
 from properties.models import Property
 from reports import home as reports_home
 
-from . import branches, data_export, forms, identity, mfa, services, setup
+from . import branches, data_export, demo, forms, identity, mfa, services, setup
 from .capabilities import OWNER_CRITICAL, email_required_for
 from .middleware import SESSION_KEY
 from .mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin, VerifiedUserRequiredMixin
@@ -142,6 +144,8 @@ class RegisterView(View):
                     form.add_error("password", exc)
             else:
                 login(request, user, backend="accounts.backends.PhoneOrEmailBackend")
+                if user.phone_verified:  # the admin switched the sign-up code off
+                    return _after_phone_verified(request)
                 try:
                     identity.send_phone_verification(user)
                 except OTPError as exc:
@@ -183,6 +187,34 @@ class VerifyEmailView(VerifiedUserRequiredMixin, View):
         return render(request, self.template_name, {"form": form})
 
 
+@method_decorator(never_cache, name="dispatch")
+class EmailLinkView(View):
+    """The page behind the link in the confirmation email. Needs no sign-in: the signed link from the inbox is the
+    proof, and people open it on whichever device has their mail. A GET only shows the button, because mail apps
+    and link scanners fetch links by themselves; the POST is what confirms."""
+
+    template_name = "accounts/email_link.html"
+
+    def dispatch(self, request, *args, **kwargs):
+        if not ratelimit.hit(f"email_link:ip:{client_ip(request)}", 30, 60):
+            return HttpResponse(status=429)
+        return super().dispatch(request, *args, **kwargs)
+
+    def get(self, request, token):
+        user = identity.user_for_email_link(token)
+        if user is None:
+            return render(request, self.template_name, {"state": "expired"}, status=400)
+        return render(request, self.template_name,
+                      {"state": "done" if user.email_verified_at else "ask", "email": user.email})
+
+    def post(self, request, token):
+        user = identity.user_for_email_link(token)
+        if user is None:
+            return render(request, self.template_name, {"state": "expired"}, status=400)
+        identity.verify_email_by_link(user, request=request)
+        return render(request, self.template_name, {"state": "done", "email": user.email})
+
+
 def _after_email(request):
     """Back to the invitation the person was accepting when they had to add an email, else home."""
     token = request.session.get(INVITE_TOKEN_KEY)
@@ -217,6 +249,30 @@ class EmailView(VerifiedUserRequiredMixin, View):
         return render(request, self.template_name, {"form": form})
 
 
+def _after_phone_verified(request):
+    """Where a person goes once their phone counts as verified (by code, or at once when the sign-up code is off)."""
+    if request.session.get(INVITE_TOKEN_KEY):
+        return redirect("accounts:accept_invite", token=request.session[INVITE_TOKEN_KEY])
+    if request.session.get(PORTAL_INVITE_KEY):
+        return redirect("portal:accept", token=request.session[PORTAL_INVITE_KEY])
+    if request.session.get(OWNER_INVITE_KEY):
+        return redirect("owner_portal:accept", token=request.session[OWNER_INVITE_KEY])
+    if _self_claim(request):  # a tenant whose landlord never sent a link (D-203)
+        request.session.pop(SIGNUP_AS_KEY, None)
+        messages.success(request, _("Welcome. Your landlord's records match your phone number."))
+        return redirect("portal:home")
+    if request.session.pop(SIGNUP_AS_KEY, None) == "tenant":
+        return redirect("portal:no_match")
+    user = request.user
+    if user.email and not user.email_verified_at:
+        try:
+            identity.send_email_verification(user)
+        except OTPError as exc:
+            messages.warning(request, str(exc))
+        return redirect("accounts:verify_email")
+    return redirect("accounts:home")
+
+
 class VerifyPhoneView(LoginRequiredMixin, View):
     template_name = "accounts/verify_phone.html"
 
@@ -236,26 +292,7 @@ class VerifyPhoneView(LoginRequiredMixin, View):
         form = forms.OTPForm(request.POST)
         if form.is_valid() and identity.verify_phone(request.user, form.cleaned_data["code"], request=request):
             messages.success(request, _("Phone number verified."))
-            if request.session.get(INVITE_TOKEN_KEY):
-                return redirect("accounts:accept_invite", token=request.session[INVITE_TOKEN_KEY])
-            if request.session.get(PORTAL_INVITE_KEY):
-                return redirect("portal:accept", token=request.session[PORTAL_INVITE_KEY])
-            if request.session.get(OWNER_INVITE_KEY):
-                return redirect("owner_portal:accept", token=request.session[OWNER_INVITE_KEY])
-            if _self_claim(request):  # a tenant whose landlord never sent a link (D-203)
-                request.session.pop(SIGNUP_AS_KEY, None)
-                messages.success(request, _("Welcome. Your landlord's records match your phone number."))
-                return redirect("portal:home")
-            if request.session.pop(SIGNUP_AS_KEY, None) == "tenant":
-                return redirect("portal:no_match")
-            user = request.user
-            if user.email and not user.email_verified_at:
-                try:
-                    identity.send_email_verification(user)
-                except OTPError as exc:
-                    messages.warning(request, str(exc))
-                return redirect("accounts:verify_email")
-            return redirect("accounts:home")
+            return _after_phone_verified(request)
         if form.is_valid():
             form.add_error("code", _("That code is wrong or has expired."))
         return render(request, self.template_name, {"form": form})
@@ -361,7 +398,7 @@ class LoginMFAView(View):
 class LogoutView(View):
     def post(self, request):
         logout(request)
-        return redirect("accounts:login")
+        return redirect("accounts:home")  # signed out, home shows the front page
 
 
 class PasswordResetRequestView(View):
@@ -476,7 +513,7 @@ class HomeView(OrgMemberRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         m = self.request.membership
         org = m.organization
-        if can(m, "properties.manage"):
+        if can(m, "properties.manage") and not org.is_demo:  # a demo has nothing to set up
             steps = setup.checklist(org)
             required = [s for s in steps if not s.optional]
             done = sum(s.done for s in required)
@@ -589,6 +626,8 @@ class OrganizationSettingsView(CapabilityRequiredMixin, View):
         m = request.membership
         pages = [{"label": label, "hint": hint, "url": reverse(name)}
                  for label, hint, capability, name in SETTINGS_PAGES if can(m, capability)]
+        if demo.is_demo(request):  # the demo refuses these pages (accounts.demo), so it does not list them
+            pages = [p for p in pages if not p["url"].startswith(demo.BLOCKED_PREFIXES)]
         return render(request, self.template_name, {"form": form, "pages": pages, "monthly_report": m.monthly_report,
                                                     "can_export": can(m, "organization.export_data"),
                                                     "exports": data_export.recent(request.organization, request.user)},

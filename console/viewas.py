@@ -10,12 +10,13 @@ from django.utils.translation import gettext as _
 
 SESSION_KEY = "console_view_as"  # the organization's public id
 MEMBER_KEY = "console_view_as_member"  # a Membership public id; empty means the organization's owner
+ROLE_KEY = "console_view_as_role"  # a Role public id: that role's pages, whether or not anyone holds it
 TENANT_KEY = "console_view_as_tenant"  # a TenantAccount public id: the tenant portal
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def clear(session) -> None:
-    for key in (SESSION_KEY, MEMBER_KEY, TENANT_KEY):
+    for key in (SESSION_KEY, MEMBER_KEY, ROLE_KEY, TENANT_KEY):
         session.pop(key, None)
 
 
@@ -32,7 +33,35 @@ def membership_for(request):
         seats = seats.filter(public_id=request.session[MEMBER_KEY])
     else:
         seats = seats.filter(role__is_owner_role=True)
-    return seats.select_related("organization", "role", "user").order_by("created_at").first()
+    seat = seats.select_related("organization", "role", "user").order_by("created_at").first()
+    if seat is not None and request.session.get(ROLE_KEY):
+        seat = _as_role(seat, request.session[ROLE_KEY])
+    return seat
+
+
+def _as_role(seat, wanted):
+    """The owner's seat wearing another role, in memory only (never saved): the pages that role's people would
+    see, with every property, even when nobody holds the role. `wanted` is one of the organization's Role public
+    ids, or "template:<key>" for a standard platform role the organization does not have."""
+    from accounts.models import Capability, Role, RoleTemplate
+
+    if wanted.startswith("template:"):
+        template = RoleTemplate.objects.filter(key=wanted[9:], is_active=True).first()
+        if template is None:
+            return seat
+        role = Role(organization_id=seat.organization_id, name=template.name, is_owner_role=template.is_owner_template)
+        caps = Capability.objects.filter(is_active=True)
+        if not template.is_owner_template:
+            caps = caps.filter(templates=template)
+    else:
+        role = Role.objects.filter(organization_id=seat.organization_id, public_id=wanted).first()
+        if role is None:
+            return seat
+        caps = Capability.objects.filter(is_active=True, rolecapability__role_id=role.pk)
+    seat.role = role
+    seat.all_properties = True
+    seat._effective_caps = frozenset(caps.values_list("codename", flat=True))
+    return seat
 
 
 def tenant_account_for(request):

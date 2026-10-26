@@ -139,7 +139,20 @@ if ! runuser -u postgres -- psql -tAc "SELECT 1 FROM pg_roles WHERE rolname = '$
     echo "$app_pw" > /root/.nyumbapms-app-db-password
     chmod 600 /root/.nyumbapms-app-db-password
 fi
-systemctl enable --now redis-server >/dev/null
+# Redis holds the report cache, rate limits and sessions. Cap its memory and, when full, drop only keys that
+# expire (cached figures); report version counters have no expiry and stay. Localhost only.
+REDIS_CONF=/etc/redis/redis.conf
+if ! grep -q "^# nyumbapms" "$REDIS_CONF"; then
+    cat >> "$REDIS_CONF" <<'CONF'
+
+# nyumbapms
+maxmemory 256mb
+maxmemory-policy volatile-lru
+bind 127.0.0.1 -::1
+CONF
+fi
+systemctl enable redis-server >/dev/null
+systemctl restart redis-server
 
 step "Settings file $ENV_FILE"
 if [ ! -f "$ENV_FILE" ]; then

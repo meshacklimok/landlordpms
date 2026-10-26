@@ -41,6 +41,8 @@ urlpatterns = [
     path("control/late-payment/", views.LatePolicyView.as_view(), name="late_policy"),
     path("organizations/<uuid:public_id>/late-rules/", views.OrganizationLateRulesView.as_view(),
          name="organization_late_rules"),
+    path("organizations/<uuid:public_id>/custom-price/", views.OrganizationCustomPriceView.as_view(),
+         name="organization_custom_price"),
     path("control/email/", views.EmailRoutingView.as_view(), name="email"),
     path("control/email/previews/", views.EmailPreviewsView.as_view(), name="email_previews"),
     path("control/email/previews/<slug:key>/", views.EmailPreviewView.as_view(), name="email_preview"),

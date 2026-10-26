@@ -81,9 +81,14 @@ def nav_groups(request, membership, assistant_set_up):
     if membership is None:
         return []
     groups = []
+    from .demo import BLOCKED_PREFIXES, is_demo
+
+    demo = is_demo(request)
     for label, items in _items(membership, assistant_set_up):
         links = [{"label": text, "url": reverse(name), "icon": icon, "active": False,
-                  "badge": _badge(membership, name)} for text, name, icon in items if name]
+                  "badge": _badge(membership, name)} for text, name, icon in items if name
+                 # The public demo refuses these pages (accounts.demo), so it does not offer them.
+                 and not (demo and reverse(name).startswith(BLOCKED_PREFIXES))]
         if links:
             groups.append({"label": label, "items": links, "active": False})
     path = request.path

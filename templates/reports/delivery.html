@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money reports billing %}
+{% extends "base.html" %}{% load i18n static money reports billing %}
 {% block title %}{% trans "Message delivery" %}{% endblock %}
 {% block content %}
 <a class="back-link d-print-none" href="{% url 'reports:centre' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All reports" %}</a>
@@ -41,4 +41,6 @@
 {% else %}
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No messages were made in this period." %}</div></div>
 {% endif %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
 {% endblock %}

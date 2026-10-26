@@ -12,11 +12,13 @@ from .channels import (  # noqa: F401
 from .messaging import (  # noqa: F401
     Announcement,
     ConsentRecord,
+    EmailSuppression,
     Message,
     MessageTemplate,
     NotificationPreference,
     NotificationTypeSetting,
     OrganizationMessageSettings,
     OrganizationNotificationRule,
+    PhoneOptOut,
     PushSubscription,
 )

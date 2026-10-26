@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money reports %}
+{% extends "base.html" %}{% load i18n static money reports %}
 {% block title %}{% trans "Maintenance report" %}{% endblock %}
 {% block content %}
 {% with cur=currency %}
@@ -66,4 +66,6 @@
 </div></div>
 {% endif %}
 {% endwith %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
 {% endblock %}

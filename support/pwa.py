@@ -1,6 +1,7 @@
 """The installable app: manifest, service worker and offline page (D-080).
 
-The service worker caches static files and the offline page only, never pages or data.
+The service worker caches static files and the offline page for everyone, and (D-218) read-only copies of a short
+list of signed-in staff pages, deleted at logout. Payments, messages, the assistant, PDFs and uploads are never stored.
 """
 
 import hashlib
@@ -72,6 +73,7 @@ def service_worker() -> str:
         "precache": json.dumps(urls),
         "offline_url": json.dumps(reverse("support:offline")),
         "static_prefix": json.dumps(static("")),
+        "logout_url": json.dumps(reverse("accounts:logout")),
     })
 
 

@@ -28,7 +28,7 @@ from letters.views import CheckView as LetterCheckView
 from mpesa.hook_views import DarajaHookView
 from mpesa.views import PayLinkStatusView, PayLinkView
 from notifications.email_views import EmailStopView
-from notifications.hook_views import AfricasTalkingHookView, OrgWhatsAppHookView, WhatsAppHookView
+from notifications.hook_views import AfricasTalkingHookView, MailHookView, OrgWhatsAppHookView, WhatsAppHookView
 from payments.views import PublicReceiptCheckView, PublicReceiptView
 from portal.ussd import UssdHookView
 from properties.views import HostelStayView, VacancyView
@@ -60,6 +60,7 @@ urlpatterns = [
     path("p/<str:token>/<uuid:request_id>/", PayLinkStatusView.as_view(), name="pay_link_status"),
     path("hooks/sms/africastalking/<str:token>/<slug:kind>/", AfricasTalkingHookView.as_view(),
          name="hook_africastalking"),
+    path("hooks/mail/<str:token>/<slug:provider>/", MailHookView.as_view(), name="hook_mail"),
     path("hooks/ussd/africastalking/<str:token>/", UssdHookView.as_view(), name="hook_ussd"),
     path("hooks/whatsapp/", WhatsAppHookView.as_view(), name="hook_whatsapp"),
     path("hooks/whatsapp/<str:token>/", OrgWhatsAppHookView.as_view(), name="hook_whatsapp_org"),

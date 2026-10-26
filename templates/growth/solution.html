@@ -4,7 +4,8 @@
 {% block content %}
 <div class="about pub-read">
 <nav aria-label="{% trans 'Breadcrumb' %}" class="pub-crumb"><a href="{% url 'growth:solutions' %}"><i class="bi bi-arrow-left" aria-hidden="true"></i> {% trans "All solutions" %}</a></nav>
-<header class="about-hero pub-read-head">
+<header class="about-hero pub-read-head{% if shots.hero %} sol-hero{% endif %}">
+  <div class="sol-hero-text">
   <p class="about-eyebrow">{% trans "Solutions" %}</p>
   <h1 class="about-title">{{ s.h1 }}</h1>
   <p class="about-lead">{{ s.lead }}</p>
@@ -12,6 +13,8 @@
     <a class="btn btn-primary btn-lg" href="{% url 'accounts:register' %}">{% trans "Start free trial" %}</a>
     <a class="btn btn-outline-secondary btn-lg" href="{% url 'growth:demo' %}">{% trans "Book a demo" %}</a>
   </div>{% endif %}
+  </div>
+  {% if shots.hero %}{% include "growth/_stage.html" with pic=shots.hero phone=shots.phone eager=True sizes="(min-width: 1200px) 34rem, (min-width: 992px) 44vw, 92vw" %}{% endif %}
 </header>
 <div class="pub-prose">
 {% for heading, text, points in s.sections %}
@@ -19,6 +22,18 @@
   <p>{{ text }}</p>
   {% if points %}<ul>{% for point in points %}<li>{{ point }}</li>{% endfor %}</ul>{% endif %}
 {% endfor %}
+</div>
+{% if shots.gallery %}
+<section class="sol-gallery" aria-labelledby="gallery-h">
+  <h2 id="gallery-h" class="about-h2">{% trans "See it in the app" %}</h2>
+  <p class="text-muted">{% trans "Real screens from the demo landlord. Sample data, nothing invented." %}</p>
+  <div class="sol-gallery-grid">
+  {% for pic in shots.gallery %}{% include "growth/_framed.html" with pic=pic caption=True sizes="(min-width: 992px) 24rem, (min-width: 576px) 46vw, 92vw" %}{% endfor %}
+  </div>
+  {% if not user.is_authenticated %}<form method="post" action="{% url 'growth:demo_enter' %}">{% csrf_token %}<button class="btn btn-outline-primary"><i class="bi bi-play-circle" aria-hidden="true"></i> {% trans "Try the demo yourself" %}</button></form>{% endif %}
+</section>
+{% endif %}
+<div class="pub-prose">
   <h2>{% trans "Common questions" %}</h2>
   {% for q, a in s.faq %}<h3 class="h5 mt-4">{{ q }}</h3><p>{{ a }}</p>{% endfor %}
 </div>
@@ -28,7 +43,7 @@
     {% if tutorial %}<li><a href="{% url 'growth:tutorial' tutorial.slug %}">{% trans "Tutorial:" %} {{ tutorial.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endif %}
     {% if article %}<li><a href="{% url 'growth:article' article.slug %}">{% trans "Article:" %} {{ article.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endif %}
     {% for r in related %}<li><a href="{% url 'growth:solution' r.slug %}">{{ r.title }}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>{% endfor %}
-    <li><a href="{% url 'growth:pricing' %}">{% trans "Pricing in KSh" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>
+    <li><a href="{% url 'growth:pricing' %}">{% trans "Pricing in KES" %}<i class="bi bi-arrow-right" aria-hidden="true"></i></a></li>
   </ul>
 </section>
 {% if not user.is_authenticated %}

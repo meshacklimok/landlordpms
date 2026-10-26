@@ -48,7 +48,7 @@ SIGNED_IN = {
     "portal:home", "portal:lease", "portal:repair_create", "portal:notice_create", "portal:repair",
     "portal:repair_photo", "portal:document", "portal:receipt", "portal:invoice_pdf", "portal:ask",
     "portal:ask_confirm", "portal:no_match",  # shows only the user's own phone number
-    "portal:messages", "portal:lease_terms", "portal:offer_answer",
+    "portal:messages", "portal:utilities", "portal:own_use_delete", "portal:lease_terms", "portal:offer_answer",
     "portal:payments", "portal:payment_report", "portal:signing", "portal:signing_pdf",  # own lease / own payment only; anything else is a 404
     "owner_portal:home", "owner_portal:account", "owner_portal:statement", "owner_portal:sent_pdf",
     "owner_portal:payments",  # the owner's own properties only; tenant names hidden
@@ -60,7 +60,7 @@ SIGNED_IN = {
     "console:organizations_export", "console:organization_bulk", "console:watchlist", "console:chase", "console:growth", "console:channels", "console:money", "console:statement", "console:costs", "console:expense", "console:organization_control", "console:organization_login_contact", "console:organization_access", "console:organization_export", "console:organization_export_download", "console:announcements", "console:email", "console:audit", "console:organization", "console:health", "console:team", "console:team_add", "console:team_activity",
     "console:view_as", "console:view_as_stop", "console:support", "console:support_item", "console:canned_replies", "console:tools",
     "console:team_edit", "console:articles", "console:article_new", "console:article", "console:article_preview", "console:notifications", "console:notification", "console:system_messages",
-    "console:referrals", "console:late_policy", "console:organization_late_rules", "console:email_previews", "console:email_preview",  # platform owner only (OwnerMixin)
+    "console:referrals", "console:late_policy", "console:organization_late_rules", "console:organization_custom_price", "console:email_previews", "console:email_preview",  # platform owner only (OwnerMixin)
     "console:owners", "console:owners_export", "console:owner_email", "console:owner_emails",
     "console:owner_email_detail", "console:owner_email_resend", "console:owner_new", "console:owner", "console:owner_follow_ups", "console:owner_bulk", "console:problems", "console:email_preview_send",  # platform owner only (OwnerMixin): owners' names and emails, and email to them
 }

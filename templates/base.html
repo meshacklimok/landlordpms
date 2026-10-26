@@ -120,7 +120,7 @@
           {% endif %}
           <li><hr class="dropdown-divider mt-0"></li>
           <li><a class="dropdown-item" href="{% url 'support:help' %}"><i class="bi bi-question-circle" aria-hidden="true"></i>{% trans "Help" %}</a></li>
-          <li><a class="dropdown-item" href="{% url 'accounts:security' %}"><i class="bi bi-shield-check" aria-hidden="true"></i>{% trans "Security" %}</a></li>
+          {% if not in_demo %}<li><a class="dropdown-item" href="{% url 'accounts:security' %}"><i class="bi bi-shield-check" aria-hidden="true"></i>{% trans "Security" %}</a></li>{% endif %}
           {% if has_console %}<li><a class="dropdown-item" href="{% url 'console:overview' %}"><i class="bi bi-speedometer" aria-hidden="true"></i>{% trans "Console" %}</a></li>{% endif %}
           <li><button type="button" class="dropdown-item text-primary" data-install-app hidden><i class="bi bi-phone" aria-hidden="true"></i>{% trans "Install the app" %}</button></li>
           <li class="px-3 py-2"><div class="small text-muted mb-1" id="theme-label">{% trans "Theme" %}</div>{% include "partials/theme_switch.html" %}</li>
@@ -141,8 +141,8 @@
   {% if request.viewing_as or request.viewing_tenant %}<div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status"><span>{% blocktrans with n=viewing_label %}You are viewing as {{ n }}. Nothing can be changed.{% endblocktrans %}</span>
     <form method="post" action="{% url 'console:view_as_stop' %}" class="ms-auto">{% csrf_token %}<button class="btn btn-sm btn-dark">{% trans "Stop viewing" %}</button></form></div>{% endif %}
   {% for a in announcements %}<div class="alert alert-{{ a.level }}" role="status">{{ a.message }}</div>{% endfor %}
-  {% if in_demo %}
-  <div class="alert alert-info" role="status">
+  {% if in_demo %}{# data-demo-notice: left out of the product screenshots on the public pages (growth/screens.py) #}
+  <div class="alert alert-info" role="status" data-demo-notice>
     {% trans "You are looking at a demo with sample data. Nothing here is real and nothing can be changed." %}
     <a href="{% url 'growth:demo_leave' %}" class="alert-link">{% trans "Start your free trial" %}</a>
     <div class="mt-1 small">{% trans "Look around as:" %}
@@ -187,10 +187,10 @@
     <ul class="footer-links">
       <li><a href="{% url 'support:help' %}">{% trans "Help" %}</a></li>
       <li><a href="{% url 'support:status' %}">{% trans "Status" %}</a></li>
-      <li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>
+      {% if not in_demo %}<li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>{% endif %}
       <li><a href="{% url 'support:terms' %}">{% trans "Terms" %}</a></li>
       <li><a href="{% url 'support:privacy' %}">{% trans "Privacy" %}</a></li>
-      <li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>
+      {% if not in_demo %}<li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>{% endif %}
     </ul>
   </nav>
   <p class="footer-note">© {% now "Y" %} NyumbaPMS · {% trans "Rent, tenants and payments for Kenyan landlords" %}{% if support_email %} · <a href="mailto:{{ support_email }}">{{ support_email }}</a>{% endif %}</p>
@@ -241,7 +241,7 @@
           <h2 class="site-footer-h">{% trans "Company" %}</h2>
           <ul class="footer-links">
             <li><a href="{% url 'growth:about' %}">{% trans "About" %}</a></li>
-            <li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>
+            {% if not in_demo %}<li><a href="{% url 'support:security' %}">{% trans "Security and your data" %}</a></li>{% endif %}
             <li><a href="{% url 'support:status' %}">{% trans "Status" %}</a></li>
           </ul>
         </div>
@@ -250,7 +250,7 @@
           <ul class="footer-links">
             <li><a href="{% url 'support:terms' %}">{% trans "Terms" %}</a></li>
             <li><a href="{% url 'support:privacy' %}">{% trans "Privacy" %}</a></li>
-            <li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>
+            {% if not in_demo %}<li><a href="{% url 'support:delete_account' %}">{% trans "Delete account" %}</a></li>{% endif %}
           </ul>
         </div>
       </nav>
@@ -296,7 +296,7 @@
 {% if report_pane %}<script src="{% static 'js/report_pane.js' %}" defer></script>
 {% elif membership %}<script src="{% static 'js/search.js' %}" defer></script>
 {% if show_ask_button %}<script src="{% static 'js/ask_widget.js' %}" defer></script>{% endif %}
-<script src="{% static 'js/offline.js' %}" data-user="{{ user.public_id }}" data-logout-text="{% trans 'Meter readings typed without a connection are still on this phone. They will be sent when you log in again here. Log out anyway?' %}" defer></script>{% endif %}
+<script src="{% static 'js/offline.js' %}" data-user="{{ user.public_id }}" data-logout-text="{% trans 'Meter readings typed without a connection are still on this phone. They will be sent when you log in again here. Log out anyway?' %}" data-needs-text="{% trans 'This needs an internet connection.' %}" data-online-text="{% trans 'You are back online.' %}" data-reload-text="{% trans 'Reload' %}" defer></script>{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

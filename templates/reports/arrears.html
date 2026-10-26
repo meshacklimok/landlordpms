@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money reports %}
+{% extends "base.html" %}{% load i18n static money reports %}
 {% block title %}{% trans "Arrears analysis" %}{% endblock %}
 {% block content %}
 {% with cur=currency %}
@@ -82,4 +82,6 @@
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "Nothing is owed and no late rent was recovered in this period. That is good news, or no rent has been billed yet." %}</div></div>
 {% endif %}
 {% endwith %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
 {% endblock %}

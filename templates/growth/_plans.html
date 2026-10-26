@@ -12,10 +12,10 @@
         <p class="plan-size mb-3">{% if plan.unit_limit %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }} units{% endblocktrans %}{% else %}{% trans "No limit on units" %}{% endif %} &middot; {% if plan.seat_limit %}{% blocktrans with n=plan.seat_limit %}{{ n }} team members{% endblocktrans %}{% else %}{% trans "Unlimited team members" %}{% endif %}</p>
 
         {% for interval, price, saved in plan.offer_list %}
-        <div class="plan-price" data-interval="{{ interval }}"{% if not forloop.first %} hidden{% endif %}><span class="plan-currency">KSh</span><span class="plan-amount">{{ price|floatformat:"0g" }}</span>
+        <div class="plan-price" data-interval="{{ interval }}"{% if not forloop.first %} hidden{% endif %}><span class="plan-currency">KES</span><span class="plan-amount">{{ price|floatformat:"0g" }}</span>
           <span class="plan-per">{% if interval == "MONTHLY" %}{% trans "a month" %}{% elif interval == "YEARLY" %}{% trans "a year" %}{% else %}{% blocktrans with y=plan.one_off_years %}once, for {{ y }} years{% endblocktrans %}{% endif %}</span>
           {% if saved %}<span class="plan-save">{% blocktrans with p=saved %}save {{ p }}%{% endblocktrans %}</span>{% endif %}</div>
-        {% if interval == "YEARLY" and plan.monthly_price %}<p class="plan-per mb-0" data-interval="{{ interval }}" hidden>{% blocktrans with m=plan.yearly_per_month|floatformat:"0g" %}About KSh {{ m }} a month{% endblocktrans %}</p>{% endif %}
+        {% if interval == "YEARLY" and plan.monthly_price %}<p class="plan-per mb-0" data-interval="{{ interval }}" hidden>{% blocktrans with m=plan.yearly_per_month|floatformat:"0g" %}About KES {{ m }} a month{% endblocktrans %}</p>{% endif %}
         {% endfor %}
 
         {% if plan.offer_list|length > 1 %}
@@ -23,12 +23,14 @@
         {% for interval, price, saved in plan.offer_list %}{% if not forloop.first %}
           <div class="plan-tone-{{ interval|lower }}">
             <dt><span class="plan-dot" aria-hidden="true"></span>{% if interval == "YEARLY" %}{% trans "Yearly" %}{% else %}{% blocktrans with y=plan.one_off_years %}Once, {{ y }} years{% endblocktrans %}{% endif %}</dt>
-            <dd>KSh {{ price|floatformat:"0g" }}{% if saved %} <span class="plan-save">{% blocktrans with p=saved %}save {{ p }}%{% endblocktrans %}</span>{% endif %}</dd>
+            <dd>KES {{ price|floatformat:"0g" }}{% if saved %} <span class="plan-save">{% blocktrans with p=saved %}save {{ p }}%{% endblocktrans %}</span>{% endif %}</dd>
           </div>
         {% endif %}{% endfor %}
         </dl></noscript>
         {% endif %}
 
+        {# compact (home page): the shared list is shown once under the cards, so only a plan's own lines show here #}
+        {% if not compact or plan.feature_lines %}
         <hr class="plan-rule">
         <p class="plan-included-title">{% trans "Included" %}</p>
         <ul class="list-unstyled plan-features mb-4">
@@ -36,6 +38,7 @@
           {% else %}{% for icon, title, text in features %}<li>{{ title }}</li>{% endfor %}
           <li>{% trans "Free trial first, no card needed" %}</li>{% endif %}
         </ul>
+        {% else %}<div class="mb-4"></div>{% endif %}
         {% if choose %}
           {% if plan.over %}<p class="small text-muted mb-0">{% trans "Too small for you now:" %} {{ plan.over|join:"; " }}</p>
           {% elif plan.current %}<p class="small fw-semibold mb-0 text-center">{% trans "You are on this plan" %}</p>

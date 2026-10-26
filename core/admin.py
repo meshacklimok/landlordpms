@@ -134,6 +134,10 @@ class PlatformSettingsForm(forms.Form):
             for key in ("AT_USERNAME", "AT_API_KEY", "AT_CALLBACK_TOKEN"):
                 if not self.effective(key):
                     self.add_error(key, "Needed while the SMS provider is Africa's Talking.")
+        if self.effective("SMS_BACKEND") == pc.SMS_CELCOM:
+            for key in ("CELCOM_API_KEY", "CELCOM_PARTNER_ID", "CELCOM_SENDER_ID"):
+                if not self.effective(key):
+                    self.add_error(key, "Needed while the SMS provider is Celcom Africa.")
         if self.effective("WHATSAPP_BACKEND") == pc.WA_CLOUD:
             for key in ("WA_PHONE_NUMBER_ID", "WA_ACCESS_TOKEN", "WA_APP_SECRET", "WA_VERIFY_TOKEN"):
                 if not self.effective(key):
@@ -168,6 +172,9 @@ class PlatformSettingAdmin(admin.ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         if not self._owner_only(request):
             raise PermissionDenied
+        if request.method == "POST" and request.POST.get("send_test") in ("sms", "email"):
+            self._send_test(request)
+            return redirect(request.path)
         form = PlatformSettingsForm(request.POST or None)
         if request.method == "POST" and form.is_valid():
             data = form.cleaned_data
@@ -195,5 +202,33 @@ class PlatformSettingAdmin(admin.ModelAdmin):
                              "state": state})
             groups.append({"name": group, "rows": rows})
         context = {**self.admin_site.each_context(request), "title": "Platform settings", "form": form,
-                   "groups": groups, "opts": self.model._meta}
+                   "groups": groups, "opts": self.model._meta, "my_email": request.user.email or ""}
         return TemplateResponse(request, "admin/core/platform_settings.html", context)
+
+    def _send_test(self, request):
+        """One real SMS or email to the address the owner types, to prove the saved provider works."""
+        from core.phone import normalize_phone
+        from notifications.email_html import send_branded
+        from notifications.providers.mail import SYSTEM, mailer_for
+        from notifications.providers.sms import send_sms
+
+        kind = request.POST["send_test"]
+        to = request.POST.get("test_" + kind, "").strip()
+        if not to:
+            messages.error(request, "Type where to send the test.")
+            return
+        try:
+            if kind == "sms":
+                phone = normalize_phone(to)
+                result = send_sms(phone, "NyumbaPMS test message. Your SMS provider works.")
+                if result.ok:
+                    messages.success(request, f"Test SMS accepted by {result.provider} for {phone}. Check the phone.")
+                else:
+                    messages.error(request, f"{result.provider} refused the test SMS: {result.error or 'no reason given'}")
+            else:
+                send_branded("NyumbaPMS test email", "This is a test. Your email settings work.", [to],
+                             using=mailer_for(SYSTEM))
+                messages.success(request, f"Test email sent to {to}. Check the inbox and spam.")
+        except Exception as exc:  # noqa: BLE001 - show the owner what is wrong, whatever it is
+            messages.error(request, f"The test failed: {exc.__class__.__name__}: {str(exc)[:200]}")
+        audit.record("platform.test_send", actor=request.user, changes={"kind": kind})

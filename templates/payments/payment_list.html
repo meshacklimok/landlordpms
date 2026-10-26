@@ -1,4 +1,4 @@
-{% extends "payments/_base.html" %}{% load i18n money reports %}
+{% extends "payments/_base.html" %}{% load i18n money reports access %}
 {% block title %}{% trans "Payments" %}{% endblock %}
 {% block content %}
 <div class="wide mx-auto">
@@ -11,6 +11,7 @@
       {% if pending_count %}
       <a class="btn btn-outline-warning text-warning-emphasis btn-sm" href="{% url 'payments:review' %}"><i class="bi bi-hourglass-split" aria-hidden="true"></i> {% trans "Review" %} <span class="badge text-bg-warning ms-1">{{ pending_count }}</span></a>
       {% endif %}
+      <a class="btn btn-outline-secondary btn-sm" href="{% url 'reports:payments' %}{% if filters.date_from and filters.date_to %}?period=custom&amp;from={{ filters.date_from|date:'Y-m-d' }}&amp;to={{ filters.date_to|date:'Y-m-d' }}{% endif %}"><i class="bi bi-graph-up" aria-hidden="true"></i> {% trans "In reports" %}</a>
       {% if can_export %}
       <a class="btn btn-outline-secondary btn-sm" href="{% url 'payments:export' %}{% querystring page=None %}"><i class="bi bi-download" aria-hidden="true"></i> {% trans "Export CSV" %}</a>
       {% endif %}

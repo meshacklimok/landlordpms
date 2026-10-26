@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
   <h1 class="h4 mb-0">{% trans "Staff" %}</h1>
-  {% if can_manage %}<a class="btn btn-primary btn-sm" href="{% url 'accounts:invite' %}">{% trans "Invite" %}</a>{% endif %}
+  {% if can_manage and not in_demo %}<a class="btn btn-primary btn-sm" href="{% url 'accounts:invite' %}">{% trans "Invite" %}</a>{% endif %}
 </div>
 
 <div class="list-group mb-4">
@@ -22,7 +22,7 @@
   {% endfor %}
 </div>
 
-{% if can_require_mfa %}
+{% if can_require_mfa and not in_demo %}
 <div class="card shadow-sm mb-4"><div class="card-body">
   <h2 class="h6">{% trans "Two-step login for all staff" %}
     {% if organization.require_mfa %}<span class="badge text-bg-success">{% trans "Required" %}</span>{% else %}<span class="badge text-bg-secondary">{% trans "Each member's choice" %}</span>{% endif %}</h2>
@@ -59,6 +59,6 @@
   {% endfor %}
 </div>
 {% endif %}
-{% if can_api_keys %}<p class="small mt-3"><a href="{% url 'api:keys' %}">{% trans "API keys" %}</a> <span class="text-muted">· {% trans "Let your accounting software or another program read your data." %}</span></p>
+{% if can_api_keys and not in_demo %}<p class="small mt-3"><a href="{% url 'api:keys' %}">{% trans "API keys" %}</a> <span class="text-muted">· {% trans "Let your accounting software or another program read your data." %}</span></p>
 <p class="small"><a href="{% url 'api:webhooks' %}">{% trans "Webhooks" %}</a> <span class="text-muted">· {% trans "Tell another program when a payment, invoice, lease or tenant changes." %}</span></p>{% endif %}
 {% endblock %}

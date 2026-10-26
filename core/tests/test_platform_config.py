@@ -222,3 +222,17 @@ def test_contact_details_and_the_launch_check_see_them(typed_in_admin):
     assert settings.SUPPORT_EMAIL == "help@fake.co.ke" and settings.LEGAL_NAME == "Fake Company Ltd"
     ok, text = launch._providers()[0]
     assert ok and "fakeco" in text
+
+
+def test_owner_can_send_a_test_sms_and_email(client, mailoutbox, outbox, monkeypatch):
+    from accounts import mfa
+
+    monkeypatch.setattr(mfa, "is_enabled", lambda user: True)
+    monkeypatch.setattr(mfa, "session_verified", lambda request: True)
+    client.force_login(get_user_model().objects.create_superuser("+254700000008", password="pw-Strong-123!"))
+    url = reverse("admin:core_platformsetting_changelist")
+    assert client.get(url).status_code == 200
+    client.post(url, {"send_test": "sms", "test_sms": "0712345678"})
+    assert outbox and outbox[-1][0] == "+254712345678"
+    client.post(url, {"send_test": "email", "test_email": "me@example.com"})
+    assert mailoutbox[-1].to == ["me@example.com"]

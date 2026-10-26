@@ -695,6 +695,8 @@ def offer_free_beds(today: datetime.date | None = None, now: datetime.datetime |
                 message = notify(prop.organization, "hostel_bed_free", phone=p.phone,
                                  dedupe_key=f"hostel_bed_free:{p.pk}",
                                  context={"name": p.name, "property": prop.name, "contact": who, "days": OFFER_DAYS})
+                if message is None:
+                    continue  # skipped (no consent, no phone, wallet): try again on a later run
                 p.offered_at = now
                 p.save(update_fields=["offered_at", "updated_at"])
                 _note(p, Kind.NOTE, note_text, None, now)

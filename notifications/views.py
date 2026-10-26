@@ -763,6 +763,17 @@ class ComposeView(CapabilityRequiredMixin, View):
             "sms_room": SMS_MAX - len(request.organization.display_name) - 1,
         }, status=status)
 
+    def _pick(self, request):
+        """No tenant chosen yet (the home page's "Message a tenant"): a short list to search and choose from."""
+        from tenants.models import Tenant
+        from tenants.services import visible_tenants
+
+        q = request.GET.get("q", "").replace("\x00", "").strip()
+        tenants = visible_tenants(request.membership, Tenant.objects.all())
+        if q:
+            tenants = tenants.filter(name__icontains=q)
+        return render(request, "notifications/compose_pick.html", {"tenants": tenants.order_by("name")[:50], "q": q})
+
     @staticmethod
     def _query(request) -> str:
         for key in ("invoice", "payment", "tenant"):
@@ -772,6 +783,8 @@ class ComposeView(CapabilityRequiredMixin, View):
         return ""
 
     def get(self, request):
+        if not any(request.GET.get(k) for k in ("invoice", "payment", "tenant")):
+            return self._pick(request)
         topic = self._topic(request)
         tenants, tenant, reasons, channel = self._choice(request, topic, request.GET)
         subject, text = compose.draft(request.organization, topic, tenant, channel)

@@ -147,12 +147,13 @@ def membership_for_token(token: str):
 
 def send_all(today: datetime.date | None = None) -> dict:
     """On the 1st: email last month's report to each member who can see financial reports. Once per member per
-    month. A member who stopped it, has no email, or whose organization is not active is skipped."""
+    month. A member who stopped it, has no email, or whose organization is not active is skipped. Figures about the
+    business go only to an address its owner confirmed (D-223): a typo must not mail them to a stranger."""
     today = today or timezone.localdate()
     month = metrics.add_months(metrics.month_start(today), -1)
     counts = {"sent": 0, "skipped": 0, "failed": 0}
     members = (Membership.objects.filter(is_active=True, monthly_report=True, user__is_active=True)
-               .exclude(user__email="").select_related("user", "organization", "role"))
+               .exclude(user__email="").filter(user__email_verified_at__isnull=False).select_related("user", "organization", "role"))
     for m in members:
         org = m.organization
         if not org.is_operational or not can(m, "reports.view_financial"):

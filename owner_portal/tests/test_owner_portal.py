@@ -349,3 +349,30 @@ def test_the_live_page_shows_owed_rent_and_empty_units_but_no_tenant_names(clien
     body = response.content.decode()
     assert "Acacia Court" in body and "Baobab" not in body
     assert response["Cache-Control"] == "private, no-store"
+
+
+def test_every_page_the_owner_portal_links_to_opens(client, owner, jane, prop, january):
+    """A crawl from /owner/ as an invited owner with a month of figures: no link ends in an error (audit 2026-10-24)."""
+    import re
+
+    _invitation, token = services.invite_owner(owner, jane)
+    user = make_user(phone=jane.phone)
+    services.accept_invitation(token, user)
+    client.force_login(user)
+    seen, queue, bad = set(), ["/owner/"], []
+    while queue and len(seen) < 60:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        page = client.get(url)
+        if page.status_code >= 400:
+            bad.append((url, page.status_code))
+        if page.status_code == 302 and page.url.startswith("/owner/"):
+            queue.append(page.url)
+        if page.status_code != 200 or "html" not in page["Content-Type"]:
+            continue
+        for href in re.findall(r'href="(/owner/[^"#?]*)', page.content.decode()):
+            if href not in seen and "/invite/" not in href:
+                queue.append(href)
+    assert len(seen) > 3 and not bad, (len(seen), bad)

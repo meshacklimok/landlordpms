@@ -1,0 +1,8 @@
+{# One screen in its frame: a browser window, or a phone. pic, sizes, caption (show pic.caption under it), class #}
+<figure class="land-shot-figure{% if class %} {{ class }}{% endif %}">
+  <div class="land-device {% if pic.phone %}land-phone-solo{% else %}land-computer{% endif %}">
+    {% if not pic.phone %}{% include "growth/_browser_bar.html" %}{% endif %}
+    {% include "growth/_screen.html" with pic=pic eager=False %}
+  </div>
+  {% if caption %}<figcaption>{{ pic.caption }}</figcaption>{% endif %}
+</figure>

@@ -160,3 +160,50 @@ class RenewalOffer(PublicIdModel, TimeStampedModel):
     @property
     def is_expired(self) -> bool:
         return self.status == self.Status.OFFERED and self.expires_on < timezone.localdate()
+
+
+class OwnUse(PublicIdModel, TimeStampedModel):
+    """A tenant's own note of a utility they pay for themselves, such as their KPLC electricity or a water meter the
+    landlord does not bill. Private to the tenant's lease: staff screens, invoices and reports never read it."""
+
+    class Utility(models.TextChoices):
+        ELECTRICITY = "ELECTRICITY", _("Electricity")
+        WATER = "WATER", _("Water")
+
+    class Kind(models.TextChoices):
+        READING = "READING", _("Meter reading")
+        TOPUP = "TOPUP", _("Bought tokens or paid a bill")
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="own_use")
+    utility = models.CharField(_("utility"), max_length=12, choices=Utility.choices)
+    kind = models.CharField(_("kind"), max_length=8, choices=Kind.choices)
+    on = models.DateField(_("date"))
+    # The meter's number for a reading; units bought (kWh or m³) for a top-up, when known.
+    value = models.DecimalField(_("reading or units"), max_digits=12, decimal_places=3, null=True, blank=True)
+    amount = models.DecimalField(_("amount paid (KES)"), max_digits=12, decimal_places=2, null=True, blank=True)
+    note = models.CharField(_("note"), max_length=200, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = _("tenant's own utility entry")
+        ordering = ["-on", "-pk"]
+        indexes = [models.Index(fields=["lease", "utility", "on"])]
+        constraints = [
+            models.CheckConstraint(condition=Q(value__isnull=True) | Q(value__gte=0), name="portal_ownuse_value_ok"),
+            models.CheckConstraint(condition=Q(amount__isnull=True) | Q(amount__gte=0),
+                                   name="portal_ownuse_amount_ok"),
+            models.CheckConstraint(condition=~Q(kind="READING") | Q(value__isnull=False),
+                                   name="portal_ownuse_reading_has_value"),
+            models.CheckConstraint(condition=~Q(kind="TOPUP") | Q(value__isnull=False) | Q(amount__isnull=False),
+                                   name="portal_ownuse_topup_has_something"),
+        ]
+
+    def __str__(self):
+        return f"{self.get_utility_display()} {self.on:%d/%m/%Y}"
+
+    @property
+    def unit_label(self) -> str:
+        return "kWh" if self.utility == self.Utility.ELECTRICITY else "m³"

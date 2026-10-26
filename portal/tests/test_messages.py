@@ -83,7 +83,7 @@ def test_the_inbox_lists_threads_with_the_unread_first(client, owner, a1, b7):
     conversation.mark_read_by_staff(a1)
     client.force_login(owner.user)
     page = client.get("/conversations/").content.decode()
-    assert page.index("B7") < page.index("A1")
+    assert page.index("· B7") < page.index("· A1")  # not bare codes: a random token in the page can contain "A1"
     assert conversation.staff_unread(owner) == 1
 
 

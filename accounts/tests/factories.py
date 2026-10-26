@@ -9,7 +9,8 @@ from accounts.models import Membership, Organization, Role, User
 from properties.models import Property
 
 PASSWORD = "Correct-Horse-9"
-_seq = itertools.count(1)
+# From 10: +254700000000 to +254700000009 are the public demo's people (accounts.demo), which sign in as the demo.
+_seq = itertools.count(10)
 
 
 def make_user(*, phone: str | None = None, verified: bool = True, **kw) -> User:

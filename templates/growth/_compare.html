@@ -6,8 +6,8 @@
     <tbody>
       <tr><th scope="row">{% trans "Units" %}</th>{% for plan in plans %}<td>{% if plan.unit_limit %}{% blocktrans with n=plan.unit_limit %}Up to {{ n }}{% endblocktrans %}{% else %}{% trans "No limit" %}{% endif %}</td>{% endfor %}</tr>
       <tr><th scope="row">{% trans "Team members" %}</th>{% for plan in plans %}<td>{% if plan.seat_limit %}{{ plan.seat_limit }}{% else %}{% trans "Unlimited" %}{% endif %}</td>{% endfor %}</tr>
-      <tr class="plan-tone-monthly"><th scope="row"><span class="plan-chip">{% trans "Monthly" %}</span></th>{% for plan in plans %}<td>KSh {{ plan.monthly_price|floatformat:"0g" }}</td>{% endfor %}</tr>
-      <tr class="plan-tone-yearly"><th scope="row"><span class="plan-chip">{% trans "Yearly" %}</span></th>{% for plan in plans %}<td>{% if plan.yearly_price %}KSh {{ plan.yearly_price|floatformat:"0g" }}{% else %}&ndash;{% endif %}</td>{% endfor %}</tr>
+      <tr class="plan-tone-monthly"><th scope="row"><span class="plan-chip">{% trans "Monthly" %}</span></th>{% for plan in plans %}<td>KES {{ plan.monthly_price|floatformat:"0g" }}</td>{% endfor %}</tr>
+      <tr class="plan-tone-yearly"><th scope="row"><span class="plan-chip">{% trans "Yearly" %}</span></th>{% for plan in plans %}<td>{% if plan.yearly_price %}KES {{ plan.yearly_price|floatformat:"0g" }}{% else %}&ndash;{% endif %}</td>{% endfor %}</tr>
       <tr><th scope="row">{% trans "Every feature below" %}</th>{% for plan in plans %}<td><span class="plan-tick" aria-label="{% trans 'Included' %}"></span></td>{% endfor %}</tr>
     </tbody></table></div>
 </section>

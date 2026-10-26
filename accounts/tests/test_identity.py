@@ -256,6 +256,14 @@ def test_register_view_sends_code_then_verify_lands_on_onboarding(client, outbox
     assert client.get(reverse("accounts:home"))["Location"] == reverse("accounts:onboarding")
 
 
+def test_sign_up_code_off_sends_nothing_and_verifies_at_once(client, outbox, settings):
+    settings.SIGNUP_SMS_OTP = False
+    response = client.post(reverse("accounts:register"), SIGN_UP)
+    assert response["Location"] == reverse("accounts:verify_email")  # the next step after a verified phone
+    assert User.objects.get().phone_verified
+    assert not outbox
+
+
 def test_sign_up_needs_an_email(client):
     data = {k: v for k, v in SIGN_UP.items() if k != "email"}
     assert client.post(reverse("accounts:register"), data).status_code == 200

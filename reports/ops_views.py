@@ -17,7 +17,8 @@ from accounts.portfolio import agency_tools
 from audit import services as audit
 from billing import selectors as billing_selectors
 from billing.models import LedgerEntry
-from core import charts, exports
+from core import charts, exports, reportcache
+from core.ids import uuid_or_none
 from leases.models import Lease
 from leases.services import visible_leases
 from payments.models import Payment
@@ -189,7 +190,7 @@ class ReportCentreView(CapabilityRequiredMixin, View):
         Best effort: a member without the dashboard figures, or a failure, gets the plain cards.
         """
         try:
-            board = metrics.dashboard(m)
+            board = reportcache.cached(m, "centre-facts", (), lambda: metrics.dashboard(m))
         except Exception:  # the centre must open even when a figure cannot be worked out
             return {}
         c, occ, arrears = board.current, board.occupancy, board.arrears
@@ -231,7 +232,10 @@ class _OperationsView(CapabilityRequiredMixin, View):
         m = request.membership
         prop, choices = _finance_filters(request)
         period, ctx = _period_context(request, prop)
-        report = self.build(request, period, prop)
+        # Kept for a few minutes per member, period and filter (core/reportcache.py); the page, downloads and the
+        # report centre's reader all ask for the same figures.
+        asked = sorted((k, v) for k, v in request.GET.items() if k not in ("format", "pane"))
+        report = reportcache.cached(m, f"ops-{self.slug}", (asked,), lambda: self.build(request, period, prop))
         fmt = request.GET.get("format")
         if fmt in ("csv", "xlsx"):
             if not can(m, "reports.export"):
@@ -340,8 +344,11 @@ class PaymentsReportView(_OperationsView):
     required_capability = "payments.view"
     slug = "payments"
 
-    def build(self, request, period, prop):
+    def get(self, request):
         self.show_tenants = can(request.membership, "tenants.view")
+        return super().get(request)
+
+    def build(self, request, period, prop):
         return operations.payments(request.membership, period.start, period.end, prop)
 
     def context(self, request, report, prop):
@@ -353,7 +360,7 @@ class PaymentsReportView(_OperationsView):
                                            [charts.series(_("Money received"), [a for *_x, a in report.months], "1")],
                                            currency=cur,
                                            links=[reverse("payments:list") + "?" + urlencode({
-                                               **extra, "status": "confirmed", "date_from": m.isoformat(),
+                                               **extra, "status": "confirmed", "date_from": max(m, report.start).isoformat(),
                                                "date_to": min(metrics.month_end(m), report.end).isoformat()})
                                                for m, _l, _n, _a in report.months])
         if report.methods:
@@ -365,7 +372,8 @@ class PaymentsReportView(_OperationsView):
         states = [(key, label, n, amount, reverse("payments:list") + "?" + urlencode({**query, "status": key}))
                   for key, label, n, amount in report.states]
         return {"specs": specs, "states": states, "show_tenants": self.show_tenants,
-                "shown_lines": report.lines[:PAYMENT_PAGE_LIMIT]}
+                "shown_lines": report.lines[:PAYMENT_PAGE_LIMIT],
+                "download_limit": operations.PAYMENT_LINE_LIMIT}
 
     @staticmethod
     def _tenant(p) -> str:
@@ -384,6 +392,9 @@ class PaymentsReportView(_OperationsView):
         show = self.show_tenants
         head = ["Date", "Lease", "Unit", "Property"] + (["Tenant"] if show else []) + [
             "Method", "Reference", "Account", "State", "Amount"]
+        if report.lines_total > len(report.lines):
+            rows += [[], [_("Only the newest %(n)s of %(t)s payments are listed below. Choose a shorter period for the rest.")
+                          % {"n": len(report.lines), "t": report.lines_total}]]
         rows += [[], [_("Every payment in the period")], head]
         for p in report.lines:
             rows.append([p.paid_at.isoformat(), p.lease.number, p.lease.unit.code, p.lease.unit.property.name,
@@ -416,6 +427,7 @@ class ExpensesReportView(_OperationsView):
         if report.previous_total:
             change = metrics.Change(report.total, report.previous_total, _("the period before"))
         return {"specs": specs, "change": change, "shown_lines": report.lines[:expense_report.LIST_LIMIT],
+                "download_limit": expense_report.DOWNLOAD_LIMIT,
                 "can_open": can(request.membership, "expenses.view")}
 
     def csv_rows(self, report):
@@ -427,6 +439,9 @@ class ExpensesReportView(_OperationsView):
             rows.append([])
         rows += [[_("By month")], ["Month", "Expenses", "Amount"]]
         rows += [[label, n, a] for _m, label, n, a in report.months]
+        if report.lines_total > len(report.lines):
+            rows += [[], [_("Only the newest %(n)s of %(t)s expenses are listed below. Choose a shorter period for the rest.")
+                          % {"n": len(report.lines), "t": report.lines_total}]]
         rows += [[], [_("Every approved expense in the period")],
                  ["Date", "Number", "Property", "Category", "Supplier", "What was paid for", "Paid by", "Reference",
                   "Amount"]]
@@ -456,7 +471,7 @@ class TenantStatementView(CapabilityRequiredMixin, View):
         base = visible_leases(m, Lease.all_objects.exclude(status=Lease.Status.DRAFT))
         base = base.select_related("unit__property").prefetch_related("lease_tenants__tenant")
         value = request.GET.get("lease", "").strip()
-        lease = get_object_or_404(base, public_id=value) if value else None
+        lease = get_object_or_404(base, public_id=uuid_or_none(value)) if value else None
         choices = [] if lease else sorted(
             base.order_by("-start_date")[:self.LEASE_LIMIT],
             key=lambda ls: (ls.unit.property.name.lower(), ls.unit.code.lower()))

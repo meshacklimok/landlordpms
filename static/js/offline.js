@@ -8,6 +8,7 @@
   var user = script && script.dataset.user;
   if (!user) return;
   var KEY = "lpms.offline.rounds";  // the name from D-088; it now holds repair reports too
+  var KEEP_USER = "lpms.pages.user";
   var PING_TIMEOUT = 6000;
   var REPORT_FIELDS = ["property", "unit", "title", "description", "kind", "priority", "from_tenant"];
 
@@ -286,7 +287,100 @@
       });
   }
 
+  // ---- Pages kept for reading and filling in without a connection (D-218) --------------------------------
+  /* The service worker keeps a copy of each staff page that is opened. Links marked data-offline-keep (the meter
+     round, the repair form) are fetched ahead, so those forms open even if the page was never visited before the
+     signal went. Copies belong to the person who was signed in: a different person signing in here clears them. */
+  function keepPages() {
+    if (!("serviceWorker" in navigator) || !navigator.onLine) return;
+    var owner = null;
+    try { owner = localStorage.getItem(KEEP_USER); } catch (e) { owner = null; }
+    var reset = owner !== user;
+    var urls = [];
+    document.querySelectorAll("a[data-offline-keep]").forEach(function (a) {
+      if (a.origin === location.origin && urls.indexOf(a.pathname + a.search) === -1) urls.push(a.pathname + a.search);
+    });
+    if (!reset && !urls.length) return;
+    navigator.serviceWorker.ready.then(function (registration) {
+      if (!registration.active) return;
+      registration.active.postMessage({ type: "keep-pages", urls: urls, reset: reset });
+      try { localStorage.setItem(KEEP_USER, user); } catch (e) { /* the copies are then cleared on each visit */ }
+    }).catch(function () { /* the site works without it */ });
+  }
+
+  // ---- A saved copy shown without a connection: fade what needs the internet (D-219) -------------------------
+  /* The worker marks a saved copy with data-offline-copy on <body>. Links to pages that are not saved, forms that
+     cannot be kept (every one except the meter round and the repair report) and the assistant are faded and, when
+     tapped, say they need the internet. Everything that works offline stays as it is. */
+  function fadeWhatNeedsTheInternet() {
+    if (!document.body.hasAttribute("data-offline-copy") || !("caches" in window)) return;
+    var toast = null, timer = null;
+    function say() {
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.className = "offline-toast";
+        toast.setAttribute("role", "status");
+        toast.textContent = script.dataset.needsText || "";
+        document.body.appendChild(toast);
+      }
+      toast.hidden = false;
+      clearTimeout(timer);
+      timer = setTimeout(function () { toast.hidden = true; }, 3000);
+    }
+    function mark(el) {
+      el.classList.add("offline-unavailable");
+      el.setAttribute("aria-disabled", "true");
+    }
+    caches.open("lpmspages-1").then(function (cache) { return cache.keys(); }).catch(function () { return []; })
+      .then(function (requests) {
+        var kept = {};
+        requests.forEach(function (r) { kept[r.url] = true; });
+        function isKept(a) {  // the same address the worker keeps a page under
+          return kept[a.origin + (a.pathname === "/" ? "/" : a.pathname + a.search)] === true;
+        }
+        document.querySelectorAll("a[href]").forEach(function (a) {
+          var href = a.getAttribute("href");
+          if (!href || href.charAt(0) === "#" || /^(javascript|mailto|tel):/i.test(href)) return;
+          if (a.origin !== location.origin) { mark(a); return; }
+          if (a.pathname === location.pathname && a.search === location.search) return;
+          if (a.pathname.indexOf("/static/") === 0 || isKept(a)) return;
+          mark(a);
+        });
+        document.querySelectorAll("form").forEach(function (form) {
+          if (form.hasAttribute("data-offline-round") || form.hasAttribute("data-offline-report")) return;
+          mark(form);
+          form.querySelectorAll("button:not([type=button]), input[type=submit]").forEach(mark);
+        });
+        document.querySelectorAll(".ask-fab, [data-ask-fab]").forEach(mark);
+      });
+    // Tapping something faded: say why, and do nothing.
+    function block(event) {
+      var target = event.target.closest && event.target.closest(".offline-unavailable");
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      say();
+    }
+    document.addEventListener("click", block, true);
+    document.addEventListener("submit", block, true);
+    // The connection is back: say so and offer the live page.
+    window.addEventListener("online", function () {
+      var notice = document.querySelector("[data-offline-notice]");
+      if (!notice) return;
+      notice.className = "alert alert-success rounded-0 border-0 mb-0 py-2 small text-center";
+      notice.textContent = (script.dataset.onlineText || "") + " ";
+      var reload = document.createElement("button");
+      reload.type = "button";
+      reload.className = "btn btn-sm btn-success ms-2";
+      reload.textContent = script.dataset.reloadText || "";
+      reload.addEventListener("click", function () { location.reload(); });
+      notice.appendChild(reload);
+    });
+  }
+
   window.addEventListener("online", send);
   changed();
   send();
+  keepPages();
+  fadeWhatNeedsTheInternet();
 })();

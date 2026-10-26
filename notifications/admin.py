@@ -7,6 +7,7 @@ from .models import (
     Announcement,
     ConsentRecord,
     EmailAccount,
+    EmailSuppression,
     Message,
     MessageTemplate,
     NotificationPreference,
@@ -201,3 +202,14 @@ class SmsAccountAdmin(_AccountAdmin):
     audit_action = "platform.sms_account"
     list_display = ["organization", "username", "sender_id", "enabled", "checked_at", "check_error"]
     search_fields = ["organization__name", "username"]
+
+
+@admin.register(EmailSuppression)
+class EmailSuppressionAdmin(admin.ModelAdmin):
+    """Addresses we no longer mail. Delete a row to allow mail to an address again, for example after its owner
+    fixed a full mailbox."""
+
+    list_display = ["email", "reason", "provider", "created_at"]
+    list_filter = ["reason", "provider"]
+    search_fields = ["email"]
+    readonly_fields = ["created_at"]

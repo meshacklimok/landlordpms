@@ -1,0 +1,8 @@
+{% load i18n %}{% if links %}
+<section class="card shadow-sm mb-3 d-print-none"><div class="card-body">
+  <h2 class="h6"><i class="bi bi-diagram-3" aria-hidden="true"></i> {% trans "Where this shows in the reports" %}</h2>
+  {% if not counted %}<p class="small text-body-secondary">{% if kind == "payment" %}{% trans "It is not counted in the figures yet (or any more), so the reports will not include it until it is confirmed." %}{% else %}{% trans "It is not counted in the figures until it is approved." %}{% endif %}</p>{% endif %}
+  <ul class="list-unstyled small mb-0">
+    {% for l in links %}<li class="d-flex justify-content-between gap-2 py-1"><a href="{{ l.url }}">{{ l.label }}</a><span class="text-body-secondary text-end">{{ l.note }}</span></li>{% endfor %}
+  </ul>
+</div></section>{% endif %}

@@ -225,3 +225,35 @@ def test_recording_a_shared_expense_through_the_page(client, owner, org, repairs
         "method": "CASH"})
     assert bad.status_code == 200 and "add up to 100" in bad.content.decode()
     assert Expense.objects.count() == 2
+
+
+def test_detail_links_on_to_the_reports(client, owner, prop, repairs):
+    e = spend(owner, prop, repairs)
+    login(client, owner)
+    page = client.get(reverse("expenses:detail", args=[e.public_id])).content.decode()
+    assert "Where this shows in the reports" in page
+    assert reverse("reports:expenses") in page and reverse("reports:cash_flow") in page
+    assert reverse("reports:profitability") in page
+
+
+def test_expenses_report_shows_the_waiting_queue_even_with_nothing_approved(client, org, owner, prop, repairs):
+    clerk = add_member(org, "accountant", all_properties=True)
+    spend(clerk, prop, repairs, "900", paid_on=PAID)
+    Expense.objects.update(status=Status.SUBMITTED)
+    login(client, owner)
+    page = client.get(reverse("reports:expenses"), {
+        "period": "custom", "from": PAID.replace(day=1).isoformat(), "to": PAID.isoformat()}).content.decode()
+    assert "Waiting for approval" in page and "No approved expenses are dated" not in page
+    assert reverse("expenses:list") + "?status=SUBMITTED" in page
+
+
+def test_expenses_download_says_when_it_is_cut_short(client, owner, prop, repairs, monkeypatch):
+    from reports import expense_report
+    monkeypatch.setattr(expense_report, "DOWNLOAD_LIMIT", 2)
+    for _ in range(3):
+        spend(owner, prop, repairs)
+    login(client, owner)
+    body = client.get(reverse("reports:expenses"), {"format": "csv", "period": "custom",
+                                                   "from": PAID.replace(day=1).isoformat(),
+                                                   "to": PAID.isoformat()}).content.decode("utf-8-sig")
+    assert "Only the newest 2 of 3 expenses" in body

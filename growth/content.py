@@ -23,15 +23,7 @@ FEATURES = [
 
 
 # The home page (D-142). Written after comparing ten property management sites; only what is built is claimed here.
-# (icon, number, label): facts, not invented customer numbers.
-LANDING_FACTS = [
-    ("wallet2", _("100%"), _("of rent goes straight to your own Paybill or Till")),
-    ("calendar-check", _("30 days"), _("free trial with everything on, no card")),
-    ("grid-3x3-gap", _("Every feature"), _("on every plan, priced only by units")),
-    ("cash-coin", _("KSh"), _("prices in shillings, M-Pesa first")),
-]
-
-# (the old way, what happens here): the problem the visitor has today, then the answer, side by side.
+# (the old way, what happens here): the problem the visitor has today, then the answer, one pair to a row.
 LANDING_SWAPS = [
     (_("Scrolling M-Pesa messages to see who paid"), _("Each payment lands on its unit, with a receipt sent")),
     (_("Calling every tenant at month end"), _("Reminders go out by SMS; you call only who is late")),

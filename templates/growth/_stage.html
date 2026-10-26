@@ -1,0 +1,12 @@
+{# A computer screen with a phone screen in front of it (growth/screens.py, D-220). pic, phone (optional), sizes, eager #}
+<div class="land-hero-visual land-hero-shots{% if phone %} has-phone{% endif %}">
+  <figure class="land-device land-computer">
+    {% include "growth/_browser_bar.html" %}
+    {% include "growth/_screen.html" with pic=pic %}
+  </figure>
+  {% if phone %}
+  <figure class="land-device land-phone">
+    {% include "growth/_screen.html" with pic=phone sizes="(min-width: 992px) 11rem, 34vw" eager=False %}
+  </figure>
+  {% endif %}
+</div>

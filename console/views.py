@@ -22,10 +22,11 @@ from django.views.generic import TemplateView, View
 
 from accounts import data_export, mfa
 from accounts.mixins import VerifiedUserRequiredMixin
-from accounts.models import DataExport, Membership, Organization, User
+from accounts.models import DataExport, Membership, Organization, Role, RoleTemplate, User
 from audit import services as audit
 from audit.models import AuditEvent
 from core import exports, system_messages
+from core.ids import uuid_or_none
 from core.models import EmailRouting, SystemMessageSetting
 from growth.models import Article, Referral, ReferralPolicy
 from notifications import catalog
@@ -242,6 +243,9 @@ class OrganizationView(ConsoleMixin, TemplateView):
             ctx["sub"] = Subscription.objects.filter(organization=org).first()
             ctx["seats"] = (Membership.objects.filter(organization=org, is_active=True)
                             .select_related("user", "role").order_by("role__name", "user__full_name"))
+            ctx["roles"] = Role.objects.filter(organization=org).order_by("name")
+            have = {r.based_on_template_id for r in ctx["roles"]}
+            ctx["missing_roles"] = RoleTemplate.objects.filter(is_active=True).exclude(pk__in=have).order_by("sort_order")
             ctx["tenant_logins"] = (TenantAccount.objects.filter(organization=org, revoked_at__isnull=True,
                                                                  tenant__archived_at__isnull=True)
                                     .select_related("tenant", "user").order_by("tenant__id")[:200])
@@ -319,21 +323,35 @@ class ViewAsStartView(OwnerMixin, View):
             return redirect("console:organization", public_id=org.public_id)
         viewas.clear(request.session)
         seat = account = None
-        if request.POST.get("membership"):
-            seat = (Membership.objects.filter(organization=org, is_active=True, public_id=request.POST["membership"])
+        role = None
+        if request.POST.get("role"):
+            wanted = request.POST["role"]
+            if wanted.startswith("template:"):
+                role = RoleTemplate.objects.filter(key=wanted[9:], is_active=True).first()
+                if role is not None:
+                    role.public_id = wanted
+            else:
+                role = Role.objects.filter(organization=org, public_id=uuid_or_none(wanted)).first()
+            if role is None:
+                messages.error(request, _("That role cannot be viewed."))
+                return redirect("console:organization", public_id=org.public_id)
+        elif request.POST.get("membership"):
+            seat = (Membership.objects.filter(organization=org, is_active=True, public_id=uuid_or_none(request.POST["membership"]))
                     .select_related("role", "user").first())
         elif request.POST.get("account"):
             account = (TenantAccount.objects.filter(organization=org, revoked_at__isnull=True,
-                                                    public_id=request.POST["account"]).select_related("tenant").first())
+                                                    public_id=uuid_or_none(request.POST["account"])).select_related("tenant").first())
         if (request.POST.get("membership") and seat is None) or (request.POST.get("account") and account is None):
             messages.error(request, _("That person cannot be viewed."))
             return redirect("console:organization", public_id=org.public_id)
         request.session[viewas.SESSION_KEY] = str(org.public_id)
+        if role:
+            request.session[viewas.ROLE_KEY] = str(role.public_id)
         if seat:
             request.session[viewas.MEMBER_KEY] = str(seat.public_id)
         if account:
             request.session[viewas.TENANT_KEY] = str(account.public_id)
-        who = (f"{seat.user.full_name} ({seat.role.name})" if seat else f"{account.tenant} (tenant)" if account
+        who = (f"the {role.name} role" if role else f"{seat.user.full_name} ({seat.role.name})" if seat else f"{account.tenant} (tenant)" if account
                else org.name)
         audit.record("console.view_as", actor=request.user, organization=org, request=request,
                      changes={"started": [None, who]})
@@ -341,6 +359,9 @@ class ViewAsStartView(OwnerMixin, View):
 
 
 class ViewAsStopView(OwnerMixin, View):
+    def get(self, request):  # the Next.js screens link here: they have no form token to post with
+        return self.post(request)
+
     def post(self, request):
         from . import viewas
 
@@ -418,6 +439,25 @@ class OrganizationLateRulesView(OwnerMixin, View):
                 billing.set_late_overrides(request.user, org, form.cleaned_data["values"],
                                            form.cleaned_data["reason"], request=request)
                 messages.success(request, _("Saved. These rules apply to this organization from now on."))
+            except ValidationError as exc:
+                messages.error(request, " ".join(exc.messages))
+        else:
+            messages.error(request, _("Check the form: ") + " ".join(
+                m for errs in form.errors.values() for m in errs))
+        return redirect("console:organization", public_id=org.public_id)
+
+
+class OrganizationCustomPriceView(OwnerMixin, View):
+    """This organization's own monthly and yearly price on its plan, over the plan's price."""
+
+    def post(self, request, public_id):
+        org = get_object_or_404(Organization.objects.select_related("subscription"), public_id=public_id)
+        form = forms.CustomPriceForm(request.POST)
+        if form.is_valid():
+            d = form.cleaned_data
+            try:
+                billing.set_custom_prices(request.user, org, d["monthly"], d["yearly"], d["reason"], request=request)
+                messages.success(request, _("Saved. The next invoice for this organization uses these prices."))
             except ValidationError as exc:
                 messages.error(request, " ".join(exc.messages))
         else:

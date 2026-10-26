@@ -142,8 +142,8 @@ def _static_pages():
             path="/", priority="1.0", changefreq="weekly",
             summary=_("Rent collection and property management software for Kenyan landlords, agents and estates.")),
         "growth:pricing": P(
-            title=_("Pricing in KSh by number of units · NyumbaPMS"),
-            description=_("Simple KSh pricing by the number of units you manage. Every plan includes every feature, "
+            title=_("Pricing in KES by number of units · NyumbaPMS"),
+            description=_("Simple KES pricing by the number of units you manage. Every plan includes every feature, "
                           "M-Pesa rent collection and SMS receipts, with a free %(days)s-day trial first.") % {"days": days},
             path=reverse("growth:pricing"), priority="0.9", changefreq="weekly",
             breadcrumb=[(_("Pricing"), reverse("growth:pricing"))]),

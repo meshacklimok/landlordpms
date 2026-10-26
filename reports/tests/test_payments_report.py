@@ -109,3 +109,19 @@ def test_month_bars_link_to_the_payments_list_with_the_filters(client, owner, le
     login(client, owner)
     html = client.get(reverse("reports:payments"), {"property": str(lease.unit.property.public_id)}).content.decode()
     assert "status=confirmed" in html and "date_from=" in html and "property=" in html
+
+
+def test_first_month_bar_starts_where_the_period_does(client, owner, lease):
+    pay(owner, lease, 1000, D(2026, 3, 20), "CONFIRMED")
+    login(client, owner)
+    html = client.get(reverse("reports:payments"), {"period": "custom", "from": "2026-03-15", "to": "2026-03-31"}
+                      ).content.decode()
+    assert "date_from=2026-03-15" in html and "date_from=2026-03-01" not in html
+
+
+def test_the_waiting_queue_shows_even_when_nothing_is_dated_in_the_period(client, owner, lease):
+    pay(owner, lease, 700, D(2026, 3, 20), "PENDING_REVIEW", confirmed=False)
+    login(client, owner)
+    html = client.get(reverse("reports:payments"), {"period": "custom", "from": "2026-04-01", "to": "2026-04-30"}
+                      ).content.decode()
+    assert "Waiting for review now" in html and "No payments are dated" not in html

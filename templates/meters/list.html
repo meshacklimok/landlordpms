@@ -47,7 +47,7 @@
   <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
     <h2 class="h6 mb-0 d-flex flex-wrap align-items-center gap-2" id="p-{{ row.property.public_id }}">{{ row.property.name }}{% if row.waiting %}<span class="wstate wstate-waiting">{% blocktrans count n=row.waiting %}{{ n }} waiting{% plural %}{{ n }} waiting{% endblocktrans %}</span>{% endif %}{% if row.meters %}{% if row.to_read %}<span class="wstate wstate-missing">{% blocktrans count n=row.to_read %}{{ n }} to read this month{% plural %}{{ n }} to read this month{% endblocktrans %}</span>{% else %}<span class="wstate wstate-approved">{% trans "All read this month" %}</span>{% endif %}{% endif %}</h2>
     <span class="d-flex gap-2">
-      {% if row.can_record and row.meters %}<a class="btn btn-sm btn-primary" href="{% url 'meters:round' row.property.public_id %}">{% trans "Read meters" %}</a>{% endif %}
+      {% if row.can_record and row.meters %}<a class="btn btn-sm btn-primary" href="{% url 'meters:round' row.property.public_id %}" data-offline-keep>{% trans "Read meters" %}</a>{% endif %}
       {% if row.can_manage %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'meters:create' row.property.public_id %}">{% trans "Add meter" %}</a>{% endif %}
     </span>
   </div>

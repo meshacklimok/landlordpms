@@ -17,7 +17,8 @@ import time
 from dataclasses import dataclass, field
 
 SMS_AT = "notifications.providers.sms.AfricasTalkingSmsSender"
-SMS_CONSOLE = "notifications.providers.sms.ConsoleSmsSender"
+SMS_CELCOM = "notifications.providers.sms.CelcomSmsSender"
+SMS_CONSOLE ="notifications.providers.sms.ConsoleSmsSender"
 WA_CLOUD = "notifications.providers.whatsapp.CloudApiWhatsAppSender"
 
 TTL = 20
@@ -37,7 +38,7 @@ class Item:
     prefixes: tuple = field(default_factory=tuple)
 
 
-SMS = "SMS (Africa's Talking)"
+SMS = "SMS (Africa's Talking, Celcom Africa)"
 WHATSAPP = "WhatsApp (Meta Cloud API)"
 AI = "Assistant and scans (OpenAI)"
 PAY = "Subscription payments to us (Paybill, Paystack)"
@@ -45,14 +46,23 @@ PUSH = "Phone alerts"
 CONTACT = "Contacts and legal details"
 
 REGISTRY: tuple[Item, ...] = (
-    Item("SMS_BACKEND", "SMS provider", SMS, "Choose Africa's Talking to send real SMS.", kind="choice",
-         choices=((SMS_AT, "Africa's Talking (real SMS)"), (SMS_CONSOLE, "Console (prints, sends nothing)"))),
+    Item("SMS_BACKEND", "SMS provider", SMS, "Choose Africa's Talking or Celcom Africa to send real SMS.", kind="choice",
+         choices=((SMS_AT, "Africa's Talking (real SMS)"), (SMS_CELCOM, "Celcom Africa (real SMS)"),
+                  (SMS_CONSOLE, "Console (prints, sends nothing)"))),
+    Item("CELCOM_API_KEY", "Celcom Africa API key", SMS, secret=True),
+    Item("CELCOM_PARTNER_ID", "Celcom Africa partner ID", SMS),
+    Item("CELCOM_SENDER_ID", "Celcom Africa sender name", SMS,
+         "The name tenants see when a landlord has no approved name of their own (Celcom must approve it)."),
     Item("AT_USERNAME", "Africa's Talking username", SMS, "'sandbox' uses their test environment."),
     Item("AT_API_KEY", "Africa's Talking API key", SMS, secret=True),
     Item("AT_SENDER_ID", "Platform SMS sender name", SMS, "The name tenants see when a landlord has no approved name of their own."),
     Item("AT_CALLBACK_TOKEN", "Africa's Talking callback token", SMS,
          "Secret part of the delivery, inbound and USSD callback URLs. At least 32 random characters.",
          secret=True, min_length=32),
+    Item("SIGNUP_SMS_OTP", "Confirm phone with an SMS code at sign-up", SMS,
+         "Yes: new accounts must type the code we text them. No: no code is sent and the number counts as "
+         "confirmed straight away, so anyone can register any number. Does not affect login two-step codes.",
+         kind="bool"),
     Item("USSD_CODE", "Tenant USSD code", SMS, "Shown to tenants, e.g. *384*123#."),
 
     Item("WHATSAPP_BACKEND", "WhatsApp provider", WHATSAPP, "Leave on 'Off' until the Meta account is approved.",

@@ -26,7 +26,7 @@ MARKER = "Canary"
 # Routes a visitor may reach without signing in (D-097 item 1).
 PUBLIC = {
     "healthz", "csp_report", "vacancy", "hostel_stay", "receipt_link", "receipt_check", "invoice_check", "monthly_report_stop", "pay_link", "pay_link_status", "letter_check", "email_stop",
-    "hook_africastalking", "hook_ussd", "hook_whatsapp", "hook_whatsapp_org", "hook_daraja", "hook_platform",
+    "hook_africastalking", "hook_mail", "hook_ussd", "hook_whatsapp", "hook_whatsapp_org", "hook_daraja", "hook_platform",
     "portal:accept",
     "owner_portal:accept",
     "support:manifest", "support:sw", "support:offline", "support:status", "support:security", "support:terms",
@@ -34,7 +34,7 @@ PUBLIC = {
     "growth:demo_thanks", "growth:demo_enter", "growth:demo_as", "growth:demo_leave", "growth:robots", "growth:sitemap", "growth:about", "growth:how_it_works",
     "growth:articles", "growth:article", "growth:solutions", "growth:solution", "growth:llms", "growth:llms_full",
     "growth:favicon", "growth:indexnow_key", "support:delete_account", "accounts:home", "accounts:web_csrf", "accounts:register", "accounts:login", "accounts:logout", "accounts:password_reset",
-    "accounts:password_reset_confirm", "accounts:accept_invite", "esign_check", "esign_sign", "esign_sign_pdf",
+    "accounts:password_reset_confirm", "accounts:accept_invite", "accounts:email_link", "esign_check", "esign_sign", "esign_sign_pdf",
 }
 # Public check pages whose random id is the key (they show face facts only, so a 200 is right).
 KEYED_BY_RANDOM_ID = {"invoice_check"}

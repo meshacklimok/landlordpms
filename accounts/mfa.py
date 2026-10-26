@@ -286,10 +286,12 @@ def gate(request):
 
 
 def suggest(membership) -> bool:
-    """Whether to suggest MFA to this member: their role holds a sensitive capability and MFA is off."""
+    """Whether to suggest MFA to this member: their role holds a sensitive capability and MFA is off.
+
+    Never in the demo (D-210): the Security page is closed there, so the button would lead nowhere."""
     from .capabilities import CAPABILITY_MAP
     from .permissions import effective_capabilities
 
-    if membership is None or is_enabled(membership.user):
+    if membership is None or membership.organization.is_demo or is_enabled(membership.user):
         return False
     return any(CAPABILITY_MAP[c].sensitive for c in effective_capabilities(membership) if c in CAPABILITY_MAP)

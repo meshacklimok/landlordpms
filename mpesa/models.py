@@ -152,6 +152,7 @@ class MpesaTransaction(TimeStampedModel):
         indexes = [
             models.Index(fields=["organization", "status"]),
             models.Index(fields=["payment_account", "paid_at"]),
+            models.Index(fields=["organization", "paid_at"], name="mpesa_tx_org_paidat_idx"),
         ]
 
     def __str__(self):

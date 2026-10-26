@@ -95,6 +95,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "core.nul.RejectNulMiddleware",  # a NUL byte in a search or form is a 400, not a database error
     "django.middleware.csp.ContentSecurityPolicyMiddleware",
     "reports.pane.ReportPaneMiddleware",  # right inside CSP: lets the report centre frame a report drawn with ?pane=1, error pages too (D-148)
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -190,7 +191,7 @@ AUTH_USER_MODEL = "accounts.User"
 AUTHENTICATION_BACKENDS = ["accounts.backends.PhoneOrEmailBackend"]
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "accounts:home"
-LOGOUT_REDIRECT_URL = "accounts:login"
+LOGOUT_REDIRECT_URL = "accounts:home"
 
 # Argon2 first (D-107). Passwords saved with PBKDF2 before then still work and are re-saved with Argon2 the next
 # time their owner logs in.
@@ -287,7 +288,12 @@ MEDIA_ROOT = BASE_DIR / 'media'
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
-    }
+    },
+    # This worker's own memory: the report cache falls back to it while Redis is down (core/reportcache.py).
+    "local": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "reportcache-local",
+    },
 }
 
 # How many of our own proxies sit in front of Django. Client IPs (rate limits, audit) are read
@@ -333,7 +339,7 @@ SMS_BACKEND = os.getenv("SMS_BACKEND", "notifications.providers.sms.ConsoleSmsSe
 # These adapters used to live in core/. A server .env written then still works.
 SMS_BACKEND = SMS_BACKEND.replace("core.sms.", "notifications.providers.sms.", 1)
 # KES per SMS part, for the cost estimate shown before an announcement is sent.
-SMS_PRICE_ESTIMATE = os.getenv("SMS_PRICE_ESTIMATE", "0.80")
+SMS_PRICE_ESTIMATE = os.getenv("SMS_PRICE_ESTIMATE", "1.00")
 # Africa's Talking (SMS_BACKEND=notifications.providers.sms.AfricasTalkingSmsSender). AT_USERNAME=sandbox uses the sandbox.
 AT_USERNAME = os.getenv("AT_USERNAME", "")
 AT_API_KEY = os.getenv("AT_API_KEY", "")
@@ -346,6 +352,10 @@ MESSAGE_MONTHLY_LIMITS = {
 }
 # Secret part of the callback URLs: /hooks/sms/africastalking/<token>/<delivery|inbound|optout>/
 AT_CALLBACK_TOKEN = os.getenv("AT_CALLBACK_TOKEN", "")
+# Bounce and spam events from Resend and Brevo: /hooks/mail/<MAIL_HOOK_TOKEN>/resend/ and /brevo/. Resend also signs
+# its requests; paste its signing secret (whsec_...) into RESEND_WEBHOOK_SECRET.
+MAIL_HOOK_TOKEN = os.getenv("MAIL_HOOK_TOKEN", "")
+RESEND_WEBHOOK_SECRET = os.getenv("RESEND_WEBHOOK_SECRET", "")
 # Tenant USSD menu (D-081): the code shown to tenants, e.g. *384*123#. Callback: /hooks/ussd/africastalking/<token>/
 USSD_CODE = os.getenv("USSD_CODE", "")
 
@@ -386,6 +396,8 @@ WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN", "")
 
 # Platform billing: what landlords pay us (D-060). Prices are before VAT; VAT is added only when we are
 # registered. [VERIFY] the rate and the SMS price with the accountant and the SMS provider.
+# Sign-up texts a code to confirm the phone (D-207 admin switch). Off: new accounts count as verified at once.
+SIGNUP_SMS_OTP = os.getenv("SIGNUP_SMS_OTP", "1") == "1"
 PLATFORM_VAT_REGISTERED = os.getenv("PLATFORM_VAT_REGISTERED", "0") == "1"
 PLATFORM_VAT_RATE = os.getenv("PLATFORM_VAT_RATE", "16")
 PLATFORM_PAYBILL = os.getenv("PLATFORM_PAYBILL", "")
@@ -505,10 +517,19 @@ if SENTRY_DSN:
         import sentry_sdk
     except ImportError as e:
         raise ImproperlyConfigured("SENTRY_DSN is set but sentry-sdk is not installed.") from e
-    # No personal data in error reports (D-097 item 5): no request bodies and no local variables, which hold
-    # phone numbers, names and amounts; send_default_pii=False already drops cookies, headers and the user.
-    sentry_sdk.init(dsn=SENTRY_DSN, send_default_pii=False, traces_sample_rate=0.1,
-                    max_request_body_size="never", include_local_variables=False,
+    # No personal data in error reports (D-097 item 5): no request bodies, no local variables (they hold
+    # phone numbers, names and amounts), no user, cookies, headers or query strings. data_collection replaces
+    # send_default_pii and collects everything for any field left out, so every field is turned off by name.
+    sentry_sdk.init(dsn=SENTRY_DSN, traces_sample_rate=0.1,
+                    data_collection={
+                        "user_info": False, "cookies": {"mode": "off"},
+                        "http_headers": {"request": {"mode": "off"}}, "http_bodies": [],
+                        "url_query_params": {"mode": "off"},
+                        "graphql": {"document": False, "variables": False},
+                        "gen_ai": {"inputs": False, "outputs": False},
+                        "database_query_data": False, "queues": False,
+                        "stack_frame_variables": False, "frame_context_lines": 0,
+                    },
                     environment=os.getenv("SENTRY_ENVIRONMENT", "production"),
                     release=os.getenv("SENTRY_RELEASE") or None)
     # Sentry has the errors; do not email them as well.
