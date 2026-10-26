@@ -2,7 +2,7 @@ Django==6.1.2
 gunicorn==26.2.0
 psycopg[binary,pool]==3.3.6
 psycopg-pool==3.3.3
-Pillow==12.3.0
+Pillow==13.0.0
 python-dotenv==1.2.4
 redis==8.1.0
 reportlab==5.1.0
