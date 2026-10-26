@@ -7,7 +7,8 @@
 {% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_title lead=t_lead %}
 <div class="pub-cards">
 {% for s in solutions %}
-  <a class="pub-card" href="{% url 'growth:solution' s.slug %}">
+  <a class="pub-card{% if s.shot %} has-shot{% endif %}" href="{% url 'growth:solution' s.slug %}">
+    {% if s.shot %}{% include "growth/_card_shot.html" with pic=s.shot %}{% endif %}
     <h2 class="pub-card-title">{{ s.title }}</h2>
     <p>{{ s.description }}</p>
     <span class="pub-card-go">{% trans "Read more" %} <i class="bi bi-arrow-right" aria-hidden="true"></i></span>

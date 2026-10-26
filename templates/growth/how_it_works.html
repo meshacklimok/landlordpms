@@ -6,11 +6,12 @@
 {% trans "How it works" as t_how %}{% trans "From the first unit to the monthly report, in six steps." as t_lead %}{% trans "The process" as t_eyebrow %}
 {% include "growth/_page_head.html" with eyebrow=t_eyebrow title=t_how lead=t_lead %}
 
-<ol class="pub-timeline">
-{% for title, body in steps %}
-  <li class="pub-timeline-item">
+<ol class="pub-timeline pub-timeline-shots">
+{% for title, body, pic in steps %}
+  <li class="pub-timeline-item{% if pic %} has-shot{% endif %}">
     <span class="about-step-n" aria-hidden="true">{{ forloop.counter }}</span>
     <div><h2 class="pub-timeline-title">{{ title }}</h2><p>{{ body }}</p></div>
+    {% if pic %}{% include "growth/_framed.html" with pic=pic caption=True sizes="(min-width: 992px) 36rem, 88vw" %}{% endif %}
   </li>
 {% endfor %}
 </ol>

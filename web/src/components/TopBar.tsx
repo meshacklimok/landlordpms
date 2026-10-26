@@ -42,9 +42,9 @@ export function TopBar({ session, menuOpen, onMenu }: Props) {
       setSignOutFailed(true); // stay signed in and say so, rather than look signed out
       return;
     }
-    // /login/ is still a Django page, so leave the app with a full page load.
+    // The front page is a Django page for signed-out visitors, so leave the app with a full page load.
     // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-    window.location.assign("/login/");
+    window.location.assign("/");
   }
 
   const unread = session.unread_count;
@@ -86,7 +86,9 @@ export function TopBar({ session, menuOpen, onMenu }: Props) {
                 </li>
                 <li><hr /></li>
                 <li><a className="dropdown-item" role="menuitem" href={urls.help}><i className="bi bi-question-circle" aria-hidden="true" />Help</a></li>
-                <li><a className="dropdown-item" role="menuitem" href={urls.security}><i className="bi bi-shield-check" aria-hidden="true" />Security</a></li>
+                {!session.in_demo && (
+                  <li><a className="dropdown-item" role="menuitem" href={urls.security}><i className="bi bi-shield-check" aria-hidden="true" />Security</a></li>
+                )}
                 {session.has_console && (
                   <li><a className="dropdown-item" role="menuitem" href={urls.console}><i className="bi bi-speedometer" aria-hidden="true" />Console</a></li>
                 )}

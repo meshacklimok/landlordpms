@@ -7,7 +7,7 @@
 <p class="small text-body-secondary">{% blocktrans with p=period.label %}Payments dated {{ p }}. Only confirmed payments are money received. Payments reversed after confirming and payments turned down in review are shown apart and never counted as received.{% endblocktrans %}</p>
 {% include "reports/_period_filter.html" %}
 
-{% if report.total %}
+{% if report.total or report.waiting %}
 <div class="row g-2 mb-3">
   <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-primary"><div class="card-body py-2">
     <div class="stat-label">{% trans "Money received" %}</div><div class="stat-value num">{{ report.confirmed|money:cur }}</div>
@@ -57,7 +57,7 @@
     <td>{{ p.get_method_display }}</td><td>{{ p.reference|default:"—" }}</td><td>{{ p.get_state_display }}</td>
     <td class="text-end num text-nowrap">{{ p.amount|money:cur }}</td></tr>{% endfor %}</tbody>
 </table></div>
-{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total %}The newest {{ n }} of {{ t }} payments are shown. Download the report for all of them.{% endblocktrans %}</p>{% endif %}
+{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total l=download_limit %}The newest {{ n }} of {{ t }} payments are shown. The download has up to {{ l }}; choose a shorter period for the rest.{% endblocktrans %}</p>{% endif %}
 <p class="small text-body-secondary">{% blocktrans with t=report.generated_at|date:"j M Y H:i" %}Updated {{ t }}.{% endblocktrans %}</p>
 {% else %}
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No payments are dated in this period. Choose another period, or record payments to see this report." %}</div></div>

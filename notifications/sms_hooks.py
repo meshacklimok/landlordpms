@@ -16,7 +16,7 @@ from core.phone import InvalidPhoneNumber, normalize_phone
 from tenants.models import Tenant
 
 from . import catalog
-from .models import ConsentRecord, Message
+from .models import ConsentRecord, Message, PhoneOptOut
 from .services import channel_allowed
 
 logger = logging.getLogger(__name__)
@@ -33,12 +33,12 @@ START_WORDS = {"START", "UNSTOP", "SUBSCRIBE", "ANZA"}
 
 @transaction.atomic
 def delivery_report(provider_id: str, status: str, failure_reason: str = "",
-                    now: datetime.datetime | None = None) -> Message | None:
+                    now: datetime.datetime | None = None, provider: str = PROVIDER) -> Message | None:
     """Marks a sent message delivered or failed. Unknown ids and in-flight statuses change nothing."""
     if not provider_id:
         return None
     message = (Message.objects.select_for_update()
-               .filter(provider=PROVIDER, provider_id=provider_id).first())
+               .filter(provider=provider, provider_id=provider_id).first())
     if message is None:
         logger.info("Delivery report for unknown message %s", provider_id)
         return None
@@ -62,6 +62,17 @@ def _tenants_with(phone: str, organization=None) -> list[Tenant]:
     return list(tenants.filter(organization=organization) if organization is not None else tenants)
 
 
+def _record_phone(phone: str, channel: str, allowed: bool, note: str) -> None:
+    try:
+        phone = normalize_phone(phone)
+    except InvalidPhoneNumber:
+        return
+    if allowed:
+        PhoneOptOut.objects.filter(phone=phone, channel=channel).delete()
+    else:
+        PhoneOptOut.objects.get_or_create(phone=phone, channel=channel, defaults={"note": note[:200]})
+
+
 @transaction.atomic
 def set_channel_from_phone(phone: str, channel: str, *, allowed: bool, note: str,
                            source: str = ConsentRecord.Source.SMS_REPLY, only_restore: bool = False,
@@ -73,6 +84,8 @@ def set_channel_from_phone(phone: str, channel: str, *, allowed: bool, note: str
     `organization` limits it to one landlord's tenants: the reply came in on that landlord's own number.
     """
     changed = 0
+    if organization is None:  # a reply to the shared number covers owners, suppliers and prospects too
+        _record_phone(phone, channel, allowed, note)
     for tenant in _tenants_with(phone, organization):
         if channel_allowed(tenant, channel) == allowed:
             continue

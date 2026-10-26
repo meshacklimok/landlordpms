@@ -193,3 +193,12 @@ def test_the_launch_check_fails_when_the_sms_wallet_is_not_enforced(settings, db
     assert any("SMS_WALLET_ENFORCED is off" in text for done, text in launch.checks() if not done)
     settings.SMS_WALLET_ENFORCED = True
     assert any("SMS wallet is enforced" in text for done, text in launch.checks() if done)
+
+
+def test_empty_callback_ip_lists_or_sentry_fail_the_check(settings):
+    settings.MPESA_ALLOWED_IPS, settings.PAYSTACK_ALLOWED_IPS, settings.SENTRY_DSN = [], [], ""
+    ok, line = launch._callback_guards()
+    assert not ok and "MPESA_ALLOWED_IPS" in line and "PAYSTACK_ALLOWED_IPS" in line and "SENTRY_DSN" in line
+    settings.MPESA_ALLOWED_IPS, settings.PAYSTACK_ALLOWED_IPS = ["196.201.214.200"], ["52.31.139.75"]
+    settings.SENTRY_DSN = "https://key@example.ingest.sentry.io/1"
+    assert launch._callback_guards()[0]

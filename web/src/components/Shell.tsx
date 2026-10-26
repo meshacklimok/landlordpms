@@ -15,7 +15,7 @@ export async function Shell({ children }: { children: ReactNode }) {
       <Notices session={session} />
       {children}
       <HelpButton url={session.urls.contact} />
-      <AskButton />
+      {session.show_ask && <AskButton />}
       <InstallPrompt />
     </ShellFrame>
   );

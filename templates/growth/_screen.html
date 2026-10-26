@@ -1,0 +1,4 @@
+{# One real screen of the product (growth/screens.py), in the theme the visitor reads in: the other copy is hidden by CSS, and a hidden lazy picture is never fetched. #}
+{# pic: a screens.Picture · sizes: the srcset sizes · eager: the first thing a visitor sees, fetched straight away #}
+<img class="land-shot land-shot-light" src="{{ pic.light_src }}" srcset="{{ pic.light_srcset }}" sizes="{{ sizes }}" width="{{ pic.width }}" height="{{ pic.height }}" alt="{{ pic.alt }}" decoding="async"{% if eager %} fetchpriority="high"{% else %} loading="lazy"{% endif %}>
+<img class="land-shot land-shot-dark" src="{{ pic.dark_src }}" srcset="{{ pic.dark_srcset }}" sizes="{{ sizes }}" width="{{ pic.width }}" height="{{ pic.height }}" alt="{{ pic.alt }}" decoding="async" loading="lazy">

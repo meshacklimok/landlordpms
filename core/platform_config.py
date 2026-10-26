@@ -59,6 +59,10 @@ REGISTRY: tuple[Item, ...] = (
     Item("AT_CALLBACK_TOKEN", "Africa's Talking callback token", SMS,
          "Secret part of the delivery, inbound and USSD callback URLs. At least 32 random characters.",
          secret=True, min_length=32),
+    Item("SIGNUP_SMS_OTP", "Confirm phone with an SMS code at sign-up", SMS,
+         "Yes: new accounts must type the code we text them. No: no code is sent and the number counts as "
+         "confirmed straight away, so anyone can register any number. Does not affect login two-step codes.",
+         kind="bool"),
     Item("USSD_CODE", "Tenant USSD code", SMS, "Shown to tenants, e.g. *384*123#."),
 
     Item("WHATSAPP_BACKEND", "WhatsApp provider", WHATSAPP, "Leave on 'Off' until the Meta account is approved.",

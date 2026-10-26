@@ -19,7 +19,13 @@ from notifications.providers.sms import SmsResult, get_sms_sender, sender_id_for
 from notifications.providers.whatsapp import get_whatsapp_sender
 
 from . import catalog, emails, push
-from .models import ConsentRecord, Message, NotificationPreference, OrganizationNotificationRule
+from .models import (
+    ConsentRecord,
+    Message,
+    NotificationPreference,
+    OrganizationNotificationRule,
+    PhoneOptOut,
+)
 from .rendering import fields_in, render, template_for
 
 logger = logging.getLogger(__name__)
@@ -162,6 +168,8 @@ def _phone_blocked(org, ntype, channel: str, phone: str) -> str | None:
     if not sms_available(org):
         return Skip.CHANNEL_UNAVAILABLE
     if not ntype.mandatory:
+        if PhoneOptOut.objects.filter(phone=phone, channel=channel).exists():
+            return Skip.OPTED_OUT
         for tenant in Tenant.all_objects.filter(organization=org, phone=phone):
             if opted_out(org, ntype, channel, tenant=tenant):
                 return Skip.OPTED_OUT
@@ -428,7 +436,11 @@ def send_one(pk: int, now: datetime.datetime | None = None) -> str | None:
                 from .own_accounts import usable_sms
 
                 if usable_sms(message.organization) is None:  # its own account is billed by its own provider
-                    billing.charge_message(message)
+                    try:
+                        with transaction.atomic():
+                            billing.charge_message(message)
+                    except Exception:  # noqa: BLE001 - the text is already out: never roll "sent" back and send it twice
+                        logger.exception("Charging message %s failed after it was sent", message.pk)
         else:
             message.error = (result.error or "")[:300]
             if result.permanent or message.attempts >= Message.MAX_ATTEMPTS:
@@ -456,4 +468,31 @@ def send_due(now: datetime.datetime | None = None, limit: int = 500) -> dict[str
             counts["retrying"] += 1
         elif status == Status.FAILED:
             counts["failed"] += 1
+    return counts
+
+
+def check_celcom_reports(now: datetime.datetime | None = None, limit: int = 200) -> dict[str, int]:
+    """Celcom has no delivery callback, so ask for the outcome of messages sent in the last two days that are
+    still only "sent". Does nothing unless Celcom is the SMS provider."""
+    from django.conf import settings
+
+    from . import sms_hooks
+    from .providers.sms import CelcomSmsSender
+
+    counts = {"celcom_delivered": 0, "celcom_failed": 0}
+    if not str(getattr(settings, "SMS_BACKEND", "")).endswith("CelcomSmsSender"):
+        return counts
+    now = now or timezone.now()
+    sender = get_sms_sender()
+    pending = (Message.objects.filter(channel=catalog.SMS, provider=CelcomSmsSender.name, status=Status.SENT,
+                                      sent_at__gte=now - datetime.timedelta(days=2)).exclude(provider_id="")
+               .order_by("sent_at", "pk").values_list("provider_id", flat=True)[:limit])
+    for provider_id in list(pending):
+        outcome = sender.delivery_status(provider_id)
+        if outcome == "delivered":
+            sms_hooks.delivery_report(provider_id, "Success", now=now, provider=CelcomSmsSender.name)
+            counts["celcom_delivered"] += 1
+        elif outcome == "failed":
+            sms_hooks.delivery_report(provider_id, "Failed", "Reported by Celcom", provider=CelcomSmsSender.name)
+            counts["celcom_failed"] += 1
     return counts

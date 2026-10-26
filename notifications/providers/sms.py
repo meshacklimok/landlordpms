@@ -148,8 +148,9 @@ class CelcomSmsSender(SmsSender):
     URL = "https://isms.celcomafrica.com/api/services/sendsms/"
     TIMEOUT = 15
     ACCEPTED = {200}
-    # Invalid or blocked number, do-not-disturb: retrying will not help.
-    PERMANENT = {1003, 1012}
+    # Network not allowed, validation errors (bad number or message), do-not-disturb: retrying will not help.
+    # Seen live: 1003 "Validation Errors" with an `errors` map, 1006 "Invalid credentials".
+    PERMANENT = {1002, 1003, 1012}
     # Sender name not registered on that network.
     INVALID_SENDER = 1001
 
@@ -159,6 +160,8 @@ class CelcomSmsSender(SmsSender):
         self.sender_id = getattr(settings, "CELCOM_SENDER_ID", "")
         if not self.api_key or not self.partner_id:
             raise ImproperlyConfigured("Set CELCOM_API_KEY and CELCOM_PARTNER_ID to use Celcom Africa.")
+        if not self.sender_id:  # Celcom refuses a send without a sender name ("Shortcode must not be empty")
+            raise ImproperlyConfigured("Set CELCOM_SENDER_ID: Celcom needs an approved sender name on every message.")
 
     def _post(self, fields: dict) -> dict:
         request = urllib.request.Request(  # noqa: S310 - a fixed https URL
@@ -187,10 +190,11 @@ class CelcomSmsSender(SmsSender):
             return SmsResult(ok=False, provider=self.name, error=f"HTTP {e.code}", permanent=400 <= e.code < 500)
         except (urllib.error.URLError, TimeoutError, ValueError) as e:
             return SmsResult(ok=False, provider=self.name, error=str(e)[:300] or e.__class__.__name__)
+        # Success arrives as {"responses": [{...}]}; errors arrive flat, as {"response-code": 1003, ...}.
         responses = data.get("responses") if isinstance(data, dict) else None
-        if not responses or not isinstance(responses[0], dict):
+        r = responses[0] if isinstance(responses, list) and responses else data
+        if not isinstance(r, dict) or not any(k in r for k in ("response-code", "respose-code")):
             return SmsResult(ok=False, provider=self.name, error="No response entry from Celcom")
-        r = responses[0]
         # Their field is spelled "respose-code" in some replies.
         raw = r.get("response-code", r.get("respose-code"))
         try:
@@ -201,8 +205,44 @@ class CelcomSmsSender(SmsSender):
             return SmsResult(ok=True, provider=self.name, provider_id=str(r.get("messageid") or ""),
                              sender_id=sender_id)
         description = str(r.get("response-description") or r.get("respose-description") or "")
-        return SmsResult(ok=False, provider=self.name, error=f"{code} {description}".strip()[:300],
-                         permanent=code in self.PERMANENT)
+        problems = r.get("errors") if isinstance(r.get("errors"), dict) else {}
+        details = "; ".join(str(v) for field in problems.values() for v in
+                            (field.values() if isinstance(field, dict) else [field]))
+        error = f"{code} {description} {details}".strip()[:300]
+        # A refused sender name is a validation error naming the shortcode: a fault in our settings, not in this
+        # message, so it is not permanent (and the caller may try the platform's name).
+        if code == 1003 and "shortcode" in problems:
+            code = self.INVALID_SENDER
+            error = f"{code} {details or description}"[:300]
+        return SmsResult(ok=False, provider=self.name, error=error, permanent=code in self.PERMANENT)
+
+    DLR_URL = "https://isms.celcomafrica.com/api/services/getdlr/"
+    # Their sample report: delivery-status 32, "DeliveredToTerminal". [VERIFY the other statuses live.]
+    DELIVERED_WORDS = ("delivered",)
+    FAILED_WORDS = ("undeliver", "reject", "expire", "fail", "absent", "blacklist", "invalid", "barred")
+
+    def delivery_status(self, message_id: str) -> str:
+        """Asks Celcom what became of a sent message: "delivered", "failed" or "pending". A reply we cannot read, or
+        any error, is "pending": the next run asks again."""
+        fields = {"apikey": self.api_key, "partnerID": self.partner_id, "messageID": message_id}
+        try:
+            request = urllib.request.Request(  # noqa: S310 - a fixed https URL
+                self.DLR_URL, data=json.dumps(fields).encode(), method="POST",
+                headers={"Accept": "application/json", "Content-Type": "application/json"})
+            with urllib.request.urlopen(request, timeout=self.TIMEOUT) as response:  # noqa: S310 - fixed https URL
+                data = json.loads(response.read().decode())
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            return "pending"
+        entry = data.get("responses") if isinstance(data, dict) else None
+        entry = entry[0] if isinstance(entry, list) and entry else data
+        if not isinstance(entry, dict):
+            return "pending"
+        text = str(entry.get("delivery-description") or "").lower()
+        if str(entry.get("delivery-status") or "") == "32" or any(w in text for w in self.DELIVERED_WORDS):
+            return "delivered"
+        if any(w in text for w in self.FAILED_WORDS):
+            return "failed"
+        return "pending"
 
 
 def platform_sender_name() -> str:

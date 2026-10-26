@@ -20,7 +20,8 @@ from properties.models import Property
 
 from .metrics import rate
 
-LIST_LIMIT = 300  # lines shown on the page; the download has them all
+LIST_LIMIT = 300  # lines shown on the page
+DOWNLOAD_LIMIT = LIST_LIMIT * 10  # lines in the download; it says so when there are more
 
 
 @dataclass
@@ -78,7 +79,7 @@ def expenses(membership: Membership, start: datetime.date, end: datetime.date,
     before = expense_services.approved(org, props, before_end - datetime.timedelta(days=days - 1), before_end)
     months = [(r["m"], f"{r['m']:%b %Y}", r["n"], r["a"]) for r in
               ok.annotate(m=TruncMonth("paid_on")).values("m").annotate(n=Count("pk"), a=Sum("amount")).order_by("m")]
-    listed = list(ok.select_related("property", "category", "supplier").order_by("-paid_on", "-pk")[:LIST_LIMIT * 10])
+    listed = list(ok.select_related("property", "category", "supplier").order_by("-paid_on", "-pk")[:DOWNLOAD_LIMIT])
     return ExpenseReport(
         start=start, end=end, total=total, count=agg["n"], waiting=waiting["n"], waiting_amount=waiting["a"] or ZERO,
         by_category=_groups(ok, "category__name", total),

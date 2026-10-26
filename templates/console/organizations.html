@@ -30,7 +30,7 @@
   {% for r in rows %}
     <tr>
       <td>{% if request.user.is_superuser %}<input type="checkbox" form="bulk" name="o" value="{{ r.org.public_id }}" aria-label="{{ r.org.name }}">{% endif %}</td>
-      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}</td>
+      <td><a href="{% url 'console:organization' r.org.public_id %}">{{ r.org.name }}</a>{% if r.org.status != "ACTIVE" %} <span class="badge text-bg-warning">{{ r.org.get_status_display }}</span>{% endif %}{% if request.user.is_superuser %}<form method="post" action="{% url 'console:view_as' r.org.public_id %}" class="mt-1">{% csrf_token %}<button class="btn btn-sm btn-outline-secondary text-nowrap py-0" title="{% trans 'See this organization as its owner sees it (read only)' %}"><i class="bi bi-eye" aria-hidden="true"></i> {% trans "View as owner" %}</button></form>{% endif %}</td>
       <td><span class="badge text-bg-{% if r.health == 'At risk' %}danger{% elif r.health == 'Watch' %}warning{% else %}success{% endif %}"{% if r.reasons %} title="{{ r.reasons|join:'; ' }}"{% endif %}>{% if r.health == 'At risk' %}{% trans "At risk" %}{% elif r.health == 'Watch' %}{% trans "Watch" %}{% else %}{% trans "Healthy" %}{% endif %}</span></td>
       <td>{{ r.plan }} <span class="text-muted">{{ r.sub_status }}</span></td>
       <td class="text-end">{{ r.units }}</td><td class="text-end">{{ r.leases }}</td>

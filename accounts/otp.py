@@ -17,6 +17,7 @@ from core import ratelimit
 from notifications.email_html import send_branded
 from notifications.providers.mail import SYSTEM, mailer_for
 from notifications.providers.sms import send_sms
+from notifications.suppression import is_suppressed
 
 from .models import OTPCode
 
@@ -48,8 +49,9 @@ def _throttle(phone: str, purpose: str, last_sent_at) -> None:
         raise OTPError(_("Too many codes requested for this number today. Try again tomorrow."))
 
 
-def issue_otp(phone: str, purpose: str, email: str = "") -> None:
-    """Sends a code to the phone by SMS, or to `email` when given. The code stays keyed by the phone."""
+def issue_otp(phone: str, purpose: str, email: str = "", link: str = "") -> None:
+    """Sends a code to the phone by SMS, or to `email` when given (with `link` under it, if any). The code stays
+    keyed by the phone."""
     now = timezone.now()
     last = OTPCode.objects.filter(phone=phone, purpose=purpose).order_by("-created_at").first()
     _throttle(phone, purpose, last.created_at if last else None)
@@ -65,10 +67,15 @@ def issue_otp(phone: str, purpose: str, email: str = "") -> None:
                            expires_at=now + OTP_TTL)
     text = _("Your NyumbaPMS code is %(code)s. It expires in 10 minutes. Never share it.") % {"code": code}
     if email:
+        if is_suppressed(email):
+            raise OTPError(_("We cannot email that address: mail to it bounced or was reported as spam. "
+                             "Use a different address."))
         try:
-            send_branded(_("Your NyumbaPMS code"),
-                         _("Your NyumbaPMS code:\n\n%(code)s\n\nIt expires in 10 minutes. Never share it.")
-                         % {"code": code}, [email], using=mailer_for(SYSTEM))
+            body = _("Your NyumbaPMS code:\n\n%(code)s\n\nIt expires in 10 minutes. Never share it.") % {"code": code}
+            if link:
+                body += "\n\n" + _("Or confirm on the page this button opens. It stays valid for 24 hours.") + "\n" + link
+            send_branded(_("Your NyumbaPMS code"), body, [email], using=mailer_for(SYSTEM),
+                         button_label=_("Confirm my email"))
         except Exception as exc:  # noqa: BLE001 - any mail failure reads the same to the user
             raise OTPError(_("We could not send the email. Check the address and try again.")) from exc
         return

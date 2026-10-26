@@ -1,9 +1,17 @@
+from urllib.parse import urlencode
+
 from django import template
+from django.urls import reverse
 from django.utils.formats import date_format
+from django.utils.html import escape as html_escape
 from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
+from django.utils.translation import get_language
 from django.utils.translation import gettext as _
 
+from accounts.permissions import can
 from core.money import format_money
+from reports import metrics
 from reports.finance import AGING_CHART_COLORS
 
 register = template.Library()
@@ -105,26 +113,45 @@ def state_mark(state: str) -> str:
     return _STATE_CELLS.get(state, _STATE_CELLS["none"])[1]
 
 
+_MONTH_NAMES: dict = {}
+
+
+def _month_name(month, language) -> str:
+    """A month's short name and year, worked out once per language and not once per unit."""
+    key = (month, language)
+    name = _MONTH_NAMES.get(key)
+    if name is None:
+        if len(_MONTH_NAMES) > 600:
+            _MONTH_NAMES.clear()
+        name = _MONTH_NAMES[key] = str(date_format(month, "M Y"))
+    return name
+
+
 @register.simple_tag
 def unit_months(cells, currency="KES"):
     """The twelve month squares of one unit in the unit-by-unit grid. Built here, not in the template: a landlord with
     100 units draws 1,200 of them, and each used to cost a dozen template lookups and two date formats (pilot
-    sizing, 2026-10-19). A month's name is worked out once, not once per unit."""
-    names = {}
+    sizing, 2026-10-19). The markup is joined as plain text, escaping each distinct piece once."""
+    language = get_language()
+    escaped: dict = {}
+
+    def esc(text) -> str:
+        done = escaped.get(text)
+        if done is None:
+            done = escaped[text] = html_escape(str(text))
+        return done
+
     out = []
     for c in cells:
-        name = names.get(c.month)
-        if name is None:
-            name = names[c.month] = date_format(c.month, "M Y")
+        name = _month_name(c.month, language)
         css, mark = _STATE_CELLS.get(c.state, _STATE_CELLS["none"])
         label = c.label
         detail = f"{name}: {label}"
         if c.expected:
             detail += f" · {format_money(c.collected, currency)} / {format_money(c.expected, currency)}"
-        out.append(format_html(
-            '<span class="unit-month {}" title="{}"><span aria-hidden="true">{}</span>'
-            '<span class="visually-hidden">{}: {}</span></span>', css, detail, mark, name, label))
-    return format_html_join("", "{}", ((o,) for o in out))
+        out.append(f'<span class="unit-month {esc(css)}" title="{esc(detail)}"><span aria-hidden="true">{esc(mark)}'
+                   f'</span><span class="visually-hidden">{esc(name)}: {esc(label)}</span></span>')
+    return mark_safe("".join(out))  # noqa: S308 - every dynamic piece above is escaped
 
 
 @register.simple_tag
@@ -183,3 +210,56 @@ def series_color(index) -> str:
 def as_excel(query: str) -> str:
     """A CSV download's query string, pointed at the Excel download instead."""
     return str(query).replace("format=csv", "format=xlsx")
+
+
+@register.inclusion_tag("reports/_trail.html")
+def money_trail(membership, kind, day, prop=None, lease=None, counted=True):
+    """Where one payment or expense shows in the reports, each link opened on its month and property.
+
+    `kind` is "payment" or "expense"; `counted` False says it is not in the figures yet (or any more).
+    A link is left out when the person may not open that report.
+    """
+    first, last = metrics.month_start(day), metrics.month_end(day)
+    pid = str(prop.public_id) if prop is not None else ""
+    ops = {"period": "custom", "from": first.isoformat(), "to": last.isoformat()}
+    fin = {"from": first.strftime("%Y-%m"), "to": first.strftime("%Y-%m")}
+    if pid:
+        ops["property"] = pid
+        fin["property"] = pid
+
+    def link(name, label, note, query):
+        return {"label": label, "note": note, "url": reverse(name) + "?" + urlencode(query)}
+
+    financial = can(membership, "reports.view_financial")
+    links = []
+    if kind == "payment":
+        if can(membership, "payments.view"):
+            links.append(link("reports:payments", _("Payments report"), _("Every payment received that month"), ops))
+        if financial:
+            links += [
+                link("reports:profit_loss", _("Profit and loss"), _("Counted in rent or utilities income"), fin),
+                link("reports:cash_flow", _("Cash flow"), _("Money in that month"), fin),
+            ]
+        if lease is not None and financial:
+            links.append(link("reports:tenant_statement", _("Tenant statement"), _("On this tenant's account"),
+                              {**ops, "lease": str(lease.public_id)}))
+        if can(membership, "invoices.view"):
+            links.append(link("reports:arrears", _("Arrears"), _("Lowers what the tenant still owes"), ops))
+        if financial:
+            links.append(link("reports:owner_statement", _("Owner statement"), _("Paid over to the owner"), {}))
+    else:
+        if financial:
+            links += [
+                link("reports:expenses", _("Expenses report"), _("By category and supplier"), ops),
+                link("reports:profit_loss", _("Profit and loss"), _("Taken off income"), fin),
+                link("reports:cash_flow", _("Cash flow"), _("Money out that month"), fin),
+                link("reports:profitability", _("Profitability"), _("Counted against the property"), ops),
+                link("reports:owner_statement", _("Owner statement"), _("Deducted before the owner is paid"), {}),
+            ]
+    return {"links": links, "counted": counted, "kind": kind}
+
+
+@register.filter
+def last_day(day):
+    """The last day of the month a date falls in."""
+    return metrics.month_end(metrics.month_start(day))

@@ -1,6 +1,7 @@
 """Today page, view as landlord, saved replies, bulk actions, statement, digest, audit CSV and the stuck lists."""
 
 import datetime
+from types import SimpleNamespace
 
 import pytest
 from django.core import mail
@@ -42,6 +43,32 @@ def test_view_as_is_read_only_audited_and_for_the_owner_only(client):
     client.post(reverse("console:view_as_stop"))
     assert viewas.SESSION_KEY not in client.session
     assert AuditEvent.objects.filter(action="console.view_as", organization=org).count() == 2
+
+
+def test_view_as_a_role_nobody_holds_and_stop_from_the_next_screens(client):
+    from accounts.models import Role, RoleTemplate, User
+    from accounts.permissions import can
+
+    org = make_org().organization
+    owner(client)
+    caretaker = Role.objects.filter(organization=org).exclude(is_owner_role=True).first()
+    start = reverse("console:view_as", args=[org.public_id])
+    assert client.post(start, {"role": str(caretaker.public_id)}).status_code == 302
+    seat = viewas.membership_for(SimpleNamespace(user=User.objects.get(is_superuser=True), session=client.session))
+    assert seat.role.name == caretaker.name and not can(seat, "organization.manage")
+    session = client.get(reverse("accounts:web_session")).json()
+    assert session["viewing"]["stop_url"] == reverse("console:view_as_stop") and session["role"] == caretaker.name
+    # a standard role the organization has not set up
+    Role.objects.filter(organization=org, based_on_template__key="viewer").delete()
+    assert RoleTemplate.objects.filter(key="viewer").exists()
+    assert client.post(start, {"role": "template:viewer"}).status_code == 302
+    assert client.get(reverse("accounts:web_session")).json()["role"] == "Viewer"
+    assert client.post(start, {"role": "template:nonsense"}).status_code == 302
+    assert viewas.ROLE_KEY not in client.session
+    client.post(start, {"role": str(caretaker.public_id)})
+    assert client.get(reverse("console:view_as_stop")).status_code == 302
+    assert viewas.SESSION_KEY not in client.session and viewas.ROLE_KEY not in client.session
+    assert client.get(reverse("accounts:web_session")).json().get("viewing") is None
 
 
 def test_canned_replies_add_and_delete(client):

@@ -96,7 +96,7 @@
 <section class="panel" id="team">
   <div class="panel-head">
     <h2>{% trans "Who looks after it" %}<span class="count">{{ team.assigned|length }}</span></h2>
-    {% if can_manage_team %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts:invite' %}?property={{ property.public_id }}"><i class="bi bi-person-plus" aria-hidden="true"></i>{% trans "Invite someone for it" %}</a>{% endif %}
+    {% if can_manage_team and not in_demo %}<a class="btn btn-outline-secondary btn-sm" href="{% url 'accounts:invite' %}?property={{ property.public_id }}"><i class="bi bi-person-plus" aria-hidden="true"></i>{% trans "Invite someone for it" %}</a>{% endif %}
   </div>
   <p class="small text-body-secondary">{% trans "The manager, caretaker or agent for this property. They see only the properties given to them, and do what their role allows." %}</p>
   <ul class="item-list">

@@ -2,3 +2,6 @@
 *.sh text eol=lf
 deploy/crontab text eol=lf
 deploy/* text eol=lf
+
+# Everything else: LF in the repository and in the checkout, so an editor on another system cannot rewrite every line.
+* text=auto eol=lf

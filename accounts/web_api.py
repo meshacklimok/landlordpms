@@ -101,6 +101,7 @@ class SessionView(MemberJSONView):
 
     def get(self, request):
         from ai_assistant.client import enabled as assistant_set_up  # the assistant app imports accounts
+        from console import viewas
 
         m, org, user = request.membership, request.membership.organization, request.user
         return JsonResponse({
@@ -113,6 +114,13 @@ class SessionView(MemberJSONView):
             "organization": {"name": org.name, "currency": org.currency},
             "role": m.role.name,
             "logout_url": reverse("accounts:logout"),
+            # The Ask button and Security link are left out where the page behind them is not open (the demo, no assistant).
+            "show_ask": bool(assistant_set_up() and (org.assistant_enabled or can(m, "organization.manage"))
+                             and not demo.is_demo(request)),
+            "in_demo": demo.is_demo(request),
+            # A superuser looking at this account as one of its people (console view as): the banner and its Stop link.
+            "viewing": ({"label": viewas.label(request), "stop_url": reverse("console:view_as_stop")}
+                        if getattr(request, "viewing_as", False) else None),
             **_chrome(request, m, org, user),
         })
 
@@ -188,7 +196,7 @@ class HomeDataView(MemberJSONView):
             "nudges": [],
             "summary": None,
         }
-        if can(m, "properties.manage"):
+        if can(m, "properties.manage") and not org.is_demo:  # a demo has nothing to set up
             steps = setup.checklist(org)
             required = [s for s in steps if not s.optional]
             done = sum(s.done for s in required)

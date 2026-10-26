@@ -1,0 +1,89 @@
+{% extends "base.html" %}{% load i18n %}{% load money %}{% load static %}
+{% block title %}{% trans "Water and electricity" %}{% endblock %}
+{% block content %}
+<div class="narrow mx-auto">
+  <a href="{% url 'portal:home' %}" class="small">← {{ lease.unit.property.name }} · {{ lease.unit.code }}</a>
+  <h1 class="h4 mt-2">{% trans "Water and electricity" %}</h1>
+
+  <section class="card shadow-sm mb-3" aria-labelledby="billed-h"><div class="card-body">
+    <h2 class="h6" id="billed-h">{% trans "Billed by the office" %}</h2>
+    {% if billed %}
+    <p class="small text-muted">{% trans "Water or other metered use that is on your invoices, month by month." %}</p>
+    <div class="chart-box h-sm mb-2"><canvas data-chart="chart-billed" role="img" aria-label="{% trans 'Metered charges on your invoices by month. The same figures are in the list below.' %}"></canvas></div>
+    {% for month in billed %}
+    <div class="py-2 {% if not forloop.last %}border-bottom{% endif %}">
+      <div class="d-flex justify-content-between gap-2"><strong>{{ month.month|date:"F Y" }}</strong><span class="text-nowrap">{{ month.amount|money:lease.currency }}</span></div>
+      <ul class="list-unstyled small text-muted mb-0">
+        {% for line in month.lines %}
+        <li class="d-flex justify-content-between gap-2"><span>{{ line.reading.meter.label }}{% if line.reading.usage is not None and line.reading.meter.served.count == 1 %} · {{ line.reading.previous.value|floatformat:"-3" }} → {{ line.reading.value|floatformat:"-3" }} = {{ line.reading.usage|floatformat:"-3" }} {{ line.reading.meter.unit_label }}{% endif %} · {{ line.service_start|date:"j M" }}–{{ line.service_end|date:"j M" }}</span>{% if month.lines|length > 1 %}<span class="text-nowrap">{{ line.amount|money:lease.currency }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="small text-muted mb-0">{% trans "Nothing metered has been billed to you in the last 12 months." %}</p>
+    {% endif %}
+  </div></section>
+
+  <h2 class="h6 mt-4">{% trans "My own meters" %}</h2>
+  <p class="small text-muted"><i class="bi bi-lock" aria-hidden="true"></i> {% trans "For electricity or water you pay for yourself. Only you can see these notes. The office, invoices and reports never use them." %}</p>
+
+  {% for item in own %}
+  <section class="card shadow-sm mb-3" aria-labelledby="own-{{ item.utility }}"><div class="card-body">
+    <h3 class="h6" id="own-{{ item.utility }}">{{ item.label }}</h3>
+    {% if item.has_data %}
+    <div class="row g-2 text-center mb-2">
+      <div class="col-4"><div class="small text-muted">{% trans "This month" %}</div><div class="fw-semibold">{% if item.this_month.units is not None %}{{ item.this_month.units|floatformat:"-1" }} {{ item.unit_label }}{% else %}—{% endif %}</div>{% if item.change_pct is not None %}<div class="small {% if item.change_pct > 0 %}text-danger{% else %}text-success{% endif %}">{% if item.change_pct > 0 %}+{% endif %}{{ item.change_pct }}% {% trans "on last month" %}</div>{% endif %}</div>
+      <div class="col-4"><div class="small text-muted">{% trans "Paid this month" %}</div><div class="fw-semibold">{% if item.this_month.cost is not None %}{{ item.this_month.cost|money:lease.currency }}{% else %}—{% endif %}</div></div>
+      <div class="col-4"><div class="small text-muted">{% trans "Per unit" %}</div><div class="fw-semibold">{% if item.price_per_unit %}{{ item.price_per_unit|money:lease.currency }}{% else %}—{% endif %}</div></div>
+    </div>
+    {% if item.days_left is not None %}<p class="small mb-2">{% if item.days_left > 0 %}{% blocktrans with n=item.days_left %}Your last purchase should last about {{ n }} more days at your usual use.{% endblocktrans %}{% else %}{% trans "Your last purchase has probably run out at your usual use." %}{% endif %}</p>{% endif %}
+    <div class="chart-box h-sm mb-2"><canvas data-chart="chart-{{ item.utility }}-units" role="img" aria-label="{% blocktrans with u=item.unit_label %}{{ u }} used each month. The same figures are in the table below.{% endblocktrans %}"></canvas></div>
+    <div class="table-responsive"><table class="table table-sm small mb-2">
+      <caption class="visually-hidden">{{ item.label }}</caption>
+      <thead><tr><th scope="col">{% trans "Month" %}</th><th scope="col" class="text-end">{{ item.unit_label }}</th><th scope="col" class="text-end">{% trans "Paid" %}</th></tr></thead>
+      <tbody>{% for m in item.months reversed %}{% if m.units is not None or m.cost is not None %}<tr><th scope="row" class="fw-normal">{{ m.month|date:"M Y" }}</th><td class="text-end">{% if m.units is not None %}{{ m.units|floatformat:"-1" }}{% else %}—{% endif %}</td><td class="text-end">{% if m.cost is not None %}{{ m.cost|money:lease.currency }}{% else %}—{% endif %}</td></tr>{% endif %}{% endfor %}</tbody>
+    </table></div>
+    <details><summary class="small text-muted">{% trans "My entries" %}</summary>
+      <ul class="list-unstyled small mb-0 mt-1">
+        {% for e in item.entries %}
+        <li class="d-flex justify-content-between align-items-center gap-2 py-1">
+          <span>{{ e.on|date:"j M Y" }} · {% if e.kind == "READING" %}{% blocktrans with v=e.value|floatformat:"-3" %}meter {{ v }}{% endblocktrans %}{% else %}{% trans "bought" %}{% if e.value is not None %} {{ e.value|floatformat:"-3" }} {{ e.unit_label }}{% endif %}{% endif %}{% if e.amount is not None %} · {{ e.amount|money:lease.currency }}{% endif %}{% if e.note %} · {{ e.note }}{% endif %}</span>
+          {% if can_write %}<form method="post" action="{% url 'portal:own_use_delete' e.public_id %}">{% csrf_token %}<button class="btn btn-link btn-sm text-danger p-0" aria-label="{% blocktrans with d=e.on|date:'j M Y' %}Remove the entry of {{ d }}{% endblocktrans %}">{% trans "Remove" %}</button></form>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% else %}
+    <p class="small text-muted mb-0">{% trans "Nothing added yet. Add a meter reading, or each time you buy tokens, to see what you use and spend each month." %}</p>
+    {% endif %}
+  </div></section>
+  {% endfor %}
+
+  {% if can_write %}
+  <section class="card shadow-sm mb-3" aria-labelledby="add-h"><div class="card-body">
+    <h3 class="h6" id="add-h">{% trans "Add to my notes" %}</h3>
+    <form method="post" novalidate>{% csrf_token %}
+      {% if form.errors %}<div class="alert alert-danger small py-2" role="alert">{% for field in form %}{% for error in field.errors %}{{ field.label }}: {{ error }} {% endfor %}{% endfor %}{{ form.non_field_errors|join:" " }}</div>{% endif %}
+      <div class="row g-2">
+        <div class="col-6"><label class="form-label small" for="{{ form.utility.id_for_label }}">{{ form.utility.label }}</label>{{ form.utility }}</div>
+        <div class="col-6"><label class="form-label small" for="{{ form.kind.id_for_label }}">{{ form.kind.label }}</label>{{ form.kind }}</div>
+        <div class="col-12 col-sm-4"><label class="form-label small" for="{{ form.on.id_for_label }}">{{ form.on.label }}</label>{{ form.on }}</div>
+        <div class="col-6 col-sm-4"><label class="form-label small" for="{{ form.value.id_for_label }}">{{ form.value.label }}</label>{{ form.value }}</div>
+        <div class="col-6 col-sm-4"><label class="form-label small" for="{{ form.amount.id_for_label }}">{{ form.amount.label }}</label>{{ form.amount }}</div>
+        <div class="col-12"><label class="form-label small" for="{{ form.note.id_for_label }}">{{ form.note.label }}</label>{{ form.note }}</div>
+      </div>
+      <button class="btn btn-primary btn-sm mt-3">{% trans "Save" %}</button>
+    </form>
+  </div></section>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}{{ block.super }}
+{% if specs or bill_spec %}
+{% if bill_spec %}{{ bill_spec|json_script:"chart-billed" }}{% endif %}
+{% for key, spec in specs.items %}{{ spec|json_script:key }}{% endfor %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
+{% endif %}
+{% endblock %}

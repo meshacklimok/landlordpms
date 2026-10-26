@@ -505,3 +505,15 @@ def test_the_owner_can_reset_two_step_login_for_a_landlord_who_lost_the_authenti
     assert not mfa.is_enabled(boss.user)
     assert AuditEvent.objects.filter(action="mfa.admin_reset", organization=None).exists() or AuditEvent.objects.filter(
         action="console.login_contact_changed", organization=boss.organization).exists()
+
+
+def test_an_archived_organization_is_not_listed(client, two_owners):
+    """Its console page is not there (the live manager hides it), so a link to it would only be a 404."""
+    from django.utils import timezone
+
+    big, small = two_owners
+    small.organization.archived_at = timezone.now()
+    small.organization.save(update_fields=["archived_at"])
+    owner(client)
+    rows = client.get(reverse("console:owners")).context["page"]
+    assert [r["org"].name for r in rows] == ["Big Lets"]

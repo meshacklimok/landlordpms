@@ -138,7 +138,7 @@ class LeaseCreateView(CapabilityRequiredMixin, View):
             initial["rent"] = unit.list_rent
         tenant = request.GET.get("tenant")
         if tenant:
-            initial["tenant"] = _tenant_choices(request).filter(public_id=tenant).first()
+            initial["tenant"] = _tenant_choices(request).filter(public_id=uuid_or_none(tenant)).first()
         form = forms.LeaseForm(initial=initial, tenants=_tenant_choices(request), hostel=_is_hostel(request))
         return render(request, self.template_name, {"form": form, "unit": unit})
 

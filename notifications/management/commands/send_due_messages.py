@@ -1,6 +1,6 @@
 from core.jobs import JobCommand, summarize
 from notifications import push
-from notifications.delivery import send_due
+from notifications.delivery import check_celcom_reports, send_due
 
 
 class Command(JobCommand):
@@ -8,4 +8,4 @@ class Command(JobCommand):
             " Also pushes alerts written by bulk jobs to staff phones (D-089).")
 
     def run(self, *args, **options):
-        return summarize({**send_due(), **push.send_due()})
+        return summarize({**send_due(), **push.send_due(), **check_celcom_reports()})

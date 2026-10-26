@@ -16,7 +16,7 @@ def organization(request):
         "assistant_set_up": set_up,
         "membership": membership,
         # The floating NyumbaPMS AI button: where the Ask link is in the menu (accounts.navigation).
-        "show_ask_button": lambda: _show_ask(membership, set_up),
+        "show_ask_button": lambda: _show_ask(membership, set_up) and not demo.is_demo(request),
         # A callable, so only pages that show the top bar build the menu.
         "nav_groups": lambda: nav_groups(request, membership, set_up),
         "organization": getattr(request, "organization", None),

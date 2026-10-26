@@ -25,3 +25,23 @@ class OfferForm(forms.Form):
         super().__init__(*args, **kwargs)
         if initial_rent is not None and not self.is_bound:
             self.fields["rent"].initial = initial_rent
+
+
+class OwnUseForm(forms.Form):
+    """A tenant's note of their own electricity or water. own_use.add_entry checks the figures."""
+
+    utility = forms.ChoiceField(label=_("Utility"), choices=[("ELECTRICITY", _("Electricity")), ("WATER", _("Water"))])
+    kind = forms.ChoiceField(label=_("What are you adding?"),
+                             choices=[("READING", _("Meter reading")), ("TOPUP", _("Tokens bought or bill paid"))])
+    on = forms.DateField(label=_("Date"), widget=DateInput)
+    value = forms.CharField(label=_("Meter shows, or units bought"), max_length=20, required=False)
+    amount = forms.CharField(label=_("Amount paid (KES)"), max_length=14, required=False)
+    note = forms.CharField(label=_("Note"), max_length=200, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            field.widget.attrs["class"] = "form-select form-select-sm" if name in ("utility", "kind") \
+                else "form-control form-control-sm"
+        self.fields["value"].widget.attrs["inputmode"] = "decimal"
+        self.fields["amount"].widget.attrs["inputmode"] = "decimal"

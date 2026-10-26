@@ -1,0 +1,16 @@
+{% extends "accounts/_auth_page.html" %}{% load i18n %}
+{% block title %}{% trans "Confirm email" %}{% endblock %}
+{% block heading %}{% trans "Confirm your email" %}{% endblock %}
+{% block card %}
+{% if state == "ask" %}
+<p class="text-muted">{% blocktrans %}Confirm that {{ email }} is your address. After this we can send your reports and security notices there.{% endblocktrans %}</p>
+<form method="post">{% csrf_token %}<button class="btn btn-primary w-100">{% trans "Confirm my email" %}</button></form>
+<p class="small text-muted mt-3 mb-0">{% trans "If you did not ask for this, close this page. Nothing changes unless you press the button." %}</p>
+{% elif state == "done" %}
+<p><strong>{{ email }}</strong> {% trans "is confirmed." %}</p>
+<a class="btn btn-primary" href="{% url 'accounts:home' %}">{% trans "Continue to NyumbaPMS" %}</a>
+{% else %}
+<p class="text-muted">{% trans "This link has expired or the address was changed. Open Settings and ask for a new confirmation email." %}</p>
+<a class="btn btn-primary" href="{% url 'accounts:verify_email' %}">{% trans "Send a new email" %}</a>
+{% endif %}
+{% endblock %}

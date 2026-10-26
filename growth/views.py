@@ -18,7 +18,7 @@ from core import ratelimit
 from core.contacts import support_whatsapp
 from subscriptions import services as subscription_services
 
-from . import ads, articles, content, pages, referrals, seo, services, solutions
+from . import ads, articles, content, pages, referrals, screens, seo, services, solutions
 from .forms import DemoRequestForm
 from .models import Article
 
@@ -39,12 +39,18 @@ def _plan_context():
 
 
 def landing(request):
-    """What a visitor sees at "/" before signing in."""
+    """What a visitor sees at "/" before signing in: real screens of the demo where they have been captured (D-220)."""
+    shots = screens.available()
     return render(request, "growth/landing.html", {
         **_plan_context(), "trial_days": subscription_services.trial_days(), "features": content.FEATURES,
-        "facts": content.LANDING_FACTS, "audiences": content.LANDING_AUDIENCES, "blocks": content.LANDING_BLOCKS,
+        "screens": shots, "hero": [shots.get(k) for k in screens.HERO],
+        "audiences": [(*a, shots.get(screens.FOR_SOLUTION.get(a[3], ("",))[0])) for a in content.LANDING_AUDIENCES],
+        "blocks": [(*block, shots.get(block[0])) for block in content.LANDING_BLOCKS],
         "more": content.LANDING_MORE, "faq": content.faq_pairs()[:6], "swaps": content.LANDING_SWAPS,
-        "works_with": content.LANDING_WORKS_WITH, "solutions": solutions.SOLUTIONS,
+        "works_with": content.LANDING_WORKS_WITH,
+        # The solution pages that no "Built for you" card already links to
+        "other_solutions": [s for s in solutions.SOLUTIONS
+                            if s["slug"] not in {a[3] for a in content.LANDING_AUDIENCES}],
         "invited": referrals.invite_offer(request),
         "support_whatsapp": support_whatsapp(),
         "wa_text": quote(_("Hello, I would like to know more about NyumbaPMS."))})
@@ -71,7 +77,8 @@ class AboutView(View):
 class HowItWorksView(View):
     def get(self, request):
         return render(request, "growth/how_it_works.html", {
-            "steps": pages.HOW_STEPS, "planning": pages.PLANNING, "roadmap": pages.ROADMAP})
+            "steps": [(*step, pic) for step, pic in zip(pages.HOW_STEPS, screens.pick(screens.FOR_HOW_STEPS), strict=True)],
+            "planning": pages.PLANNING, "roadmap": pages.ROADMAP})
 
 
 class ArticleListView(View):
@@ -156,7 +163,9 @@ class DemoEnterView(View):
         if not demo.enter(request):
             messages.info(request, _("The live demo is not ready yet. Book a demo and we will show you around."))
             return redirect("growth:demo")
-        return redirect("accounts:home")
+        # "Open this screen in the demo" on the home page: only the pages that have a picture there.
+        to = request.POST.get("next", "")
+        return redirect(to if to in screens.DEMO_PATHS else "accounts:home")
 
 
 class DemoSwitchView(View):
@@ -194,7 +203,9 @@ class ReferralsView(CapabilityRequiredMixin, View):
 
 class SolutionListView(View):
     def get(self, request):
-        return render(request, "growth/solutions.html", {"solutions": solutions.SOLUTIONS})
+        shots = screens.available()
+        return render(request, "growth/solutions.html", {"solutions": [
+            {**s, "shot": shots.get(screens.FOR_SOLUTION.get(s["slug"], ("",))[0])} for s in solutions.SOLUTIONS]})
 
 
 class SolutionView(View):
@@ -204,7 +215,8 @@ class SolutionView(View):
             raise Http404
         return render(request, "growth/solution.html", {
             "s": item, "related": [solutions.solution(r) for r in item["related"]],
-            "tutorial": content.tutorial(item["tutorial"]), "article": articles.get_published(item.get("article", ""))})
+            "tutorial": content.tutorial(item["tutorial"]), "article": articles.get_published(item.get("article", "")),
+            "shots": screens.for_solution(slug)})
 
 
 class RobotsView(View):

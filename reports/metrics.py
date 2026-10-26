@@ -143,11 +143,27 @@ def occupancy_trend(sc: Scope, last: datetime.date, today: datetime.date,
 
     Units are counted as they are set up now: a unit added later counts as empty in the months before it.
     """
+    Manual = Unit.ManualStatus
+    months = [add_months(month_start(last), -n) for n in range(count - 1, -1, -1)]
+    days = [min(today, month_end(m)) for m in months]
+    # Two queries for every month, not one per month: the units once, and every lease that could occupy one.
+    units = list(Unit.objects.filter(organization=sc.organization,
+                                     property__in=sc.properties(include_archived=False))
+                 .exclude(manual_status=Manual.INACTIVE).values_list("pk", "manual_status"))
+    leases = list(Lease.objects.exclude(status=Lease.Status.DRAFT).filter(start_date__lte=max(days))
+                  .filter(unit__in=[pk for pk, _status in units])
+                  .values_list("unit_id", "start_date", "ended_on"))
     out = []
-    for n in range(count - 1, -1, -1):
-        m = add_months(month_start(last), -n)
-        row = occupancy(sc, min(today, month_end(m)))
-        row.label, row.key = f"{m:%b %Y}", m
+    for m, day in zip(months, days, strict=True):
+        occupied = {unit for unit, started, ended in leases if started <= day and (ended is None or ended >= day)}
+        row = Occupancy(label=f"{m:%b %Y}", key=m, rentable=len(units))
+        for pk, status in units:
+            if pk in occupied:
+                row.occupied += 1
+            elif status == Manual.RESERVED:
+                row.reserved += 1
+            elif status == Manual.UNDER_MAINTENANCE:
+                row.maintenance += 1
         out.append(row)
     return out
 
@@ -187,6 +203,12 @@ class MonthFigures:
         return rate(self.collected, self.expected)
 
 
+def _billed_since(first: datetime.date) -> Q:
+    """Lets the database use the (organization, billing_month) index: a line whose billing_month is set cannot be
+    in a month before `first` unless that column is, so this only narrows the rows the month filter then checks."""
+    return Q(billing_month__gte=first) | Q(billing_month__isnull=True)
+
+
 def _billed_month():
     return Coalesce("billing_month", Cast(TruncMonth("invoice__period_start"), DateField()))
 
@@ -197,6 +219,7 @@ def _rent(sc: Scope, first: datetime.date, last: datetime.date) -> dict[tuple[in
     rent_lines = (InvoiceLine.objects
                   .filter(organization=sc.organization, is_void=False, invoice__status__in=LIVE_INVOICE,
                           lease__unit__property__in=sc.properties(), charge_type__category=ChargeType.Category.RENT)
+                  .filter(_billed_since(first))
                   .annotate(month=_billed_month()).filter(month__gte=first, month__lte=last)
                   .values("invoice_id", "month", "lease__unit__property_id").annotate(total=Sum("amount")))
     rent_by_invoice: dict[int, dict[datetime.date, Decimal]] = defaultdict(dict)

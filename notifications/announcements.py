@@ -147,7 +147,7 @@ def sms_parts(text: str) -> int:
 
 
 def price_per_part() -> Decimal:
-    return Decimal(str(getattr(settings, "SMS_PRICE_ESTIMATE", "0.80")))
+    return Decimal(str(getattr(settings, "SMS_PRICE_ESTIMATE", "1.00")))
 
 
 # ---------------------------------------------------------------------------

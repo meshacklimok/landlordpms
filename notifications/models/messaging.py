@@ -312,3 +312,43 @@ class PushSubscription(TimeStampedModel):
 
     def __str__(self):
         return f"{self.user} · {self.user_agent[:40] or self.endpoint[:40]}"
+
+
+class EmailSuppression(models.Model):
+    """An address we stop mailing: it bounced for good, or its owner marked a message as spam. Written by the mail
+    providers' webhooks (notifications/mail_hooks.py); sending skips these addresses so a dead or hostile address
+    cannot keep hurting the sender reputation of everyone else."""
+
+    class Reason(models.TextChoices):
+        HARD_BOUNCE = "HARD_BOUNCE", _("Address does not exist or refuses mail")
+        COMPLAINT = "COMPLAINT", _("Marked as spam by the recipient")
+
+    email = models.EmailField(unique=True)  # lowercase
+    reason = models.CharField(max_length=12, choices=Reason.choices)
+    provider = models.CharField(max_length=20, blank=True)
+    detail = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.email} ({self.reason})"
+
+
+class PhoneOptOut(models.Model):
+    """A phone number that replied STOP (or was reported opted out by the network) on a channel. Tenant opt-outs are
+    kept as consent records; this covers every other person we text by bare number (owners, suppliers, prospects,
+    M-Pesa payers). Written by notifications/sms_hooks.py; a START reply removes the row."""
+
+    phone = models.CharField(max_length=20)
+    channel = models.CharField(max_length=10)
+    note = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["phone", "channel"], name="phone_optout_unique")]
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.phone} ({self.channel})"

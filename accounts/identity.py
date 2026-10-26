@@ -1,8 +1,11 @@
 """Sign-up, phone verification and password reset (doc 14 A11)."""
 
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.core import signing
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 
@@ -43,6 +46,8 @@ def register_user(*, phone: str, full_name: str, password: str, email: str = "",
     validate_password(password, user)
     user.set_password(password)
     user.terms_version, user.terms_accepted_at = legal.VERSION, timezone.now()
+    if not settings.SIGNUP_SMS_OTP:  # admin switched the sign-up code off
+        user.phone_verified_at = timezone.now()
     user.save()
     audit.record("user.register", actor=user, obj=user, request=request,
                  changes={"terms_version": [None, legal.VERSION]})
@@ -75,8 +80,39 @@ def verify_phone(user: User, code: str, request=None) -> bool:
     return True
 
 
+EMAIL_LINK_SALT = "accounts.verify-email-link"
+EMAIL_LINK_MAX_AGE = 24 * 3600
+
+
+def email_link_token(user: User) -> str:
+    """Signed with the user and the address it is for, so changing the address kills older links."""
+    return signing.dumps([user.pk, user.email.lower()], salt=EMAIL_LINK_SALT)
+
+
+def user_for_email_link(token: str) -> User | None:
+    """The user a still-valid link was made for, only while their address is the one the link was sent to."""
+    try:
+        pk, email = signing.loads(token, salt=EMAIL_LINK_SALT, max_age=EMAIL_LINK_MAX_AGE)
+    except (signing.BadSignature, TypeError, ValueError):
+        return None
+    user = User.objects.filter(pk=pk, is_active=True).first()
+    return user if user and user.email and user.email.lower() == email else None
+
+
 def send_email_verification(user: User) -> None:
-    issue_otp(user.phone, OTPCode.Purpose.VERIFY_EMAIL, email=user.email)
+    """The code and a link, in one email. The link only opens a page with a Confirm button (accounts.views.
+    EmailLinkView): mail apps and security scanners open links on their own, and that must not confirm anything."""
+    link = settings.SITE_URL + reverse("accounts:email_link", args=[email_link_token(user)])
+    issue_otp(user.phone, OTPCode.Purpose.VERIFY_EMAIL, email=user.email, link=link)
+
+
+def verify_email_by_link(user: User, request=None) -> bool:
+    """Marks the address confirmed. Reaching this needs the signed link from the inbox, which is the proof."""
+    if not user.email_verified_at:
+        user.email_verified_at = timezone.now()
+        user.save(update_fields=["email_verified_at"])
+        audit.record("user.verify_email", actor=user, obj=user, request=request, changes={"via": [None, "link"]})
+    return True
 
 
 def verify_email(user: User, code: str, request=None) -> bool:

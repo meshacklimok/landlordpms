@@ -8,7 +8,7 @@ end: models, M-Pesa, webhooks, USSD, the public pages. Anything this app does no
 
 ```bash
 # terminal 1, from the project root
-venv/Scripts/python.exe manage.py runserver 8000
+.venv/bin/python manage.py runserver 8000
 # terminal 2
 cd web && cp .env.example .env.local && npm install && npm run dev   # http://localhost:3000
 ```

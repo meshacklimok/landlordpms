@@ -12,6 +12,9 @@ export type Session = {
   organization: { name: string; currency: string };
   role: string;
   logout_url: string;
+  show_ask: boolean;
+  in_demo: boolean;
+  viewing: { label: string; stop_url: string } | null;
   unread_count: number;
   notices: Notice[];
   email_notice: { has_email: boolean; email: string; url: string } | null;

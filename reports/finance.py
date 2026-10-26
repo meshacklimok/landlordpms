@@ -26,13 +26,14 @@ from accounts.models import Membership, Organization
 from accounts.permissions import accessible_property_ids, require, visible_properties
 from billing import selectors as billing_selectors
 from billing.models import ChargeType, DepositEntry, Invoice, InvoiceLine
+from core import reportcache
 from core.money import ZERO, format_money, round_money
 from expenses import services as expense_services
-from payments.models import Payment
+from payments.models import Payment, PaymentAllocation
 from properties.models import Property
 
-from .income import _invoice_shares, _split
-from .metrics import Change, add_months, month_end, month_start, rate
+from .income import Split, divide, invoice_shares
+from .metrics import Change, _billed_since, add_months, month_end, month_start, rate
 from .models import OwnerRemittance
 
 MAX_MONTHS = 12
@@ -192,9 +193,16 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
                  prop: Property | None = None, *, compare: bool = False) -> Report:
     """The figures for both the profit and loss and the cash flow pages.
 
-    With `compare`, `previous` holds the same report for the months just before (D-110).
+    With `compare`, `previous` holds the same report for the months just before (D-110). Kept for a few minutes
+    (core/reportcache.py): the dashboard, performance, scorecard and profit pages all ask for the same months.
     """
     require(membership, "reports.view_financial")
+    return reportcache.cached(membership, "money", (start, end, prop and prop.pk, compare),
+                              lambda: _money_report(membership, start, end, prop, compare=compare))
+
+
+def _money_report(membership: Membership, start: datetime.date, end: datetime.date,
+                  prop: Property | None, *, compare: bool) -> Report:
     org = membership.organization
     properties = _properties(membership, prop)
     first, last = start, month_end(end)
@@ -209,20 +217,24 @@ def money_report(membership: Membership, start: datetime.date, end: datetime.dat
     for r in (InvoiceLine.objects.filter(organization=org, is_void=False, invoice__status__in=LIVE_INVOICE,
                                          lease__unit__property__in=properties,
                                          charge_type__category=ChargeType.Category.RENT)
+              .filter(_billed_since(first))
               .annotate(month=Coalesce("billing_month", Cast(TruncMonth("invoice__period_start"), DateField())))
               .filter(month__gte=first, month__lte=last).values("month", "lease__unit__property_id")
               .annotate(total=Sum("amount"))):
         months[r["month"]].rent_billed += r["total"]
         places[r["lease__unit__property_id"]].rent_billed += r["total"]
 
-    # Money received, split by what each payment paid.
-    payments = list(Payment.objects.filter(organization=org, status=Payment.Status.CONFIRMED, paid_at__gte=first,
-                                           paid_at__lte=last, lease__unit__property__in=properties)
-                    .select_related("lease__unit").prefetch_related("allocations"))
-    shares = _invoice_shares(payments)
-    for p in payments:
-        part = _split(p, shares)
-        for row in (months[month_start(p.paid_at)], places[p.lease.unit.property_id]):
+    # Money received, split by what each payment paid. Plain rows, not models: a year is hundreds of payments.
+    paid = Payment.objects.filter(organization=org, status=Payment.Status.CONFIRMED, paid_at__gte=first,
+                                  paid_at__lte=last, lease__unit__property__in=properties)
+    allocations = defaultdict(list)
+    for payment_id, invoice_id, amount in (PaymentAllocation.objects.filter(payment__in=paid.values("pk"))
+                                           .values_list("payment_id", "invoice_id", "amount")):
+        allocations[payment_id].append((invoice_id, amount))
+    shares = invoice_shares({invoice_id for rows in allocations.values() for invoice_id, _amount in rows})
+    for pk, paid_at, amount, property_id in paid.values_list("pk", "paid_at", "amount", "lease__unit__property_id"):
+        part = divide(Split(payment=None), amount, allocations.get(pk, ()), shares)
+        for row in (months[month_start(paid_at)], places[property_id]):
             row.rent += part.rent
             row.utilities += part.utilities
             row.other += part.other

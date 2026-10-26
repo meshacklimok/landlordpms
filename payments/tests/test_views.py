@@ -260,3 +260,13 @@ def test_detail_shows_rejection(client, owner, lease):
     assert r.status_code == 302
     r = client.get(detail(payment))
     assert r.status_code == 200 and b"Never arrived" in r.content and b"Rejected" in r.content
+
+
+def test_detail_links_on_to_the_reports(client, owner, lease):
+    payment = pay(owner, lease, "900")
+    login(client, owner)
+    page = client.get(detail(payment)).content.decode()
+    month = payment.paid_at.strftime("%Y-%m")
+    assert "Where this shows in the reports" in page
+    assert reverse("reports:payments") in page and reverse("reports:profit_loss") + f"?from={month}" in page
+    assert reverse("reports:tenant_statement") in page and str(lease.public_id) in page

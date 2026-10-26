@@ -87,7 +87,7 @@ def test_every_report_splits_the_money_the_same_way(owner, prop, february):
     received = sum(p.amount for p in lease.payments.all())
     assert received == money(21500)
 
-    pack = income.income_pack(owner, 2026)
+    pack = income.income_pack(owner, 2026, receipts=True)
     total = pack.total
     assert (total.rent_billed, total.utilities_billed, total.other_billed) == (
         money(20000), money(1000), money(500))

@@ -7,7 +7,7 @@
     <span class="d-flex gap-2">
       {% if can_performance %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'maintenance:performance' %}"><i class="bi bi-speedometer2" aria-hidden="true"></i> {% trans "Performance" %}</a>{% endif %}
       {% if to_assign %}<a class="btn btn-sm btn-warning" href="?status=NEW">{% blocktrans count n=to_assign %}{{ n }} to assign{% plural %}{{ n }} to assign{% endblocktrans %}</a>{% endif %}
-      {% if can_report %}<a class="btn btn-sm btn-primary" href="{% url 'maintenance:create' %}"><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Report a problem" %}</a>{% endif %}
+      {% if can_report %}<a class="btn btn-sm btn-primary" href="{% url 'maintenance:create' %}" data-offline-keep><i class="bi bi-plus-lg" aria-hidden="true"></i> {% trans "Report a problem" %}</a>{% endif %}
     </span>
   </div>
   <p class="small text-body-secondary">{% trans "Repairs and problems, from reporting to checking the work." %}</p>

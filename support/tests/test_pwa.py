@@ -2,13 +2,16 @@
 
 import json
 import re
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from django.contrib.staticfiles import finders
 from django.templatetags.static import static
 from django.urls import reverse
 
-from accounts.tests.factories import make_org
+from accounts.tests.factories import make_org, make_property
 from accounts.tests.test_isolation import login
 from support import pwa
 
@@ -50,13 +53,36 @@ def test_the_service_worker_is_at_the_root_and_never_cached(client):
     assert "{{" not in text and "{%" not in text
 
 
-def test_only_static_files_and_the_offline_page_are_cached():
-    """Pages go to the network; only GETs under the static prefix are put in the cache."""
+def test_pages_are_kept_only_from_a_short_list_and_never_payments_messages_or_the_assistant():
+    """Static files and the offline page for everyone; read-only copies only of the listed signed-in staff pages."""
     text = pwa.service_worker()
     assert 'request.method !== "GET"' in text
-    assert "fetch(request).catch(() => caches.match(OFFLINE_URL))" in text
-    assert text.count("cache.put(") == 1
     assert "url.pathname.startsWith(STATIC_PREFIX)" in text
+    assert text.count("cache.put(") == 2  # static files, and the kept pages
+    assert 'const LOGOUT_URL = "/logout/";' in text
+    # The list of kept pages names no money, message, assistant, portal or report page.
+    kept = text[text.index("const KEPT_PAGES"):text.index("].map(")]
+    for word in ("payments", "billing", "mpesa", "messages", "ask", "/my/", "owner", "reports", "esign", "letters"):
+        assert word not in kept, word
+
+
+def test_the_service_worker_keeps_and_forgets_pages_as_it_should():
+    """Runs the worker against a fake cache and network: what is kept, shown offline, and deleted at logout."""
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed")
+    result = subprocess.run(["node", str(Path(__file__).with_name("sw_behaviour.js"))], input=pwa.service_worker(),
+                            capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    outcomes = json.loads(result.stdout)
+    assert len(outcomes) > 30
+    assert {name: why for name, why in outcomes.items() if why is not True} == {}
+
+
+def test_the_links_to_the_offline_forms_ask_for_them_to_be_kept_ahead(client):
+    owner = make_org()
+    make_property(owner.organization)
+    login(client, owner)
+    assert b"data-offline-keep" in client.get(reverse("maintenance:list")).content
 
 
 def test_the_cache_version_follows_the_files(monkeypatch):

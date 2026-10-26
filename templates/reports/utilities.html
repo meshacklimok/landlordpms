@@ -1,4 +1,4 @@
-{% extends "base.html" %}{% load i18n money reports %}
+{% extends "base.html" %}{% load i18n static money reports %}
 {% block title %}{% trans "Water and electricity" %}{% endblock %}
 {% block content %}
 {% with cur=currency %}
@@ -51,4 +51,6 @@
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No approved meter readings fall in this period. Choose another period, or record and approve readings to see this report." %}</div></div>
 {% endif %}
 {% endwith %}
+<script src="{% static 'vendor/chartjs-4.4.4/chart.umd.min.js' %}"></script>
+<script src="{% static 'js/charts.js' %}"></script>
 {% endblock %}

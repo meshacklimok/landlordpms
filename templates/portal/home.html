@@ -52,23 +52,27 @@
     <div class="alert alert-warning small py-2" role="status">{% blocktrans with amount=p.amount|money:lease.currency day=p.paid_at|date:"j M" %}Your payment of {{ amount }} on {{ day }} is with the office to confirm.{% endblocktrans %}</div>
     {% endfor %}
 
-    <div class="row g-2 mb-3 text-center">
-      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:messages' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+    <div class="row g-2 mb-3 text-center justify-content-center">
+      <div class="col-4"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:messages' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
         <i class="bi bi-chat-left-text fs-4" aria-hidden="true"></i>
         <div class="small mt-1">{% trans "Messages" %}{% if card.unread %} <span class="badge text-bg-primary">{{ card.unread }}</span>{% endif %}</div>
       </div></a></div>
-      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:payments' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+      <div class="col-4"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:payments' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
         <i class="bi bi-receipt fs-4" aria-hidden="true"></i>
         <div class="small mt-1">{% trans "Payments and receipts" %}</div>
       </div></a></div>
-      <div class="col-6 col-sm-3">{% if card.can_report %}<a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:repair_create' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+      <div class="col-4">{% if card.can_report %}<a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:repair_create' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
         <i class="bi bi-tools fs-4" aria-hidden="true"></i>
         <div class="small mt-1">{% trans "Report a problem" %}</div>
       </div></a>{% else %}<a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:lease' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
         <i class="bi bi-file-text fs-4" aria-hidden="true"></i>
         <div class="small mt-1">{% trans "Statement" %}</div>
       </div></a>{% endif %}</div>
-      <div class="col-6 col-sm-3"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:lease_terms' lease.public_id %}" target="_blank" rel="noopener"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+      <div class="col-4"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:utilities' lease.public_id %}"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
+        <i class="bi bi-droplet-half fs-4" aria-hidden="true"></i>
+        <div class="small mt-1">{% trans "Water and electricity" %}</div>
+      </div></a></div>
+      <div class="col-4"><a class="card shadow-sm h-100 text-decoration-none" href="{% url 'portal:lease_terms' lease.public_id %}" target="_blank" rel="noopener"><div class="card-body py-3 py-sm-3" style="min-height:5.5rem">
         <i class="bi bi-file-earmark-pdf fs-4" aria-hidden="true"></i>
         <div class="small mt-1">{% trans "Agreement (PDF)" %}</div>
       </div></a></div>

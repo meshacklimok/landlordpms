@@ -27,7 +27,7 @@
 
 <p class="small text-muted mt-4">
   {% if vat_registered %}{% trans "Prices are before VAT." %}{% else %}{% trans "Prices are in Kenya shillings." %}{% endif %}
-  {% blocktrans with p=sms_price|floatformat:2 %}SMS reminders are paid from a credit you top up, at KSh {{ p }} for each SMS part. Login codes and invitations are free.{% endblocktrans %}
+  {% blocktrans with p=sms_price|floatformat:2 %}SMS reminders are paid from a credit you top up, at KES {{ p }} for each SMS part. Login codes and invitations are free.{% endblocktrans %}
   {% trans "Viewers who can only look do not count as team members. Agencies with more units than the largest plan can ask us for a quote." %}</p>
 <section class="about-cta">
   <div><h2 class="about-h2 mb-1">{% trans "Not sure which fits?" %}</h2><p class="mb-0">{% trans "Tell us what you manage and we will show you around." %}</p></div>

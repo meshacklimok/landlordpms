@@ -1,4 +1,4 @@
-{% extends "expenses/_base.html" %}{% load i18n money %}
+{% extends "expenses/_base.html" %}{% load i18n money reports %}
 {% block title %}{{ expense.number }}{% endblock %}
 {% block content %}
 <div class="mx-auto mw-760">
@@ -28,6 +28,8 @@
       <dd class="col-sm-8">{% if expense.receipt %}<a href="{% url 'expenses:receipt' expense.public_id %}" target="_blank" rel="noopener"><i class="bi bi-paperclip" aria-hidden="true"></i> {% if expense.receipt_is_pdf %}{% trans "Open the PDF" %}{% else %}{% trans "Open the photo" %}{% endif %}</a>{% else %}<span class="text-body-secondary">{% trans "None" %}</span>{% endif %}</dd>
     </dl>
   </div></div>
+
+  {% money_trail membership "expense" expense.paid_on expense.property None expense.is_live %}
 
   {% if shares %}
   <div class="card shadow-sm mb-3"><div class="card-body">

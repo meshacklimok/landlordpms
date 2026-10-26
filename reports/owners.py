@@ -269,6 +269,13 @@ def _email(send: OwnerStatementSend, st: statements.Statement, pdf: bytes) -> No
         "",
         org.display_name,
     ]
+    from notifications.suppression import is_suppressed
+
+    if is_suppressed(send.email_to):
+        send.email_status = OwnerStatementSend.EmailStatus.FAILED
+        send.email_error = str(_("This address bounced earlier or reported spam. Correct it and send again."))
+        send.save(update_fields=["email_status", "email_error"])
+        return
     try:
         send_branded(_("Owner statement for %(month)s") % {"month": st.label}, "\n".join(lines), [send.email_to],
                      using=mailer_for(MESSAGES), org_name=org.display_name, org=org,

@@ -4,7 +4,7 @@ import pytest
 from django.core.management import call_command
 from django.urls import reverse
 
-from accounts import demo
+from accounts import demo, mfa
 from accounts.models import Organization
 from accounts.tests.factories import add_member, make_org
 from billing.models import Invoice
@@ -14,6 +14,7 @@ from mpesa.models import MpesaTransaction
 from notifications import delivery
 from notifications.models import Message
 from payments.models import Payment
+from portal.models import TenantAccount
 from properties.models import Property, Unit
 from prospects.models import Prospect
 
@@ -51,6 +52,15 @@ def test_seed_builds_the_full_demo_and_a_second_run_replaces_it():
     assert live.count() == 1
     assert live.get().pk != first.pk
     assert Organization.all_objects.filter(is_demo=True).count() == 2
+    # The one sample tenant login takes the name of this run's tenant, not the one it had before.
+    account = TenantAccount.objects.get(organization=live.get(), revoked_at__isnull=True)
+    assert account.user.full_name == account.tenant.name
+
+
+def test_no_two_step_login_nudge_in_the_demo(seeded):
+    """Its Security page is closed, so the "Set it up" button would lead nowhere; a real owner still sees it."""
+    assert not mfa.suggest(seeded.memberships.get())
+    assert mfa.suggest(make_org())
 
 
 def test_notify_does_nothing_for_the_demo(seeded):
@@ -93,7 +103,7 @@ def test_a_demo_visitor_can_sign_out(client, seeded):
     client.post(reverse("growth:demo_enter"))
     response = client.post(reverse("accounts:logout"))
     assert response.status_code == 302
-    assert response.url == reverse("accounts:login")
+    assert response.url == reverse("accounts:home")
 
 
 def test_a_real_landlord_is_not_blocked(client):
@@ -185,3 +195,29 @@ def test_a_visitor_can_look_around_as_the_sample_tenant_and_change_nothing(clien
     assert b"Look around as" in home.content
     refused = client.post(reverse("portal:repair_create", args=[lease.public_id]), {}, headers={"Accept": "application/json"})
     assert refused.status_code == 403
+
+
+def test_no_page_a_demo_visitor_opens_links_to_a_page_the_demo_refuses(client, seeded):
+    """Menus, tabs and buttons must not lead a demo visitor to the "not part of the demo" answer (found by the
+    2026-10-24 audit). Help text and the public status page may still name such pages, so they are not followed."""
+    import re
+
+    _staff_in(seeded)
+    client.post(reverse("growth:demo_enter"))
+    quiet = ("/help/", "/status/", "/terms/", "/privacy/", "/security/", "/articles/", "/tutorials/", "/solutions/")
+    seen, queue, refused, found_on = set(), ["/"], [], {}
+    while queue and len(seen) < 60:
+        url = queue.pop(0)
+        if url in seen:
+            continue
+        seen.add(url)
+        page = client.get(url)
+        if page.status_code == 403:
+            refused.append(f"{url} (linked from {found_on.get(url)})")
+        if page.status_code != 200 or url.startswith(quiet) or "html" not in page["Content-Type"]:
+            continue
+        for href in re.findall(r'href="(/[^"#?]*)', page.content.decode()):
+            if href not in seen and not href.startswith(("/static/", "/media/", "/demo/", "/logout")):
+                found_on.setdefault(href, url)
+                queue.append(href)
+    assert not refused, refused

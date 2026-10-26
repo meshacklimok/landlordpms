@@ -64,12 +64,13 @@ CACHES = {
         "KEY_PREFIX": "nyumbapms",
         # A stalled Redis must fail fast, not hold every request; reports fall back to computing (core/reportcache.py).
         "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2, "health_check_interval": 30},
-    }
+    },
+    "local": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "reportcache-local"},
 }
 
 MAILERS = {
     "default": {
-        "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "BACKEND": "notifications.providers.backend.SuppressingSMTPBackend",
         "OPTIONS": {
             "host": _required("EMAIL_HOST"),
             "port": int(os.getenv("EMAIL_PORT", "587")),
@@ -83,7 +84,7 @@ MAILERS = {
 # A second provider for mail to tenants and owners (notifications/providers/mail.py). Optional: without it, "default" carries everything.
 if os.getenv("EMAIL_MESSAGES_HOST"):
     MAILERS["messages"] = {
-        "BACKEND": "django.core.mail.backends.smtp.EmailBackend",
+        "BACKEND": "notifications.providers.backend.SuppressingSMTPBackend",
         "OPTIONS": {
             "host": os.environ["EMAIL_MESSAGES_HOST"],
             "port": int(os.getenv("EMAIL_MESSAGES_PORT", "587")),

@@ -13,7 +13,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 from core.http import ReplyThen
 
-from . import sms_hooks, whatsapp_hooks
+from . import mail_hooks, sms_hooks, whatsapp_hooks
 from .models import WhatsAppAccount
 from .whatsapp_account import platform_number
 
@@ -110,3 +110,27 @@ def _answer(questions: list[int]) -> None:
 
     for pk in questions:
         tenant.respond(pk)
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class MailHookView(View):
+    """Bounce and spam-complaint events from the mail providers. The secret in the URL says it is for us; Resend
+    also signs each request (Svix), and that signature is required when its secret is set."""
+
+    http_method_names = ["post"]
+
+    def post(self, request, token, provider):
+        expected = getattr(settings, "MAIL_HOOK_TOKEN", "")
+        if not expected or not hmac.compare_digest(token.encode(), expected.encode()) \
+                or provider not in ("resend", "brevo"):
+            raise Http404
+        if provider == "resend" and not mail_hooks.resend_signature_ok(
+                getattr(settings, "RESEND_WEBHOOK_SECRET", ""), request.headers, request.body):
+            return HttpResponseForbidden()
+        try:
+            payload = json.loads(request.body.decode())
+        except (ValueError, UnicodeDecodeError):
+            return HttpResponseBadRequest()
+        if isinstance(payload, dict):
+            (mail_hooks.resend_event if provider == "resend" else mail_hooks.brevo_event)(payload)
+        return HttpResponse("OK", content_type="text/plain")

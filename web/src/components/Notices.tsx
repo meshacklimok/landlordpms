@@ -6,8 +6,15 @@ export function Notices({ session }: { session: Session }) {
   const { notices, email_notice: email, terms_notice: terms, urls } = session;
   return (
     <>
+      {session.viewing && (
+        <div className="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="status">
+          <span>You are viewing as {session.viewing.label}. Nothing can be changed.</span>
+          <a className="btn btn-sm btn-dark ms-auto" href={session.viewing.stop_url}>Stop viewing</a>
+        </div>
+      )}
       {notices.map((n) => (
-        <div key={n.text} className={`alert alert-${n.level}`} role="status">
+        // data-demo-notice: left out of the product screenshots on the public pages (growth/screens.py)
+        <div key={n.text} className={`alert alert-${n.level}`} role="status" data-demo-notice={n.people ? "" : undefined}>
           <span>{n.text}</span>
           {n.url && <> <a className="alert-link" href={n.url}>{n.link}</a></>}
           {n.people && n.people.length > 0 && (

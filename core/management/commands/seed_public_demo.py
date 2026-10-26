@@ -11,17 +11,18 @@ Safe on a server with real SMS: the organization is marked `is_demo`, and `notif
 
 import datetime
 import random
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 
 from accounts import demo
 from accounts import services as account_services
 from accounts.models import Membership, Organization, Role
 from accounts.permissions import can
-from billing.models import Invoice
+from billing.models import Invoice, InvoiceLine
 from core.jobs import JobCommand
 from core.kenya import County
 from core.money import format_money
@@ -50,6 +51,8 @@ from .seed_demo import Command as SeedDemo
 
 DAY = datetime.timedelta(days=1)
 PROMPT, LATE, PARTIAL, STOPPED = "prompt", "late", "partial", "stopped"
+# What tenants who are behind owe in all, as a share of this month's rent billed (D-221)
+ARREARS_SHARE = Decimal("0.126")
 HABITS = (PROMPT,) * 62 + (LATE,) * 22 + (PARTIAL,) * 8 + (STOPPED,) * 8
 
 FIRST = ["Wanjiku", "Otieno", "Achieng", "Kiprotich", "Mwangi", "Fatuma", "Mutua", "Chebet", "Nekesa", "Daniel", "Aisha",
@@ -218,6 +221,7 @@ class Command(JobCommand, SeedDemo):
             self._bill_and_pay()
             self._tenant_login()
             self._meters()
+            self._settle_arrears()
             self._repairs()
             self._expenses()
             self._prospects()
@@ -227,6 +231,55 @@ class Command(JobCommand, SeedDemo):
     def _pay(self, lease, spec, invoice, earlier):
         self.habits[lease.pk] = spec["habit"]
         super()._pay(lease, spec, invoice, earlier)
+
+    def _settle_arrears(self) -> None:
+        """Leaves the same tenants behind but owing a believable amount: ARREARS_SHARE of this month's rent billed.
+
+        The habits above leave tenants months behind, which made the demo look like a landlord losing money. Here each
+        tenant who is behind keeps owing on every invoice they were late on (so the ageing columns still fill), but a
+        catch-up payment brings each lease down to its own share, in whole thousands. Nobody is cleared.
+        """
+        today = self.today
+        billed = (InvoiceLine.objects.filter(organization=self.org, is_void=False, invoice__voided_at__isnull=True,
+                                             invoice__issued_at__isnull=False, charge_type__category="RENT",
+                                             invoice__period_start__year=today.year,
+                                             invoice__period_start__month=today.month)
+                  .aggregate(total=Sum("amount"))["total"] or Decimal(0))
+        behind: dict[int, list[Invoice]] = {}
+        for invoice in (Invoice.objects.filter(organization=self.org, status__in=Invoice.OPEN, overdue_after__lt=today)
+                        .select_related("lease__unit__property").order_by("period_start")):
+            if invoice.outstanding > 0:
+                behind.setdefault(invoice.lease_id, []).append(invoice)
+        if not behind or not billed:
+            return
+        owed = {pk: sum((i.outstanding for i in rows), Decimal(0)) for pk, rows in behind.items()}
+        goal = int((billed * ARREARS_SHARE / 1000).quantize(Decimal(1), ROUND_HALF_UP)) * 1000
+        weight = {pk: self.rng.uniform(0.5, 1.6) for pk in behind}
+        room = {pk: int(owed[pk] // 1000) for pk in behind}  # thousands each can still be brought down to
+        share = {pk: max(1, min(room[pk], round(goal / 1000 * weight[pk] / sum(weight.values())))) for pk in behind}
+        order = list(behind)
+        for _ in range(1000):  # settle the rounding so the total is exactly the goal
+            gap = goal // 1000 - sum(share.values())
+            if not gap:
+                break
+            pk = self.rng.choice(order)
+            step = 1 if gap > 0 else -1
+            if 1 <= share[pk] + step <= room[pk]:
+                share[pk] += step
+        for pk, rows in behind.items():
+            keep = Decimal(share[pk] * 1000)
+            left = {i.pk: min(i.outstanding, (i.outstanding * keep / owed[pk]).quantize(Decimal(1))) for i in rows}
+            left[rows[-1].pk] = min(rows[-1].outstanding, max(Decimal(0), left[rows[-1].pk] + keep - sum(left.values())))
+            plan = [(i, i.outstanding - left[i.pk]) for i in rows if i.outstanding > left[i.pk]]
+            if not plan:
+                continue
+            lease = rows[0].lease
+            method = Payment.Method.BANK if lease.primary_tenant.kind == Tenant.Kind.COMPANY else Payment.Method.MPESA
+            paid_at = min(today, max([today - DAY * self.rng.randint(2, 12)] + [i.issue_date for i, _ in plan]))
+            record_payment(self.actor, lease, amount=sum(a for _, a in plan), method=method, paid_at=paid_at,
+                           reference=self._reference(method), payment_account=self.accounts[method], allocations=plan)
+        self.stdout.write(f"Arrears: {len(behind)} leases still behind, KES {sum(share.values()) * 1000:,} "
+                          f"({ARREARS_SHARE:.1%} of KES {billed:,.0f} rent billed this month).")
 
     # -- the team ---------------------------------------------------------------
 
@@ -247,14 +300,21 @@ class Command(JobCommand, SeedDemo):
         self.stdout.write(f"Team: {len(self.staff)}.")
 
     def _tenant_login(self) -> None:
-        """The sample tenant a visitor can look around as: a portal login on one active lease, named after its tenant."""
+        """The sample tenant a visitor can look around as: a portal login on one active lease, named after its tenant.
+
+        A tenant who pays on time, so the portal shows what most tenants see (and what the public screenshots show)."""
+        prompt = [pk for pk, habit in self.habits.items() if habit == PROMPT]
         tenant = (Tenant.objects.for_org(self.org).filter(kind=Tenant.Kind.INDIVIDUAL,
-                                                           lease_links__lease__status=Lease.Status.ACTIVE)
+                                                           lease_links__lease__status=Lease.Status.ACTIVE,
+                                                           lease_links__lease__pk__in=prompt)
                   .order_by("pk").first())
         if tenant is None:
             return
-        TenantAccount.objects.create(organization=self.org, tenant=tenant, user=demo.demo_user(demo.TENANT_PHONE, tenant.name),
-                                     invited_by=self.actor.user)
+        user = demo.demo_user(demo.TENANT_PHONE, tenant.name)
+        if user.full_name != tenant.name:  # the login outlives each weekly demo; it takes this week's tenant's name
+            user.full_name = tenant.name
+            user.save(update_fields=["full_name"])
+        TenantAccount.objects.create(organization=self.org, tenant=tenant, user=user, invited_by=self.actor.user)
         self.stdout.write(f"Sample tenant: {tenant.name}.")
 
     def _who(self, prop, capability, *keys):

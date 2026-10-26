@@ -1,6 +1,7 @@
 """Meter pages: who sees and does what, and the optional photo (D-057)."""
 
 import datetime
+import re
 
 import pytest
 from django.urls import reverse
@@ -96,7 +97,8 @@ def test_a_member_limited_to_other_properties_does_not_see_the_meter(client, own
     manager = add_member(owner.organization, "manager", properties=[elsewhere])
     login(client, manager)
     assert client.get(detail(meter)).status_code == 404
-    assert meter.label not in client.get(reverse("meters:list")).content.decode()
+    page = re.sub(r'value="[^"]*"', "", client.get(reverse("meters:list")).content.decode())  # a CSRF token can contain any letters
+    assert meter.label not in page
 
 
 def test_the_round_records_several_meters_with_optional_photos(client, owner, prop, meter):

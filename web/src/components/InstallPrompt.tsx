@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { BrandMark } from "./BrandMark";
 
 type InstallEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
@@ -23,7 +23,12 @@ function laterActive(): boolean {
 export function InstallPrompt() {
   const path = usePathname();
   const [shown, setShown] = useState(false);
-  const [ios, setIos] = useState(false);
+  // Read from the browser without a state set inside an effect; the server (and the first paint) says "not an iPhone".
+  const ios = useSyncExternalStore(
+    () => () => {},
+    () => /iphone|ipad|ipod/i.test(navigator.userAgent),
+    () => false,
+  );
   const [event, setEvent] = useState<InstallEvent | null>(null);
 
   useEffect(() => {
@@ -53,10 +58,6 @@ export function InstallPrompt() {
     const timer = window.setTimeout(() => setShown(true), DELAY_MS);
     return () => window.clearTimeout(timer);
   }, [path]);
-
-  useEffect(() => {
-    setIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
-  }, []);
 
   // Android shows the real install dialog; an iPhone has none, so it gets the two steps instead. Any other browser stays quiet.
   if (!shown || path !== "/" || (!event && !ios)) return null;

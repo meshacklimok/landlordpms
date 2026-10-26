@@ -1,6 +1,7 @@
 pytest==9.1.1
 pytest-django==4.14.0
-ruff==0.16.9
-pre-commit==4.6.2
-locust==2.46.6
+ruff==0.17.2
+pre-commit==4.7.0
+locust==2.47.0
 pip-audit==2.10.1
+playwright==1.55.0  # manage.py capture_screens: product pictures for the public pages (D-220)

@@ -767,7 +767,8 @@ class QRLabelsView(RoundView):
 
     def get(self, request, property_id):
         prop = self._prop(request, property_id)
-        picked = self._picked(request.GET)
+        picked = request.GET.get("utility", "")
+        picked = picked if picked in Meter.Utility.values else ""
         rows = [r for r in sheet.sheet_meters([m for m in self._meters(prop) if not m.is_prepaid
                                                and (not picked or m.utility == picked)], timezone.localdate())]
         labels = [{"meter": r["meter"], "rooms": ", ".join(s["code"] for s in r["served"]) or r["meter"].label,

@@ -7,7 +7,7 @@
 <p class="small text-body-secondary">{% blocktrans with p=period.label %}Approved expenses paid {{ p }}, as the profit and loss counts them. Expenses still waiting for approval are not counted.{% endblocktrans %}</p>
 {% include "reports/_period_filter.html" %}
 
-{% if report.count %}
+{% if report.count or report.waiting %}
 <div class="row g-2 mb-3">
   <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-warning"><div class="card-body py-2">
     <div class="stat-label">{% trans "Spent" %}</div><div class="stat-value num">{{ report.total|money:cur }}</div>
@@ -21,7 +21,7 @@
     <div class="stat-sub">{% if report.by_category %}{{ report.by_category.0.2|money:cur }} · {{ report.by_category.0.3|percent }}{% endif %}</div></div></div></div>
   <div class="col-6 col-lg-3"><div class="card stat stat-accent shadow-sm h-100 accent-danger"><div class="card-body py-2">
     <div class="stat-label">{% trans "Waiting for approval" %}</div><div class="stat-value">{{ report.waiting }}</div>
-    <div class="stat-sub">{{ report.waiting_amount|money:cur }} · {% trans "not counted" %}</div></div></div></div>
+    <div class="stat-sub">{{ report.waiting_amount|money:cur }} · {% trans "not counted" %}{% if report.waiting and can_open %} · <a href="{% url 'expenses:list' %}?status=SUBMITTED&amp;from={{ report.start|date:'Y-m' }}&amp;to={{ report.end|date:'Y-m' }}{% if selected %}&amp;property={{ selected.public_id }}{% endif %}">{% trans "see them" %}</a>{% endif %}</div></div></div></div>
 </div>
 
 <section class="row g-3 mb-3">
@@ -59,7 +59,7 @@
     <td>{{ e.property.name }}</td><td>{{ e.category.name }}</td><td>{{ e.supplier.name|default:"—" }}</td><td>{{ e.description }}</td>
     <td class="text-end num text-nowrap">{{ e.amount|money:cur }}</td></tr>{% endfor %}</tbody>
 </table></div>
-{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total %}The newest {{ n }} of {{ t }} expenses are shown. Download the report for all of them.{% endblocktrans %}</p>{% endif %}
+{% if report.lines_total > shown_lines|length %}<p class="small text-body-secondary">{% blocktrans with n=shown_lines|length t=report.lines_total l=download_limit %}The newest {{ n }} of {{ t }} expenses are shown. The download has up to {{ l }}; choose a shorter period for the rest.{% endblocktrans %}</p>{% endif %}
 {% else %}
 <div class="card shadow-sm"><div class="card-body text-center text-body-secondary py-5">{% trans "No approved expenses are dated in this period. Choose another period, or record expenses to see this report." %}</div></div>
 {% endif %}

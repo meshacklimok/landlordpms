@@ -1,4 +1,4 @@
-{% extends "payments/_base.html" %}{% load i18n money access %}
+{% extends "payments/_base.html" %}{% load i18n money access reports %}
 {% block title %}{% trans "Payment" %}{% if receipt %} · {{ receipt.number }}{% endif %}{% endblock %}
 {% block content %}
 <div class="wide mx-auto">
@@ -161,6 +161,7 @@
           {% endif %}
         </ul>
       </section>
+      {% if payment.state == "confirmed" %}{% money_trail membership "payment" payment.paid_at lease.unit.property lease True %}{% else %}{% money_trail membership "payment" payment.paid_at lease.unit.property lease False %}{% endif %}
     </div>
   </div>
 </div>

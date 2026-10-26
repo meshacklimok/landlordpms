@@ -179,7 +179,8 @@ def rows(*, query: str = "", status: str = "", plan: str = "", org_type: str = "
          today: datetime.date | None = None) -> list[dict]:
     """One row per owner, with their organization's size. `pks` narrows to those memberships (a hand-picked list)."""
     today = today or timezone.localdate()
-    qs = (Membership.objects.filter(is_active=True, role__is_owner_role=True)
+    # An archived organization (an old demo copy, a closed account) has no page in the console, so it is not listed.
+    qs = (Membership.objects.filter(is_active=True, role__is_owner_role=True, organization__archived_at__isnull=True)
           .select_related("user", "organization__subscription__plan"))
     if query:
         qs = qs.filter(Q(user__full_name__icontains=query) | Q(user__email__icontains=query)

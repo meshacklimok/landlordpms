@@ -48,7 +48,7 @@ SIGNED_IN = {
     "portal:home", "portal:lease", "portal:repair_create", "portal:notice_create", "portal:repair",
     "portal:repair_photo", "portal:document", "portal:receipt", "portal:invoice_pdf", "portal:ask",
     "portal:ask_confirm", "portal:no_match",  # shows only the user's own phone number
-    "portal:messages", "portal:lease_terms", "portal:offer_answer",
+    "portal:messages", "portal:utilities", "portal:own_use_delete", "portal:lease_terms", "portal:offer_answer",
     "portal:payments", "portal:payment_report", "portal:signing", "portal:signing_pdf",  # own lease / own payment only; anything else is a 404
     "owner_portal:home", "owner_portal:account", "owner_portal:statement", "owner_portal:sent_pdf",
     "owner_portal:payments",  # the owner's own properties only; tenant names hidden
