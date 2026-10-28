@@ -29,6 +29,7 @@ jobs:
 
     env:
       SECRET_KEY: ci-only-not-secret
+      SITE_URL: https://app.nyumbapms.com
       DB_NAME: landlordpms
       DB_USER: landlordpms
       DB_PASSWORD: landlordpms
@@ -43,6 +44,17 @@ jobs:
           python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements*.txt
+
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg
+          sudo install -d /usr/share/postgresql-common/pgdg
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor --yes -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
@@ -77,6 +89,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Generate Next.js route types
+        run: npx next typegen
 
       - name: Type check
         run: npx tsc --noEmit
