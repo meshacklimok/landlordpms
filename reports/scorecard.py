@@ -17,7 +17,8 @@ from core.money import ZERO, round_money
 from leases.models import Lease
 from properties.models import Property
 
-from . import finance, health as health_report, metrics
+from . import finance, metrics
+from . import health as health_report
 from .metrics import month_start, rate
 
 
