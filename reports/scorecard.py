@@ -4,7 +4,7 @@ Money comes from the profit and loss (reports.finance), so it is on the same cas
 on the period's last day (or today); turnover is move-outs over leases in force, as on the leases report.
 Properties are ranked by net operating income per unit.
 """
-
+from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from decimal import Decimal
