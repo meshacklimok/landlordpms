@@ -1,0 +1,70 @@
+name: Deploy NyumbaPMS
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout tested code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Prepare deployment archive
+        run: |
+          tar -czf nyumbapms.tar.gz \
+            --exclude=.git \
+            --exclude=.env \
+            --exclude='.env.*' \
+            --exclude=web/.env \
+            --exclude='web/.env.*' \
+            --exclude=web/.env.example \
+            --exclude=.venv \
+            --exclude=venv \
+            --exclude=web/node_modules \
+            --exclude=web/.next \
+            --exclude=media \
+            --exclude=staticfiles \
+            --exclude=backups \
+            --exclude=exports \
+            .
+
+      - name: Configure SSH
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_PORT: ${{ secrets.DO_PORT }}
+          DO_SSH_KEY: ${{ secrets.DO_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DO_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$DO_PORT" "$DO_HOST" >> ~/.ssh/known_hosts
+
+      - name: Upload and deploy
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DO_PORT: ${{ secrets.DO_PORT }}
+        run: |
+          scp -P "$DO_PORT" nyumbapms.tar.gz "$DO_USER@$DO_HOST:/root/nyumbapms.tar.gz"
+          ssh -p "$DO_PORT" "$DO_USER@$DO_HOST" '
+            set -e
+            /srv/landlordpms/deploy/update.sh
+            cd /srv/landlordpms/web
+            npm ci
+            npm run build
+            systemctl restart nyumbapms-web
+            systemctl is-active --quiet landlordpms
+            systemctl is-active --quiet nyumbapms-web
+          '
