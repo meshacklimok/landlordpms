@@ -23,7 +23,7 @@ jobs:
 
       - name: Prepare deployment archive
         run: |
-          tar -czf nyumbapms.tar.gz \
+          tar --warning=no-file-changed --ignore-failed-read -czf nyumbapms.tar.gz \
             --exclude=.git \
             --exclude=.env \
             --exclude='.env.*' \
