@@ -4,7 +4,7 @@ Money comes from the profit and loss (reports.finance), so it is on the same cas
 on the period's last day (or today); turnover is move-outs over leases in force, as on the leases report.
 Properties are ranked by net operating income per unit.
 """
-
+from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from decimal import Decimal
@@ -17,8 +17,7 @@ from core.money import ZERO, round_money
 from leases.models import Lease
 from properties.models import Property
 
-from . import finance, metrics
-from . import health as health_report
+from . import finance, health, metrics
 from .metrics import month_start, rate
 
 
@@ -32,7 +31,7 @@ class Score:
     collection: Decimal | None = None
     move_outs: int = 0
     in_force: int = 0
-    health: health_report.Health | None = None
+    health: health.Health | None = None
 
     @property
     def noi(self) -> Decimal:
@@ -110,7 +109,7 @@ def scorecard(membership, start: datetime.date, end: datetime.date, prop: Proper
 
     shown = [r for r in rows.values() if r.units or r.income or r.expenses]
     shown.sort(key=lambda r: (r.noi_per_unit is None, -(r.noi_per_unit or ZERO), r.property.name.lower()))
-    health_report.attach(membership, sc, shown, end, today, now or timezone.now())
+    health.attach(membership, sc, shown, end, today, now or timezone.now())
     total = Score(None, collection=money.total.collection_rate)
     for r in shown:
         total.units += r.units
