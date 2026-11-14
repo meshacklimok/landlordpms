@@ -1,5 +1,7 @@
 """The public "Try the demo" organization (D-210): sample data, read-only, and nothing is sent."""
 
+from datetime import date
+
 import pytest
 from django.core.management import call_command
 from django.urls import reverse
@@ -55,6 +57,47 @@ def test_seed_builds_the_full_demo_and_a_second_run_replaces_it():
     # The one sample tenant login takes the name of this run's tenant, not the one it had before.
     account = TenantAccount.objects.get(organization=live.get(), revoked_at__isnull=True)
     assert account.user.full_name == account.tenant.name
+
+
+@pytest.mark.parametrize(
+    "today",
+    [
+        date(2026, 12, 1),
+        date(2027, 1, 1),
+    ],
+)
+def test_public_demo_tracks_calendar_month_and_avoids_future_payments(
+    monkeypatch, today
+):
+    from django.utils import timezone as django_timezone
+
+    real_localdate = django_timezone.localdate
+    monkeypatch.setattr(
+        "core.management.commands.seed_public_demo.timezone.localdate",
+        lambda value=None: today if value is None else real_localdate(value),
+    )
+
+    call_command("seed_public_demo")
+    org = demo.demo_org()
+
+    # The demo includes invoices for the simulated current month.
+    assert Invoice.objects.filter(
+        organization=org,
+        period_start__year=today.year,
+        period_start__month=today.month,
+    ).exists()
+
+    # On the first day, invoices for later months should not exist.
+    assert not Invoice.objects.filter(
+        organization=org,
+        period_start__gt=today,
+    ).exists()
+
+    # Demo payments must not be dated after the simulated current date.
+    assert not Payment.objects.filter(
+        organization=org,
+        paid_at__gt=today,
+    ).exists()
 
 
 def test_no_two_step_login_nudge_in_the_demo(seeded):
