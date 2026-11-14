@@ -39,7 +39,7 @@ def prop(owner, jane):
                                              management_fee_fixed=Decimal("1500"))
     # These tests cover October 2026, so management must have started before October.
     type(prop).objects.filter(pk=prop.pk).update(
-        created_at=datetime.datetime(2026, 9, 1, tzinfo=datetime.timezone.utc)
+        created_at=datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
     )
     return prop
 
