@@ -152,7 +152,12 @@ def test_receipt_check_page_shows_only_face_facts_and_the_pdf_carries_a_qr(clien
     assert check_url(receipt).endswith(url)
     body = client.get(url).content.decode()
     assert receipt.number in body and "10,000" in body
-    assert payment.tenant.name not in body and lease.unit.code not in body
+
+    # Check the page's main content, not unrelated global navigation
+    # where a CSRF token can coincidentally contain a unit code.
+    main_content = body.split('<main id="main"', 1)[1].split("</main>", 1)[0]
+    assert payment.tenant.name not in main_content
+    assert lease.unit.code not in main_content
     assert "Balance" not in body
     assert client.get(reverse("receipt_check", args=["nope"])).status_code == 404
     assert render_pdf(receipt).startswith(b"%PDF")
