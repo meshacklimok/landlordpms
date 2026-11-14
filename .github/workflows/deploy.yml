@@ -60,7 +60,7 @@ jobs:
           scp -P "$DO_PORT" nyumbapms.tar.gz "$DO_USER@$DO_HOST:/root/nyumbapms.tar.gz"
           ssh -p "$DO_PORT" "$DO_USER@$DO_HOST" '
             set -e
-            /srv/landlordpms/deploy/update.sh
+            bash /srv/landlordpms/deploy/update.sh
             cd /srv/landlordpms/web
             npm ci
             npm run build
