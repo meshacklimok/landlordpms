@@ -19,6 +19,6 @@ MAILTO=""
 30   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_assistant
 45   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_sessions
 50   3  *  *  0  sh /srv/landlordpms/deploy/run.sh purge_messages
-30   4  *  *  1  sh /srv/landlordpms/deploy/run.sh reset_public_demo
+30   4  *  *  1  sh /srv/landlordpms/deploy/run.sh seed_public_demo
 0    4  1  *  *  sh /srv/landlordpms/deploy/run.sh restore_test
 */15 *  *  *  *  sh /srv/landlordpms/deploy/run.sh check_jobs
