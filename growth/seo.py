@@ -39,7 +39,7 @@ AI_SEARCH_BOTS = [
 
 # Never offered to crawlers: the signed-in app, tenant and owner portals, webhooks, one-time links and the API.
 PRIVATE_PREFIXES = [
-    "/ok-ml-staff/", "/my/", "/owner/", "/hooks/", "/api/", "/p/", "/r/", "/rc/", "/ic/", "/mr/", "/sign/", "/s/", "/l/", "/v/", "/e/",
+    "/ok-ml-staff/", "/my/", "/owner/", "/hooks/", "/api/", "/p/", "/r/", "/rc/", "/ic/", "/mr/", "/sign/", "/s/", "/l/", "/v/", "/stay/", "/e/",
     "/esign/", "/console/", "/conversations/", "/csp-report/", "/healthz", "/search/", "/ask/", "/properties/",
     "/tenants/", "/leases/", "/imports/", "/billing/", "/payments/", "/messages/", "/mpesa/", "/bank/",
     "/inspections/", "/meters/", "/expenses/", "/maintenance/", "/documents/", "/prospects/", "/letters/",
@@ -140,7 +140,8 @@ def _static_pages():
             description=_("Collect rent on your own Paybill or Till, match every M-Pesa payment to its unit, send SMS "
                           "receipts and reminders, and see who owes. Free %(days)s-day trial.") % {"days": days},
             path="/", priority="1.0", changefreq="weekly",
-            summary=_("Rent collection and property management software for Kenyan landlords, agents and estates.")),
+            summary=_("Property management software for Kenyan landlords, agents and estates, with M-Pesa rent collection, "
+                      "unit-level payment matching, SMS receipts, utility billing and property reports.")),
         "growth:pricing": P(
             title=_("Pricing in KES by number of units · NyumbaPMS"),
             description=_("Simple KES pricing by the number of units you manage. Every plan includes every feature, "
@@ -167,8 +168,8 @@ def _static_pages():
             breadcrumb=[(_("About"), reverse("growth:about"))]),
         "growth:how_it_works": P(
             title=_("How NyumbaPMS Works: From Setup to Rent Paid"),
-            description=_("From adding your units to receipting an M-Pesa payment and reading the monthly report: how "
-                          "NyumbaPMS works in six steps, and what is not finished yet."),
+            description=_("Learn how Kenyan landlords set up properties and units, bill rent, record M-Pesa payments, "
+                          "issue SMS receipts and review monthly property reports in NyumbaPMS."),
             path=reverse("growth:how_it_works"), priority="0.7",
             breadcrumb=[(_("How it works"), reverse("growth:how_it_works"))]),
         "growth:articles": P(
