@@ -6,6 +6,10 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
 
+  experimental: {
+    agentUpgrade: "security",
+  },
+
   async headers() {
     return [
       {
