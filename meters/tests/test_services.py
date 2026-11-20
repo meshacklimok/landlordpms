@@ -12,7 +12,7 @@ from billing.models import ChargeType, InvoiceLine
 from billing.tests.test_invoicing import bill
 from leases.models import Lease
 from meters import services
-from meters.models import MeterAllocation, MeterCharge, MeterReading
+from meters.models import MeterCharge, MeterReading
 
 from .conftest import jpeg, let, make_meter, read
 
@@ -315,8 +315,10 @@ def test_a_lease_with_unbilled_water_is_not_settled(owner, prop):
 # Shared allocation adjustments
 # ---------------------------------------------------------------------------
 
-def shared_reading_for_allocation_tests(owner, prop, *, today=D(2026, 1, 10)):
+def shared_reading_for_allocation_tests(owner, prop, *, today=None):
     """Two occupied units sharing a 30-unit January reading; do not invoice it yet."""
+    if today is None:
+        today = D(2026, 1, 10)
     lease1, unit1 = let(owner, prop, code="A1")
     _lease2, unit2 = let(owner, prop, code="A2")
     meter = make_meter(owner, prop, [unit1, unit2], rate="100", split="EQUAL")
