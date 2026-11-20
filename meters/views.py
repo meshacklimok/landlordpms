@@ -30,7 +30,7 @@ from properties.views import _apply_errors
 
 from . import forms, ocr, plans, qr, services, sheet, usage, water
 from . import split as splitting
-from .models import Meter, MeterReading, MeterUnit
+from .models import Meter, MeterAllocation, MeterReading, MeterUnit
 
 
 def _get_property(request, public_id) -> Property:
@@ -422,12 +422,22 @@ class SharesView(CapabilityRequiredMixin, View):
         served = list(meter.served.select_related("unit"))
         ctx = {"reading": reading, "meter": meter, "property": meter.property, "served": served,
                "can_approve": services.can_approve(request.membership, reading),
+               "can_adjust_allocation": (
+                   reading.status == MeterReading.Status.APPROVED
+                   and can(request.membership, "meters.approve", meter.property)
+               ),
                "vacant_choices": Meter.VacantShare.choices}
         if reading.status == MeterReading.Status.APPROVED:
             charges = list(reading.charges.filter(cancelled_at__isnull=True).select_related("lease"))
+            allocations = list(
+                MeterAllocation.objects.filter(
+                    organization=request.membership.organization, reading=reading
+                ).select_related("lease", "unit", "updated_by").order_by("unit__code", "service_start")
+            )
             ctx["charged"] = [{"unit": mu.unit, "charges": [c for c in charges if c.unit_id == mu.unit_id]}
                               for mu in served]
             ctx["charged_total"] = sum((c.amount for c in charges), 0)
+            ctx["allocations"] = allocations
             return render(request, self.template_name, ctx)
         vacant = request.GET.get("vacant", "")
         vacant = vacant if vacant in Meter.VacantShare.values else meter.vacant_share
@@ -449,6 +459,36 @@ class SharesView(CapabilityRequiredMixin, View):
 
     def post(self, request, public_id):
         reading = self._reading(request, public_id)
+        if request.POST.get("action") == "adjust_allocation":
+            if (
+                reading.status != MeterReading.Status.APPROVED
+                or not can(request.membership, "meters.approve", reading.meter.property)
+            ):
+                raise Http404
+            allocation = get_object_or_404(
+                MeterAllocation.objects.filter(
+                    organization=request.membership.organization, reading=reading
+                ),
+                pk=request.POST.get("allocation"),
+            )
+            try:
+                services.adjust_allocation(
+                    request.membership,
+                    allocation,
+                    allocated_units=request.POST.get("allocated_units", ""),
+                    amount=request.POST.get("amount", ""),
+                    is_exempt=request.POST.get("is_exempt") == "on",
+                    reason=request.POST.get("reason", ""),
+                    request=request,
+                )
+            except ValidationError as exc:
+                messages.error(request, _errors(exc))
+            except PermissionDenied:
+                raise Http404 from None
+            else:
+                messages.success(request, _("Tenant allocation updated."))
+            return redirect("meters:shares", public_id=reading.public_id)
+
         try:
             charges = services.approve(request.membership, reading, note=request.POST.get("note", ""),
                                        split=request.POST.get("split", ""),

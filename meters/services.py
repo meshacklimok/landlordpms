@@ -20,8 +20,9 @@ from inspections import photos
 from leases.models import Lease
 from properties.models import Property, Unit
 
+from . import plans as water_plans
 from . import split as splitting
-from .models import Meter, MeterCharge, MeterReading, MeterUnit, OfflineRound
+from .models import Meter, MeterAllocation, MeterCharge, MeterReading, MeterUnit, OfflineRound
 
 Flag = MeterReading.Flag
 Status = MeterReading.Status
@@ -370,6 +371,10 @@ def charges_for(reading: MeterReading, *, rate: Decimal | None = None, minimum: 
     meter = reading.meter
     if not billable(reading) or (payer or meter.payer) == Meter.Payer.LANDLORD:
         return []
+    # Flat and included water plans use their own billing rules, not meter charges.
+    # Electricity billing is unaffected by the property's water plan.
+    if not water_plans.billed_from_readings(meter):
+        return []
     rate = meter.rate if rate is None else rate
     division = splitting.divide(reading, split=split, vacant_share=vacant_share, rate=rate, minimum=minimum,
                                 bill_total=bill_total)
@@ -460,9 +465,131 @@ def approve(actor: Membership, reading: MeterReading, *, note="", split: str | N
     reading.approved_by = actor.user
     reading.approval_note = note
     reading.save()
-    charges = MeterCharge.objects.bulk_create(charges_for(
-        reading, rate=reading.rate, minimum=reading.minimum_charge, split=reading.split or None,
-        vacant_share=reading.vacant_share or None, payer=reading.payer, bill_total=bill_total))
+    charges = []
+    allocations = []
+    charge_parts = []
+
+    should_allocate = (
+        billable(reading)
+        and reading.payer != Meter.Payer.LANDLORD
+        and water_plans.billed_from_readings(meter)
+    )
+
+    if should_allocate:
+        division = splitting.divide(
+            reading,
+            rate=reading.rate,
+            minimum=reading.minimum_charge,
+            split=reading.split or None,
+            vacant_share=reading.vacant_share or None,
+            bill_total=bill_total,
+        )
+        if not division.available:
+            raise ValidationError(division.reason)
+
+        for room in division.rooms:
+            for part in room.parts:
+                allocations.append(MeterAllocation(
+                    organization=reading.organization,
+                    reading=reading,
+                    lease=part.lease,
+                    unit=room.unit,
+                    service_start=part.start,
+                    service_end=part.end,
+                    calculated_units=part.units,
+                    allocated_units=part.units,
+                    calculated_amount=part.amount,
+                    amount=part.amount,
+                ))
+                # Process every lease part: a saved manual allocation can
+                # remain chargeable even when its recalculated amount is zero.
+                charge_parts.append((room, part))
+
+        allocation_by_lease = {}
+        for allocation in allocations:
+            saved, created = MeterAllocation.objects.get_or_create(
+                reading=reading,
+                lease=allocation.lease,
+                defaults={
+                    "organization": allocation.organization,
+                    "unit": allocation.unit,
+                    "service_start": allocation.service_start,
+                    "service_end": allocation.service_end,
+                    "calculated_units": allocation.calculated_units,
+                    "allocated_units": allocation.allocated_units,
+                    "calculated_amount": allocation.calculated_amount,
+                    "amount": allocation.amount,
+                    "updated_by": actor.user,
+                },
+            )
+            if not created:
+                # Refresh the calculation without silently erasing a saved
+                # manual adjustment or exemption.
+                saved.organization = allocation.organization
+                saved.unit = allocation.unit
+                saved.service_start = allocation.service_start
+                saved.service_end = allocation.service_end
+                saved.calculated_units = allocation.calculated_units
+                saved.calculated_amount = allocation.calculated_amount
+                if not saved.is_exempt and not saved.adjustment_reason:
+                    saved.allocated_units = allocation.allocated_units
+                    saved.amount = allocation.amount
+                saved.save()
+            allocation_by_lease[saved.lease_id] = saved
+
+        for room, part in charge_parts:
+            allocation = allocation_by_lease[part.lease.pk]
+            existing_charge = MeterCharge.objects.filter(
+                allocation=allocation,
+            ).first()
+
+            # A saved exemption or zero final amount must never reactivate
+            # a charge when this reading is approved again.
+            if allocation.is_exempt or allocation.amount <= ZERO:
+                if existing_charge is not None and existing_charge.cancelled_at is None:
+                    existing_charge.cancelled_at = timezone.now()
+                    existing_charge.save(update_fields=["cancelled_at"])
+                continue
+
+            if allocation.adjustment_reason:
+                description = f"Water allocation adjusted: {allocation.adjustment_reason}"[:200]
+            else:
+                description = splitting.describe(
+                    reading, division, room, part,
+                    rate=reading.rate,
+                    bill_total=bill_total,
+                )
+
+            if existing_charge is not None:
+                if existing_charge.cancelled_at is None:
+                    raise ValidationError(
+                        _("This allocation already has an active charge; approval cannot create a duplicate.")
+                    )
+                existing_charge.organization = reading.organization
+                existing_charge.reading = reading
+                existing_charge.lease = part.lease
+                existing_charge.unit = room.unit
+                existing_charge.service_start = part.start
+                existing_charge.service_end = part.end
+                existing_charge.billing_month = billing_month_for(part.lease, reading.read_on)
+                existing_charge.amount = allocation.amount
+                existing_charge.description = description
+                existing_charge.cancelled_at = None
+                existing_charge.save()
+                charges.append(existing_charge)
+            else:
+                charges.append(MeterCharge.objects.create(
+                    organization=reading.organization,
+                    reading=reading,
+                    allocation=allocation,
+                    lease=part.lease,
+                    unit=room.unit,
+                    service_start=part.start,
+                    service_end=part.end,
+                    billing_month=billing_month_for(part.lease, reading.read_on),
+                    amount=allocation.amount,
+                    description=description,
+                ))
     _audit("meters.reading_approve", actor, reading, request, {
         "status": [Status.SUBMITTED, Status.APPROVED], "rate": [None, str(reading.rate)],
         "charged": [None, str(sum((c.amount for c in charges), ZERO))],
@@ -474,6 +601,119 @@ def approve(actor: Membership, reading: MeterReading, *, note="", split: str | N
         invoicing.bill_meter_charges(reading.organization, today=today, lease=Lease.all_objects.get(pk=lease_id),
                                      actor=actor, request=request)
     return charges
+
+
+
+@transaction.atomic
+def adjust_allocation(
+    actor: Membership,
+    allocation: MeterAllocation,
+    *,
+    allocated_units,
+    amount,
+    is_exempt=False,
+    reason,
+    today=None,
+    request=None,
+) -> MeterAllocation:
+    """Adjust one approved reading's tenant share without changing an issued invoice."""
+    allocation = (
+        MeterAllocation.objects.select_for_update()
+        .select_related("reading__meter__property", "lease", "unit")
+        .get(pk=allocation.pk)
+    )
+    reading = _lock(allocation.reading)
+    _check(actor, reading.meter.property, "meters.approve")
+
+    if allocation.organization_id != actor.organization_id or reading.organization_id != actor.organization_id:
+        raise PermissionDenied(_("That allocation belongs to another organization."))
+    if allocation.reading_id != reading.pk or reading.status != Status.APPROVED:
+        raise ValidationError(_("Only allocations from an approved reading can be adjusted."))
+
+    try:
+        units = Decimal(str(allocated_units if allocated_units not in (None, "") else "0").replace(",", "").strip())
+    except (InvalidOperation, ValueError):
+        raise ValidationError({"allocated_units": _("Enter a valid units amount.")}) from None
+
+    if not units.is_finite() or units < 0 or units > MAX_VALUE:
+        raise ValidationError({"allocated_units": _("Units must be between 0 and 999999999.999.")})
+    if units != units.quantize(Decimal("0.001")):
+        raise ValidationError({"allocated_units": _("Use at most 3 decimal places for units.")})
+
+    final_amount = _clean_amount(amount, "amount")
+    reason = (reason or "").strip()
+    if not reason:
+        raise ValidationError({"reason": _("Give a reason for changing this allocation or exempting the tenant.")})
+    if len(reason) > 300:
+        raise ValidationError({"reason": _("The reason must be 300 characters or fewer.")})
+
+    charge = MeterCharge.objects.select_for_update().filter(allocation=allocation).first()
+    if charge is not None and charge.lines.filter(is_void=False).exists():
+        raise ValidationError(_("This charge is on an invoice. Void the invoice first."))
+
+    old = {
+        "allocated_units": str(allocation.allocated_units),
+        "amount": str(allocation.amount),
+        "is_exempt": allocation.is_exempt,
+        "adjustment_reason": allocation.adjustment_reason,
+    }
+
+    allocation.allocated_units = units
+    allocation.amount = ZERO if is_exempt else final_amount
+    allocation.is_exempt = bool(is_exempt)
+    allocation.adjustment_reason = reason
+    allocation.updated_by = actor.user
+    allocation.save(update_fields=[
+        "allocated_units", "amount", "is_exempt", "adjustment_reason", "updated_by", "updated_at",
+    ])
+
+    if allocation.is_exempt or allocation.amount <= ZERO:
+        if charge is not None and charge.cancelled_at is None:
+            charge.cancelled_at = timezone.now()
+            charge.save(update_fields=["cancelled_at"])
+    else:
+        description = f"Water allocation adjusted: {reason}"[:200]
+        if charge is None:
+            charge = MeterCharge.objects.create(
+                organization=allocation.organization,
+                reading=reading,
+                allocation=allocation,
+                lease=allocation.lease,
+                unit=allocation.unit,
+                service_start=allocation.service_start,
+                service_end=allocation.service_end,
+                billing_month=billing_month_for(allocation.lease, reading.read_on),
+                amount=allocation.amount,
+                description=description,
+            )
+        else:
+            charge.organization = allocation.organization
+            charge.reading = reading
+            charge.lease = allocation.lease
+            charge.unit = allocation.unit
+            charge.service_start = allocation.service_start
+            charge.service_end = allocation.service_end
+            charge.billing_month = billing_month_for(allocation.lease, reading.read_on)
+            charge.amount = allocation.amount
+            charge.description = description
+            charge.cancelled_at = None
+            charge.save()
+
+        invoicing.bill_meter_charges(
+            reading.organization,
+            today=today,
+            lease=allocation.lease,
+            actor=actor,
+            request=request,
+        )
+
+    _audit("meters.allocation_adjust", actor, allocation, request, {
+        "allocated_units": [old["allocated_units"], str(allocation.allocated_units)],
+        "amount": [old["amount"], str(allocation.amount)],
+        "is_exempt": [old["is_exempt"], allocation.is_exempt],
+        "adjustment_reason": [old["adjustment_reason"], reason],
+    })
+    return allocation
 
 
 def approve_many(actor: Membership, readings, *, today=None, request=None) -> tuple[int, int]:

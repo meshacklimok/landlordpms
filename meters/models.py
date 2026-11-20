@@ -203,11 +203,70 @@ class MeterReading(PublicIdModel, TimeStampedModel):
         return [str(labels.get(f, f)) for f in self.flags]
 
 
+class MeterAllocation(models.Model):
+    """Calculated and final tenant share for one lease on a meter reading."""
+
+    organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
+    reading = models.ForeignKey(MeterReading, on_delete=models.PROTECT, related_name="allocations")
+    lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="meter_allocations")
+    unit = models.ForeignKey("properties.Unit", on_delete=models.PROTECT, related_name="+")
+    service_start = models.DateField()
+    service_end = models.DateField()
+
+    # Preserve the calculation separately from the landlord's final allocation.
+    calculated_units = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("0"))
+    allocated_units = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal("0"))
+    calculated_amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+    amount = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal("0.00"))
+
+    is_exempt = models.BooleanField(default=False)
+    adjustment_reason = models.CharField(max_length=300, blank=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        ordering = ["unit__code", "service_start", "pk"]
+        constraints = [
+            models.UniqueConstraint("reading", "lease", name="meters_alloc_reading_lease_once"),
+            models.CheckConstraint(
+                condition=Q(calculated_units__gte=0, allocated_units__gte=0),
+                name="meters_alloc_units_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=Q(calculated_amount__gte=0, amount__gte=0),
+                name="meters_alloc_amounts_not_negative",
+            ),
+            models.CheckConstraint(
+                condition=Q(service_end__gte=F("service_start")),
+                name="meters_alloc_days_order",
+            ),
+            models.CheckConstraint(
+                condition=Q(is_exempt=False) | Q(amount=0),
+                name="meters_alloc_exempt_zero",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.unit.code} · {self.amount}"
+
+
 class MeterCharge(models.Model):
     """What one lease owes for one approved reading. Billed through an InvoiceLine that points here."""
 
     organization = models.ForeignKey("accounts.Organization", on_delete=models.PROTECT, related_name="+")
     reading = models.ForeignKey(MeterReading, on_delete=models.PROTECT, related_name="charges")
+    allocation = models.OneToOneField(
+        "meters.MeterAllocation",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="charge",
+    )
     lease = models.ForeignKey("leases.Lease", on_delete=models.PROTECT, related_name="meter_charges")
     unit = models.ForeignKey("properties.Unit", on_delete=models.PROTECT, related_name="+")
     # The days of the reading period this lease covered.

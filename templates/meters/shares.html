@@ -33,6 +33,93 @@
   </table></div>
 </div></div>
 
+{% if allocations %}
+<div class="card shadow-sm mt-3">
+  <div class="card-body">
+    <h2 class="h5 mb-1">{% trans "Tenant allocations" %}</h2>
+    <p class="small text-muted">
+      {% trans "Compare the calculated share with the final amount. Adjustments and exemptions require a reason. Invoiced charges cannot be changed here." %}
+    </p>
+
+    {% for allocation in allocations %}
+    <div class="border rounded p-3 mb-3">
+      <div class="d-flex flex-wrap justify-content-between gap-2 mb-2">
+        <strong>{{ allocation.unit.code }}</strong>
+        {% if allocation.is_exempt %}
+          <span class="badge text-bg-warning">{% trans "Exempt" %}</span>
+        {% elif allocation.adjustment_reason %}
+          <span class="badge text-bg-info">{% trans "Adjusted" %}</span>
+        {% endif %}
+      </div>
+
+      <div class="row g-2 small mb-3">
+        <div class="col-6">
+          <span class="text-muted">{% trans "Calculated units" %}</span>
+          <div class="font-monospace">{{ allocation.calculated_units|floatformat:"-3" }} {{ meter.unit_label }}</div>
+        </div>
+        <div class="col-6">
+          <span class="text-muted">{% trans "Calculated amount" %}</span>
+          <div class="font-monospace">{{ allocation.calculated_amount|money }}</div>
+        </div>
+      </div>
+
+      {% if can_adjust_allocation %}
+      <form method="post" class="allocation-adjust-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="adjust_allocation">
+        <input type="hidden" name="allocation" value="{{ allocation.pk }}">
+
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <label class="form-label" for="units-{{ allocation.pk }}">{% trans "Final allocated units" %}</label>
+            <input class="form-control" id="units-{{ allocation.pk }}" name="allocated_units"
+                   type="number" min="0" max="999999999.999" step="0.001"
+                   value="{{ allocation.allocated_units }}" required>
+          </div>
+          <div class="col-sm-6">
+            <label class="form-label" for="amount-{{ allocation.pk }}">{% trans "Final charge (KES)" %}</label>
+            <input class="form-control" id="amount-{{ allocation.pk }}" name="amount"
+                   type="number" min="0" max="99999999" step="0.01"
+                   value="{{ allocation.amount }}" required>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" id="exempt-{{ allocation.pk }}" name="is_exempt"
+                     type="checkbox" {% if allocation.is_exempt %}checked{% endif %}>
+              <label class="form-check-label" for="exempt-{{ allocation.pk }}">
+                {% trans "Exempt this tenant from this bill" %}
+              </label>
+            </div>
+            <div class="form-text">{% trans "Exemption sets the final charge to KES 0. The calculated values remain available for reference." %}</div>
+          </div>
+          <div class="col-12">
+            <label class="form-label" for="reason-{{ allocation.pk }}">{% trans "Reason for adjustment or exemption" %}</label>
+            <input class="form-control" id="reason-{{ allocation.pk }}" name="reason"
+                   maxlength="300" value="{{ allocation.adjustment_reason }}" required
+                   placeholder="{% trans 'e.g. Tenant away for the entire billing period' %}">
+          </div>
+          <div class="col-12">
+            <button class="btn btn-outline-primary" type="submit">
+              {% trans "Save allocation" %}
+            </button>
+          </div>
+        </div>
+      </form>
+      {% else %}
+      <div class="small">
+        <div>{% trans "Final units" %}: {{ allocation.allocated_units|floatformat:"-3" }} {{ meter.unit_label }}</div>
+        <div>{% trans "Final charge" %}: {{ allocation.amount|money }}</div>
+        {% if allocation.adjustment_reason %}
+          <div class="text-muted mt-1">{% trans "Reason" %}: {{ allocation.adjustment_reason }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 {% elif not billable %}
 <p class="text-muted">{% trans "This reading has no use to divide: it starts the count, the meter is prepaid, or nothing was used." %}</p>
 
