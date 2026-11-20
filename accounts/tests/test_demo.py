@@ -20,7 +20,6 @@ from portal.models import TenantAccount
 from properties.models import Property, Unit
 from prospects.models import Prospect
 
-
 pytestmark = pytest.mark.django_db
 
 
