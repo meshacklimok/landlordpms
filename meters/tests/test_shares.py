@@ -10,6 +10,7 @@ from django.urls import reverse
 
 from accounts.tests.factories import add_member, make_org
 from accounts.tests.test_isolation import login
+from billing.tests.test_invoicing import bill
 from meters import services, split
 from meters.models import MeterReading
 from properties import services as property_services
@@ -183,3 +184,135 @@ def test_the_sheet_carries_what_the_preview_divides(client, owner, prop, tank):
     page = client.get(reverse("meters:round", args=[prop.public_id])).content.decode()
     assert 'data-rooms="1.00:1,1.00:1,1.00:0"' in page and 'data-vacant="OCCUPIED"' in page
     assert "data-share-amount" in page
+
+
+# Tenant allocation editor: rendered values and permission boundaries.
+def allocation_reading(owner, prop):
+    lease, unit1 = let(owner, prop, code="AL1")
+    _lease2, unit2 = let(owner, prop, code="AL2")
+    meter = make_meter(owner, prop, [unit1, unit2], label="Allocation test", rate="100", split="EQUAL")
+    services.approve(owner, read(owner, meter, DEC31, 0), today=DEC31)
+    reading = read(owner, meter, JAN31, 30)
+    services.approve(owner, reading, today=D(2026, 1, 10))
+    return lease, reading
+
+
+def test_approved_shared_reading_shows_calculated_allocation_values(client, owner, prop):
+    lease, reading = allocation_reading(owner, prop)
+    login(client, owner)
+
+    response = client.get(shares_url(reading))
+
+    assert response.status_code == 200
+    page = response.content.decode()
+    assert "Tenant allocations" in page
+    assert "Calculated units" in page
+    assert "Calculated amount" in page
+    assert "Final allocated units" in page
+    assert "Final charge (KES)" in page
+    allocation = reading.allocations.get(lease=lease)
+    assert f"{allocation.calculated_units:.0f}" in page
+    assert f"{allocation.calculated_amount:,.2f}" in page
+
+
+def test_landlord_can_adjust_an_allocation_from_the_page(client, owner, prop):
+    lease, reading = allocation_reading(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    login(client, owner)
+
+    response = client.post(shares_url(reading), {
+        "action": "adjust_allocation",
+        "allocation": str(allocation.pk),
+        "allocated_units": "17.250",
+        "amount": "1700.00",
+        "reason": "Corrected against supplier bill",
+    })
+
+    assert response.status_code == 302
+    allocation.refresh_from_db()
+    assert allocation.allocated_units == Decimal("17.250")
+    assert allocation.amount == Decimal("1700.00")
+    assert allocation.adjustment_reason == "Corrected against supplier bill"
+    assert allocation.updated_by == owner.user
+
+
+def test_caretaker_cannot_adjust_a_tenant_allocation(client, owner, prop):
+    lease, reading = allocation_reading(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    original_amount = allocation.amount
+    original_updated_by = allocation.updated_by
+    caretaker = add_member(owner.organization, "caretaker", properties=[prop])
+    login(client, caretaker)
+
+    response = client.post(shares_url(reading), {
+        "action": "adjust_allocation",
+        "allocation": str(allocation.pk),
+        "allocated_units": "99",
+        "amount": "9900",
+        "reason": "Unauthorized adjustment",
+    })
+
+    assert response.status_code == 404
+    allocation.refresh_from_db()
+    assert allocation.amount == original_amount
+    assert allocation.updated_by == original_updated_by
+
+def test_landlord_can_exempt_a_tenant_from_the_shares_page(client, owner, prop):
+    lease, reading = allocation_reading(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    original_calculated_units = allocation.calculated_units
+    original_calculated_amount = allocation.calculated_amount
+    login(client, owner)
+
+    response = client.post(shares_url(reading), {
+        "action": "adjust_allocation",
+        "allocation": str(allocation.pk),
+        "allocated_units": "0",
+        "amount": str(allocation.amount),
+        "is_exempt": "on",
+        "reason": "Tenant away for the entire billing period",
+    })
+
+    assert response.status_code == 302
+    allocation.refresh_from_db()
+    charge = allocation.charge
+    charge.refresh_from_db()
+
+    assert allocation.is_exempt is True
+    assert allocation.amount == Decimal("0.00")
+    assert allocation.calculated_units == original_calculated_units
+    assert allocation.calculated_amount == original_calculated_amount
+    assert allocation.adjustment_reason == "Tenant away for the entire billing period"
+    assert charge.cancelled_at is not None
+
+
+def test_shares_page_cannot_change_an_allocation_after_invoicing(client, owner, prop):
+    lease, reading = allocation_reading(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    bill(lease, D(2026, 2, 1), today=D(2026, 2, 2))
+    allocation.refresh_from_db()
+    charge = allocation.charge
+    charge.refresh_from_db()
+    original_units = allocation.allocated_units
+    original_amount = allocation.amount
+    original_reason = allocation.adjustment_reason
+    assert charge.lines.filter(is_void=False).exists()
+    login(client, owner)
+
+    response = client.post(shares_url(reading), {
+        "action": "adjust_allocation",
+        "allocation": str(allocation.pk),
+        "allocated_units": "20",
+        "amount": "2000",
+        "reason": "Attempted change after invoicing",
+    })
+
+    assert response.status_code == 302
+    allocation.refresh_from_db()
+    charge.refresh_from_db()
+    assert allocation.allocated_units == original_units
+    assert allocation.amount == original_amount
+    assert allocation.adjustment_reason == original_reason
+    assert charge.amount == original_amount
+    assert charge.cancelled_at is None
+    assert charge.lines.filter(is_void=False).exists()

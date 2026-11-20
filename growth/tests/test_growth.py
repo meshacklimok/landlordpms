@@ -57,6 +57,79 @@ def test_pricing_shows_the_live_plans(client):
     assert "Lite" in body and "777" in body
 
 
+def test_public_page_titles_match_the_seo_registry(client):
+    import re
+    from html import unescape
+
+    expected_titles = {
+        "/": "NyumbaPMS: M-Pesa Rent Collection Software for Kenya",
+        reverse("growth:pricing"): "Pricing in KES by number of units · NyumbaPMS",
+        reverse("growth:about"): "About NyumbaPMS: Rent Software Built for Kenya",
+        reverse("growth:solutions"): "Rent Software for Kenyan Landlords and Agents · NyumbaPMS",
+        reverse("growth:how_it_works"): "How NyumbaPMS Works: From Setup to Rent Paid",
+        reverse("growth:faq"): "Rent Collection and M-Pesa FAQ · NyumbaPMS",
+        reverse("growth:articles"): "Landlord Guides for Kenya: Rent, Paybill, Meters · NyumbaPMS",
+        reverse("growth:tutorials"): "NyumbaPMS Tutorials: First Invoice, M-Pesa, Meters",
+    }
+
+    for path, expected in expected_titles.items():
+        response = client.get(path)
+        assert response.status_code == 200, path
+        body = response.content.decode()
+
+        title_match = re.search(r"<title>(.*?)</title>", body, re.DOTALL)
+        og_match = re.search(
+            r'<meta property="og:title" content="(.*?)">',
+            body,
+            re.DOTALL,
+        )
+
+        assert title_match, f"Missing browser title on {path}"
+        assert og_match, f"Missing Open Graph title on {path}"
+
+        title = unescape(title_match.group(1).strip())
+        og_title = unescape(og_match.group(1).strip())
+
+        assert title == expected, f"Unexpected browser title on {path}: {title!r}"
+        assert og_title == expected, f"Unexpected Open Graph title on {path}: {og_title!r}"
+        assert title == og_title, f"Browser and Open Graph titles differ on {path}"
+
+
+
+def test_demo_and_tutorial_detail_titles_match_the_seo_registry(client):
+    import re
+    from html import unescape
+
+    first_tutorial = content.TUTORIALS[0]
+    expected_titles = {
+        reverse("growth:demo"): "Book a Free NyumbaPMS Demo · Call, Video or In Person",
+        reverse("growth:tutorial", args=[first_tutorial["slug"]]):
+            f"{first_tutorial['title']} · NyumbaPMS tutorial",
+    }
+
+    for path, expected in expected_titles.items():
+        response = client.get(path)
+        assert response.status_code == 200, path
+        body = response.content.decode()
+
+        title_match = re.search(r"<title>(.*?)</title>", body, re.DOTALL)
+        og_match = re.search(
+            r'<meta property="og:title" content="(.*?)">',
+            body,
+            re.DOTALL,
+        )
+
+        assert title_match, f"Missing browser title on {path}"
+        assert og_match, f"Missing Open Graph title on {path}"
+
+        title = unescape(title_match.group(1).strip())
+        og_title = unescape(og_match.group(1).strip())
+
+        assert title == expected, f"Unexpected browser title on {path}: {title!r}"
+        assert og_title == expected, f"Unexpected Open Graph title on {path}: {og_title!r}"
+        assert title == og_title, f"Browser and Open Graph titles differ on {path}"
+
+
 def test_the_faq_marks_up_every_question_and_cannot_be_broken_out_of(client):
     body = client.get(reverse("growth:faq")).content.decode()
     assert 'type="application/ld+json"' in body and "FAQPage" in body
@@ -68,8 +141,10 @@ def test_robots_and_sitemap(client, settings):
     settings.SITE_URL = "https://app.example.com"
     robots = client.get(reverse("growth:robots")).content.decode()
     assert "Sitemap: https://app.example.com/sitemap.xml" in robots and "Disallow: /my/" in robots
+    assert "Disallow: /stay/" in robots
     sitemap = client.get(reverse("growth:sitemap")).content.decode()
     assert "https://app.example.com/pricing/" in sitemap and "/tutorials/first-invoice/" in sitemap
+    assert "/stay/" not in sitemap
 
 
 def test_signed_in_users_do_not_get_the_public_menu(client):

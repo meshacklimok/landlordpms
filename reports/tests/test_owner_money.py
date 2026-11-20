@@ -35,8 +35,13 @@ def jane(owner):
 @pytest.fixture
 def prop(owner, jane):
     prop = make_property(owner.organization, name="Acacia Court")
-    return property_services.update_property(owner, prop, owner=jane, management_fee_percent=Decimal("10"),
+    prop = property_services.update_property(owner, prop, owner=jane, management_fee_percent=Decimal("10"),
                                              management_fee_fixed=Decimal("1500"))
+    # These tests cover October 2026, so management must have started before October.
+    type(prop).objects.filter(pk=prop.pk).update(
+        created_at=datetime.datetime(2026, 9, 1, tzinfo=datetime.UTC)
+    )
+    return prop
 
 
 def test_deposit_is_held_not_paid_out_and_utilities_carry_no_fee(owner, jane, prop):

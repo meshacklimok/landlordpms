@@ -31,3 +31,6 @@ Thumbs.db
 *.log
 
 .env.production
+
+# Local AI coding-tool settings
+.claude/

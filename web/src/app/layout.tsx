@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import localFont from "next/font/local";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import { themeBootScript } from "@/lib/theme";
@@ -27,6 +28,19 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body>
         <a className="skip-link" href="#main">Skip to content</a>
         {children}
+
+        <Script
+          src="https://www.googletagmanager.com/gtag/js?id=G-H820C1WZFT"
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){window.dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', 'G-H820C1WZFT');
+          `}
+        </Script>
       </body>
     </html>
   );
