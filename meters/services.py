@@ -618,7 +618,7 @@ def adjust_allocation(
 ) -> MeterAllocation:
     """Adjust one approved reading's tenant share without changing an issued invoice."""
     allocation = (
-        MeterAllocation.objects.select_for_update()
+        MeterAllocation.objects.select_for_update(of=("self",))
         .select_related("reading__meter__property", "lease", "unit")
         .get(pk=allocation.pk)
     )
