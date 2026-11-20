@@ -25,31 +25,7 @@
   {% endif %}
 
 
-  {% if months %}
-  <div class="card shadow-sm mb-3"><div class="card-body">
-    <h2 class="h6">{% blocktrans with w=lease.organization|word:"rent"|lower %}Your {{ w }} over 12 months{% endblocktrans %}</h2>
-    <div class="ring-stat mb-3">
-      {% trans "Paid in time" as in_time_label %}{% ring months.in_time_share in_time_label %}
-      <div class="ring-text small">{% blocktrans count n=months.due|length with k=months.in_time %}{{ k }} of {{ n }} month's rent paid in full by the due date{% plural %}{{ k }} of {{ n }} months' rent paid in full by the due date{% endblocktrans %}</div>
-    </div>
-    <ol class="month-strip" aria-label="{% blocktrans with w=lease.organization|word:'rent' %}{{ w }} each month: how much was paid and when{% endblocktrans %}">
-      {% for c in months.cells %}
-      <li class="ms-{{ c.state }}" title="{{ c.month|date:'M Y' }}: {{ c.label }}{% if c.expected %} · {{ c.collected|money:lease.currency }} / {{ c.expected|money:lease.currency }}{% endif %}">
-        <span class="ms-mark" aria-hidden="true">{{ c.state|state_mark }}</span>
-        <span class="ms-bar"><span class="ms-fill" style="height: {{ c.collected|share_of:c.expected|percent_number }}%"></span></span>
-        <span>{{ c.month|date:"M" }}</span>
-        <span class="visually-hidden">{{ c.month|date:"F Y" }}: {{ c.label }}{% if c.expected %}, {{ c.collected|money:lease.currency }} {% trans "of" %} {{ c.expected|money:lease.currency }}{% endif %}</span>
-      </li>
-      {% endfor %}
-    </ol>
-    <div class="chart-legend small d-flex flex-wrap gap-3 mt-2 text-muted">
-      <span><span class="key key-paid"></span>✓ {% trans "Paid in time" %}</span>
-      <span><span class="key key-late"></span>L {% trans "Paid late" %}</span>
-      <span><span class="key key-part"></span>½ {% trans "Part paid" %}</span>
-      <span><span class="key key-unpaid"></span>✗ {% trans "Not paid, overdue" %}</span>
-    </div>
-  </div></div>
-  {% endif %}
+  {% include "portal/_months.html" %}
 
   <div class="card shadow-sm mb-3"><div class="card-body">
     <h2 class="h6">{% trans "Open invoices" %}</h2>

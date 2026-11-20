@@ -3,7 +3,6 @@ online (D-126)."""
 
 import uuid
 
-from django.conf import settings
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponse, JsonResponse
@@ -19,6 +18,7 @@ from ai_assistant import services as assistant
 from core.contacts import support_whatsapp
 from growth.content import FEATURES
 from meters import ocr
+from notifications.providers.sms import platform_sender_name
 
 from . import collect, documents, entitlements, services
 from .models import (
@@ -44,7 +44,7 @@ class SubscriptionView(CapabilityRequiredMixin, View):
         for plan in plans:
             plan.over = entitlements.over_limits(org, plan)
             plan.current = plan.pk == sub.plan_id and sub.status != Subscription.Status.TRIAL
-            plan.offer_list = plan.offers()
+            plan.offer_list = plan.offers(sub)
         payments = (SubscriptionPayment.objects.filter(organization=org).select_related("receipt", "invoice")
                     .order_by("-paid_on", "-pk")[:20])
         open_invoice = services.open_invoice(sub)
@@ -67,7 +67,7 @@ class SubscriptionView(CapabilityRequiredMixin, View):
             "change": services.scheduled_change(sub),
             "grace_days": services.grace_days(),
             "account_number": collect.account_number(open_invoice) if open_invoice else "",
-            "pay_online": collect.methods() if open_invoice and open_invoice.outstanding > 0 else {},
+            "pay_online": collect.page_methods() if open_invoice and open_invoice.outstanding > 0 else {},
             "last_checkout": last_checkout,
             "phone": request.user.phone,
             "invoices": SubscriptionInvoice.objects.filter(organization=org)[:24],
@@ -89,7 +89,7 @@ class SubscriptionView(CapabilityRequiredMixin, View):
             "lapse_roles": [{"role": r, "on": r.pk in chosen_roles}
                             for r in services.lapse_role_choices(org)] if can(request.membership, "subscription.manage") else [],
             "support_whatsapp": support_whatsapp(),
-            "platform_sender": getattr(settings, "AT_SENDER_ID", "") or "NyumbaPMS",
+            "platform_sender": platform_sender_name() or "NyumbaPMS",
         })
 
     def post(self, request):

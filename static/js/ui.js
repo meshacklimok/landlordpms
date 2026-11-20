@@ -137,6 +137,27 @@
     });
   });
 
+  // Phone top bar: slides away when scrolling down, comes back on any scroll up (and at the top of the page).
+  var bar = document.querySelector(".app-topbar");
+  if (bar) {
+    var lastY = window.scrollY;
+    var barTicking = false;
+    var phone = window.matchMedia("(max-width: 767.98px)");
+    var tuck = function () {
+      barTicking = false;
+      var y = Math.max(0, window.scrollY);
+      var delta = y - lastY;
+      if (!phone.matches || y < bar.offsetHeight) bar.classList.remove("is-tucked");
+      else if (delta > 6 && !bar.contains(document.activeElement)) bar.classList.add("is-tucked");
+      else if (delta < -6) bar.classList.remove("is-tucked");
+      if (Math.abs(delta) > 6) lastY = y;
+    };
+    window.addEventListener("scroll", function () {
+      if (!barTicking) { barTicking = true; window.requestAnimationFrame(tuck); }
+    }, { passive: true });
+    bar.addEventListener("focusin", function () { bar.classList.remove("is-tucked"); });
+  }
+
   // D-141. Back to top: shown once the page is scrolled well down; puts keyboard focus back at the start of the content.
   var toTop = document.querySelector("[data-back-to-top]");
   if (toTop) {

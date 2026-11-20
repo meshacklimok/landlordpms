@@ -57,6 +57,7 @@ def test_seed_builds_the_full_demo_and_a_second_run_replaces_it():
     # The one sample tenant login takes the name of this run's tenant, not the one it had before.
     account = TenantAccount.objects.get(organization=live.get(), revoked_at__isnull=True)
     assert account.user.full_name == account.tenant.name
+
 @pytest.mark.parametrize(
     "today",
     [

@@ -5,6 +5,8 @@ const django = process.env.DJANGO_URL ?? "http://127.0.0.1:8000";
 const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
+  // Pages drawn here do not pass through Django's header middleware (core/headers.py, prod.py), so repeat the same
+  // protections: no framing, no sniffing, same-origin referrers, and the browser features no page of ours uses.
 
   async headers() {
     return [

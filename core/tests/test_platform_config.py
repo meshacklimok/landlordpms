@@ -83,6 +83,37 @@ def test_admin_page_saves_validates_and_hides_secrets(client, monkeypatch, setti
     assert b"atsk_12345678" not in again.content and b"ends 5678" in again.content
 
 
+def test_admin_page_takes_celcom_keys_and_sms_goes_out_through_celcom(client, monkeypatch, settings):
+    for key in ("CELCOM_API_KEY", "CELCOM_PARTNER_ID", "CELCOM_SENDER_ID"):
+        monkeypatch.setattr(base_settings(settings), key, "")
+    from accounts import mfa
+    from notifications.providers import sms
+
+    monkeypatch.setattr(mfa, "is_enabled", lambda user: True)
+    monkeypatch.setattr(mfa, "session_verified", lambda request: True)
+    user = get_user_model().objects.create_superuser("+254700000003", password="pw-Strong-123!")
+    client.force_login(user)
+    url = reverse("admin:core_platformsetting_changelist")
+    assert b"Celcom Africa" in client.get(url).content
+
+    bad = client.post(url, {"SMS_BACKEND": pc.SMS_CELCOM})  # provider chosen, keys missing
+    assert bad.status_code == 200 and PlatformSetting.objects.count() == 0
+
+    ok = client.post(url, {"SMS_BACKEND": pc.SMS_CELCOM, "CELCOM_API_KEY": "celcomkey12345",
+                           "CELCOM_PARTNER_ID": "777", "CELCOM_SENDER_ID": "NYUMBA"})
+    assert ok.status_code == 302
+    page = client.get(url)
+    assert b"celcomkey12345" not in page.content and b"ends 2345" in page.content
+
+    settings.SMS_BACKEND = pc.SMS_CELCOM  # the conftest pins the test backend; the saved choice is what production reads
+    sent = []
+    monkeypatch.setattr(sms.CelcomSmsSender, "_post", lambda self, fields: sent.append(fields) or {
+        "responses": [{"response-code": 200, "messageid": 1}]})
+    result = sms.send_sms("+254712345678", "Hello")
+    assert result.ok and result.provider == "celcom"
+    assert sent[0]["apikey"] == "celcomkey12345" and sent[0]["partnerID"] == "777" and sent[0]["shortcode"] == "NYUMBA"
+
+
 def test_only_the_owner_reaches_the_page(client, monkeypatch):
     from accounts import mfa
 

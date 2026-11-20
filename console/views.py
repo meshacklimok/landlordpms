@@ -1466,6 +1466,8 @@ class OwnerView(OwnerMixin, TemplateView):
 class EmailPreviewsView(ConsoleMixin, TemplateView):
     """Every kind of email we send, drawn as the recipient sees it (made-up words)."""
 
+    required_capability = "channels"
+
     template_name = "console/email_previews.html"
 
     def get_context_data(self, **kwargs):
@@ -1477,6 +1479,8 @@ class EmailPreviewsView(ConsoleMixin, TemplateView):
 
 
 class EmailPreviewView(ConsoleMixin, View):
+    required_capability = "channels"
+
     def get(self, request, key):
         from django.http import HttpResponse
 
@@ -1490,6 +1494,8 @@ class EmailPreviewView(ConsoleMixin, View):
 
 class EmailPreviewSendView(ConsoleMixin, View):
     """Sends a sample to the signed-in person, to see it in a real inbox on a phone."""
+
+    required_capability = "channels"
 
     def post(self, request, key):
         from core import ratelimit

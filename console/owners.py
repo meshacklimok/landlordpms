@@ -141,7 +141,7 @@ def monthly_value(sub) -> int:
     """What a paying subscription brings in a month (a yearly one divided by 12). Trials and free plans: 0."""
     if sub is None or sub.status not in (Subscription.Status.ACTIVE, Subscription.Status.PAST_DUE):
         return 0
-    price = sub.plan.price(sub.interval)
+    price = sub.price_for(sub.plan, sub.interval)
     if not price or price <= 0:
         return 0
     span = {"MONTHLY": 1, "YEARLY": 12}.get(sub.interval, 12 * sub.plan.one_off_years)

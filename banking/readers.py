@@ -24,6 +24,7 @@ DELIMITERS = (",", ";", "\t")
 MAX_PDF_PAGES = 100
 MAX_SHEETS = 5
 MAX_COLUMNS = 40
+MAX_ROWS = 20000
 
 # A date at the start of a cell: 14-Oct-26, 14/10/2026, 14.10.26, 14 October 2026, 2026-10-14.
 _DATE_START = re.compile(r"^\s*(\d{1,2}[-/. ](?:[A-Za-z]{3,9}|\d{1,2})[-/. ,]*\d{2,4}|\d{4}-\d{2}-\d{2})\b")
@@ -94,7 +95,7 @@ def _xlsx_tables(data: bytes) -> list[list[list[str]]]:
         raise FileError("This does not look like an Excel (.xlsx) file. Save it as .xlsx or as CSV.")
     try:
         book = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
-        return [[[_cell_text(v) for v in record] for record in sheet.iter_rows(values_only=True, max_col=MAX_COLUMNS)]
+        return [[[_cell_text(v) for v in record] for record in sheet.iter_rows(values_only=True, max_row=MAX_ROWS, max_col=MAX_COLUMNS)]
                 for sheet in book.worksheets[:MAX_SHEETS]]
     except (zipfile.BadZipFile, InvalidFileException, KeyError, IndexError, OSError, ValueError):
         raise FileError("This does not look like an Excel (.xlsx) file. Save it as .xlsx or as CSV.") from None
