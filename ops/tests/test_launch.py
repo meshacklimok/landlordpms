@@ -28,7 +28,13 @@ def test_the_cron_file_runs_every_job_and_nothing_else():
             fields = line.split()
             assert fields[5:7] == ["sh", "/srv/landlordpms/deploy/run.sh"], line
             commands[fields[7]] = fields[:5]
-    assert set(commands) == set(JOBS) | {"check_jobs"}
+    # The management command seeds the demo, but records its run under
+    # the stable scheduled-job name "reset_public_demo".
+    tracked_names = {
+        "reset_public_demo" if name == "seed_public_demo" else name
+        for name in commands
+    }
+    assert tracked_names == set(JOBS) | {"check_jobs"}
     assert commands["restore_test"] == ["0", "4", "1", "*", "*"]
 
 

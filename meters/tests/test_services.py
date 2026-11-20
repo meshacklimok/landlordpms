@@ -309,3 +309,169 @@ def test_a_lease_with_unbilled_water_is_not_settled(owner, prop):
     lease, meter = started(owner, prop)
     services.approve(owner, read(owner, meter, JAN31, 110), today=JAN31)
     assert jobs.is_settled(lease) is False
+
+
+# ---------------------------------------------------------------------------
+# Shared allocation adjustments
+# ---------------------------------------------------------------------------
+
+def shared_reading_for_allocation_tests(owner, prop, *, today=None):
+    """Two occupied units sharing a 30-unit January reading; do not invoice it yet."""
+    if today is None:
+        today = D(2026, 1, 10)
+    lease1, unit1 = let(owner, prop, code="A1")
+    _lease2, unit2 = let(owner, prop, code="A2")
+    meter = make_meter(owner, prop, [unit1, unit2], rate="100", split="EQUAL")
+    services.approve(owner, read(owner, meter, DEC31, 0), today=DEC31)
+    reading = read(owner, meter, JAN31, 30)
+    services.approve(owner, reading, today=today)
+    return lease1, reading
+
+
+def test_adjusting_a_shared_allocation_preserves_the_calculation(owner, prop):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    original_units = allocation.calculated_units
+    original_amount = allocation.calculated_amount
+
+    updated = services.adjust_allocation(
+        owner, allocation, allocated_units="17.250", amount="1700.00",
+        reason="Corrected from the supplier statement", today=D(2026, 1, 10),
+    )
+
+    updated.refresh_from_db()
+    charge = MeterCharge.objects.get(allocation=updated)
+    assert updated.calculated_units == original_units == Decimal("15.000")
+    assert updated.calculated_amount == original_amount == Decimal("1500.00")
+    assert updated.allocated_units == Decimal("17.250")
+    assert updated.amount == Decimal("1700.00")
+    assert updated.adjustment_reason == "Corrected from the supplier statement"
+    assert updated.updated_by == owner.user
+    assert charge.amount == Decimal("1700.00")
+    assert not charge.lines.filter(is_void=False).exists()
+
+
+def test_exempting_a_tenant_preserves_calculation_and_cancels_unbilled_charge(owner, prop):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+    charge = MeterCharge.objects.get(allocation=allocation)
+
+    services.adjust_allocation(
+        owner, allocation, allocated_units=0, amount="1500.00", is_exempt=True,
+        reason="Tenant away for the entire billing period", today=D(2026, 1, 10),
+    )
+
+    allocation.refresh_from_db()
+    charge.refresh_from_db()
+    assert allocation.is_exempt is True
+    assert allocation.amount == Decimal("0.00")
+    assert allocation.calculated_units == Decimal("15.000")
+    assert allocation.calculated_amount == Decimal("1500.00")
+    assert allocation.adjustment_reason == "Tenant away for the entire billing period"
+    assert charge.cancelled_at is not None
+
+
+def test_an_invoiced_allocation_cannot_be_adjusted(owner, prop):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop, today=D(2026, 1, 10))
+    allocation = reading.allocations.get(lease=lease)
+    charge = MeterCharge.objects.get(allocation=allocation)
+
+    # Explicitly invoice the lease so the test proves the posted-charge guard.
+    bill(lease, FEB)
+    assert charge.lines.filter(is_void=False).exists()
+    old_amount = allocation.amount
+
+    with pytest.raises(ValidationError, match="on an invoice"):
+        services.adjust_allocation(
+            owner, allocation, allocated_units="20", amount="2000",
+            reason="Attempted change after invoicing", today=D(2026, 2, 2),
+        )
+
+    allocation.refresh_from_db()
+    charge.refresh_from_db()
+    assert allocation.amount == old_amount
+    assert charge.amount == old_amount
+
+
+def test_reapproval_preserves_manual_allocation_amount(owner, prop):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+
+    services.adjust_allocation(
+        owner, allocation, allocated_units="17.250", amount="1700.00",
+        reason="Corrected from supplier statement", today=D(2026, 1, 10),
+    )
+
+    services.undo_approval(owner, reading)
+    services.approve(owner, reading, today=D(2026, 1, 10))
+
+    allocation.refresh_from_db()
+    charge = MeterCharge.objects.get(allocation=allocation)
+    assert allocation.amount == Decimal("1700.00")
+    assert allocation.allocated_units == Decimal("17.250")
+    assert charge.amount == Decimal("1700.00")
+    assert charge.cancelled_at is None
+
+
+def test_reapproval_restores_manual_amount_when_recalculated_amount_is_zero(
+    owner, prop, monkeypatch
+):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop)
+    original_divide = services.splitting.divide
+
+    def divide_with_zero_share(*args, **kwargs):
+        division = original_divide(*args, **kwargs)
+        for room in division.rooms:
+            for part in room.parts:
+                if part.lease.pk == lease.pk:
+                    part.amount = Decimal("0.00")
+        return division
+
+    monkeypatch.setattr(services.splitting, "divide", divide_with_zero_share)
+
+    services.undo_approval(owner, reading)
+    services.approve(owner, reading, today=D(2026, 1, 10))
+
+    allocation = reading.allocations.get(lease=lease)
+    assert allocation.calculated_amount == Decimal("0.00")
+    assert allocation.amount == Decimal("0.00")
+
+    services.adjust_allocation(
+        owner, allocation, allocated_units="17.250", amount="1700.00",
+        reason="Corrected from supplier statement", today=D(2026, 1, 10),
+    )
+
+    charge = MeterCharge.objects.get(allocation=allocation)
+    assert charge.amount == Decimal("1700.00")
+    assert charge.cancelled_at is None
+
+    services.undo_approval(owner, reading)
+    services.approve(owner, reading, today=D(2026, 1, 10))
+
+    allocation.refresh_from_db()
+    charge.refresh_from_db()
+    assert allocation.calculated_amount == Decimal("0.00")
+    assert allocation.amount == Decimal("1700.00")
+    assert allocation.allocated_units == Decimal("17.250")
+    assert charge.amount == Decimal("1700.00")
+    assert charge.cancelled_at is None
+
+
+
+def test_reapproval_does_not_reactivate_exempt_tenant_charge(owner, prop):
+    lease, reading = shared_reading_for_allocation_tests(owner, prop)
+    allocation = reading.allocations.get(lease=lease)
+
+    services.adjust_allocation(
+        owner, allocation, allocated_units=0, amount="1500.00", is_exempt=True,
+        reason="Tenant away for the entire billing period", today=D(2026, 1, 10),
+    )
+
+    services.undo_approval(owner, reading)
+    services.approve(owner, reading, today=D(2026, 1, 10))
+
+    allocation.refresh_from_db()
+    charge = MeterCharge.objects.get(allocation=allocation)
+    assert allocation.is_exempt is True
+    assert allocation.amount == Decimal("0.00")
+    assert charge.cancelled_at is not None

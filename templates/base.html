@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}NyumbaPMS{% endblock %}</title>
+  <title>{% block title %}{{ seo.title|default:"NyumbaPMS" }}{% endblock %}</title>
   {% block meta %}{% include "seo/_head.html" %}{% endblock %}
   <link rel="manifest" href="{% url 'support:manifest' %}">
   <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">

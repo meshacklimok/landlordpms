@@ -57,8 +57,6 @@ def test_seed_builds_the_full_demo_and_a_second_run_replaces_it():
     # The one sample tenant login takes the name of this run's tenant, not the one it had before.
     account = TenantAccount.objects.get(organization=live.get(), revoked_at__isnull=True)
     assert account.user.full_name == account.tenant.name
-
-
 @pytest.mark.parametrize(
     "today",
     [
@@ -87,18 +85,18 @@ def test_public_demo_tracks_calendar_month_and_avoids_future_payments(
         period_start__month=today.month,
     ).exists()
 
-    # On the first day, invoices for later months should not exist.
+    # On the first day of the month, the next month's invoices
+    # should not yet be generated under the normal lead-day settings.
     assert not Invoice.objects.filter(
         organization=org,
-        period_start__gt=today,
+        period_start__gt=today.replace(day=1),
     ).exists()
 
-    # Demo payments must not be dated after the simulated current date.
+    # No payment should be dated after the simulated current date.
     assert not Payment.objects.filter(
         organization=org,
         paid_at__gt=today,
     ).exists()
-
 
 def test_no_two_step_login_nudge_in_the_demo(seeded):
     """Its Security page is closed, so the "Set it up" button would lead nowhere; a real owner still sees it."""
