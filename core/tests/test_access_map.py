@@ -61,7 +61,6 @@ SIGNED_IN = {
     "console:view_as", "console:view_as_stop", "console:support", "console:support_item", "console:canned_replies", "console:tools",
     "console:team_edit", "console:articles", "console:article_new", "console:article", "console:article_preview", "console:notifications", "console:notification", "console:system_messages",
     "console:referrals", "console:late_policy", "console:organization_late_rules", "console:organization_custom_price", "console:email_previews", "console:email_preview",  # platform owner only (OwnerMixin)
-    "console:referrals", "console:late_policy", "console:organization_late_rules", "console:organization_custom_price", "console:email_previews", "console:email_preview",  # platform owner only (OwnerMixin)
     "console:owners", "console:owners_export", "console:owner_email", "console:owner_emails",
     "console:owner_email_detail", "console:owner_email_resend", "console:owner_new", "console:owner", "console:owner_follow_ups", "console:owner_bulk", "console:problems", "console:email_preview_send",  # platform owner only (OwnerMixin): owners' names and emails, and email to them
 }
