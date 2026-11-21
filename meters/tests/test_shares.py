@@ -12,7 +12,8 @@ from accounts.tests.factories import add_member, make_org
 from accounts.tests.test_isolation import login
 from billing.tests.test_invoicing import bill
 from meters import services, split
-from meters.models import MeterReading
+from meters.forms import MeterForm
+from meters.models import Meter, MeterReading
 from properties import services as property_services
 
 from .conftest import let, make_meter, read
@@ -20,6 +21,12 @@ from .conftest import let, make_meter, read
 pytestmark = pytest.mark.django_db
 D = datetime.date
 DEC31, JAN30, JAN31 = D(2025, 12, 31), D(2026, 1, 30), D(2026, 1, 31)
+
+
+def test_percentage_split_is_not_offered():
+    supported = ["EQUAL", "WEIGHTED", "USAGE"]
+    assert [value for value, _label in Meter.Split.choices] == supported
+    assert [value for value, _label in MeterForm().fields["split"].choices] == supported
 
 
 @pytest.fixture

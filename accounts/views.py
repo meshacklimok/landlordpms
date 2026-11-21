@@ -23,10 +23,11 @@ from django.views.generic import TemplateView
 from audit import services as audit
 from core import ratelimit, reportcache, sessions
 from core.net import client_ip
+from core.phone import normalize_phone
 from properties.models import Property
 from reports import home as reports_home
 
-from . import branches, data_export, demo, forms, identity, mfa, services, setup
+from . import branches, data_export, demo, forms, identity, mfa, registration_alerts, services, setup
 from .capabilities import OWNER_CRITICAL, email_required_for
 from .middleware import SESSION_KEY
 from .mixins import CapabilityRequiredMixin, OrgMemberRequiredMixin, VerifiedUserRequiredMixin
@@ -128,6 +129,10 @@ class RegisterView(View):
         elif form.is_valid() and not _ip_allowed(request, "signup", SIGNUP_PER_IP_HOUR):
             form.add_error(None, _too_many_text())
         elif form.is_valid():
+            normalized_phone = normalize_phone(form.cleaned_data["phone"])
+            is_new_registration = not identity.User.objects.filter(
+                phone=normalized_phone
+            ).exists()
             try:
                 user = identity.register_user(
                     phone=form.cleaned_data["phone"],
@@ -143,6 +148,8 @@ class RegisterView(View):
                 else:
                     form.add_error("password", exc)
             else:
+                if is_new_registration:
+                    registration_alerts.send_new_registration(user)
                 login(request, user, backend="accounts.backends.PhoneOrEmailBackend")
                 if user.phone_verified:  # the admin switched the sign-up code off
                     return _after_phone_verified(request)
