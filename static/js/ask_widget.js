@@ -145,7 +145,8 @@
 
       var form = el("form", "ask-w-form");
       var box = el("textarea", "ask-w-input");
-      box.rows = 1; box.maxLength = state.max_length; box.required = true; box.disabled = busy;
+      // readOnly, not disabled: a disabled box loses focus and the phone keyboard closes while waiting.
+      box.rows = 1; box.maxLength = state.max_length; box.required = true; box.readOnly = busy;
       box.value = draft;
       box.placeholder = panel.getAttribute("data-placeholder");
       box.setAttribute("aria-label", panel.getAttribute("data-question"));
@@ -175,10 +176,21 @@
     }
     fresh.hidden = !(state.platform_on && state.is_on && state.turns.length);
     fresh.disabled = busy;
+    var hadFocus = document.activeElement && document.activeElement.classList.contains("ask-w-input");
     body.replaceChildren.apply(body, out);
     var last = body.querySelector(".ask-w-thread");
     if (last) body.scrollTop = body.scrollHeight;
-    if (!busy) { var t = body.querySelector(".ask-w-input"); if (t && !panel.hidden && !note) t.focus({ preventScroll: true }); }
+    var t = body.querySelector(".ask-w-input");
+    // Keep the keyboard as the person left it: still open if it was open, and not popped up by the answer arriving.
+    if (t && !panel.hidden && (hadFocus || (!busy && !note && !touch))) t.focus({ preventScroll: true });
+  }
+
+  var touch = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  // When the keyboard opens or closes the visible area changes: keep the latest answer in view.
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () {
+      if (!panel.hidden && body.querySelector(".ask-w-thread")) body.scrollTop = body.scrollHeight;
+    });
   }
 
   var fresh = panel.querySelector("[data-ask-new]");

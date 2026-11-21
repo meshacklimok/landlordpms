@@ -202,7 +202,7 @@ def revenue_mrr() -> dict:
     subs = Subscription.objects.filter(
         status__in=[Subscription.Status.ACTIVE, Subscription.Status.PAST_DUE]).select_related("plan")
     for sub in subs:
-        price = sub.plan.price(sub.interval)
+        price = sub.price_for(sub.plan, sub.interval)
         if not price or price <= 0:
             continue
         span = {"MONTHLY": 1, "YEARLY": 12}.get(sub.interval, 12 * sub.plan.one_off_years)

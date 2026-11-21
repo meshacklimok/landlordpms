@@ -359,7 +359,7 @@ class PlatformReceipt(PublicIdModel):
 
 
 class PlatformSequence(models.Model):
-    """Our own document numbers (LPM-INV-2026-000001). Not per organization, unlike core.NumberSequence."""
+    """Our own document numbers (NPMS-INV-2026-000001). Not per organization, unlike core.NumberSequence."""
 
     key = models.CharField(max_length=30)
     period = models.CharField(max_length=10, blank=True)

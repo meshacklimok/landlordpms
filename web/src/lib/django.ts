@@ -5,14 +5,13 @@ import { notFound, redirect } from "next/navigation";
 const DJANGO = process.env.DJANGO_URL ?? "http://127.0.0.1:8000";
 
 /**
- * The X-Forwarded-For Django should see. nginx has already put the visitor's address in it. Next.js's own
- * pass-through of other pages (the rewrites) adds the address it received from, which is nginx on this machine,
- * so add the same hop here: Django then reads the same chain whichever way a request arrives, and prod sets
- * TRUSTED_PROXY_COUNT=2 (nginx and Next.js). Appended on the right, so anything a visitor forged stays on the
- * left where Django ignores it. With no header at all (dev, no nginx) it stays empty and Django uses the socket.
+ * The X-Forwarded-For Django should see: exactly what nginx sent. nginx has already put the visitor's address in it,
+ * and deploy/setup.sh sets TRUSTED_PROXY_COUNT=1 (Django reads the last entry). Adding a hop here made Django read
+ * 127.0.0.1 for every page this app draws, so per-address limits and the audit log lost the visitor's address.
+ * With no header at all (dev, no nginx) it stays empty and Django uses the socket.
  */
 function forwardedFor(incoming: string | null): string {
-  return incoming ? `${incoming}, 127.0.0.1` : "";
+  return incoming ?? "";
 }
 
 /**
@@ -25,6 +24,8 @@ export async function djangoGet<T>(path: string): Promise<T> {
   const response = await fetch(`${DJANGO}${path}`, {
     cache: "no-store",
     headers: {
+      // Django only answers for its own domain (ALLOWED_HOSTS), not for 127.0.0.1:8000, so pass the visitor's Host on.
+      ...(incoming.get("host") ? { host: incoming.get("host") as string } : {}),
       cookie: jar.toString(),
       "accept-language": incoming.get("accept-language") ?? "en",
       // Django decides "secure request" from this when it sits behind nginx.

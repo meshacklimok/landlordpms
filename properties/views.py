@@ -16,6 +16,7 @@ from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
 from django.views import View
 
@@ -566,7 +567,7 @@ class UnitBulkView(CapabilityRequiredMixin, View):
     def post(self, request):
         form = forms.BulkUnitForm(request.POST)
         back = request.POST.get("next", "")
-        target = back if back.startswith("/") and not back.startswith("//") else reverse("properties:units")
+        target = back if url_has_allowed_host_and_scheme(back, allowed_hosts={request.get_host()}, require_https=request.is_secure()) and back.startswith("/") else reverse("properties:units")
         ids = [i for i in (uuid_or_none(v) for v in request.POST.getlist("units")) if i]
         if not ids:
             messages.error(request, _("Tick at least one unit."))

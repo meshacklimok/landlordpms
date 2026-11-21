@@ -138,6 +138,15 @@ ul, ol { padding: 0; list-style: none; }
 .ask-float-brand .brand-pms { font-weight: 800; }
 .ask-float-brand svg { width: 1.4rem; height: 1.4rem; }
 .ask-fab b { font-weight: 800; }
+/* Install bar (InstallPrompt.tsx): phones only, sits above the Help and Ask buttons */
+.install-bar { position: fixed; left: max(.75rem, env(safe-area-inset-left)); right: max(.75rem, env(safe-area-inset-right)); bottom: calc(max(1rem, env(safe-area-inset-bottom)) + 3.6rem); z-index: 32;
+  display: flex; align-items: center; gap: .75rem; padding: .7rem .85rem; background: var(--canvas); color: var(--text); border: 1px solid var(--border); border-radius: 1rem; box-shadow: 0 .5rem 1.5rem rgba(0, 0, 0, .25); }
+.install-bar > svg { flex: none; width: 2rem; height: 2rem; }
+.install-bar-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.25; }
+.install-bar-text span { color: var(--muted); font-size: .82rem; }
+.install-bar-actions { display: flex; align-items: center; gap: .35rem; flex: none; }
+.install-bar-actions .btn-quiet { padding-left: .5rem; padding-right: .5rem; }
+@media (min-width: 768px) { .install-bar { display: none; } }
 .ask-starters { display: flex; flex-direction: column; align-items: flex-start; gap: .4rem; margin-top: 1rem; }
 .ask-chip { max-width: 100%; padding: .4rem .8rem; border: 1px solid var(--border); border-radius: 1rem; background: var(--surface); color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .ask-chip:hover:not(:disabled) { border-color: var(--primary); background: var(--hover); }

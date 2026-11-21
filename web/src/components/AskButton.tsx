@@ -16,10 +16,13 @@ export function AskButton() {
 
   // Load the conversation the first time the panel is opened.
   useEffect(() => {
-  if (!open || state) return;
-  fetch("/ask/web-api/", { credentials: "same-origin" })
+    if (!open || state) return;
+    fetch("/ask/web-api/", { credentials: "same-origin" })
       .then((r) => (r.ok ? (r.json() as Promise<AskState>) : Promise.reject(new Error(String(r.status)))))
-      .then(setState)
+      .then((s) => {
+        setFailed(false);
+        setState(s);
+      })
       .catch(() => setFailed(true));
   }, [open, state]);
 

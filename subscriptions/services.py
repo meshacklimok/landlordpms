@@ -212,7 +212,7 @@ def issue_invoice(sub: Subscription, new_plan: Plan, interval: str, *, reason: s
         rate, vat = _vat(net)
         invoice = SubscriptionInvoice.objects.create(
             organization=org, subscription=sub, reason=reason,
-            number=next_platform_number("invoice", "LPM-INV", today.year),
+            number=next_platform_number("invoice", "NPMS-INV", today.year),
             plan=new_plan, plan_name=new_plan.name, interval=interval,
             period_start=period_start,
             period_end=period_end(period_start, interval, new_plan.one_off_years) if period_start else None,
@@ -370,7 +370,7 @@ def _tell_staff(org: Organization, *, lapsed: bool) -> None:
 
 def _receipt(payment: SubscriptionPayment) -> PlatformReceipt:
     return PlatformReceipt.objects.create(
-        payment=payment, number=next_platform_number("receipt", "LPM-RCT", timezone.localdate().year))
+        payment=payment, number=next_platform_number("receipt", "NPMS-RCT", timezone.localdate().year))
 
 
 def check_payment(amount, reference: str, paid_on: datetime.date) -> str:

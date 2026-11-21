@@ -168,13 +168,13 @@ def test_a_new_organization_starts_a_business_trial(owner):
 def test_choosing_a_plan_issues_an_invoice_and_payment_starts_it(owner, admin, settings):
     settings.PLATFORM_VAT_REGISTERED = False
     invoice = services.choose_plan(owner, plan("starter"), "MONTHLY", today=TODAY)
-    assert invoice.number == f"LPM-INV-{TODAY.year}-000001"
+    assert invoice.number == f"NPMS-INV-{TODAY.year}-000001"
     assert invoice.total == Decimal("799.00") and invoice.vat_amount == 0 and invoice.period_start is None
     assert invoice.customer_name == owner.organization.name
     payment = pay(admin, invoice, on=TODAY)
     invoice.refresh_from_db()
     sub = Subscription.objects.get(organization=owner.organization)
-    assert invoice.status == SubscriptionInvoice.Status.PAID and payment.receipt.number.startswith("LPM-RCT-")
+    assert invoice.status == SubscriptionInvoice.Status.PAID and payment.receipt.number.startswith("NPMS-RCT-")
     assert sub.status == Status.ACTIVE and sub.plan.key == "starter" and sub.trial_ends_on is None
     assert (sub.period_start, sub.period_end) == (TODAY, datetime.date(2026, 4, 9))
     assert AuditEvent.objects.filter(action="subscription.activate", organization=owner.organization).exists()
@@ -367,7 +367,7 @@ def test_sms_is_charged_per_part_and_stops_at_zero(owner, admin, settings, monke
     entry = SmsWalletEntry.objects.get(message=m)
     assert entry.amount == Decimal("-2.00") and entry.balance_after == 0  # 200 characters is two parts
     assert not delivery.sms_available(org)
-    assert SubscriptionPayment.objects.get(reference="TOP1").receipt.number.startswith("LPM-RCT-")
+    assert SubscriptionPayment.objects.get(reference="TOP1").receipt.number.startswith("NPMS-RCT-")
 
 
 def _sms(org, tenant, body="x" * 200):
@@ -452,7 +452,7 @@ def test_the_subscription_page(client, owner, admin):
     page = client.get(reverse("subscriptions:page")).content.decode()
     assert "Business" in page and "Choose a plan" in page
     response = client.post(reverse("subscriptions:page"), {"plan": "starter", "interval": "MONTHLY"}, follow=True)
-    assert "Invoice LPM-INV-" in response.content.decode()
+    assert "Invoice NPMS-INV-" in response.content.decode()
     invoice = SubscriptionInvoice.objects.get(organization=owner.organization)
     pdf = client.get(reverse("subscriptions:invoice_pdf", args=[invoice.public_id]))
     assert pdf["Content-Type"] == "application/pdf" and pdf.content.startswith(b"%PDF")

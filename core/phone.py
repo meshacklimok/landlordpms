@@ -19,7 +19,8 @@ class InvalidPhoneNumber(ValueError):
 def normalize_phone(raw: str) -> str:
     if raw is None:
         raise InvalidPhoneNumber("Phone number is required.")
-    value = re.sub(r"[\s\-().]", "", str(raw))
+    # Invisible direction marks (U+200E, U+202A..) ride along when a number is copied from Contacts or WhatsApp.
+    value = re.sub(r"[\s\-().\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]", "", str(raw))
     if value.startswith("00"):
         value = "+" + value[2:]
 

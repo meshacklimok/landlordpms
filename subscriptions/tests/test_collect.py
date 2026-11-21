@@ -135,7 +135,7 @@ def test_switched_off_refuses_to_start(owner, invoice):
 
 
 def test_account_numbers(invoice):
-    assert collect.account_number(invoice) == invoice.number.replace("LPM-INV-", "").replace("-", "")
+    assert collect.account_number(invoice) == invoice.number.replace("NPMS-INV-", "").replace("-", "")
     assert len(collect.account_number(invoice)) <= 12
     for typed in (collect.account_number(invoice), invoice.number, invoice.number.lower().replace("-", " ")):
         assert collect.invoice_for_account(typed) == invoice
@@ -628,3 +628,125 @@ def test_the_renewal_reminder_says_the_card_will_be_charged(owner, invoice):
     SubscriptionReminderModel.objects.all().delete()
     services.send_reminders(today)
     assert "renewal invoice is on the Subscription page" in mail.outbox[0].body
+
+
+# ---------------------------------------------------------------------------
+# Paystack takes over when Daraja cannot send the prompt
+# ---------------------------------------------------------------------------
+
+
+def _admin_passed_mfa(monkeypatch):
+    from accounts import mfa
+
+    monkeypatch.setattr(mfa, "is_enabled", lambda user: True)
+    monkeypatch.setattr(mfa, "session_verified", lambda request: True)
+
+
+def _backup_on(on=True):
+    switch = PlatformPaySwitch.get()
+    switch.paystack_backup = on
+    switch.save()
+
+
+def test_backup_sends_the_prompt_through_paystack_when_daraja_fails(client, owner, invoice):
+    _backup_on()
+    FakeDarajaClient.fail = "Daraja is down"
+    login(client, owner)
+    response = client.post(reverse("subscriptions:pay_mpesa"), {"invoice": invoice.public_id, "phone": "0712345678"},
+                           follow=True)
+    checkout = PlatformCheckout.objects.get()
+    assert checkout.provider == PlatformCheckout.Provider.PAYSTACK and checkout.phone == "+254712345678"
+    assert any(call[2] == "/charge" for call in FakePaystackClient.calls)
+    text = response.content.decode()
+    assert "Daraja is down" not in text
+    assert AuditEvent.objects.filter(action="subscription_checkout.start", changes__backup_for_daraja=True).exists()
+
+
+def test_backup_off_still_shows_the_daraja_error(owner, invoice):
+    FakeDarajaClient.fail = "Invalid Access Token"
+    with pytest.raises(ValidationError, match="Invalid Access Token"):
+        collect.start_mpesa(owner, invoice, "0712000111")
+    assert not PlatformCheckout.objects.exists() and not FakePaystackClient.calls
+
+
+def test_backup_does_not_hide_a_bad_phone_or_a_repeat(owner, invoice):
+    _backup_on()
+    with pytest.raises(ValidationError):
+        collect.start_mpesa(owner, invoice, "not a phone")
+    collect.start_mpesa(owner, invoice, "0712000111")
+    FakeDarajaClient.fail = "Daraja is down"
+    with pytest.raises(ValidationError, match="two minutes"):
+        collect.start_mpesa(owner, invoice, "0712000111")
+    assert PlatformCheckout.objects.count() == 1 and not FakePaystackClient.calls
+
+
+def test_backup_covers_a_daraja_that_is_not_set_up(owner, invoice, settings):
+    _backup_on()
+    settings.PLATFORM_DARAJA_PASSKEY = ""
+    assert collect.page_methods()["mpesa"] is True
+    checkout = collect.start_mpesa(owner, invoice, "0712000111")
+    assert checkout.provider == PlatformCheckout.Provider.PAYSTACK
+
+
+def test_backup_failing_too_gives_a_plain_message(owner, invoice):
+    _backup_on()
+    FakeDarajaClient.fail = "Daraja is down"
+    FakePaystackClient.fail = "Mobile money is not enabled"
+    with pytest.raises(ValidationError, match="could not send the prompt") as err:
+        collect.start_mpesa(owner, invoice, "0712000111")
+    assert "Paystack" not in str(err.value) and "Daraja" not in str(err.value)
+    assert not PlatformCheckout.objects.exists()
+
+
+def test_backup_needs_the_paystack_key(owner, invoice, settings):
+    _backup_on()
+    settings.PLATFORM_PAYSTACK_SECRET_KEY = ""
+    FakeDarajaClient.fail = "Invalid Access Token"
+    with pytest.raises(ValidationError, match="Invalid Access Token"):
+        collect.start_mpesa(owner, invoice, "0712000111")
+
+
+def test_the_page_hides_the_second_form_while_the_backup_is_on(client, owner, invoice):
+    login(client, owner)
+    assert reverse("subscriptions:pay_paystack_mpesa") in client.get(reverse("subscriptions:page")).content.decode()
+    _backup_on()
+    page = client.get(reverse("subscriptions:page")).content.decode()
+    assert reverse("subscriptions:pay_mpesa") in page and reverse("subscriptions:pay_paystack_mpesa") not in page
+
+
+def test_the_admin_button_flips_the_backup(client, monkeypatch):
+    _admin_passed_mfa(monkeypatch)
+    admin = make_user(is_staff=True, is_superuser=True)
+    client.force_login(admin)
+    url = reverse("admin:subscriptions_payswitch_toggle_backup")
+    assert client.get(url).status_code == 403
+    assert client.post(url).status_code == 302 and PlatformPaySwitch.get().paystack_backup is True
+    client.post(url)
+    assert PlatformPaySwitch.get().paystack_backup is False
+    assert AuditEvent.objects.filter(action="platform.pay_switch").count() == 2
+    assert client.get(reverse("admin:subscriptions_platformpayswitch_changelist")).status_code == 200
+
+
+def test_the_admin_button_is_for_staff_who_may_change_it(client, owner, monkeypatch):
+    _admin_passed_mfa(monkeypatch)
+    url = reverse("admin:subscriptions_payswitch_toggle_backup")
+    client.force_login(owner.user)
+    assert client.post(url).status_code in (302, 404)  # not staff
+    assert PlatformPaySwitch.get().paystack_backup is False
+    staff = make_user(is_staff=True)
+    client.force_login(staff)
+    assert client.post(url).status_code == 403
+    assert PlatformPaySwitch.get().paystack_backup is False
+
+
+@pytest.mark.parametrize("backup", [False, True])
+def test_card_payment_works_with_the_backup_on_or_off(client, owner, invoice, backup):
+    _backup_on(backup)
+    login(client, owner)
+    assert reverse("subscriptions:pay_paystack") in client.get(reverse("subscriptions:page")).content.decode()
+    response = client.post(reverse("subscriptions:pay_paystack"), {"invoice": invoice.public_id})
+    checkout = PlatformCheckout.objects.get()
+    assert response.status_code == 302 and checkout.provider == PlatformCheckout.Provider.PAYSTACK
+    client.logout()
+    assert hook(client, "ps", ps_event(checkout)).status_code == 200
+    assert_paid(invoice, SubscriptionPayment.Method.PAYSTACK)
