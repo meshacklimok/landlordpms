@@ -37,8 +37,6 @@ class Meter(PublicIdModel, TimeStampedModel, ArchivableModel):
     class Split(models.TextChoices):
         EQUAL = "EQUAL", _("Equally")
         WEIGHTED = "WEIGHTED", _("By weight")
-        # Each room's fixed share of the bill; the shares add up to 100 (D-157).
-        PERCENT = "PERCENT", _("By percentage")
         # Each room's own meter (a sub-meter) over the same dates decides its share of this one (D-143).
         USAGE = "USAGE", _("By each room's own meter")
 
